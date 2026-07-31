@@ -22,7 +22,7 @@ func New() Controller {
 	return windowsController{}
 }
 
-func (windowsController) Install(ctx context.Context, executable string) error {
+func (windowsController) Install(ctx context.Context, executable, _ string) error {
 	executable, err := filepath.Abs(executable)
 	if err != nil {
 		return err
@@ -41,14 +41,14 @@ func (windowsController) Install(ctx context.Context, executable string) error {
 	}
 	service, err := manager.OpenService(Name)
 	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
-		service, err = manager.CreateService(Name, executable, config, "daemon")
+		service, err = manager.CreateService(Name, executable, config, "--system", "daemon")
 	} else if err == nil {
 		var existing mgr.Config
 		existing, err = service.Config()
 		if err == nil {
 			existing.StartType = config.StartType
 			existing.ErrorControl = config.ErrorControl
-			existing.BinaryPathName = `"` + executable + `" daemon`
+			existing.BinaryPathName = `"` + executable + `" --system daemon`
 			existing.DisplayName = config.DisplayName
 			existing.Description = config.Description
 			existing.DelayedAutoStart = config.DelayedAutoStart

@@ -23,7 +23,7 @@ const (
 )
 
 type Controller interface {
-	Install(context.Context, string) error
+	Install(context.Context, string, string) error
 	Uninstall(context.Context) error
 	Start(context.Context) error
 	Stop(context.Context) error

@@ -37,8 +37,8 @@ type shellExecuteInfo struct {
 	Process    windows.Handle
 }
 
-func Ensure(arguments []string) (bool, int, error) {
-	if !requiresAdministrator(arguments) {
+func Ensure(arguments []string, required bool) (bool, int, error) {
+	if !required {
 		return false, 0, nil
 	}
 	if windows.GetCurrentProcessToken().IsElevated() {
@@ -84,32 +84,6 @@ func Ensure(arguments []string) (bool, int, error) {
 		return false, 0, err
 	}
 	return true, int(exitCode), nil
-}
-
-func requiresAdministrator(arguments []string) bool {
-	var values []string
-	for _, argument := range arguments {
-		if argument != "--elevated" && argument != "--yes" && argument != "--no-restart" {
-			values = append(values, strings.ToLower(argument))
-		}
-	}
-	if len(values) == 0 {
-		return false
-	}
-	switch values[0] {
-	case "run":
-		return true
-	case "core":
-		return false
-	case "subscription":
-		return false
-	case "config":
-		return false
-	case "service":
-		return len(values) > 1 && values[1] != "status"
-	default:
-		return false
-	}
 }
 
 func filepathDir(path string) string {

@@ -11,6 +11,7 @@ import (
 func (command *CLI) menu(ctx context.Context) int {
 	for {
 		fmt.Fprintln(command.output, "\nSempre")
+		fmt.Fprintf(command.output, "  Mode: %s\n", command.manager.Paths().Mode)
 		fmt.Fprintln(command.output, "  1. Status")
 		fmt.Fprintln(command.output, "  2. List core versions")
 		fmt.Fprintln(command.output, "  3. Install latest stable sing-box")
@@ -42,7 +43,7 @@ func (command *CLI) menu(ctx context.Context) int {
 			fmt.Fprintln(command.errors, "Invalid selection.")
 			continue
 		}
-		if err := command.execute(ctx, arguments); err != nil {
+		if err := command.execute(ctx, arguments, Options{Mode: command.manager.Paths().Mode}); err != nil {
 			fmt.Fprintln(command.errors, "ERROR:", err)
 		}
 		fmt.Fprint(command.output, "Press Enter to return to the menu...")

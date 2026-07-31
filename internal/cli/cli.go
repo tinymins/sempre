@@ -18,6 +18,8 @@ import (
 type Options struct {
 	Yes       bool
 	NoRestart bool
+	Mode      layout.Mode
+	Elevated  bool
 }
 
 type CLI struct {
@@ -28,7 +30,38 @@ type CLI struct {
 }
 
 func Run(ctx context.Context, arguments []string, input io.Reader, output, errorOutput io.Writer) int {
-	paths, err := layout.FromExecutable()
+	arguments, options, err := parseGlobalOptions(arguments)
+	if err != nil {
+		fmt.Fprintln(errorOutput, "ERROR:", err)
+		return 1
+	}
+	executable, err := layout.CurrentExecutable()
+	if err != nil {
+		fmt.Fprintln(errorOutput, "ERROR:", err)
+		return 1
+	}
+	options.Mode, err = resolveMode(options.Mode, executable)
+	if err != nil {
+		fmt.Fprintln(errorOutput, "ERROR:", err)
+		return 1
+	}
+	if handled, code := runStateless(ctx, arguments, executable, output, errorOutput); handled {
+		return code
+	}
+	elevatedArguments := invocationArguments(arguments, options)
+	handled, code, err := elevate.Ensure(elevatedArguments, requiresAdministrator(arguments, options.Mode))
+	if err != nil {
+		fmt.Fprintln(errorOutput, "ERROR:", err)
+		return 1
+	}
+	if handled {
+		if code != 0 {
+			fmt.Fprintf(errorOutput, "ERROR: elevated command exited with code %d\n", code)
+			return 1
+		}
+		return 0
+	}
+	paths, err := layout.ForMode(options.Mode)
 	if err != nil {
 		fmt.Fprintln(errorOutput, "ERROR:", err)
 		return 1
@@ -47,28 +80,28 @@ func Run(ctx context.Context, arguments []string, input io.Reader, output, error
 	if len(arguments) == 0 {
 		return command.menu(ctx)
 	}
-	if err := command.execute(ctx, arguments); err != nil {
+	if err := command.execute(ctx, arguments, options); err != nil {
 		fmt.Fprintln(errorOutput, "ERROR:", err)
 		return 1
 	}
 	return 0
 }
 
-func (command *CLI) execute(ctx context.Context, arguments []string) error {
-	handled, code, err := elevate.Ensure(arguments)
+func resolveMode(requested layout.Mode, executable string) (layout.Mode, error) {
+	if requested != "" {
+		return requested, nil
+	}
+	portable, err := layout.PortableMarkerEnabled(executable)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if handled {
-		if code != 0 {
-			return fmt.Errorf("elevated command exited with code %d", code)
-		}
-		return nil
+	if portable {
+		return layout.Portable, nil
 	}
-	arguments, options, err := parseGlobalOptions(arguments)
-	if err != nil {
-		return err
-	}
+	return layout.System, nil
+}
+
+func (command *CLI) execute(ctx context.Context, arguments []string, options Options) error {
 	if len(arguments) == 0 {
 		return usageError()
 	}
@@ -95,6 +128,8 @@ func (command *CLI) execute(ctx context.Context, arguments []string) error {
 		return command.config(ctx, arguments[1:], options)
 	case "service":
 		return command.service(ctx, arguments[1:])
+	case "portable":
+		return fmt.Errorf("portable mode is changed before data initialization; run 'sempre portable enable|disable'")
 	case "run":
 		return command.run(ctx, arguments[1:])
 	case "update":
@@ -323,6 +358,10 @@ func (command *CLI) applyRestart(ctx context.Context, change app.Change, options
 	if !change.Changed || !change.NeedsRestart {
 		return nil
 	}
+	if command.manager.Paths().Mode != layout.System {
+		fmt.Fprintln(command.output, "Change saved; portable deployments are applied the next time they run.")
+		return nil
+	}
 	current, err := command.manager.ServiceState(ctx)
 	if err != nil {
 		fmt.Fprintln(command.output, "Change saved; service status is unavailable. Run 'sempre service restart' to apply it.")
@@ -350,7 +389,7 @@ func (command *CLI) applyRestart(ctx context.Context, change app.Change, options
 		fmt.Fprintln(command.output, "Change saved; run 'sempre service restart' when ready.")
 		return nil
 	}
-	if err := command.execute(ctx, []string{"service", "restart"}); err != nil {
+	if err := command.execute(ctx, []string{"service", "restart"}, options); err != nil {
 		return fmt.Errorf("change saved, but service restart failed: %w", err)
 	}
 	fmt.Fprintln(command.output, "Change applied and service restarted successfully.")
@@ -367,6 +406,17 @@ func parseGlobalOptions(arguments []string) ([]string, Options, error) {
 		case "--no-restart":
 			options.NoRestart = true
 		case "--elevated":
+			options.Elevated = true
+		case "--system":
+			if options.Mode == layout.Portable {
+				return nil, Options{}, fmt.Errorf("--system and --portable cannot be used together")
+			}
+			options.Mode = layout.System
+		case "--portable":
+			if options.Mode == layout.System {
+				return nil, Options{}, fmt.Errorf("--system and --portable cannot be used together")
+			}
+			options.Mode = layout.Portable
 		default:
 			result = append(result, argument)
 		}
@@ -375,6 +425,87 @@ func parseGlobalOptions(arguments []string) ([]string, Options, error) {
 		return nil, Options{}, fmt.Errorf("--yes and --no-restart cannot be used together")
 	}
 	return result, options, nil
+}
+
+func invocationArguments(arguments []string, options Options) []string {
+	result := []string{"--" + string(options.Mode)}
+	result = append(result, arguments...)
+	if options.Yes {
+		result = append(result, "--yes")
+	}
+	if options.NoRestart {
+		result = append(result, "--no-restart")
+	}
+	if options.Elevated {
+		result = append(result, "--elevated")
+	}
+	return result
+}
+
+func requiresAdministrator(arguments []string, mode layout.Mode) bool {
+	if len(arguments) == 0 {
+		return mode == layout.System
+	}
+	switch arguments[0] {
+	case "help", "-h", "--help", "version", "portable":
+		return false
+	case "service":
+		return len(arguments) < 2 || arguments[1] != "status"
+	case "run":
+		return true
+	default:
+		return mode == layout.System
+	}
+}
+
+func runStateless(
+	ctx context.Context,
+	arguments []string,
+	executable string,
+	output, errorOutput io.Writer,
+) (bool, int) {
+	if len(arguments) == 1 {
+		switch arguments[0] {
+		case "help", "-h", "--help":
+			fmt.Fprint(output, usage)
+			return true, 0
+		case "version":
+			fmt.Fprintf(output, "Sempre %s (%s, %s)\n", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
+			return true, 0
+		}
+	}
+	if len(arguments) == 2 && arguments[0] == "portable" {
+		var enabled bool
+		switch arguments[1] {
+		case "enable":
+			enabled = true
+		case "disable":
+			enabled = false
+		default:
+			fmt.Fprintln(errorOutput, "ERROR: portable accepts enable or disable")
+			return true, 1
+		}
+		if err := layout.SetPortableMarker(executable, enabled); err != nil {
+			fmt.Fprintln(errorOutput, "ERROR:", err)
+			return true, 1
+		}
+		state := "disabled"
+		if enabled {
+			state = "enabled"
+		}
+		fmt.Fprintf(output, "Portable marker %s at %s.\n", state, layout.PortableMarkerPath(executable))
+		return true, 0
+	}
+	if len(arguments) == 2 && arguments[0] == "service" && arguments[1] == "status" {
+		current, err := service.New().Status(ctx)
+		if err != nil {
+			fmt.Fprintln(errorOutput, "ERROR:", err)
+			return true, 1
+		}
+		fmt.Fprintln(output, current)
+		return true, 0
+	}
+	return false, 0
 }
 
 func usageError() error {
@@ -406,6 +537,11 @@ Service and diagnostics:
   sempre logs [--follow]
   sempre doctor
   sempre version
+
+Modes:
+  sempre --system <command>       Use protected machine-wide data (default)
+  sempre --portable <command>     Use .sempre beside the executable
+  sempre portable enable|disable Manage the .sempre-portable marker
 
 Mutating commands accept --yes to restart a running service without prompting,
 or --no-restart to save the change without restarting.

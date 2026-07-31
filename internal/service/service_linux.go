@@ -25,7 +25,7 @@ func New() Controller {
 	return linuxController{}
 }
 
-func (linuxController) Install(ctx context.Context, executable string) error {
+func (linuxController) Install(ctx context.Context, executable, workingDirectory string) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
@@ -41,14 +41,20 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%s
-ExecStart=%s daemon
+ExecStart=%s --system daemon
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
+StateDirectory=sempre
+StateDirectoryMode=0700
+LogsDirectory=sempre
+LogsDirectoryMode=0700
+RuntimeDirectory=sempre
+RuntimeDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target
-`, Description, strconv.Quote(filepath.Dir(executable)), strconv.Quote(executable))
+`, Description, strconv.Quote(workingDirectory), strconv.Quote(executable))
 	if err := state.WriteAtomic(systemdUnit, []byte(unit), 0o644); err != nil {
 		return err
 	}

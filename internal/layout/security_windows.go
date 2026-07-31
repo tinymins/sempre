@@ -4,10 +4,12 @@ package layout
 
 import "golang.org/x/sys/windows"
 
-func secureDirectory(path string) error {
-	descriptor, err := windows.SecurityDescriptorFromString(
-		"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)",
-	)
+func secureDirectory(path string, mode Mode) error {
+	sddl := "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	if mode == Portable {
+		sddl += "(A;OICI;FA;;;OW)"
+	}
+	descriptor, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
 		return err
 	}
@@ -24,4 +26,8 @@ func secureDirectory(path string) error {
 		acl,
 		nil,
 	)
+}
+
+func secureExecutableDirectory(path string) error {
+	return secureDirectory(path, System)
 }

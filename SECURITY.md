@@ -10,8 +10,9 @@ reasonable opportunity to investigate it. Report security issues through the
 
 Subscription URLs may contain access tokens. Sempre stores them in its
 restricted state file and redacts URL paths and query parameters from normal
-status output and logs. Bug reports must not include `.sempre/state.json` or
-unredacted command output containing a subscription URL.
+status output and logs. Bug reports must not include `state.json` from the
+system data directory, portable `.sempre/state.json`, or unredacted command
+output containing a subscription URL.
 
 ## Trust Boundary
 
@@ -19,3 +20,8 @@ Sempre downloads proxy core archives only from the core adapter's official
 release source and requires a SHA-256 release digest. Subscription
 configurations are untrusted input and must pass the selected core's validation
 command before activation.
+
+System-mode data and the installed service executable are writable only by
+administrators and the operating-system service account. Portable mode trusts
+the directory containing the downloaded executable and is intended only when
+the user explicitly opts into that deployment model.

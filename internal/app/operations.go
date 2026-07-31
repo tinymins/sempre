@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sempre-lab/sempre/internal/layout"
 	"github.com/sempre-lab/sempre/internal/service"
 	"github.com/sempre-lab/sempre/internal/supervisor"
 )
@@ -29,21 +30,7 @@ func (manager *Manager) RunDirect(ctx context.Context, reference string) error {
 }
 
 func (manager *Manager) InstallService(ctx context.Context) error {
-	if _, _, err := manager.deploymentSpec(ctx, ""); err != nil {
-		return err
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	executable, err = filepath.EvalSymlinks(executable)
-	if err != nil {
-		return err
-	}
-	if err := manager.service.Install(ctx, executable); err != nil {
-		return err
-	}
-	return manager.service.Start(ctx)
+	return manager.installSystemService(ctx)
 }
 
 func (manager *Manager) UninstallService(ctx context.Context) error {
@@ -51,7 +38,11 @@ func (manager *Manager) UninstallService(ctx context.Context) error {
 }
 
 func (manager *Manager) StartService(ctx context.Context) error {
-	if _, _, err := manager.deploymentSpec(ctx, ""); err != nil {
+	systemManager, err := manager.systemManager()
+	if err != nil {
+		return err
+	}
+	if _, _, err := systemManager.deploymentSpec(ctx, ""); err != nil {
 		return err
 	}
 	return manager.service.Start(ctx)
@@ -62,7 +53,11 @@ func (manager *Manager) StopService(ctx context.Context) error {
 }
 
 func (manager *Manager) RestartService(ctx context.Context) error {
-	if _, _, err := manager.deploymentSpec(ctx, ""); err != nil {
+	systemManager, err := manager.systemManager()
+	if err != nil {
+		return err
+	}
+	if _, _, err := systemManager.deploymentSpec(ctx, ""); err != nil {
 		return err
 	}
 	return manager.service.Restart(ctx)
@@ -79,6 +74,7 @@ func (manager *Manager) Status(ctx context.Context) (string, error) {
 	}
 	serviceState, serviceErr := manager.service.Status(ctx)
 	var builder strings.Builder
+	fmt.Fprintln(&builder, "Mode:", manager.paths.Mode)
 	if document.Active == nil {
 		fmt.Fprintln(&builder, "Core: not selected")
 	} else {
@@ -89,9 +85,9 @@ func (manager *Manager) Status(ctx context.Context) (string, error) {
 		fmt.Fprintln(&builder, "Last deployment error:", document.LastError)
 	}
 	if serviceErr != nil {
-		fmt.Fprintln(&builder, "Service: unavailable:", serviceErr)
+		fmt.Fprintln(&builder, "System service: unavailable:", serviceErr)
 	} else {
-		fmt.Fprintln(&builder, "Service:", serviceState)
+		fmt.Fprintln(&builder, "System service:", serviceState)
 	}
 	runtime := document.Runtime
 	if runtime.State == "" {
@@ -129,6 +125,10 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 		}
 	}
 	check("data directory", writableDirectory(manager.paths.Home))
+	if manager.paths.Mode == layout.System {
+		check("data protection", checkProtectedPath(manager.paths.Home))
+		check("service executable", manager.checkServiceExecutable())
+	}
 	if document.Active == nil {
 		check("active core", fmt.Errorf("not selected"))
 	} else {

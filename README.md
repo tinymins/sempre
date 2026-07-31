@@ -29,8 +29,9 @@ Sempre does not download, bundle, or invoke NSSM or PowerShell.
 
 ## Quick Start
 
-Place the Sempre binary in its permanent directory before installing the
-service. Sempre stores all of its data beside the executable in `.sempre/`.
+Run Sempre from any directory. Normal commands use protected machine-wide
+storage and request administrator access through native UAC on Windows or
+`sudo` on Unix when required.
 
 ```text
 sempre core install sing-box
@@ -48,6 +49,18 @@ sempre service install
 ```
 
 Running Sempre without arguments opens an interactive menu.
+
+To keep both the binary and its data in one movable directory, explicitly
+enable portable mode:
+
+```text
+sempre portable enable
+sempre status
+```
+
+The marker command creates `.sempre-portable` beside the executable. You can
+also select a mode for one invocation with `--portable` or `--system`;
+`--system` overrides an existing portable marker.
 
 ## Downloads
 
@@ -126,16 +139,22 @@ sempre service status
 ```
 
 `service install` validates the selected deployment, registers Sempre with the
-native system service manager, enables it, and starts it. `service uninstall`
-retains all `.sempre/` data.
+native system service manager, enables it, and starts it. It also copies Sempre
+to a protected system executable directory, so the original download can be
+moved or deleted afterwards. `service uninstall` retains the installed binary
+and system data.
+
+When installation is first run from portable mode, the selected core and
+configuration are copied into system storage. If system storage already
+exists, it remains authoritative and portable data does not replace it.
 
 Sempre supervises the core on every platform. Unexpected exits use bounded
 exponential backoff. Unix process groups and Windows Job Objects ensure child
 processes are cleaned up when the service stops.
 
-On Windows, the executable runs as the current user by default. Commands that
-control the system service request native UAC elevation only when needed.
-Read-only commands do not prompt for elevation.
+Windows elevation uses the native `runas` API. Sempre does not invoke
+PowerShell. Linux and macOS use `sudo`. Help, version, portable marker
+management, and `service status` do not require elevation.
 
 ## Diagnostics
 
@@ -152,8 +171,19 @@ port, TUN interface name, or the presence of another proxy product.
 
 ## Data Layout
 
+System mode is the default:
+
+| Platform | Executable | Data | Logs | Runtime |
+| --- | --- | --- | --- | --- |
+| Windows | `%ProgramFiles%\Sempre\sempre.exe` | `%ProgramData%\Sempre` | `%ProgramData%\Sempre\logs` | `%ProgramData%\Sempre\run` |
+| Linux | `/usr/local/libexec/sempre/sempre` | `/var/lib/sempre` | `/var/log/sempre` | `/run/sempre` |
+| macOS | `/Library/Application Support/Sempre/bin/sempre` | `/Library/Application Support/Sempre/data` | `/Library/Logs/Sempre` | `/var/run/sempre` |
+
+Portable mode keeps the following structure beside the executable:
+
 ```text
 sempre.exe
+.sempre-portable
 .sempre/
 |-- state.json
 |-- cores/
@@ -164,9 +194,8 @@ sempre.exe
 `-- run/
 ```
 
-The service registration records the executable's absolute path. Moving the
-binary after service installation requires running `sempre service install`
-again to repair the registration.
+The system service always runs the protected system executable with
+`--system daemon`, even when installation was initiated from portable mode.
 
 ## Build
 

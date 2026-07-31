@@ -28,7 +28,7 @@ func New() Controller {
 	return darwinController{}
 }
 
-func (darwinController) Install(ctx context.Context, executable string) error {
+func (darwinController) Install(ctx context.Context, executable, workingDirectory string) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func (darwinController) Install(ctx context.Context, executable string) error {
 <dict>
   <key>Label</key><string>%s</string>
   <key>ProgramArguments</key>
-  <array><string>%s</string><string>daemon</string></array>
+  <array><string>%s</string><string>--system</string><string>daemon</string></array>
   <key>WorkingDirectory</key><string>%s</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
@@ -51,7 +51,7 @@ func (darwinController) Install(ctx context.Context, executable string) error {
   <key>ThrottleInterval</key><integer>5</integer>
 </dict>
 </plist>
-`, launchdLabel, escape(executable), escape(filepath.Dir(executable)))
+`, launchdLabel, escape(executable), escape(workingDirectory))
 	_, _ = exec.CommandContext(ctx, "launchctl", "bootout", "system/"+launchdLabel).CombinedOutput()
 	if err := state.WriteAtomic(launchdPlist, []byte(plist), 0o644); err != nil {
 		return err
