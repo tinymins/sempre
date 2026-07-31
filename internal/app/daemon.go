@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sempre-lab/sempre/internal/core"
@@ -57,6 +58,10 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 					Spec:       adapter.Run(binary, config, dataDir),
 				}, nil
 			},
+			ResolveFailure: func(failure error) (bool, error) {
+				logf("resolve deployment failed: %v", failure)
+				return manager.rollbackPendingDeployment("resolve failed", failure)
+			},
 			ScheduledUpdate: func(updateCtx context.Context) (bool, error) {
 				change, err := manager.UpdateSubscription(updateCtx)
 				if err != nil {
@@ -83,39 +88,37 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			},
 			Healthy: func(plan supervisor.Plan) error {
 				logf("healthy %s", deploymentLabel(plan.Deployment))
-				return manager.store.Update(func(document *state.Document) error {
+				var cleanupCore, cleanupVersion string
+				err := manager.store.Update(func(document *state.Document) error {
 					if document.Pending && state.SameDeployment(document.Active, &plan.Deployment) {
 						old := document.Previous
 						document.Previous = nil
 						document.Pending = false
 						document.LastError = ""
-						if old != nil {
-							manager.collectWeakVersion(document, old.Core, old.Version)
+						if old != nil && manager.collectWeakVersion(document, old.Core, old.Version) {
+							cleanupCore = old.Core
+							cleanupVersion = old.Version
 						}
 					}
 					document.Runtime.State = "running"
 					document.Runtime.LastTransition = time.Now().UTC()
 					return nil
 				})
+				if err == nil && cleanupVersion != "" {
+					_ = os.RemoveAll(manager.paths.CoreVersionDir(cleanupCore, cleanupVersion))
+				}
+				if err == nil {
+					err = manager.garbageCollectConfigs()
+				}
+				return err
 			},
 			EarlyFailure: func(plan supervisor.Plan, failure error) error {
 				logf("startup failed for %s: %v", deploymentLabel(plan.Deployment), failure)
-				return manager.store.Update(func(document *state.Document) error {
-					document.LastError = fmt.Sprintf("startup failed for %s: %v", deploymentLabel(plan.Deployment), failure)
-					if document.Pending &&
-						state.SameDeployment(document.Active, &plan.Deployment) &&
-						document.Previous != nil {
-						restored := *document.Previous
-						document.Active = &restored
-						document.Configs[restored.Core] = restored.ConfigHash
-						document.Previous = nil
-						document.Pending = false
-					}
-					document.Runtime.State = "failed"
-					document.Runtime.LastExit = fmt.Sprint(failure)
-					document.Runtime.LastTransition = time.Now().UTC()
-					return nil
-				})
+				_, err := manager.rollbackPendingDeployment(
+					"startup failed for "+deploymentLabel(plan.Deployment),
+					failure,
+				)
+				return err
 			},
 			Exited: func(plan supervisor.Plan, failure error, restarts int) error {
 				logf("exited %s: %v", deploymentLabel(plan.Deployment), failure)
@@ -141,6 +144,94 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 		},
 	}
 	return manager.service.Run(ctx, runner.Run)
+}
+
+func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (bool, error) {
+	retry := false
+	changed := false
+	err := manager.store.Update(func(document *state.Document) error {
+		document.LastError = fmt.Sprintf("%s: %v", stage, failure)
+		if document.Pending {
+			changed = true
+			if document.Previous != nil {
+				restored := *document.Previous
+				document.Active = &restored
+				document.Configs[restored.Core] = restored.ConfigHash
+				retry = true
+			} else {
+				document.Active = nil
+			}
+			document.Previous = nil
+			document.Pending = false
+		}
+		document.Runtime.State = "failed"
+		document.Runtime.PID = 0
+		document.Runtime.LastExit = fmt.Sprint(failure)
+		document.Runtime.LastTransition = time.Now().UTC()
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if changed {
+		if err := manager.garbageCollectConfigs(); err != nil {
+			return false, err
+		}
+	}
+	return retry, nil
+}
+
+func (manager *Manager) garbageCollectConfigs() error {
+	lease, err := manager.store.AcquireConfig()
+	if err != nil {
+		return err
+	}
+	defer lease.Release()
+	document, err := manager.store.Read()
+	if err != nil {
+		return err
+	}
+	references := referencedConfigs(document)
+	coreDirectories, err := os.ReadDir(manager.paths.Configs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, coreDirectory := range coreDirectories {
+		if !coreDirectory.IsDir() || coreDirectory.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		coreID := coreDirectory.Name()
+		directory := filepath.Join(manager.paths.Configs, coreID)
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 ||
+				filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			hash := strings.TrimSuffix(entry.Name(), ".json")
+			if !references[coreID][hash] {
+				if err := os.Remove(filepath.Join(directory, entry.Name())); err != nil {
+					return err
+				}
+			}
+		}
+		remaining, err := os.ReadDir(directory)
+		if err != nil {
+			return err
+		}
+		if len(remaining) == 0 {
+			if err := os.Remove(directory); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (manager *Manager) nextSubscriptionUpdate() (time.Duration, bool) {

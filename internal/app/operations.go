@@ -12,6 +12,7 @@ import (
 
 	"github.com/sempre-lab/sempre/internal/layout"
 	"github.com/sempre-lab/sempre/internal/service"
+	"github.com/sempre-lab/sempre/internal/state"
 	"github.com/sempre-lab/sempre/internal/supervisor"
 )
 
@@ -29,8 +30,16 @@ func (manager *Manager) RunDirect(ctx context.Context, reference string) error {
 	return supervisor.RunForeground(ctx, spec, manager.output, manager.errors)
 }
 
-func (manager *Manager) InstallService(ctx context.Context) error {
-	return manager.installSystemService(ctx)
+func (manager *Manager) InstallService(ctx context.Context, allowReplace bool) error {
+	return manager.installSystemService(ctx, allowReplace)
+}
+
+func (manager *Manager) DeployService(
+	ctx context.Context,
+	component DeployComponent,
+	allowReplace bool,
+) error {
+	return manager.deploySystemService(ctx, component, allowReplace)
 }
 
 func (manager *Manager) UninstallService(ctx context.Context) error {
@@ -75,6 +84,11 @@ func (manager *Manager) Status(ctx context.Context) (string, error) {
 	serviceState, serviceErr := manager.service.Status(ctx)
 	var builder strings.Builder
 	fmt.Fprintln(&builder, "Mode:", manager.paths.Mode)
+	if document.Selected == nil {
+		fmt.Fprintln(&builder, "Selected: none")
+	} else {
+		fmt.Fprintf(&builder, "Selected: %s@%s\n", document.Selected.Core, document.Selected.Ref)
+	}
 	if document.Active == nil {
 		fmt.Fprintln(&builder, "Core: not selected")
 	} else {
@@ -90,7 +104,12 @@ func (manager *Manager) Status(ctx context.Context) (string, error) {
 		fmt.Fprintln(&builder, "System service:", serviceState)
 	}
 	runtime := document.Runtime
-	if runtime.State == "" {
+	runtimeStatus, runtimeErr := manager.runtimeStatus(document)
+	if runtimeErr != nil {
+		fmt.Fprintln(&builder, "Supervisor: unavailable:", runtimeErr)
+	} else if runtimeStatus != "" {
+		fmt.Fprintln(&builder, "Supervisor:", runtimeStatus)
+	} else if runtime.State == "" {
 		fmt.Fprintln(&builder, "Supervisor: no runtime state")
 	} else {
 		fmt.Fprintf(&builder, "Supervisor: %s, PID %d, restarts %d\n", runtime.State, runtime.PID, runtime.RestartCount)
@@ -125,9 +144,15 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 		}
 	}
 	check("data directory", writableDirectory(manager.paths.Home))
+	serviceState, serviceErr := manager.service.Status(ctx)
+	check("service manager", serviceErr)
 	if manager.paths.Mode == layout.System {
 		check("data protection", checkProtectedPath(manager.paths.Home))
-		check("service executable", manager.checkServiceExecutable())
+		if serviceErr == nil && serviceState == service.NotInstalled {
+			fmt.Fprintln(&builder, "[INFO] system service: not installed")
+		} else {
+			check("service executable", manager.checkServiceExecutable())
+		}
 	}
 	if document.Active == nil {
 		check("active core", fmt.Errorf("not selected"))
@@ -143,12 +168,60 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 			check("configuration validation", validationErr)
 		}
 	}
-	_, serviceErr := manager.service.Status(ctx)
-	check("service manager", serviceErr)
+	runtimeStatus, runtimeErr := manager.runtimeStatus(document)
+	if runtimeErr != nil {
+		check("runtime state", runtimeErr)
+	} else if strings.HasPrefix(runtimeStatus, "stale") {
+		check("runtime state", fmt.Errorf("%s", runtimeStatus))
+	} else if runtimeStatus == "" {
+		fmt.Fprintln(&builder, "[INFO] runtime state: no managed core is running")
+	} else {
+		fmt.Fprintf(&builder, "[ OK ] runtime state: %s\n", runtimeStatus)
+	}
 	if failures == 0 {
 		fmt.Fprintln(&builder, "All checks passed.")
 	}
 	return strings.TrimRight(builder.String(), "\n"), nil
+}
+
+func (manager *Manager) runtimeStatus(document state.Document) (string, error) {
+	locked, err := manager.store.InstanceRunning()
+	if err != nil {
+		return "", err
+	}
+	runtimeState := document.Runtime
+	if runtimeState.PID > 0 {
+		if !processAlive(runtimeState.PID) {
+			return fmt.Sprintf(
+				"stale record: PID %d is not running (recorded state %s)",
+				runtimeState.PID,
+				runtimeState.State,
+			), nil
+		}
+		if !locked {
+			return fmt.Sprintf(
+				"stale record: PID %d exists but the Sempre instance lock is free",
+				runtimeState.PID,
+			), nil
+		}
+		return fmt.Sprintf(
+			"%s, PID %d, restarts %d",
+			runtimeState.State,
+			runtimeState.PID,
+			runtimeState.RestartCount,
+		), nil
+	}
+	if locked {
+		return "starting or stopping; instance lock held before PID was recorded", nil
+	}
+	switch runtimeState.State {
+	case "running", "starting", "restarting":
+		return fmt.Sprintf("stale record: state is %s but no managed process or instance lock exists", runtimeState.State), nil
+	case "":
+		return "", nil
+	default:
+		return fmt.Sprintf("%s, no running process", runtimeState.State), nil
+	}
 }
 
 func writableDirectory(path string) error {

@@ -78,7 +78,7 @@ func Run(ctx context.Context, arguments []string, input io.Reader, output, error
 		errors:  errorOutput,
 	}
 	if len(arguments) == 0 {
-		return command.menu(ctx)
+		return command.menu(ctx, options)
 	}
 	if err := command.execute(ctx, arguments, options); err != nil {
 		fmt.Fprintln(errorOutput, "ERROR:", err)
@@ -127,7 +127,7 @@ func (command *CLI) execute(ctx context.Context, arguments []string, options Opt
 	case "config":
 		return command.config(ctx, arguments[1:], options)
 	case "service":
-		return command.service(ctx, arguments[1:])
+		return command.service(ctx, arguments[1:], options)
 	case "portable":
 		return fmt.Errorf("portable mode is changed before data initialization; run 'sempre portable enable|disable'")
 	case "run":
@@ -224,7 +224,7 @@ func (command *CLI) core(ctx context.Context, arguments []string, options Option
 		if len(arguments) != 2 {
 			return usageError()
 		}
-		change, err := command.manager.UseCore(arguments[1])
+		change, err := command.manager.UseCore(ctx, arguments[1])
 		return command.finishChange(ctx, change, options, err)
 	case "remove":
 		if len(arguments) != 2 {
@@ -269,6 +269,12 @@ func (command *CLI) subscription(ctx context.Context, arguments []string, option
 			fmt.Fprintln(command.output, output)
 		}
 		return err
+	case "clear":
+		if len(arguments) != 1 {
+			return usageError()
+		}
+		change, err := command.manager.ClearSubscription()
+		return command.finishChange(ctx, change, options, err)
 	default:
 		return usageError()
 	}
@@ -282,37 +288,67 @@ func (command *CLI) config(ctx context.Context, arguments []string, options Opti
 	return command.finishChange(ctx, change, options, err)
 }
 
-func (command *CLI) service(ctx context.Context, arguments []string) error {
-	if len(arguments) != 1 {
+func (command *CLI) service(ctx context.Context, arguments []string, options Options) error {
+	if len(arguments) == 0 {
 		return usageError()
 	}
 	switch arguments[0] {
 	case "install":
-		if err := command.manager.InstallService(ctx); err != nil {
+		if len(arguments) != 1 {
+			return usageError()
+		}
+		if err := command.installService(ctx, options); err != nil {
 			return err
 		}
 		fmt.Fprintln(command.output, "Service installed, enabled, and started.")
+	case "deploy":
+		if len(arguments) != 2 {
+			return usageError()
+		}
+		component, err := app.ParseDeployComponent(arguments[1])
+		if err != nil {
+			return err
+		}
+		if err := command.deployService(ctx, component, options); err != nil {
+			return err
+		}
+		fmt.Fprintf(command.output, "System service %s deployment completed.\n", component)
 	case "uninstall":
+		if len(arguments) != 1 {
+			return usageError()
+		}
 		if err := command.manager.UninstallService(ctx); err != nil {
 			return err
 		}
 		fmt.Fprintln(command.output, "Service uninstalled. Sempre data was retained.")
 	case "start":
+		if len(arguments) != 1 {
+			return usageError()
+		}
 		if err := command.manager.StartService(ctx); err != nil {
 			return err
 		}
 		fmt.Fprintln(command.output, "Service started.")
 	case "stop":
+		if len(arguments) != 1 {
+			return usageError()
+		}
 		if err := command.manager.StopService(ctx); err != nil {
 			return err
 		}
 		fmt.Fprintln(command.output, "Service stopped.")
 	case "restart":
+		if len(arguments) != 1 {
+			return usageError()
+		}
 		if err := command.manager.RestartService(ctx); err != nil {
 			return err
 		}
 		fmt.Fprintln(command.output, "Service restarted.")
 	case "status":
+		if len(arguments) != 1 {
+			return usageError()
+		}
 		state, err := command.manager.ServiceState(ctx)
 		if err != nil {
 			return err
@@ -322,6 +358,45 @@ func (command *CLI) service(ctx context.Context, arguments []string) error {
 		return usageError()
 	}
 	return nil
+}
+
+func (command *CLI) installService(ctx context.Context, options Options) error {
+	err := command.manager.InstallService(ctx, options.Yes)
+	var confirmation *app.ConfirmationRequired
+	if !errors.As(err, &confirmation) {
+		return err
+	}
+	if !command.confirmReplacement(confirmation.Summary) {
+		return fmt.Errorf("service installation cancelled")
+	}
+	return command.manager.InstallService(ctx, true)
+}
+
+func (command *CLI) deployService(
+	ctx context.Context,
+	component app.DeployComponent,
+	options Options,
+) error {
+	err := command.manager.DeployService(ctx, component, options.Yes)
+	var confirmation *app.ConfirmationRequired
+	if !errors.As(err, &confirmation) {
+		return err
+	}
+	if !command.confirmReplacement(confirmation.Summary) {
+		return fmt.Errorf("service deployment cancelled")
+	}
+	return command.manager.DeployService(ctx, component, true)
+}
+
+func (command *CLI) confirmReplacement(summary string) bool {
+	fmt.Fprintln(command.output, summary)
+	fmt.Fprint(command.output, "Replace this system data? [y/N]: ")
+	line, err := command.input.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false
+	}
+	value := strings.TrimSpace(line)
+	return strings.EqualFold(value, "y") || strings.EqualFold(value, "yes")
 }
 
 func (command *CLI) run(ctx context.Context, arguments []string) error {
@@ -444,7 +519,7 @@ func invocationArguments(arguments []string, options Options) []string {
 
 func requiresAdministrator(arguments []string, mode layout.Mode) bool {
 	if len(arguments) == 0 {
-		return mode == layout.System
+		return menuRequiresAdministrator(mode)
 	}
 	switch arguments[0] {
 	case "help", "-h", "--help", "version", "portable":
@@ -528,11 +603,13 @@ Configuration:
   sempre subscription update
   sempre subscription schedule <duration|off>
   sempre subscription status
+  sempre subscription clear
   sempre config import <file>
   sempre update
 
 Service and diagnostics:
   sempre service <install|uninstall|start|stop|restart|status>
+  sempre service deploy <all|core|bin|data>   Portable mode only
   sempre status
   sempre logs [--follow]
   sempre doctor

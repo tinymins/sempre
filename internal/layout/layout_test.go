@@ -22,6 +22,20 @@ func TestAtCreatesPortableLayout(t *testing.T) {
 	}
 }
 
+func TestPortableAndSystemModesShareInstanceLock(t *testing.T) {
+	portable, err := ForMode(Portable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	system, err := ForMode(System)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if portable.InstanceLock != system.InstanceLock {
+		t.Fatalf("portable lock %q != system lock %q", portable.InstanceLock, system.InstanceLock)
+	}
+}
+
 func TestPortableMarker(t *testing.T) {
 	t.Parallel()
 	executable := filepath.Join(t.TempDir(), executableName("sempre"))

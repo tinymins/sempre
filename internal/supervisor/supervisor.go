@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"time"
@@ -23,6 +24,7 @@ type Plan struct {
 
 type Hooks struct {
 	Resolve         func(context.Context) (Plan, error)
+	ResolveFailure  func(error) (bool, error)
 	ScheduledUpdate func(context.Context) (bool, error)
 	NextUpdate      func() (time.Duration, bool)
 	Started         func(Plan, int) error
@@ -77,6 +79,16 @@ func (runner *Runner) Run(ctx context.Context) error {
 		}
 		plan, err := runner.Hooks.Resolve(ctx)
 		if err != nil {
+			if runner.Hooks.ResolveFailure != nil {
+				retry, rollbackErr := runner.Hooks.ResolveFailure(err)
+				if rollbackErr != nil {
+					return errors.Join(err, rollbackErr)
+				}
+				if retry {
+					backoff = time.Second
+					continue
+				}
+			}
 			return err
 		}
 		command := exec.Command(plan.Spec.Path, plan.Spec.Args...)

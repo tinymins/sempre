@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,6 +46,46 @@ func TestStoreInitializesAndPersists(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.State + ".previous"); !os.IsNotExist(err) {
 		t.Fatalf("state backup was left behind: %v", err)
+	}
+}
+
+func TestStoreMigratesSelectedCoreFromSchemaOne(t *testing.T) {
+	t.Parallel()
+	paths := layout.At(t.TempDir())
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	legacy := map[string]any{
+		"schema": 1,
+		"active": map[string]any{
+			"core":        "sing-box",
+			"ref":         "1.2.3",
+			"version":     "1.2.3",
+			"config_hash": "hash",
+		},
+		"pending":      false,
+		"cores":        map[string]any{},
+		"configs":      map[string]any{},
+		"subscription": map[string]any{"interval": "24h"},
+		"runtime":      map[string]any{},
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.State, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := New(paths)
+	document, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Schema != SchemaVersion ||
+		document.Selected == nil ||
+		document.Selected.Core != "sing-box" ||
+		document.Selected.Ref != "1.2.3" {
+		t.Fatalf("migrated document = %#v", document)
 	}
 }
 
@@ -95,6 +136,13 @@ func TestInstanceLeaseIsExclusive(t *testing.T) {
 	}
 	if _, err := store.AcquireInstance(); err == nil {
 		t.Fatal("second instance lease succeeded")
+	}
+	running, err := store.InstanceRunning()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !running {
+		t.Fatal("held instance lock was reported as free")
 	}
 	first.Release()
 	second, err := store.AcquireInstance()

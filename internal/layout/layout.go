@@ -23,6 +23,7 @@ type Layout struct {
 	Home              string
 	State             string
 	Lock              string
+	ConfigLock        string
 	Cores             string
 	Configs           string
 	Runtime           string
@@ -32,6 +33,7 @@ type Layout struct {
 	ManagerLog        string
 	InstanceLock      string
 	ServiceExecutable string
+	instanceLockMode  Mode
 	test              bool
 }
 
@@ -44,7 +46,14 @@ func ForMode(mode Mode) (Layout, error) {
 		if err != nil {
 			return Layout{}, err
 		}
-		return portableLayout(executable), nil
+		portable := portableLayout(executable)
+		system, err := systemLayout()
+		if err != nil {
+			return Layout{}, err
+		}
+		portable.InstanceLock = system.InstanceLock
+		portable.instanceLockMode = System
+		return portable, nil
 	default:
 		return Layout{}, fmt.Errorf("unsupported Sempre mode %q", mode)
 	}
@@ -113,6 +122,7 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		Home:              home,
 		State:             filepath.Join(home, "state.json"),
 		Lock:              filepath.Join(run, "state.lock"),
+		ConfigLock:        filepath.Join(run, "config.lock"),
 		Cores:             filepath.Join(home, "cores"),
 		Configs:           filepath.Join(home, "configs"),
 		Runtime:           run,
@@ -122,6 +132,7 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		ManagerLog:        filepath.Join(logs, "sempre.log"),
 		InstanceLock:      filepath.Join(run, "instance.lock"),
 		ServiceExecutable: serviceExecutable,
+		instanceLockMode:  mode,
 	}
 }
 
@@ -132,7 +143,9 @@ func At(root string) Layout {
 	if runtime.GOOS == "windows" {
 		executable += ".exe"
 	}
-	return portableLayout(executable)
+	paths := portableLayout(executable)
+	paths.test = true
+	return paths
 }
 
 // SystemAt creates an isolated system-style layout for tests.
@@ -204,6 +217,10 @@ func (paths Layout) EnsureServiceExecutableDirectory() error {
 		return nil
 	}
 	return secureExecutableDirectory(directory)
+}
+
+func (paths Layout) EnsureInstanceLockDirectory() error {
+	return ensureRoot(filepath.Dir(paths.InstanceLock), paths.instanceLockMode, paths.test)
 }
 
 func (paths Layout) CoreVersionDir(core, version string) string {

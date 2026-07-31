@@ -2,11 +2,12 @@ package state
 
 import "time"
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 type Document struct {
 	Schema       int                   `json:"schema"`
 	UpdatedAt    time.Time             `json:"updated_at"`
+	Selected     *Selection            `json:"selected,omitempty"`
 	Active       *Deployment           `json:"active,omitempty"`
 	Previous     *Deployment           `json:"previous,omitempty"`
 	Pending      bool                  `json:"pending"`
@@ -15,6 +16,11 @@ type Document struct {
 	Configs      map[string]string     `json:"configs"`
 	Subscription Subscription          `json:"subscription"`
 	Runtime      Runtime               `json:"runtime"`
+}
+
+type Selection struct {
+	Core string `json:"core"`
+	Ref  string `json:"ref"`
 }
 
 type Deployment struct {
@@ -67,9 +73,13 @@ func NewDocument() Document {
 }
 
 func (document *Document) Normalize() {
-	if document.Schema == 0 {
-		document.Schema = SchemaVersion
+	if document.Schema <= 1 && document.Selected == nil && document.Active != nil {
+		document.Selected = &Selection{
+			Core: document.Active.Core,
+			Ref:  document.Active.Ref,
+		}
 	}
+	document.Schema = SchemaVersion
 	if document.Cores == nil {
 		document.Cores = map[string]*CoreState{}
 	}

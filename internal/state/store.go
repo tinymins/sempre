@@ -41,6 +41,9 @@ func (store *Store) Initialize() error {
 }
 
 func (store *Store) AcquireInstance() (*Lease, error) {
+	if err := store.paths.EnsureInstanceLockDirectory(); err != nil {
+		return nil, fmt.Errorf("create instance lock directory: %w", err)
+	}
 	file, err := os.OpenFile(store.paths.InstanceLock, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open instance lock: %w", err)
@@ -54,6 +57,41 @@ func (store *Store) AcquireInstance() (*Lease, error) {
 		return nil, fmt.Errorf("another Sempre-managed core is already running")
 	}
 	return &Lease{file: file}, nil
+}
+
+func (store *Store) AcquireConfig() (*Lease, error) {
+	file, err := os.OpenFile(store.paths.ConfigLock, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open configuration lock: %w", err)
+	}
+	if err := fileowner.MatchParent(store.paths.ConfigLock); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("secure configuration lock: %w", err)
+	}
+	if err := lockFile(file); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("lock configuration: %w", err)
+	}
+	return &Lease{file: file}, nil
+}
+
+func (store *Store) InstanceRunning() (bool, error) {
+	file, err := os.OpenFile(store.paths.InstanceLock, os.O_CREATE|os.O_RDWR, 0o600)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("open instance lock: %w", err)
+	}
+	defer file.Close()
+	if err := fileowner.MatchParent(store.paths.InstanceLock); err != nil {
+		return false, fmt.Errorf("secure instance lock: %w", err)
+	}
+	if err := tryLockFile(file); err != nil {
+		return true, nil
+	}
+	unlockFile(file)
+	return false, nil
 }
 
 func (lease *Lease) Release() {
@@ -108,7 +146,7 @@ func (store *Store) readUnlocked() (Document, error) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		return Document{}, fmt.Errorf("decode state: %w", err)
 	}
-	if document.Schema != 0 && document.Schema != SchemaVersion {
+	if document.Schema < 0 || document.Schema > SchemaVersion {
 		return Document{}, fmt.Errorf("unsupported state schema %d", document.Schema)
 	}
 	document.Normalize()

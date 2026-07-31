@@ -4,6 +4,7 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -63,5 +64,40 @@ func TestRunnerReportsEarlyFailureAndStops(t *testing.T) {
 	}
 	if stopped.Load() != 1 {
 		t.Fatalf("stopped callbacks = %d", stopped.Load())
+	}
+}
+
+func TestRunnerRetriesAfterResolveRollback(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var resolves atomic.Int32
+	var rollbacks atomic.Int32
+	runner := Runner{
+		Stdout: NewRollingWriter(filepath.Join(t.TempDir(), "out.log"), 1024, 1),
+		Stderr: NewRollingWriter(filepath.Join(t.TempDir(), "err.log"), 1024, 1),
+		Hooks: Hooks{
+			Resolve: func(context.Context) (Plan, error) {
+				if resolves.Add(1) == 1 {
+					return Plan{}, errors.New("candidate is unavailable")
+				}
+				cancel()
+				return Plan{}, context.Canceled
+			},
+			ResolveFailure: func(err error) (bool, error) {
+				if strings.Contains(err.Error(), "candidate is unavailable") {
+					rollbacks.Add(1)
+					return true, nil
+				}
+				return false, nil
+			},
+			Stopped: func() error { return nil },
+		},
+	}
+	if err := runner.Run(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("runner error = %v", err)
+	}
+	if rollbacks.Load() != 1 || resolves.Load() != 2 {
+		t.Fatalf("resolves = %d, rollbacks = %d", resolves.Load(), rollbacks.Load())
 	}
 }

@@ -1,0 +1,268 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+
+	"github.com/sempre-lab/sempre/internal/core"
+	"github.com/sempre-lab/sempre/internal/layout"
+	"github.com/sempre-lab/sempre/internal/state"
+)
+
+func (manager *Manager) stageDeployment(
+	ctx context.Context,
+	target layout.Layout,
+	component DeployComponent,
+	document state.Document,
+) ([]*swapOperation, error) {
+	var operations []*swapOperation
+	fail := func(err error) ([]*swapOperation, error) {
+		cleanupStaged(operations)
+		return nil, err
+	}
+
+	if component == DeployAll || component == DeployBin {
+		if err := target.EnsureServiceExecutableDirectory(); err != nil {
+			return fail(err)
+		}
+		source, err := layout.CurrentExecutable()
+		if err != nil {
+			return fail(err)
+		}
+		if !sameFile(source, target.ServiceExecutable) {
+			operation, err := stageExecutable(source, target.ServiceExecutable)
+			if err != nil {
+				return fail(err)
+			}
+			operations = append(operations, operation)
+		}
+	}
+	if component == DeployAll || component == DeployCore {
+		operation, err := manager.stageCores(ctx, target, document, component == DeployCore)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, operation)
+	}
+	if component == DeployAll || component == DeployData {
+		if component == DeployData {
+			if err := manager.validateTargetCores(ctx, target, document); err != nil {
+				return fail(err)
+			}
+		}
+		configs, err := manager.stageConfigs(target, document)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, configs)
+		stateFile, err := stageStateFile(target.State, deploymentDocument(document))
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, stateFile)
+	}
+	return operations, nil
+}
+
+func (manager *Manager) stageCores(
+	ctx context.Context,
+	target layout.Layout,
+	document state.Document,
+	merge bool,
+) (*swapOperation, error) {
+	staging, err := stageDirectory(target.Cores)
+	if err != nil {
+		return nil, err
+	}
+	operation := &swapOperation{staged: staging, target: target.Cores}
+	if merge {
+		if err := copyDirectoryIfExists(target.Cores, staging, 0o700); err != nil {
+			operation.cleanup()
+			return nil, fmt.Errorf("stage existing system cores: %w", err)
+		}
+	}
+	for _, coreID := range sortedCoreIDs(document) {
+		adapter, err := manager.registry.Get(coreID)
+		if err != nil {
+			operation.cleanup()
+			return nil, err
+		}
+		for _, version := range sortedVersions(document.Cores[coreID]) {
+			if err := validateCoreVersion(coreID, version); err != nil {
+				operation.cleanup()
+				return nil, err
+			}
+			actual, err := adapter.Version(ctx, manager.paths.CoreBinary(coreID, version))
+			if err != nil {
+				operation.cleanup()
+				return nil, fmt.Errorf("validate portable %s@%s: %w", coreID, version, err)
+			}
+			if actual != version {
+				operation.cleanup()
+				return nil, fmt.Errorf("portable %s reports version %s, expected %s", coreID, actual, version)
+			}
+			destination := filepath.Join(staging, coreID, version)
+			if err := os.RemoveAll(destination); err != nil {
+				operation.cleanup()
+				return nil, err
+			}
+			if err := copyDirectory(manager.paths.CoreVersionDir(coreID, version), destination, 0o700); err != nil {
+				operation.cleanup()
+				return nil, fmt.Errorf("stage %s@%s: %w", coreID, version, err)
+			}
+		}
+	}
+	return operation, nil
+}
+
+func (manager *Manager) validateTargetCores(
+	ctx context.Context,
+	target layout.Layout,
+	document state.Document,
+) error {
+	for _, coreID := range sortedCoreIDs(document) {
+		adapter, err := manager.registry.Get(coreID)
+		if err != nil {
+			return err
+		}
+		for _, version := range sortedVersions(document.Cores[coreID]) {
+			if err := validateCoreVersion(coreID, version); err != nil {
+				return err
+			}
+			actual, err := adapter.Version(ctx, target.CoreBinary(coreID, version))
+			if err != nil {
+				return fmt.Errorf("system core %s@%s is required by data deployment: %w", coreID, version, err)
+			}
+			if actual != version {
+				return fmt.Errorf("system core %s reports version %s, expected %s", coreID, actual, version)
+			}
+		}
+	}
+	return nil
+}
+
+func (manager *Manager) stageConfigs(
+	target layout.Layout,
+	document state.Document,
+) (*swapOperation, error) {
+	staging, err := stageDirectory(target.Configs)
+	if err != nil {
+		return nil, err
+	}
+	operation := &swapOperation{staged: staging, target: target.Configs}
+	for coreID, hashes := range referencedConfigs(document) {
+		for hash := range hashes {
+			data, err := os.ReadFile(manager.paths.Config(coreID, hash))
+			if err != nil {
+				operation.cleanup()
+				return nil, fmt.Errorf("read referenced configuration %s/%s: %w", coreID, hash, err)
+			}
+			if err := state.WriteAtomic(filepath.Join(staging, coreID, hash+".json"), data, 0o600); err != nil {
+				operation.cleanup()
+				return nil, err
+			}
+		}
+	}
+	return operation, nil
+}
+
+func deploymentDocument(document state.Document) state.Document {
+	document.Normalize()
+	document.Runtime = state.Runtime{}
+	return document
+}
+
+func meaningfulState(document state.Document) bool {
+	return document.Selected != nil ||
+		document.Active != nil ||
+		document.Previous != nil ||
+		len(document.Cores) != 0 ||
+		len(document.Configs) != 0 ||
+		document.Subscription.URL != ""
+}
+
+func sameDeploymentData(left, right state.Document) bool {
+	left = deploymentDocument(left)
+	right = deploymentDocument(right)
+	left.UpdatedAt = right.UpdatedAt
+	return reflect.DeepEqual(left, right)
+}
+
+func deploymentReplacementSummary(document state.Document) string {
+	selected := "none"
+	if document.Selected != nil {
+		selected = document.Selected.Core + "@" + document.Selected.Ref
+	}
+	active := "none"
+	if document.Active != nil {
+		active = deploymentLabel(*document.Active)
+	}
+	configured := "no"
+	if document.Subscription.URL != "" {
+		configured = "yes"
+	}
+	versions := 0
+	for _, coreState := range document.Cores {
+		versions += len(coreState.Installed)
+	}
+	return fmt.Sprintf(
+		"Existing system data will be replaced:\n  Selected: %s\n  Active: %s\n  Core versions: %d\n  Subscription configured: %s",
+		selected,
+		active,
+		versions,
+		configured,
+	)
+}
+
+func referencedConfigs(document state.Document) map[string]map[string]bool {
+	result := map[string]map[string]bool{}
+	add := func(coreID, hash string) {
+		if coreID == "" || hash == "" {
+			return
+		}
+		if result[coreID] == nil {
+			result[coreID] = map[string]bool{}
+		}
+		result[coreID][hash] = true
+	}
+	for coreID, hash := range document.Configs {
+		add(coreID, hash)
+	}
+	if document.Active != nil {
+		add(document.Active.Core, document.Active.ConfigHash)
+	}
+	if document.Previous != nil {
+		add(document.Previous.Core, document.Previous.ConfigHash)
+	}
+	return result
+}
+
+func sortedCoreIDs(document state.Document) []string {
+	ids := make([]string, 0, len(document.Cores))
+	for coreID := range document.Cores {
+		ids = append(ids, coreID)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func sortedVersions(coreState *state.CoreState) []string {
+	versions := make([]string, 0, len(coreState.Installed))
+	for version := range coreState.Installed {
+		versions = append(versions, version)
+	}
+	sort.Strings(versions)
+	return versions
+}
+
+func validateCoreVersion(coreID, version string) error {
+	ref, err := core.ParseRef(coreID + "@" + version)
+	if err != nil || ref.IsChannel() {
+		return fmt.Errorf("invalid managed core version %s@%s", coreID, version)
+	}
+	return nil
+}

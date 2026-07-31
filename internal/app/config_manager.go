@@ -33,12 +33,43 @@ func (manager *Manager) ImportConfig(ctx context.Context, source string) (Change
 }
 
 func (manager *Manager) SetSubscription(ctx context.Context, value string) (Change, error) {
+	if strings.TrimSpace(value) == "" {
+		return manager.ClearSubscription()
+	}
 	parsed, err := validateSubscriptionURL(value)
 	if err != nil {
 		return Change{}, err
 	}
 	normalized := parsed.String()
 	return manager.downloadSubscription(ctx, normalized, true)
+}
+
+func (manager *Manager) ClearSubscription() (Change, error) {
+	change := Change{}
+	err := manager.store.Update(func(document *state.Document) error {
+		if document.Subscription.URL == "" &&
+			document.Subscription.LastCheck.IsZero() &&
+			document.Subscription.LastChange.IsZero() &&
+			document.Subscription.LastResult == "" {
+			return nil
+		}
+		document.Subscription.URL = ""
+		document.Subscription.LastCheck = time.Time{}
+		document.Subscription.LastChange = time.Time{}
+		document.Subscription.LastResult = ""
+		change.Changed = true
+		change.NeedsRestart = true
+		return nil
+	})
+	if err != nil {
+		return Change{}, err
+	}
+	if change.Changed {
+		change.Message = "subscription cleared; the active configuration was retained"
+	} else {
+		change.Message = "subscription is already clear"
+	}
+	return change, nil
 }
 
 func (manager *Manager) UpdateSubscription(ctx context.Context) (Change, error) {
@@ -168,15 +199,20 @@ func (manager *Manager) activateConfig(
 	data []byte,
 	updateSubscription func(*state.Document, bool),
 ) (Change, error) {
+	lease, err := manager.store.AcquireConfig()
+	if err != nil {
+		return Change{}, err
+	}
+	defer lease.Release()
 	document, err := manager.store.Read()
 	if err != nil {
 		return Change{}, err
 	}
-	active, adapter, err := manager.configurationTarget(document)
+	target, adapter, err := manager.configurationTarget(document)
 	if err != nil {
 		return Change{}, err
 	}
-	binary := manager.paths.CoreBinary(active.Core, active.Version)
+	binary := manager.paths.CoreBinary(target.Core, target.Version)
 	candidate, err := os.CreateTemp(manager.paths.Runtime, "config-candidate-*.json")
 	if err != nil {
 		return Change{}, err
@@ -200,42 +236,49 @@ func (manager *Manager) activateConfig(
 	}
 	sum := sha256.Sum256(data)
 	hash := hex.EncodeToString(sum[:])
-	configPath := manager.paths.Config(active.Core, hash)
+	configPath := manager.paths.Config(target.Core, hash)
+	configCreated := false
 	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 		if err := state.WriteAtomic(configPath, data, 0o600); err != nil {
 			return Change{}, err
 		}
+		configCreated = true
 	} else if err != nil {
 		return Change{}, err
 	}
 
 	change := Change{}
 	err = manager.store.Update(func(document *state.Document) error {
-		oldHash := document.Configs[active.Core]
-		changed := oldHash != hash
+		currentTarget, _, err := manager.configurationTarget(*document)
+		if err != nil {
+			return err
+		}
+		if currentTarget.Core != target.Core ||
+			currentTarget.Ref != target.Ref ||
+			currentTarget.Version != target.Version {
+			return fmt.Errorf("core selection changed while activating configuration; retry the command")
+		}
+		oldHash := document.Configs[target.Core]
+		configChanged := oldHash != hash
 		if updateSubscription != nil {
-			updateSubscription(document, changed)
+			updateSubscription(document, configChanged)
 		}
-		if !changed {
-			return nil
-		}
-		document.Configs[active.Core] = hash
-		if document.Active != nil && document.Active.Core == active.Core {
-			deployment := *document.Active
-			deployment.ConfigHash = hash
-			document.Stage(deployment)
-			change.NeedsRestart = true
-		} else if document.Active == nil {
-			active.ConfigHash = hash
-			document.Stage(active)
+		document.Configs[target.Core] = hash
+		target.ConfigHash = hash
+		deploymentChanged := !state.SameDeployment(document.Active, &target)
+		if deploymentChanged {
+			document.Stage(target)
 			change.NeedsRestart = true
 		}
-		change.Changed = true
+		change.Changed = configChanged || deploymentChanged
 		change.PreviousDetail = shortHash(oldHash)
 		change.CurrentDetail = shortHash(hash)
 		return nil
 	})
 	if err != nil {
+		if configCreated {
+			_ = os.Remove(configPath)
+		}
 		return Change{}, err
 	}
 	if change.Changed {

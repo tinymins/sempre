@@ -93,18 +93,26 @@ func (manager *Manager) active(document state.Document) (state.Deployment, core.
 }
 
 func (manager *Manager) configurationTarget(document state.Document) (state.Deployment, core.Adapter, error) {
-	if document.Active != nil {
-		return manager.active(document)
+	if document.Selected == nil {
+		return state.Deployment{}, nil, fmt.Errorf("no core is selected; run 'sempre core use <core@version>' first")
 	}
-	for _, name := range manager.CoreIDs() {
-		coreState := document.Cores[name]
-		if coreState == nil {
-			continue
-		}
-		if version := coreState.Channels[core.Stable]; version != "" {
-			adapter, err := manager.registry.Get(name)
-			return state.Deployment{Core: name, Ref: core.Stable, Version: version}, adapter, err
-		}
+	selection := document.Selected
+	coreState := document.Cores[selection.Core]
+	if coreState == nil {
+		return state.Deployment{}, nil, fmt.Errorf("%s is not installed", selection.Core)
 	}
-	return state.Deployment{}, nil, fmt.Errorf("no core is installed; run 'sempre core install sing-box' first")
+	version := selection.Ref
+	if selection.Ref == core.Stable {
+		version = coreState.Channels[selection.Ref]
+	}
+	if version == "" || coreState.Installed[version] == nil {
+		return state.Deployment{}, nil, fmt.Errorf("%s@%s is not installed", selection.Core, selection.Ref)
+	}
+	adapter, err := manager.registry.Get(selection.Core)
+	return state.Deployment{
+		Core:       selection.Core,
+		Ref:        selection.Ref,
+		Version:    version,
+		ConfigHash: document.Configs[selection.Core],
+	}, adapter, err
 }
