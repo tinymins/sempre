@@ -12,23 +12,25 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.25.x"
           cache: true
       - run: go run ./cmd/build
-      - uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            dist/sempre-windows-amd64.exe
-            dist/sempre-windows-arm64.exe
-            dist/sempre-linux-amd64
-            dist/sempre-linux-arm64
-            dist/sempre-darwin-amd64
-            dist/sempre-darwin-arm64
-            dist/SHA256SUMS
-
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/sempre-windows-amd64.exe \
+            dist/sempre-windows-arm64.exe \
+            dist/sempre-linux-amd64 \
+            dist/sempre-linux-arm64 \
+            dist/sempre-darwin-amd64 \
+            dist/sempre-darwin-arm64 \
+            dist/SHA256SUMS \
+            --generate-notes \
+            --verify-tag

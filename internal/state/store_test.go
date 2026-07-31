@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/sempre-lab/sempre/internal/layout"
@@ -39,7 +40,7 @@ func TestStoreInitializesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("state permissions = %o", info.Mode().Perm())
 	}
 	if _, err := os.Stat(paths.State + ".previous"); !os.IsNotExist(err) {
