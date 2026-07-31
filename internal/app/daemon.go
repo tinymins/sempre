@@ -1,0 +1,211 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/sempre-lab/sempre/internal/core"
+	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/sempre-lab/sempre/internal/supervisor"
+)
+
+func (manager *Manager) RunDaemon(ctx context.Context) error {
+	lease, err := manager.store.AcquireInstance()
+	if err != nil {
+		return err
+	}
+	defer lease.Release()
+	logger := supervisor.NewRollingWriter(manager.paths.ManagerLog, 10<<20, 3)
+	stdout := supervisor.NewRollingWriter(manager.paths.StdoutLog, 10<<20, 3)
+	stderr := supervisor.NewRollingWriter(manager.paths.StderrLog, 10<<20, 3)
+	logf := func(format string, arguments ...any) {
+		_, _ = fmt.Fprintf(logger, time.Now().UTC().Format(time.RFC3339)+" "+format+"\n", arguments...)
+	}
+	runner := supervisor.Runner{
+		Stdout: stdout,
+		Stderr: stderr,
+		Hooks: supervisor.Hooks{
+			Resolve: func(runCtx context.Context) (supervisor.Plan, error) {
+				document, err := manager.store.Read()
+				if err != nil {
+					return supervisor.Plan{}, err
+				}
+				deployment, adapter, err := manager.active(document)
+				if err != nil {
+					return supervisor.Plan{}, err
+				}
+				binary := manager.paths.CoreBinary(deployment.Core, deployment.Version)
+				config := manager.paths.Config(deployment.Core, deployment.ConfigHash)
+				if _, err := os.Stat(binary); err != nil {
+					return supervisor.Plan{}, fmt.Errorf("active core binary is unavailable: %w", err)
+				}
+				if _, err := os.Stat(config); err != nil {
+					return supervisor.Plan{}, fmt.Errorf("active configuration is unavailable: %w", err)
+				}
+				dataDir := filepath.Join(manager.paths.Runtime, deployment.Core)
+				if err := os.MkdirAll(dataDir, 0o700); err != nil {
+					return supervisor.Plan{}, err
+				}
+				if err := manager.validateConfiguration(runCtx, adapter, binary, config, logger, logger); err != nil {
+					return supervisor.Plan{}, err
+				}
+				return supervisor.Plan{
+					Deployment: deployment,
+					Spec:       adapter.Run(binary, config, dataDir),
+				}, nil
+			},
+			ScheduledUpdate: func(updateCtx context.Context) (bool, error) {
+				change, err := manager.UpdateSubscription(updateCtx)
+				if err != nil {
+					return false, err
+				}
+				logf("%s", change.Message)
+				return change.Changed, nil
+			},
+			NextUpdate: manager.nextSubscriptionUpdate,
+			Started: func(plan supervisor.Plan, pid int) error {
+				logf("started %s with PID %d", deploymentLabel(plan.Deployment), pid)
+				return manager.store.Update(func(document *state.Document) error {
+					document.Runtime = state.Runtime{
+						State:          "starting",
+						PID:            pid,
+						Core:           plan.Deployment.Core,
+						Version:        plan.Deployment.Version,
+						StartedAt:      time.Now().UTC(),
+						RestartCount:   document.Runtime.RestartCount,
+						LastTransition: time.Now().UTC(),
+					}
+					return nil
+				})
+			},
+			Healthy: func(plan supervisor.Plan) error {
+				logf("healthy %s", deploymentLabel(plan.Deployment))
+				return manager.store.Update(func(document *state.Document) error {
+					if document.Pending && state.SameDeployment(document.Active, &plan.Deployment) {
+						old := document.Previous
+						document.Previous = nil
+						document.Pending = false
+						document.LastError = ""
+						if old != nil {
+							manager.collectWeakVersion(document, old.Core, old.Version)
+						}
+					}
+					document.Runtime.State = "running"
+					document.Runtime.LastTransition = time.Now().UTC()
+					return nil
+				})
+			},
+			EarlyFailure: func(plan supervisor.Plan, failure error) error {
+				logf("startup failed for %s: %v", deploymentLabel(plan.Deployment), failure)
+				return manager.store.Update(func(document *state.Document) error {
+					document.LastError = fmt.Sprintf("startup failed for %s: %v", deploymentLabel(plan.Deployment), failure)
+					if document.Pending &&
+						state.SameDeployment(document.Active, &plan.Deployment) &&
+						document.Previous != nil {
+						restored := *document.Previous
+						document.Active = &restored
+						document.Configs[restored.Core] = restored.ConfigHash
+						document.Previous = nil
+						document.Pending = false
+					}
+					document.Runtime.State = "failed"
+					document.Runtime.LastExit = fmt.Sprint(failure)
+					document.Runtime.LastTransition = time.Now().UTC()
+					return nil
+				})
+			},
+			Exited: func(plan supervisor.Plan, failure error, restarts int) error {
+				logf("exited %s: %v", deploymentLabel(plan.Deployment), failure)
+				return manager.store.Update(func(document *state.Document) error {
+					document.Runtime.State = "restarting"
+					document.Runtime.PID = 0
+					document.Runtime.RestartCount = restarts
+					document.Runtime.LastExit = fmt.Sprint(failure)
+					document.Runtime.LastTransition = time.Now().UTC()
+					return nil
+				})
+			},
+			Stopped: func() error {
+				logf("daemon stopped")
+				return manager.store.Update(func(document *state.Document) error {
+					document.Runtime.State = "stopped"
+					document.Runtime.PID = 0
+					document.Runtime.LastTransition = time.Now().UTC()
+					return nil
+				})
+			},
+			Log: logf,
+		},
+	}
+	return manager.service.Run(ctx, runner.Run)
+}
+
+func (manager *Manager) nextSubscriptionUpdate() (time.Duration, bool) {
+	document, err := manager.store.Read()
+	if err != nil || document.Subscription.URL == "" || document.Subscription.Interval == "off" {
+		return 0, false
+	}
+	interval, err := time.ParseDuration(document.Subscription.Interval)
+	if err != nil {
+		return 0, false
+	}
+	if document.Subscription.LastCheck.IsZero() {
+		return time.Second, true
+	}
+	return time.Until(document.Subscription.LastCheck.Add(interval)), true
+}
+
+func (manager *Manager) deploymentSpec(ctx context.Context, referenceValue string) (state.Deployment, core.RunSpec, error) {
+	document, err := manager.store.Read()
+	if err != nil {
+		return state.Deployment{}, core.RunSpec{}, err
+	}
+	deployment, adapter, err := manager.active(document)
+	if err != nil {
+		return state.Deployment{}, core.RunSpec{}, err
+	}
+	if referenceValue != "" {
+		reference, err := core.ParseRef(referenceValue)
+		if err != nil {
+			return state.Deployment{}, core.RunSpec{}, err
+		}
+		coreState := document.Cores[reference.Core]
+		if coreState == nil {
+			return state.Deployment{}, core.RunSpec{}, fmt.Errorf("%s is not installed", reference.Core)
+		}
+		version := reference.Value
+		if reference.IsChannel() {
+			version = coreState.Channels[reference.Value]
+		}
+		if coreState.Installed[version] == nil {
+			return state.Deployment{}, core.RunSpec{}, fmt.Errorf("%s is not installed", reference)
+		}
+		adapter, err = manager.registry.Get(reference.Core)
+		if err != nil {
+			return state.Deployment{}, core.RunSpec{}, err
+		}
+		configHash := document.Configs[reference.Core]
+		if configHash == "" {
+			return state.Deployment{}, core.RunSpec{}, fmt.Errorf("%s has no active configuration", reference.Core)
+		}
+		deployment = state.Deployment{
+			Core:       reference.Core,
+			Ref:        reference.Value,
+			Version:    version,
+			ConfigHash: configHash,
+		}
+	}
+	binary := manager.paths.CoreBinary(deployment.Core, deployment.Version)
+	config := manager.paths.Config(deployment.Core, deployment.ConfigHash)
+	dataDir := filepath.Join(manager.paths.Runtime, deployment.Core)
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return state.Deployment{}, core.RunSpec{}, err
+	}
+	if err := manager.validateConfiguration(ctx, adapter, binary, config, manager.output, manager.errors); err != nil {
+		return state.Deployment{}, core.RunSpec{}, err
+	}
+	return deployment, adapter.Run(binary, config, dataDir), nil
+}
