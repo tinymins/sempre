@@ -81,3 +81,4 @@ jobs:
           sc.exe delete sempre 2>$null
           Remove-Item -Recurse -Force "$env:ProgramFiles\Sempre" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$env:ProgramData\Sempre" -ErrorAction SilentlyContinue
+          exit 0

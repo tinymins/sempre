@@ -33,6 +33,26 @@ func (linuxController) Install(ctx context.Context, executable, workingDirectory
 	if err != nil {
 		return err
 	}
+	unit, err := renderSystemdUnit(executable, workingDirectory)
+	if err != nil {
+		return err
+	}
+	if err := state.WriteAtomic(systemdUnit, unit, 0o644); err != nil {
+		return err
+	}
+	if err := runCommand(ctx, "systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+	return runCommand(ctx, "systemctl", "enable", Name+".service")
+}
+
+func renderSystemdUnit(executable, workingDirectory string) ([]byte, error) {
+	if !filepath.IsAbs(executable) || !filepath.IsAbs(workingDirectory) {
+		return nil, fmt.Errorf("systemd service paths must be absolute")
+	}
+	if strings.ContainsAny(workingDirectory, "\r\n") {
+		return nil, fmt.Errorf("systemd working directory contains a newline")
+	}
 	unit := fmt.Sprintf(`[Unit]
 Description=%s
 After=network-online.target
@@ -54,14 +74,8 @@ RuntimeDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target
-`, Description, strconv.Quote(workingDirectory), strconv.Quote(executable))
-	if err := state.WriteAtomic(systemdUnit, []byte(unit), 0o644); err != nil {
-		return err
-	}
-	if err := runCommand(ctx, "systemctl", "daemon-reload"); err != nil {
-		return err
-	}
-	return runCommand(ctx, "systemctl", "enable", Name+".service")
+`, Description, workingDirectory, strconv.Quote(executable))
+	return []byte(unit), nil
 }
 
 func (controller linuxController) Uninstall(ctx context.Context) error {
