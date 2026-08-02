@@ -15,13 +15,16 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/tinymins/sempre/internal/state"
 )
 
 const (
-	launchdLabel = "io.github.tinymins.sempre"
-	launchdPlist = "/Library/LaunchDaemons/io.github.tinymins.sempre.plist"
+	launchdLabel             = "io.github.tinymins.sempre"
+	launchdPlist             = "/Library/LaunchDaemons/io.github.tinymins.sempre.plist"
+	launchdBootstrapTimeout  = 10 * time.Second
+	launchdBootstrapInterval = 100 * time.Millisecond
 )
 
 type darwinController struct{}
@@ -46,10 +49,41 @@ func (darwinController) Install(ctx context.Context, executable, workingDirector
 	if err := state.WriteAtomic(launchdPlist, plist, 0o644); err != nil {
 		return err
 	}
-	if err := runCommand(ctx, "launchctl", "bootstrap", "system", launchdPlist); err != nil {
+	if err := bootstrapLaunchd(ctx); err != nil {
 		return err
 	}
 	return runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel)
+}
+
+func bootstrapLaunchd(ctx context.Context) error {
+	return retryLaunchdBootstrap(ctx, func(bootstrapCtx context.Context) error {
+		return runCommand(bootstrapCtx, "launchctl", "bootstrap", "system", launchdPlist)
+	})
+}
+
+func retryLaunchdBootstrap(ctx context.Context, bootstrap func(context.Context) error) error {
+	retryCtx, cancel := context.WithTimeout(ctx, launchdBootstrapTimeout)
+	defer cancel()
+
+	for {
+		err := bootstrap(retryCtx)
+		if err == nil {
+			return nil
+		}
+		// bootout may return before launchd has finished removing the old job.
+		// launchctl reports that transition as error 5; other errors are actionable.
+		if !strings.Contains(err.Error(), "Bootstrap failed: 5: Input/output error") {
+			return err
+		}
+
+		timer := time.NewTimer(launchdBootstrapInterval)
+		select {
+		case <-retryCtx.Done():
+			timer.Stop()
+			return fmt.Errorf("wait for launchd to unload previous service: %w: %v", retryCtx.Err(), err)
+		case <-timer.C:
+		}
+	}
 }
 
 func renderLaunchdPlist(executable, workingDirectory string) ([]byte, error) {
@@ -106,7 +140,7 @@ func (darwinController) Start(ctx context.Context) error {
 	if current == Running {
 		return nil
 	}
-	if err := runCommand(ctx, "launchctl", "bootstrap", "system", launchdPlist); err != nil {
+	if err := bootstrapLaunchd(ctx); err != nil {
 		return err
 	}
 	return runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel)
@@ -131,7 +165,7 @@ func (controller darwinController) Restart(ctx context.Context) error {
 		return err
 	}
 	_, _ = exec.CommandContext(ctx, "launchctl", "bootout", "system/"+launchdLabel).CombinedOutput()
-	if err := runCommand(ctx, "launchctl", "bootstrap", "system", launchdPlist); err != nil {
+	if err := bootstrapLaunchd(ctx); err != nil {
 		return err
 	}
 	return runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel)
