@@ -33,7 +33,7 @@ func New() Controller {
 	return darwinController{}
 }
 
-func (darwinController) Install(ctx context.Context, executable, workingDirectory string) error {
+func (controller darwinController) Install(ctx context.Context, executable, workingDirectory string) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
@@ -45,7 +45,9 @@ func (darwinController) Install(ctx context.Context, executable, workingDirector
 	if err != nil {
 		return err
 	}
-	_, _ = exec.CommandContext(ctx, "launchctl", "bootout", "system/"+launchdLabel).CombinedOutput()
+	if err := controller.Stop(ctx); err != nil {
+		return err
+	}
 	if err := state.WriteAtomic(launchdPlist, plist, 0o644); err != nil {
 		return err
 	}
@@ -119,7 +121,9 @@ func (controller darwinController) Uninstall(ctx context.Context) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
-	_, _ = exec.CommandContext(ctx, "launchctl", "bootout", "system/"+launchdLabel).CombinedOutput()
+	if err := controller.Stop(ctx); err != nil {
+		return err
+	}
 	if err := os.Remove(launchdPlist); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -130,31 +134,39 @@ func (darwinController) Start(ctx context.Context) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
-	current, err := (darwinController{}).Status(ctx)
+	current, loaded, err := queryLaunchdService(ctx)
 	if err != nil {
 		return err
 	}
-	if current == NotInstalled {
-		return fmt.Errorf("Sempre service is not installed")
+	if !loaded {
+		if _, err := os.Stat(launchdPlist); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("Sempre service is not installed")
+			}
+			return err
+		}
 	}
 	if current == Running {
 		return nil
 	}
-	if err := bootstrapLaunchd(ctx); err != nil {
+	if err := runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel); err != nil {
 		return err
 	}
-	return runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel)
+	if loaded {
+		return runCommand(ctx, "launchctl", "kickstart", "system/"+launchdLabel)
+	}
+	return bootstrapLaunchd(ctx)
 }
 
 func (darwinController) Stop(ctx context.Context) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
-	state, err := (darwinController{}).Status(ctx)
+	_, loaded, err := queryLaunchdService(ctx)
 	if err != nil {
 		return err
 	}
-	if state == NotInstalled || state == Stopped {
+	if !loaded {
 		return nil
 	}
 	return runCommand(ctx, "launchctl", "bootout", "system/"+launchdLabel)
@@ -164,29 +176,56 @@ func (controller darwinController) Restart(ctx context.Context) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
-	_, _ = exec.CommandContext(ctx, "launchctl", "bootout", "system/"+launchdLabel).CombinedOutput()
-	if err := bootstrapLaunchd(ctx); err != nil {
+	_, loaded, err := queryLaunchdService(ctx)
+	if err != nil {
 		return err
 	}
-	return runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel)
+	if !loaded {
+		return controller.Start(ctx)
+	}
+	if err := runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel); err != nil {
+		return err
+	}
+	return runCommand(ctx, "launchctl", "kickstart", "-k", "system/"+launchdLabel)
 }
 
 func (darwinController) Status(ctx context.Context) (State, error) {
-	output, err := exec.CommandContext(ctx, "launchctl", "print", "system/"+launchdLabel).CombinedOutput()
-	text := string(output)
+	current, loaded, err := queryLaunchdService(ctx)
 	if err != nil {
+		return Unknown, err
+	}
+	if loaded {
+		return current, nil
+	}
+	if _, err := os.Stat(launchdPlist); err == nil {
+		return Stopped, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Unknown, err
+	}
+	return NotInstalled, nil
+}
+
+func queryLaunchdService(ctx context.Context) (State, bool, error) {
+	output, err := exec.CommandContext(ctx, "launchctl", "print", "system/"+launchdLabel).CombinedOutput()
+	return interpretLaunchdPrint(string(output), err)
+}
+
+func interpretLaunchdPrint(text string, commandErr error) (State, bool, error) {
+	trimmed := strings.TrimSpace(text)
+	if commandErr != nil {
 		if strings.Contains(text, "Could not find service") {
-			if _, statErr := os.Stat(launchdPlist); statErr == nil {
-				return Stopped, nil
-			}
-			return NotInstalled, nil
+			return Stopped, false, nil
 		}
-		return Unknown, fmt.Errorf("query launchd service: %s", strings.TrimSpace(text))
+		if trimmed == "" {
+			return Unknown, false, fmt.Errorf("query launchd service: %w", commandErr)
+		}
+		return Unknown, false, fmt.Errorf("query launchd service: %w: %s", commandErr, trimmed)
 	}
 	if strings.Contains(text, "state = running") {
-		return Running, nil
+		return Running, true, nil
 	}
-	return Stopped, nil
+	// A successfully printed job is loaded even while launchd is still starting it.
+	return Stopped, true, nil
 }
 
 func (darwinController) Run(ctx context.Context, daemon func(context.Context) error) error {

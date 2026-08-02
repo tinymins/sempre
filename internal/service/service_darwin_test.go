@@ -58,3 +58,24 @@ func TestRetryLaunchdBootstrapReturnsOtherErrors(t *testing.T) {
 		t.Fatalf("bootstrap attempts = %d, want 1", attempts)
 	}
 }
+
+func TestInterpretLaunchdPrintDistinguishesLoadedJob(t *testing.T) {
+	current, loaded, err := interpretLaunchdPrint("system/io.example = {\n\tstate = waiting\n}", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded || current != Stopped {
+		t.Fatalf("launchd state = %s, loaded = %v; want stopped and loaded", current, loaded)
+	}
+
+	current, loaded, err = interpretLaunchdPrint(
+		"Bad request.\nCould not find service io.example in domain for system",
+		errors.New("exit status 113"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded || current != Stopped {
+		t.Fatalf("launchd state = %s, loaded = %v; want stopped and unloaded", current, loaded)
+	}
+}
