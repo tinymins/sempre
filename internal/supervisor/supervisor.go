@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/sempre-lab/sempre/internal/core"
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 const (

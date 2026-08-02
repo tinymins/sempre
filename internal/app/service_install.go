@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
-	"github.com/sempre-lab/sempre/internal/layout"
-	"github.com/sempre-lab/sempre/internal/service"
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/service"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 type DeployComponent string
@@ -134,12 +135,15 @@ func (manager *Manager) deployToSystem(
 	wasRunning := current == service.Running || current == service.StartPending
 	if current != service.NotInstalled && current != service.Stopped {
 		if err := manager.service.Stop(ctx); err != nil {
-			return err
+			cleanupCtx, cancel := deploymentCleanupContext(ctx)
+			defer cancel()
+			return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
 		}
 	}
 	if err := activateSwaps(operations); err != nil {
-		_ = restoreServiceState(ctx, manager.service, current)
-		return err
+		cleanupCtx, cancel := deploymentCleanupContext(ctx)
+		defer cancel()
+		return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
 	}
 	if component == DeployAll {
 		if err := target.Ensure(); err != nil {
@@ -168,7 +172,9 @@ func (manager *Manager) deployToSystem(
 			}
 		}
 	}
-	commitSwaps(operations)
+	if err := commitSwaps(operations); err != nil {
+		return fmt.Errorf("deployment committed but backup cleanup failed: %w", err)
+	}
 	return nil
 }
 
@@ -205,12 +211,15 @@ func (manager *Manager) replaceSystemExecutable(ctx context.Context, target layo
 	}
 	if current != service.NotInstalled && current != service.Stopped {
 		if err := manager.service.Stop(ctx); err != nil {
-			return err
+			cleanupCtx, cancel := deploymentCleanupContext(ctx)
+			defer cancel()
+			return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
 		}
 	}
 	if err := activateSwaps(operations); err != nil {
-		_ = restoreServiceState(ctx, manager.service, current)
-		return err
+		cleanupCtx, cancel := deploymentCleanupContext(ctx)
+		defer cancel()
+		return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
 	}
 	if err := manager.service.Install(ctx, target.ServiceExecutable, target.Home); err != nil {
 		return rollbackDeployment(ctx, manager.service, operations, current, true, target, err)
@@ -218,7 +227,9 @@ func (manager *Manager) replaceSystemExecutable(ctx context.Context, target layo
 	if err := manager.service.Start(ctx); err != nil {
 		return rollbackDeployment(ctx, manager.service, operations, current, true, target, err)
 	}
-	commitSwaps(operations)
+	if err := commitSwaps(operations); err != nil {
+		return fmt.Errorf("service update committed but backup cleanup failed: %w", err)
+	}
 	return nil
 }
 
@@ -231,19 +242,25 @@ func rollbackDeployment(
 	target layout.Layout,
 	cause error,
 ) error {
+	cleanupCtx, cancel := deploymentCleanupContext(ctx)
+	defer cancel()
 	rollbackErr := rollbackSwaps(operations)
 	if repairRegistration {
 		if previous == service.NotInstalled {
-			rollbackErr = errors.Join(rollbackErr, controller.Uninstall(ctx))
+			rollbackErr = errors.Join(rollbackErr, controller.Uninstall(cleanupCtx))
 		} else {
-			rollbackErr = errors.Join(rollbackErr, controller.Install(ctx, target.ServiceExecutable, target.Home))
+			rollbackErr = errors.Join(rollbackErr, controller.Install(cleanupCtx, target.ServiceExecutable, target.Home))
 		}
 	}
-	rollbackErr = errors.Join(rollbackErr, restoreServiceState(ctx, controller, previous))
+	rollbackErr = errors.Join(rollbackErr, restoreServiceState(cleanupCtx, controller, previous))
 	if rollbackErr != nil {
 		return fmt.Errorf("%w (rollback failed: %v)", cause, rollbackErr)
 	}
 	return cause
+}
+
+func deploymentCleanupContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), 30*time.Second)
 }
 
 func restoreServiceState(ctx context.Context, controller service.Controller, previous service.State) error {

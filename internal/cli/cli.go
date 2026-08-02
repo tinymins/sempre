@@ -8,11 +8,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/sempre-lab/sempre/internal/app"
-	"github.com/sempre-lab/sempre/internal/buildinfo"
-	"github.com/sempre-lab/sempre/internal/elevate"
-	"github.com/sempre-lab/sempre/internal/layout"
-	"github.com/sempre-lab/sempre/internal/service"
+	"github.com/tinymins/sempre/internal/app"
+	"github.com/tinymins/sempre/internal/buildinfo"
+	"github.com/tinymins/sempre/internal/elevate"
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/service"
 )
 
 type Options struct {

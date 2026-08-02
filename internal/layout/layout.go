@@ -23,6 +23,7 @@ type Layout struct {
 	Home              string
 	State             string
 	Lock              string
+	OperationLock     string
 	ConfigLock        string
 	Cores             string
 	Configs           string
@@ -122,6 +123,7 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		Home:              home,
 		State:             filepath.Join(home, "state.json"),
 		Lock:              filepath.Join(run, "state.lock"),
+		OperationLock:     filepath.Join(run, "operation.lock"),
 		ConfigLock:        filepath.Join(run, "config.lock"),
 		Cores:             filepath.Join(home, "cores"),
 		Configs:           filepath.Join(home, "configs"),

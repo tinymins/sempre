@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sempre-lab/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/layout"
 )
 
 func TestParseGlobalOptions(t *testing.T) {

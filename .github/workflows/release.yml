@@ -7,30 +7,84 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "1.25.x"
+          go-version: 1.25.12
           cache: true
       - run: go run ./cmd/build
+      - name: Attest build provenance
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: |
+            dist/sempre-windows-amd64.exe
+            dist/sempre-windows-arm64.exe
+            dist/sempre-linux-amd64
+            dist/sempre-linux-arm64
+            dist/sempre-darwin-amd64
+            dist/sempre-darwin-arm64
+      - name: Generate target SBOMs
+        shell: bash
+        run: |
+          generate_sbom() {
+            GOOS="$1" GOARCH="$2" CGO_ENABLED=0 go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0 \
+              app -json -notimestamp -noserial -packages -licenses \
+              -main cmd/sempre -output "dist/$3.cdx.json" .
+          }
+          generate_sbom windows amd64 sempre-windows-amd64.exe
+          generate_sbom windows arm64 sempre-windows-arm64.exe
+          generate_sbom linux amd64 sempre-linux-amd64
+          generate_sbom linux arm64 sempre-linux-arm64
+          generate_sbom darwin amd64 sempre-darwin-amd64
+          generate_sbom darwin arm64 sempre-darwin-arm64
+      - name: Attest Windows amd64 SBOM
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: dist/sempre-windows-amd64.exe
+          sbom-path: dist/sempre-windows-amd64.exe.cdx.json
+      - name: Attest Windows arm64 SBOM
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: dist/sempre-windows-arm64.exe
+          sbom-path: dist/sempre-windows-arm64.exe.cdx.json
+      - name: Attest Linux amd64 SBOM
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: dist/sempre-linux-amd64
+          sbom-path: dist/sempre-linux-amd64.cdx.json
+      - name: Attest Linux arm64 SBOM
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: dist/sempre-linux-arm64
+          sbom-path: dist/sempre-linux-arm64.cdx.json
+      - name: Attest macOS amd64 SBOM
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: dist/sempre-darwin-amd64
+          sbom-path: dist/sempre-darwin-amd64.cdx.json
+      - name: Attest macOS arm64 SBOM
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: dist/sempre-darwin-arm64
+          sbom-path: dist/sempre-darwin-arm64.cdx.json
+      - name: Refresh release checksums
+        shell: bash
+        run: (cd dist && sha256sum sempre-* > SHA256SUMS)
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            dist/sempre-windows-amd64.exe \
-            dist/sempre-windows-arm64.exe \
-            dist/sempre-linux-amd64 \
-            dist/sempre-linux-arm64 \
-            dist/sempre-darwin-amd64 \
-            dist/sempre-darwin-arm64 \
-            dist/SHA256SUMS \
+            dist/* \
             --generate-notes \
             --verify-tag

@@ -4,7 +4,7 @@
 
 Please do not publish a suspected vulnerability before maintainers have had a
 reasonable opportunity to investigate it. Report security issues through the
-[private vulnerability reporting form](https://github.com/sempre-lab/sempre/security/advisories/new).
+[private vulnerability reporting form](https://github.com/tinymins/sempre/security/advisories/new).
 
 ## Sensitive Data
 

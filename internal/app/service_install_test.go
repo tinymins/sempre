@@ -8,15 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sempre-lab/sempre/internal/layout"
-	"github.com/sempre-lab/sempre/internal/service"
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/service"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 type recordingService struct {
-	state      service.State
-	calls      []string
-	failStarts int
+	state           service.State
+	calls           []string
+	failStarts      int
+	startContextErr error
 }
 
 func (controller *recordingService) Install(context.Context, string, string) error {
@@ -33,8 +34,9 @@ func (controller *recordingService) Uninstall(context.Context) error {
 	return nil
 }
 
-func (controller *recordingService) Start(context.Context) error {
+func (controller *recordingService) Start(ctx context.Context) error {
 	controller.calls = append(controller.calls, "start")
+	controller.startContextErr = ctx.Err()
 	if controller.failStarts > 0 {
 		controller.failStarts--
 		return errors.New("start failed")
@@ -89,7 +91,9 @@ func TestCoreDeploymentMergesManagedVersions(t *testing.T) {
 	if err := activateSwaps(operations); err != nil {
 		t.Fatal(err)
 	}
-	commitSwaps(operations)
+	if err := commitSwaps(operations); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, path := range []string{
 		target.CoreBinary("sing-box", "1.2.3"),
@@ -128,7 +132,9 @@ func TestAllDeploymentReplacesExtraCoreAndKeepsLogs(t *testing.T) {
 	if err := activateSwaps(operations); err != nil {
 		t.Fatal(err)
 	}
-	commitSwaps(operations)
+	if err := commitSwaps(operations); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := os.Stat(target.CoreBinary("sing-box", "1.2.3")); err != nil {
 		t.Fatal(err)
@@ -170,22 +176,22 @@ func TestDataDeploymentCopiesStateAndReferencedConfigsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := source.store.Update(func(document *state.Document) error {
-		document.Configs["sing-box"] = "current"
+		document.Configs["sing-box"] = testHashA
 		document.Active = &state.Deployment{
 			Core:       "sing-box",
 			Ref:        "stable",
 			Version:    "1.2.3",
-			ConfigHash: "current",
+			ConfigHash: testHashA,
 		}
 		document.Runtime = state.Runtime{State: "running", PID: 123}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.WriteAtomic(source.paths.Config("sing-box", "current"), []byte("{}"), 0o600); err != nil {
+	if err := state.WriteAtomic(source.paths.Config("sing-box", testHashA), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.WriteAtomic(source.paths.Config("sing-box", "unused"), []byte("{}"), 0o600); err != nil {
+	if err := state.WriteAtomic(source.paths.Config("sing-box", testHashB), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -201,7 +207,9 @@ func TestDataDeploymentCopiesStateAndReferencedConfigsOnly(t *testing.T) {
 	if err := activateSwaps(operations); err != nil {
 		t.Fatal(err)
 	}
-	commitSwaps(operations)
+	if err := commitSwaps(operations); err != nil {
+		t.Fatal(err)
+	}
 
 	deployed, err := state.New(target).Read()
 	if err != nil {
@@ -210,10 +218,10 @@ func TestDataDeploymentCopiesStateAndReferencedConfigsOnly(t *testing.T) {
 	if deployed.Runtime != (state.Runtime{}) {
 		t.Fatalf("runtime = %#v", deployed.Runtime)
 	}
-	if _, err := os.Stat(target.Config("sing-box", "current")); err != nil {
+	if _, err := os.Stat(target.Config("sing-box", testHashA)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(target.Config("sing-box", "unused")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(target.Config("sing-box", testHashB)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("unused config was copied: %v", err)
 	}
 }
@@ -267,6 +275,59 @@ func TestSwapRollbackRestoresTarget(t *testing.T) {
 	}
 	if string(data) != "old" {
 		t.Fatalf("target = %q", data)
+	}
+}
+
+func TestSwapPreservesBackupWhenActivationAndRestoreFail(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	target := filepath.Join(root, "state.json")
+	staged := filepath.Join(root, "staged.json")
+	if err := os.WriteFile(target, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(staged, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	operation := &swapOperation{
+		staged: staged,
+		target: target,
+		rename: func(source, destination string) error {
+			if source == target {
+				return os.Rename(source, destination)
+			}
+			return errors.New("injected rename failure")
+		},
+	}
+	if err := operation.activate(); err == nil || !operation.needsRestore {
+		t.Fatalf("activation error = %v, operation = %#v", err, operation)
+	}
+	operation.cleanup()
+	if _, err := os.Stat(operation.backup); err != nil {
+		t.Fatalf("recovery backup was removed: %v", err)
+	}
+	operation.rename = os.Rename
+	if err := operation.rollback(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "old" {
+		t.Fatalf("restored target = %q, %v", data, err)
+	}
+}
+
+func TestRollbackUsesCleanupContextAfterCancellation(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	controller := &recordingService{state: service.Stopped}
+	cause := errors.New("deployment failed")
+	err := rollbackDeployment(ctx, controller, nil, service.Running, false, layout.SystemAt(t.TempDir()), cause)
+	if !errors.Is(err, cause) {
+		t.Fatalf("rollback error = %v", err)
+	}
+	if controller.startContextErr != nil {
+		t.Fatalf("cleanup context was canceled: %v", controller.startContextErr)
 	}
 }
 

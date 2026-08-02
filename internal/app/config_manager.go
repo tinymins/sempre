@@ -13,13 +13,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sempre-lab/sempre/internal/buildinfo"
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/buildinfo"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 const MaxConfigSize = int64(32 << 20)
 
+var errConfigurationValidation = errors.New("configuration validation failed")
+
 func (manager *Manager) ImportConfig(ctx context.Context, source string) (Change, error) {
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.importConfig(ctx, source)
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) importConfig(ctx context.Context, source string) (Change, error) {
 	file, err := os.Open(source)
 	if err != nil {
 		return Change{}, fmt.Errorf("open configuration: %w", err)
@@ -33,18 +45,38 @@ func (manager *Manager) ImportConfig(ctx context.Context, source string) (Change
 }
 
 func (manager *Manager) SetSubscription(ctx context.Context, value string) (Change, error) {
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.setSubscription(ctx, value)
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) setSubscription(ctx context.Context, value string) (Change, error) {
 	if strings.TrimSpace(value) == "" {
-		return manager.ClearSubscription()
+		return manager.clearSubscription()
 	}
 	parsed, err := validateSubscriptionURL(value)
 	if err != nil {
 		return Change{}, err
 	}
 	normalized := parsed.String()
-	return manager.downloadSubscription(ctx, normalized, true)
+	return manager.downloadSubscription(ctx, normalized, true, false)
 }
 
 func (manager *Manager) ClearSubscription() (Change, error) {
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.clearSubscription()
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) clearSubscription() (Change, error) {
 	change := Change{}
 	err := manager.store.Update(func(document *state.Document) error {
 		if document.Subscription.URL == "" &&
@@ -73,6 +105,16 @@ func (manager *Manager) ClearSubscription() (Change, error) {
 }
 
 func (manager *Manager) UpdateSubscription(ctx context.Context) (Change, error) {
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.updateSubscription(ctx)
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) updateSubscription(ctx context.Context) (Change, error) {
 	document, err := manager.store.Read()
 	if err != nil {
 		return Change{}, err
@@ -80,10 +122,20 @@ func (manager *Manager) UpdateSubscription(ctx context.Context) (Change, error) 
 	if document.Subscription.URL == "" {
 		return Change{}, fmt.Errorf("no subscription URL is configured")
 	}
-	return manager.downloadSubscription(ctx, document.Subscription.URL, false)
+	return manager.downloadSubscription(ctx, document.Subscription.URL, false, true)
 }
 
 func (manager *Manager) SetSubscriptionSchedule(value string) (Change, error) {
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.setSubscriptionSchedule(value)
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) setSubscriptionSchedule(value string) (Change, error) {
 	value = strings.TrimSpace(strings.ToLower(value))
 	if value != "off" {
 		interval, err := time.ParseDuration(value)
@@ -143,7 +195,12 @@ func (manager *Manager) SubscriptionStatus() (string, error) {
 	return strings.TrimRight(builder.String(), "\n"), nil
 }
 
-func (manager *Manager) downloadSubscription(ctx context.Context, value string, saveURL bool) (Change, error) {
+func (manager *Manager) downloadSubscription(
+	ctx context.Context,
+	value string,
+	saveURL bool,
+	recordFailures bool,
+) (Change, error) {
 	parsed, err := validateSubscriptionURL(value)
 	if err != nil {
 		return Change{}, err
@@ -167,20 +224,19 @@ func (manager *Manager) downloadSubscription(ctx context.Context, value string, 
 	request.Header.Set("User-Agent", "Sempre/"+buildinfo.Version)
 	response, err := client.Do(request)
 	if err != nil {
-		manager.recordSubscriptionResult("download failed")
-		return Change{}, fmt.Errorf("download subscription from %s failed: %s", redactedURL(value), safeNetworkError(err))
+		failure := fmt.Errorf("download subscription from %s failed: %s", redactedURL(value), safeNetworkError(err))
+		return manager.subscriptionFailure(failure, "download failed", recordFailures)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		manager.recordSubscriptionResult("HTTP " + response.Status)
-		return Change{}, fmt.Errorf("download subscription from %s: HTTP %s", redactedURL(value), response.Status)
+		failure := fmt.Errorf("download subscription from %s: HTTP %s", redactedURL(value), response.Status)
+		return manager.subscriptionFailure(failure, "HTTP "+response.Status, recordFailures)
 	}
 	data, err := readLimited(response.Body, MaxConfigSize)
 	if err != nil {
-		manager.recordSubscriptionResult("download rejected")
-		return Change{}, err
+		return manager.subscriptionFailure(err, "download rejected", recordFailures)
 	}
-	return manager.activateConfig(ctx, data, func(document *state.Document, changed bool) {
+	change, err := manager.activateConfig(ctx, data, func(document *state.Document, changed bool) {
 		if saveURL {
 			document.Subscription.URL = parsed.String()
 		}
@@ -192,6 +248,14 @@ func (manager *Manager) downloadSubscription(ctx context.Context, value string, 
 			document.Subscription.LastResult = "no change"
 		}
 	})
+	if err != nil {
+		result := "configuration activation failed"
+		if errors.Is(err, errConfigurationValidation) {
+			result = "configuration validation failed"
+		}
+		return manager.subscriptionFailure(err, result, recordFailures)
+	}
+	return change, nil
 }
 
 func (manager *Manager) activateConfig(
@@ -231,8 +295,7 @@ func (manager *Manager) activateConfig(
 		return Change{}, err
 	}
 	if err := manager.validateConfiguration(ctx, adapter, binary, candidatePath, manager.output, manager.errors); err != nil {
-		manager.recordSubscriptionResult("configuration validation failed")
-		return Change{}, err
+		return Change{}, fmt.Errorf("%w: %v", errConfigurationValidation, err)
 	}
 	sum := sha256.Sum256(data)
 	hash := hex.EncodeToString(sum[:])
@@ -289,8 +352,18 @@ func (manager *Manager) activateConfig(
 	return change, nil
 }
 
-func (manager *Manager) recordSubscriptionResult(result string) {
-	_ = manager.store.Update(func(document *state.Document) error {
+func (manager *Manager) subscriptionFailure(failure error, result string, record bool) (Change, error) {
+	if !record {
+		return Change{}, failure
+	}
+	if err := manager.recordSubscriptionResult(result); err != nil {
+		return Change{}, errors.Join(failure, fmt.Errorf("record subscription result: %w", err))
+	}
+	return Change{}, failure
+}
+
+func (manager *Manager) recordSubscriptionResult(result string) error {
+	return manager.store.Update(func(document *state.Document) error {
 		document.Subscription.LastCheck = time.Now().UTC()
 		document.Subscription.LastResult = result
 		return nil

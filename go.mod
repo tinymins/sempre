@@ -1,4 +1,4 @@
-module github.com/sempre-lab/sempre
+module github.com/tinymins/sempre
 
 go 1.25.0
 

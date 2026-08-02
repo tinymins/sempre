@@ -1,8 +1,9 @@
 package app
 
 import (
-	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,11 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sempre-lab/sempre/internal/layout"
-	"github.com/sempre-lab/sempre/internal/service"
-	"github.com/sempre-lab/sempre/internal/state"
-	"github.com/sempre-lab/sempre/internal/supervisor"
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/service"
+	"github.com/tinymins/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/supervisor"
 )
+
+var ErrDoctorFailed = errors.New("doctor checks failed")
 
 func (manager *Manager) RunDirect(ctx context.Context, reference string) error {
 	lease, err := manager.store.AcquireInstance()
@@ -31,7 +34,9 @@ func (manager *Manager) RunDirect(ctx context.Context, reference string) error {
 }
 
 func (manager *Manager) InstallService(ctx context.Context, allowReplace bool) error {
-	return manager.installSystemService(ctx, allowReplace)
+	return manager.withSystemOperation(func() error {
+		return manager.installSystemService(ctx, allowReplace)
+	})
 }
 
 func (manager *Manager) DeployService(
@@ -39,14 +44,20 @@ func (manager *Manager) DeployService(
 	component DeployComponent,
 	allowReplace bool,
 ) error {
-	return manager.deploySystemService(ctx, component, allowReplace)
+	return manager.withSystemOperation(func() error {
+		return manager.deploySystemService(ctx, component, allowReplace)
+	})
 }
 
 func (manager *Manager) UninstallService(ctx context.Context) error {
-	return manager.service.Uninstall(ctx)
+	return manager.withSystemOperation(func() error { return manager.service.Uninstall(ctx) })
 }
 
 func (manager *Manager) StartService(ctx context.Context) error {
+	return manager.withSystemOperation(func() error { return manager.startService(ctx) })
+}
+
+func (manager *Manager) startService(ctx context.Context) error {
 	systemManager, err := manager.systemManager()
 	if err != nil {
 		return err
@@ -58,10 +69,14 @@ func (manager *Manager) StartService(ctx context.Context) error {
 }
 
 func (manager *Manager) StopService(ctx context.Context) error {
-	return manager.service.Stop(ctx)
+	return manager.withSystemOperation(func() error { return manager.service.Stop(ctx) })
 }
 
 func (manager *Manager) RestartService(ctx context.Context) error {
+	return manager.withSystemOperation(func() error { return manager.restartService(ctx) })
+}
+
+func (manager *Manager) restartService(ctx context.Context) error {
 	systemManager, err := manager.systemManager()
 	if err != nil {
 		return err
@@ -181,7 +196,11 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 	if failures == 0 {
 		fmt.Fprintln(&builder, "All checks passed.")
 	}
-	return strings.TrimRight(builder.String(), "\n"), nil
+	report := strings.TrimRight(builder.String(), "\n")
+	if failures > 0 {
+		return report, fmt.Errorf("%w: %d check(s) failed", ErrDoctorFailed, failures)
+	}
+	return report, nil
 }
 
 func (manager *Manager) runtimeStatus(document state.Document) (string, error) {
@@ -237,10 +256,14 @@ func writableDirectory(path string) error {
 }
 
 func FollowLogs(ctx context.Context, output io.Writer, paths []string, follow bool) error {
-	offsets := map[string]int64{}
+	cursors := map[string]logCursor{}
 	for {
 		for _, path := range paths {
-			offsets[path] = printLogDelta(output, filepath.Base(path), path, offsets[path])
+			cursor, err := printLogDelta(output, filepath.Base(path), path, cursors[path], !follow)
+			if err != nil {
+				return err
+			}
+			cursors[path] = cursor
 		}
 		if !follow {
 			return nil
@@ -253,32 +276,71 @@ func FollowLogs(ctx context.Context, output io.Writer, paths []string, follow bo
 	}
 }
 
-func printLogDelta(output io.Writer, label, path string, offset int64) int64 {
+type logCursor struct {
+	offset  int64
+	info    os.FileInfo
+	partial []byte
+}
+
+func printLogDelta(output io.Writer, label, path string, cursor logCursor, flushPartial bool) (logCursor, error) {
 	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return cursor, nil
+	}
 	if err != nil {
-		return offset
+		return cursor, fmt.Errorf("open log %s: %w", path, err)
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		return offset
+		return cursor, fmt.Errorf("inspect log %s: %w", path, err)
 	}
-	if info.Size() < offset {
-		offset = 0
+	if cursor.info != nil && (!os.SameFile(cursor.info, info) || info.Size() < cursor.offset) {
+		cursor = logCursor{}
 	}
-	if offset == 0 && info.Size() > 64*1024 {
-		offset = info.Size() - 64*1024
+	trimInitialLine := false
+	if cursor.info == nil && cursor.offset == 0 && info.Size() > 64*1024 {
+		cursor.offset = info.Size() - 64*1024
+		trimInitialLine = true
 	}
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return offset
+	if _, err := file.Seek(cursor.offset, io.SeekStart); err != nil {
+		return cursor, fmt.Errorf("seek log %s: %w", path, err)
 	}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		fmt.Fprintf(output, "[%s] %s\n", label, scanner.Text())
-	}
-	position, err := file.Seek(0, io.SeekCurrent)
+	data, err := io.ReadAll(file)
 	if err != nil {
-		return offset
+		return cursor, fmt.Errorf("read log %s: %w", path, err)
 	}
-	return position
+	cursor.offset += int64(len(data))
+	cursor.info = info
+	data = append(cursor.partial, data...)
+	cursor.partial = nil
+	if trimInitialLine {
+		if newline := bytes.IndexByte(data, '\n'); newline >= 0 {
+			data = data[newline+1:]
+		} else if !flushPartial {
+			cursor.partial = data
+			return cursor, nil
+		}
+	}
+	for {
+		newline := bytes.IndexByte(data, '\n')
+		if newline < 0 {
+			break
+		}
+		line := bytes.TrimSuffix(data[:newline], []byte{'\r'})
+		if _, err := fmt.Fprintf(output, "[%s] %s\n", label, line); err != nil {
+			return cursor, err
+		}
+		data = data[newline+1:]
+	}
+	if len(data) > 0 {
+		if flushPartial {
+			if _, err := fmt.Fprintf(output, "[%s] %s\n", label, bytes.TrimSuffix(data, []byte{'\r'})); err != nil {
+				return cursor, err
+			}
+		} else {
+			cursor.partial = append(cursor.partial, data...)
+		}
+	}
+	return cursor, nil
 }

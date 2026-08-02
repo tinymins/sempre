@@ -1,0 +1,83 @@
+name: Native service smoke tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  service-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.25.12
+          cache: true
+      - name: Build smoke deployment
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          mkdir smoke
+          go build -o smoke/sempre ./cmd/sempre
+          go build -o smoke/testcore ./internal/integration/testcore
+          go run ./internal/integration/setup -root "$PWD/smoke" -core "$PWD/smoke/testcore"
+      - name: Exercise native service
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          sudo ./smoke/sempre --portable service install --yes
+          sudo ./smoke/sempre --portable service install --yes
+          ./smoke/sempre service status
+          sudo ./smoke/sempre --system doctor
+          sudo ./smoke/sempre --portable service stop
+          sudo ./smoke/sempre --portable service start
+          sudo ./smoke/sempre --portable service restart
+          sudo ./smoke/sempre --portable service uninstall
+      - name: Build and exercise Windows service
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Path smoke
+          go build -o smoke/sempre.exe ./cmd/sempre
+          go build -o smoke/testcore.exe ./internal/integration/testcore
+          go run ./internal/integration/setup -root "$PWD/smoke" -core "$PWD/smoke/testcore.exe"
+          ./smoke/sempre.exe --portable service install --yes
+          ./smoke/sempre.exe --portable service install --yes
+          ./smoke/sempre.exe service status
+          ./smoke/sempre.exe --system doctor
+          ./smoke/sempre.exe --portable service stop
+          ./smoke/sempre.exe --portable service start
+          ./smoke/sempre.exe --portable service restart
+          ./smoke/sempre.exe --portable service uninstall
+      - name: Clean Linux service data
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo systemctl stop sempre.service 2>/dev/null || true
+          sudo systemctl disable sempre.service 2>/dev/null || true
+          sudo rm -f /etc/systemd/system/sempre.service
+          sudo rm -rf /usr/local/libexec/sempre /var/lib/sempre /var/log/sempre /run/sempre
+          sudo systemctl daemon-reload || true
+      - name: Clean macOS service data
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          sudo launchctl bootout system/io.github.tinymins.sempre 2>/dev/null || true
+          sudo rm -f /Library/LaunchDaemons/io.github.tinymins.sempre.plist
+          sudo rm -rf "/Library/Application Support/Sempre" "/Library/Logs/Sempre" /var/run/sempre
+      - name: Clean Windows service data
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          sc.exe stop sempre 2>$null
+          sc.exe delete sempre 2>$null
+          Remove-Item -Recurse -Force "$env:ProgramFiles\Sempre" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$env:ProgramData\Sempre" -ErrorAction SilentlyContinue

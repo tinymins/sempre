@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sempre-lab/sempre/internal/fileowner"
-	"github.com/sempre-lab/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/fileowner"
+	"github.com/tinymins/sempre/internal/layout"
 )
 
 type Store struct {
@@ -32,12 +32,35 @@ func (store *Store) Initialize() error {
 	if err := store.paths.Ensure(); err != nil {
 		return err
 	}
-	if _, err := os.Stat(store.paths.State); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect state: %w", err)
-	}
-	return store.Update(func(document *Document) error { return nil })
+	return store.withLock(func() error {
+		if _, err := os.Stat(store.paths.State); err == nil {
+			_, err := store.readUnlocked()
+			return err
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect state: %w", err)
+		}
+
+		backup := store.paths.State + ".previous"
+		if _, err := os.Stat(backup); err == nil {
+			document, err := readDocument(backup)
+			if err != nil {
+				return fmt.Errorf("recover previous state: %w", err)
+			}
+			if err := document.Validate(); err != nil {
+				return fmt.Errorf("recover previous state: %w", err)
+			}
+			if err := replaceFile(backup, store.paths.State); err != nil {
+				return fmt.Errorf("recover previous state: %w", err)
+			}
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect previous state: %w", err)
+		}
+
+		document := NewDocument()
+		document.UpdatedAt = time.Now().UTC()
+		return writeJSONAtomic(store.paths.State, document, 0o600)
+	})
 }
 
 func (store *Store) AcquireInstance() (*Lease, error) {
@@ -71,6 +94,25 @@ func (store *Store) AcquireConfig() (*Lease, error) {
 	if err := lockFile(file); err != nil {
 		file.Close()
 		return nil, fmt.Errorf("lock configuration: %w", err)
+	}
+	return &Lease{file: file}, nil
+}
+
+func (store *Store) AcquireOperation() (*Lease, error) {
+	if err := store.paths.Ensure(); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(store.paths.OperationLock, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open operation lock: %w", err)
+	}
+	if err := fileowner.MatchParent(store.paths.OperationLock); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("secure operation lock: %w", err)
+	}
+	if err := lockFile(file); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("lock operation: %w", err)
 	}
 	return &Lease{file: file}, nil
 }
@@ -129,16 +171,24 @@ func (store *Store) Update(change func(*Document) error) error {
 			return err
 		}
 		document.Normalize()
+		if err := document.Validate(); err != nil {
+			return fmt.Errorf("validate state: %w", err)
+		}
 		document.UpdatedAt = time.Now().UTC()
 		return writeJSONAtomic(store.paths.State, document, 0o600)
 	})
 }
 
 func (store *Store) readUnlocked() (Document, error) {
-	data, err := os.ReadFile(store.paths.State)
+	document, err := readDocument(store.paths.State)
 	if errors.Is(err, os.ErrNotExist) {
 		return NewDocument(), nil
 	}
+	return document, err
+}
+
+func readDocument(path string) (Document, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Document{}, fmt.Errorf("read state: %w", err)
 	}
@@ -150,6 +200,9 @@ func (store *Store) readUnlocked() (Document, error) {
 		return Document{}, fmt.Errorf("unsupported state schema %d", document.Schema)
 	}
 	document.Normalize()
+	if err := document.Validate(); err != nil {
+		return Document{}, fmt.Errorf("validate state: %w", err)
+	}
 	return document, nil
 }
 
@@ -208,19 +261,8 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 
-	backup := path + ".previous"
-	_ = os.Remove(backup)
-	if _, err := os.Stat(path); err == nil {
-		if err := os.Rename(path, backup); err != nil {
-			return fmt.Errorf("back up %s: %w", path, err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := os.Rename(temporary, path); err != nil {
-		_ = os.Rename(backup, path)
+	if err := replaceFile(temporary, path); err != nil {
 		return fmt.Errorf("replace %s: %w", path, err)
 	}
-	_ = os.Remove(backup)
 	return nil
 }

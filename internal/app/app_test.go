@@ -4,18 +4,32 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/sempre-lab/sempre/internal/core"
-	"github.com/sempre-lab/sempre/internal/layout"
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 type fakeAdapter struct{}
+
+type rejectingAdapter struct{ fakeAdapter }
+
+func (rejectingAdapter) Validate(context.Context, string, string, string, io.Writer, io.Writer) error {
+	return errors.New("rejected configuration")
+}
+
+var (
+	testHashA = strings.Repeat("a", 64)
+	testHashB = strings.Repeat("b", 64)
+	testHashC = strings.Repeat("c", 64)
+)
 
 func (fakeAdapter) ID() string { return "sing-box" }
 
@@ -99,7 +113,7 @@ func TestUseExactVersionPromotesExplicitReference(t *testing.T) {
 	t.Parallel()
 	manager := newTestManager(t)
 	if err := manager.store.Update(func(document *state.Document) error {
-		document.Configs["sing-box"] = "hash"
+		document.Configs["sing-box"] = testHashA
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -196,6 +210,7 @@ func TestCollectWeakVersionRemovesOnlyUnreferencedInstall(t *testing.T) {
 	versionDir := manager.paths.CoreVersionDir("sing-box", "1.2.3")
 	collected := false
 	if err := manager.store.Update(func(document *state.Document) error {
+		document.Selected = nil
 		delete(document.Cores["sing-box"].Channels, "stable")
 		collected = manager.collectWeakVersion(document, "sing-box", "1.2.3")
 		return nil
@@ -261,7 +276,7 @@ func TestClearSubscriptionRetainsConfiguration(t *testing.T) {
 	t.Parallel()
 	manager := newTestManager(t)
 	if err := manager.store.Update(func(document *state.Document) error {
-		document.Configs["sing-box"] = "hash"
+		document.Configs["sing-box"] = testHashA
 		document.Subscription = state.Subscription{
 			URL:        "https://example.com/config?token=secret",
 			Interval:   "24h",
@@ -285,8 +300,169 @@ func TestClearSubscriptionRetainsConfiguration(t *testing.T) {
 	if document.Subscription.URL != "" || document.Subscription.LastResult != "" {
 		t.Fatalf("subscription = %#v", document.Subscription)
 	}
-	if document.Configs["sing-box"] != "hash" {
+	if document.Configs["sing-box"] != testHashA {
 		t.Fatalf("configuration was removed: %#v", document.Configs)
+	}
+}
+
+func TestNewSubscriptionFailureDoesNotOverwriteSavedMetadata(t *testing.T) {
+	manager := newTestManager(t)
+	oldCheck := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Subscription.URL = "https://old.example/config.json"
+		document.Subscription.LastCheck = oldCheck
+		document.Subscription.LastResult = "no change"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(nil)
+	server.Close()
+	if _, err := manager.SetSubscription(context.Background(), server.URL); err == nil {
+		t.Fatal("new subscription unexpectedly succeeded")
+	}
+	document, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Subscription.URL != "https://old.example/config.json" ||
+		!document.Subscription.LastCheck.Equal(oldCheck) ||
+		document.Subscription.LastResult != "no change" {
+		t.Fatalf("subscription metadata changed: %#v", document.Subscription)
+	}
+}
+
+func TestSavedSubscriptionFailureRecordsAttempt(t *testing.T) {
+	manager := newTestManager(t)
+	server := httptest.NewTLSServer(nil)
+	server.Close()
+	oldCheck := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Subscription.URL = server.URL
+		document.Subscription.LastCheck = oldCheck
+		document.Subscription.LastResult = "no change"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.UpdateSubscription(context.Background()); err == nil {
+		t.Fatal("subscription update unexpectedly succeeded")
+	}
+	document, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !document.Subscription.LastCheck.After(oldCheck) || document.Subscription.LastResult != "download failed" {
+		t.Fatalf("subscription failure was not recorded: %#v", document.Subscription)
+	}
+}
+
+func TestLocalValidationFailureDoesNotChangeSubscriptionMetadata(t *testing.T) {
+	manager := newTestManager(t)
+	manager.registry = core.NewRegistry(rejectingAdapter{})
+	oldCheck := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Subscription.URL = "https://old.example/config.json"
+		document.Subscription.LastCheck = oldCheck
+		document.Subscription.LastResult = "no change"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(config, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.ImportConfig(context.Background(), config); err == nil {
+		t.Fatal("invalid local configuration unexpectedly succeeded")
+	}
+	document, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !document.Subscription.LastCheck.Equal(oldCheck) || document.Subscription.LastResult != "no change" {
+		t.Fatalf("subscription metadata changed: %#v", document.Subscription)
+	}
+}
+
+func TestDoctorReturnsFailureWhenChecksFail(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	report, err := manager.Doctor(context.Background())
+	if !errors.Is(err, ErrDoctorFailed) {
+		t.Fatalf("doctor error = %v", err)
+	}
+	if !strings.Contains(report, "[FAIL] active core") {
+		t.Fatalf("doctor report = %q", report)
+	}
+}
+
+func TestLogDeltaHandlesRotationAndLongLines(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "sempre.log")
+	if err := os.WriteFile(path, []byte("first\npartial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	cursor, err := printLogDelta(&output, "sempre.log", path, logCursor{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "[sempre.log] first\n" {
+		t.Fatalf("initial output = %q", output.String())
+	}
+	if err := os.Rename(path, path+".1"); err != nil {
+		t.Fatal(err)
+	}
+	longLine := strings.Repeat("x", 128*1024)
+	if err := os.WriteFile(path, []byte("rotated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err = printLogDelta(&output, "sempre.log", path, cursor, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(longLine); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = printLogDelta(&output, "sempre.log", path, cursor, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "[sempre.log] rotated\n") || !strings.Contains(output.String(), longLine) {
+		t.Fatalf("rotated output length = %d", output.Len())
+	}
+}
+
+func TestLogDeltaResetsAfterTruncation(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "core.log")
+	if err := os.WriteFile(path, []byte("before\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	cursor, err := printLogDelta(&output, "core.log", path, logCursor{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("after\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = printLogDelta(&output, "core.log", path, cursor, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "[core.log] before\n[core.log] after\n" {
+		t.Fatalf("truncated output = %q", output.String())
 	}
 }
 
@@ -315,12 +491,12 @@ func TestResolveFailureRollsBackPendingDeploymentAndCollectsConfigs(t *testing.T
 		Core:       "sing-box",
 		Ref:        "stable",
 		Version:    "1.2.3",
-		ConfigHash: "old",
+		ConfigHash: testHashA,
 	}
 	newDeployment := oldDeployment
-	newDeployment.ConfigHash = "new"
+	newDeployment.ConfigHash = testHashB
 	if err := manager.store.Update(func(document *state.Document) error {
-		document.Configs["sing-box"] = "new"
+		document.Configs["sing-box"] = testHashB
 		document.Active = &newDeployment
 		document.Previous = &oldDeployment
 		document.Pending = true
@@ -328,7 +504,7 @@ func TestResolveFailureRollsBackPendingDeploymentAndCollectsConfigs(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, hash := range []string{"old", "new", "unused"} {
+	for _, hash := range []string{testHashA, testHashB, testHashC} {
 		if err := state.WriteAtomic(manager.paths.Config("sing-box", hash), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -348,13 +524,13 @@ func TestResolveFailureRollsBackPendingDeploymentAndCollectsConfigs(t *testing.T
 	if document.Pending || document.Previous != nil || !state.SameDeployment(document.Active, &oldDeployment) {
 		t.Fatalf("document = %#v", document)
 	}
-	if document.Configs["sing-box"] != "old" {
+	if document.Configs["sing-box"] != testHashA {
 		t.Fatalf("active config = %q", document.Configs["sing-box"])
 	}
-	if _, err := os.Stat(manager.paths.Config("sing-box", "old")); err != nil {
+	if _, err := os.Stat(manager.paths.Config("sing-box", testHashA)); err != nil {
 		t.Fatal(err)
 	}
-	for _, hash := range []string{"new", "unused"} {
+	for _, hash := range []string{testHashB, testHashC} {
 		if _, err := os.Stat(manager.paths.Config("sing-box", hash)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("configuration %s was retained: %v", hash, err)
 		}

@@ -2,12 +2,15 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 
-	"github.com/sempre-lab/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/layout"
 )
 
 func TestStoreInitializesAndPersists(t *testing.T) {
@@ -19,7 +22,9 @@ func TestStoreInitializesAndPersists(t *testing.T) {
 	}
 	if err := store.Update(func(document *Document) error {
 		document.Subscription.URL = "https://example.com/config.json?token=secret"
-		document.Core("sing-box").Channels["stable"] = "1.2.3"
+		coreState := document.Core("sing-box")
+		coreState.Installed["1.2.3"] = &Installation{}
+		coreState.Channels["stable"] = "1.2.3"
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -61,11 +66,18 @@ func TestStoreMigratesSelectedCoreFromSchemaOne(t *testing.T) {
 			"core":        "sing-box",
 			"ref":         "1.2.3",
 			"version":     "1.2.3",
-			"config_hash": "hash",
+			"config_hash": strings.Repeat("a", 64),
 		},
-		"pending":      false,
-		"cores":        map[string]any{},
-		"configs":      map[string]any{},
+		"pending": false,
+		"cores": map[string]any{
+			"sing-box": map[string]any{
+				"channels": map[string]any{"stable": "1.2.3"},
+				"installed": map[string]any{
+					"1.2.3": map[string]any{},
+				},
+			},
+		},
+		"configs":      map[string]any{"sing-box": strings.Repeat("a", 64)},
 		"subscription": map[string]any{"interval": "24h"},
 		"runtime":      map[string]any{},
 	}
@@ -86,6 +98,110 @@ func TestStoreMigratesSelectedCoreFromSchemaOne(t *testing.T) {
 		document.Selected.Core != "sing-box" ||
 		document.Selected.Ref != "1.2.3" {
 		t.Fatalf("migrated document = %#v", document)
+	}
+}
+
+func TestInitializeRecoversValidPreviousState(t *testing.T) {
+	t.Parallel()
+	paths := layout.At(t.TempDir())
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	document := NewDocument()
+	document.Subscription.Interval = "12h"
+	data, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.State+".previous", data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := New(paths)
+	if err := store.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Subscription.Interval != "12h" {
+		t.Fatalf("interval = %q", recovered.Subscription.Interval)
+	}
+	if _, err := os.Stat(paths.State + ".previous"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("previous state was not consumed: %v", err)
+	}
+}
+
+func TestStoreRejectsUnsafePersistedPaths(t *testing.T) {
+	t.Parallel()
+	paths := layout.At(t.TempDir())
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	document := NewDocument()
+	document.Cores["../escape"] = &CoreState{
+		Channels:  map[string]string{},
+		Installed: map[string]*Installation{},
+	}
+	data, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.State, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(paths).Read(); err == nil || !strings.Contains(err.Error(), "invalid core ID") {
+		t.Fatalf("unsafe state error = %v", err)
+	}
+}
+
+func TestDocumentRejectsInvalidConfigurationHash(t *testing.T) {
+	t.Parallel()
+	document := NewDocument()
+	coreState := document.Core("sing-box")
+	coreState.Installed["1.2.3"] = &Installation{}
+	coreState.Channels["stable"] = "1.2.3"
+	document.Configs["sing-box"] = "short"
+	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "invalid configuration hash") {
+		t.Fatalf("invalid hash error = %v", err)
+	}
+}
+
+func TestOperationLeaseSerializesWriters(t *testing.T) {
+	t.Parallel()
+	store := New(layout.At(t.TempDir()))
+	if err := store.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.AcquireOperation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	acquired := make(chan error, 1)
+	go func() {
+		close(started)
+		second, err := store.AcquireOperation()
+		if err == nil {
+			second.Release()
+		}
+		acquired <- err
+	}()
+	<-started
+	select {
+	case err := <-acquired:
+		first.Release()
+		t.Fatalf("second lease did not block: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	first.Release()
+	select {
+	case err := <-acquired:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second lease did not acquire after release")
 	}
 }
 

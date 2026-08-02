@@ -10,15 +10,18 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 type swapOperation struct {
-	staged    string
-	target    string
-	backup    string
-	hadTarget bool
-	active    bool
+	staged       string
+	target       string
+	backup       string
+	hadTarget    bool
+	active       bool
+	needsRestore bool
+	rename       func(string, string) error
+	removeAll    func(string) error
 }
 
 func stageExecutable(source, target string) (*swapOperation, error) {
@@ -76,8 +79,12 @@ func stageDirectory(target string) (string, error) {
 func activateSwaps(operations []*swapOperation) error {
 	for index, operation := range operations {
 		if err := operation.activate(); err != nil {
-			for rollbackIndex := index - 1; rollbackIndex >= 0; rollbackIndex-- {
-				_ = operations[rollbackIndex].rollback()
+			rollbackErr := error(nil)
+			for rollbackIndex := index; rollbackIndex >= 0; rollbackIndex-- {
+				rollbackErr = errors.Join(rollbackErr, operations[rollbackIndex].rollback())
+			}
+			if rollbackErr != nil {
+				return errors.Join(err, fmt.Errorf("roll back activated files: %w", rollbackErr))
 			}
 			return err
 		}
@@ -91,7 +98,7 @@ func (operation *swapOperation) activate() error {
 		if err != nil {
 			return err
 		}
-		if err := os.Rename(operation.target, backup); err != nil {
+		if err := operation.renameFile(operation.target, backup); err != nil {
 			return fmt.Errorf("back up %s: %w", operation.target, err)
 		}
 		operation.backup = backup
@@ -99,47 +106,81 @@ func (operation *swapOperation) activate() error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := os.Rename(operation.staged, operation.target); err != nil {
+	if err := operation.renameFile(operation.staged, operation.target); err != nil {
+		activationErr := fmt.Errorf("activate %s: %w", operation.target, err)
 		if operation.hadTarget {
-			_ = os.Rename(operation.backup, operation.target)
+			if restoreErr := operation.renameFile(operation.backup, operation.target); restoreErr != nil {
+				operation.needsRestore = true
+				return errors.Join(activationErr, fmt.Errorf("restore %s: %w", operation.target, restoreErr))
+			}
+			operation.backup = ""
+			operation.hadTarget = false
 		}
-		return fmt.Errorf("activate %s: %w", operation.target, err)
+		return activationErr
 	}
+	operation.staged = ""
 	operation.active = true
 	return nil
 }
 
 func (operation *swapOperation) rollback() error {
+	if operation.needsRestore {
+		if err := operation.renameFile(operation.backup, operation.target); err != nil {
+			return fmt.Errorf("restore %s from %s: %w", operation.target, operation.backup, err)
+		}
+		operation.backup = ""
+		operation.hadTarget = false
+		operation.needsRestore = false
+		return nil
+	}
 	if !operation.active {
 		return nil
 	}
-	if err := os.RemoveAll(operation.target); err != nil {
+	if err := operation.removePath(operation.target); err != nil {
 		return err
 	}
 	if operation.hadTarget {
-		if err := os.Rename(operation.backup, operation.target); err != nil {
+		if err := operation.renameFile(operation.backup, operation.target); err != nil {
 			return err
 		}
+		operation.backup = ""
+		operation.hadTarget = false
 	}
 	operation.active = false
 	return nil
 }
 
-func (operation *swapOperation) commit() {
+func (operation *swapOperation) commit() error {
 	if operation.hadTarget {
-		_ = os.RemoveAll(operation.backup)
+		if err := operation.removePath(operation.backup); err != nil {
+			return fmt.Errorf("remove committed backup %s: %w", operation.backup, err)
+		}
 		operation.backup = ""
+		operation.hadTarget = false
 	}
 	operation.active = false
+	return nil
 }
 
 func (operation *swapOperation) cleanup() {
 	if operation.staged != "" {
 		_ = os.RemoveAll(operation.staged)
 	}
-	if !operation.active && operation.backup != "" {
-		_ = os.RemoveAll(operation.backup)
+	// Backups are removed only by a confirmed commit or successful rollback.
+}
+
+func (operation *swapOperation) renameFile(source, target string) error {
+	if operation.rename != nil {
+		return operation.rename(source, target)
 	}
+	return os.Rename(source, target)
+}
+
+func (operation *swapOperation) removePath(path string) error {
+	if operation.removeAll != nil {
+		return operation.removeAll(path)
+	}
+	return os.RemoveAll(path)
 }
 
 func unusedSibling(target, pattern string) (string, error) {
@@ -163,10 +204,12 @@ func cleanupStaged(operations []*swapOperation) {
 	}
 }
 
-func commitSwaps(operations []*swapOperation) {
+func commitSwaps(operations []*swapOperation) error {
+	var result error
 	for _, operation := range operations {
-		operation.commit()
+		result = errors.Join(result, operation.commit())
 	}
+	return result
 }
 
 func rollbackSwaps(operations []*swapOperation) error {

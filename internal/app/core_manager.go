@@ -11,13 +11,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sempre-lab/sempre/internal/archive"
-	"github.com/sempre-lab/sempre/internal/core"
-	"github.com/sempre-lab/sempre/internal/download"
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/archive"
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/download"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 func (manager *Manager) InstallCore(ctx context.Context, value string) (Change, error) {
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.installCore(ctx, value)
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) installCore(ctx context.Context, value string) (Change, error) {
 	reference, err := core.ParseRef(value)
 	if err != nil {
 		return Change{}, err
@@ -133,6 +143,16 @@ func (manager *Manager) InstallCore(ctx context.Context, value string) (Change, 
 }
 
 func (manager *Manager) UpdateCores(ctx context.Context, value string) ([]Change, error) {
+	var changes []Change
+	err := manager.withOperation(func() error {
+		var err error
+		changes, err = manager.updateCores(ctx, value)
+		return err
+	})
+	return changes, err
+}
+
+func (manager *Manager) updateCores(ctx context.Context, value string) ([]Change, error) {
 	if value != "" {
 		reference, err := core.ParseRef(value)
 		if err != nil {
@@ -141,7 +161,7 @@ func (manager *Manager) UpdateCores(ctx context.Context, value string) ([]Change
 		if !reference.IsChannel() {
 			return nil, fmt.Errorf("exact core versions are immutable; update a channel such as %s@stable", reference.Core)
 		}
-		change, err := manager.InstallCore(ctx, reference.String())
+		change, err := manager.installCore(ctx, reference.String())
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +184,7 @@ func (manager *Manager) UpdateCores(ctx context.Context, value string) ([]Change
 	}
 	changes := make([]Change, 0, len(references))
 	for _, reference := range references {
-		change, err := manager.InstallCore(ctx, reference)
+		change, err := manager.installCore(ctx, reference)
 		if err != nil {
 			return nil, err
 		}
@@ -174,6 +194,16 @@ func (manager *Manager) UpdateCores(ctx context.Context, value string) ([]Change
 }
 
 func (manager *Manager) UseCore(ctx context.Context, value string) (Change, error) {
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.useCore(ctx, value)
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) useCore(ctx context.Context, value string) (Change, error) {
 	reference, err := core.ParseRef(value)
 	if err != nil {
 		return Change{}, err
@@ -252,6 +282,16 @@ func (manager *Manager) UseCore(ctx context.Context, value string) (Change, erro
 }
 
 func (manager *Manager) RemoveCore(value string) (Change, error) {
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.removeCore(value)
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) removeCore(value string) (Change, error) {
 	reference, err := core.ParseRef(value)
 	if err != nil {
 		return Change{}, err

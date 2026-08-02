@@ -14,7 +14,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 const systemdUnit = "/etc/systemd/system/sempre.service"

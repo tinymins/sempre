@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -48,7 +50,7 @@ func (windowsController) Install(ctx context.Context, executable, _ string) erro
 		if err == nil {
 			existing.StartType = config.StartType
 			existing.ErrorControl = config.ErrorControl
-			existing.BinaryPathName = `"` + executable + `" --system daemon`
+			existing.BinaryPathName = windowsServiceCommand(executable)
 			existing.DisplayName = config.DisplayName
 			existing.Description = config.Description
 			existing.DelayedAutoStart = config.DelayedAutoStart
@@ -67,6 +69,14 @@ func (windowsController) Install(ctx context.Context, executable, _ string) erro
 		return fmt.Errorf("configure service recovery: %w", err)
 	}
 	return service.SetRecoveryActionsOnNonCrashFailures(true)
+}
+
+func windowsServiceCommand(executable string) string {
+	arguments := []string{executable, "--system", "daemon"}
+	for index := range arguments {
+		arguments[index] = syscall.EscapeArg(arguments[index])
+	}
+	return strings.Join(arguments, " ")
 }
 
 func (windowsController) Uninstall(ctx context.Context) error {

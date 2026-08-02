@@ -8,9 +8,9 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/sempre-lab/sempre/internal/core"
-	"github.com/sempre-lab/sempre/internal/layout"
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 func (manager *Manager) stageDeployment(

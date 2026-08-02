@@ -20,7 +20,7 @@
         },
         "info": {
           "0409": {
-            "CompanyName": "Sempre Lab contributors",
+            "CompanyName": "Sempre contributors",
             "FileDescription": "Sempre proxy core lifecycle manager",
             "FileVersion": "0.1.0",
             "InternalName": "sempre",
@@ -33,4 +33,3 @@
     }
   }
 }
-

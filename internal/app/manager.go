@@ -6,13 +6,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 
-	"github.com/sempre-lab/sempre/internal/core"
-	"github.com/sempre-lab/sempre/internal/core/singbox"
-	"github.com/sempre-lab/sempre/internal/layout"
-	"github.com/sempre-lab/sempre/internal/service"
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/core/singbox"
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/service"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 type Change struct {
@@ -79,6 +81,66 @@ func (manager *Manager) CoreIDs() []string {
 	ids := manager.registry.IDs()
 	sort.Strings(ids)
 	return ids
+}
+
+func acquireOperationLocks(paths ...layout.Layout) (func(), error) {
+	type candidate struct {
+		key   string
+		paths layout.Layout
+	}
+	byKey := map[string]layout.Layout{}
+	for _, item := range paths {
+		key := filepath.Clean(item.OperationLock)
+		if runtime.GOOS == "windows" {
+			key = strings.ToLower(key)
+		}
+		byKey[key] = item
+	}
+	candidates := make([]candidate, 0, len(byKey))
+	for key, item := range byKey {
+		candidates = append(candidates, candidate{key: key, paths: item})
+	}
+	sort.Slice(candidates, func(left, right int) bool {
+		return candidates[left].key < candidates[right].key
+	})
+
+	leases := make([]*state.Lease, 0, len(candidates))
+	release := func() {
+		for index := len(leases) - 1; index >= 0; index-- {
+			leases[index].Release()
+		}
+	}
+	for _, item := range candidates {
+		lease, err := state.New(item.paths).AcquireOperation()
+		if err != nil {
+			release()
+			return nil, err
+		}
+		leases = append(leases, lease)
+	}
+	return release, nil
+}
+
+func (manager *Manager) withOperation(action func() error) error {
+	release, err := acquireOperationLocks(manager.paths)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return action()
+}
+
+func (manager *Manager) withSystemOperation(action func() error) error {
+	systemPaths, err := layout.ForMode(layout.System)
+	if err != nil {
+		return err
+	}
+	release, err := acquireOperationLocks(manager.paths, systemPaths)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return action()
 }
 
 func (manager *Manager) active(document state.Document) (state.Deployment, core.Adapter, error) {

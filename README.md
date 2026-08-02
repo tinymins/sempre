@@ -11,6 +11,13 @@ first supported core is [sing-box](https://github.com/SagerNet/sing-box).
 Sempre is an independent community project. It is not affiliated with
 SagerNet, Project X, MetaCubeX, or their respective projects.
 
+> [!WARNING]
+> Sempre is pre-1.0 software that installs a privileged system service and
+> manages network proxy processes. Review release notes, keep a working
+> recovery path, and test upgrades on a non-critical machine first. Initial
+> v0.1 binaries are not code-signed; verify checksums and GitHub attestations
+> before running them.
+
 ## Why
 
 Sempre replaces platform-specific wrapper scripts and third-party service
@@ -67,17 +74,22 @@ also select a mode for one invocation with `--portable` or `--system`;
 ## Downloads
 
 Canonical releases are published at
-[github.com/sempre-lab/sempre/releases](https://github.com/sempre-lab/sempre/releases).
+[github.com/tinymins/sempre/releases](https://github.com/tinymins/sempre/releases).
 The latest binaries have stable asset URLs:
 
 | Platform | amd64 | arm64 |
 | --- | --- | --- |
-| Windows | [Download](https://github.com/sempre-lab/sempre/releases/latest/download/sempre-windows-amd64.exe) | [Download](https://github.com/sempre-lab/sempre/releases/latest/download/sempre-windows-arm64.exe) |
-| Linux | [Download](https://github.com/sempre-lab/sempre/releases/latest/download/sempre-linux-amd64) | [Download](https://github.com/sempre-lab/sempre/releases/latest/download/sempre-linux-arm64) |
-| macOS | [Download](https://github.com/sempre-lab/sempre/releases/latest/download/sempre-darwin-amd64) | [Download](https://github.com/sempre-lab/sempre/releases/latest/download/sempre-darwin-arm64) |
+| Windows | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-windows-amd64.exe) | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-windows-arm64.exe) |
+| Linux | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-linux-amd64) | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-linux-arm64) |
+| macOS | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-darwin-amd64) | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-darwin-arm64) |
 
 Release checksums are available from
-[`SHA256SUMS`](https://github.com/sempre-lab/sempre/releases/latest/download/SHA256SUMS).
+[`SHA256SUMS`](https://github.com/tinymins/sempre/releases/latest/download/SHA256SUMS).
+Each target also includes a CycloneDX JSON SBOM. Verify build provenance with:
+
+```text
+gh attestation verify <downloaded-binary> --repo tinymins/sempre
+```
 
 ## Core Versions
 
@@ -253,13 +265,20 @@ Go 1.25 or newer is required. The build is pure Go and uses `CGO_ENABLED=0`.
 
 ```text
 go test ./...
+go test -race ./...
 go vet ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 go run ./cmd/build
 ```
 
 The build command emits Windows, Linux, and macOS binaries for amd64 and arm64,
 plus `dist/SHA256SUMS`. Windows resources use an `asInvoker` manifest; UAC is
 requested at runtime only for privileged commands.
+
+Tagged release builds use Go 1.25.12, derive their embedded build date from the
+Git commit timestamp, publish per-target CycloneDX SBOMs, and attach GitHub
+artifact attestations. Release binaries are currently unsigned at the operating
+system level.
 
 Sempre itself does not redistribute sing-box. Core releases are downloaded at
 runtime from the official GitHub release and verified against the SHA-256

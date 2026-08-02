@@ -4,9 +4,11 @@ package service
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,12 +16,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sempre-lab/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 const (
-	launchdLabel = "io.github.sempre-lab.sempre"
-	launchdPlist = "/Library/LaunchDaemons/io.github.sempre-lab.sempre.plist"
+	launchdLabel = "io.github.tinymins.sempre"
+	launchdPlist = "/Library/LaunchDaemons/io.github.tinymins.sempre.plist"
 )
 
 type darwinController struct{}
@@ -36,6 +38,21 @@ func (darwinController) Install(ctx context.Context, executable, workingDirector
 	if err != nil {
 		return err
 	}
+	plist, err := renderLaunchdPlist(executable, workingDirectory)
+	if err != nil {
+		return err
+	}
+	_, _ = exec.CommandContext(ctx, "launchctl", "bootout", "system/"+launchdLabel).CombinedOutput()
+	if err := state.WriteAtomic(launchdPlist, plist, 0o644); err != nil {
+		return err
+	}
+	if err := runCommand(ctx, "launchctl", "bootstrap", "system", launchdPlist); err != nil {
+		return err
+	}
+	return runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel)
+}
+
+func renderLaunchdPlist(executable, workingDirectory string) ([]byte, error) {
 	escape := html.EscapeString
 	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -52,14 +69,16 @@ func (darwinController) Install(ctx context.Context, executable, workingDirector
 </dict>
 </plist>
 `, launchdLabel, escape(executable), escape(workingDirectory))
-	_, _ = exec.CommandContext(ctx, "launchctl", "bootout", "system/"+launchdLabel).CombinedOutput()
-	if err := state.WriteAtomic(launchdPlist, []byte(plist), 0o644); err != nil {
-		return err
+	decoder := xml.NewDecoder(strings.NewReader(plist))
+	for {
+		if _, err := decoder.Token(); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("generate launchd plist: %w", err)
+		}
 	}
-	if err := runCommand(ctx, "launchctl", "bootstrap", "system", launchdPlist); err != nil {
-		return err
-	}
-	return runCommand(ctx, "launchctl", "enable", "system/"+launchdLabel)
+	return []byte(plist), nil
 }
 
 func (controller darwinController) Uninstall(ctx context.Context) error {

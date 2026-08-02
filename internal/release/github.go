@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sempre-lab/sempre/internal/buildinfo"
+	"github.com/tinymins/sempre/internal/buildinfo"
 )
 
 type Asset struct {

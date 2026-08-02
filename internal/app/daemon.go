@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sempre-lab/sempre/internal/core"
-	"github.com/sempre-lab/sempre/internal/state"
-	"github.com/sempre-lab/sempre/internal/supervisor"
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/supervisor"
 )
 
 func (manager *Manager) RunDaemon(ctx context.Context) error {

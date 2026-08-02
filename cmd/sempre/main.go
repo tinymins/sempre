@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/sempre-lab/sempre/internal/cli"
+	"github.com/tinymins/sempre/internal/cli"
 )
 
 func main() {

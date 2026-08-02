@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"time"
 )
 
 type target struct {
@@ -87,12 +86,12 @@ func build() error {
 		version = "dev"
 	}
 	commit := gitOutput(root, "rev-parse", "--short=12", "HEAD")
-	date := time.Now().UTC().Format(time.RFC3339)
+	date := gitOutput(root, "show", "-s", "--format=%cI", "HEAD")
 	ldflags := strings.Join([]string{
 		"-s", "-w",
-		"-X", "github.com/sempre-lab/sempre/internal/buildinfo.Version=" + version,
-		"-X", "github.com/sempre-lab/sempre/internal/buildinfo.Commit=" + commit,
-		"-X", "github.com/sempre-lab/sempre/internal/buildinfo.Date=" + date,
+		"-X", "github.com/tinymins/sempre/internal/buildinfo.Version=" + version,
+		"-X", "github.com/tinymins/sempre/internal/buildinfo.Commit=" + commit,
+		"-X", "github.com/tinymins/sempre/internal/buildinfo.Date=" + date,
 	}, " ")
 	targets := []target{
 		{"windows", "amd64", "sempre-windows-amd64.exe"},

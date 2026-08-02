@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/sempre-lab/sempre/internal/core"
-	"github.com/sempre-lab/sempre/internal/release"
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/release"
 )
 
 const repository = "SagerNet/sing-box"

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/sempre-lab/sempre/internal/fileowner"
+	"github.com/tinymins/sempre/internal/fileowner"
 )
 
 type RollingWriter struct {

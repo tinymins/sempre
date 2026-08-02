@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sempre-lab/sempre/internal/buildinfo"
+	"github.com/tinymins/sempre/internal/buildinfo"
 )
 
 const MaxArtifactSize = int64(512 << 20)

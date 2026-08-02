@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/sempre-lab/sempre/internal/elevate"
-	"github.com/sempre-lab/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/elevate"
+	"github.com/tinymins/sempre/internal/layout"
 )
 
 func (command *CLI) menu(ctx context.Context, options Options) int {
