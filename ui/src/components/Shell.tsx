@@ -55,12 +55,11 @@ export function Shell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="border-t border-[var(--border)] p-3">
-          <div className="mb-2 flex items-center justify-between px-2"><span className="text-xs text-[var(--muted)]">{t('core')}</span><Badge tone={runtime === 'running' ? 'success' : runtime === 'idle' ? 'warning' : 'neutral'}>{runtime}</Badge></div>
-          <Button className="w-full justify-start" variant="ghost" onClick={() => setSession(null)}><LogOut size={16} />{t('logout')}</Button>
+          <div className="flex items-center justify-between px-2"><span className="text-xs text-[var(--muted)]">{t('core')}</span><Badge tone={runtime === 'running' ? 'success' : runtime === 'idle' ? 'warning' : 'neutral'}>{runtime}</Badge></div>
         </div>
       </aside>
       <div className="lg:pl-56">
-        <header className="sticky top-0 z-20 flex h-14 items-center border-b border-[var(--border)] bg-[color:var(--background)]/95 px-4 backdrop-blur md:px-6">
+        <header className="sticky top-0 z-20 flex h-16 items-center border-b border-[var(--border)] bg-[color:var(--background)]/95 px-4 backdrop-blur md:px-6">
           <Button className="mr-2 lg:hidden" size="icon" variant="ghost" title="Menu" onClick={() => setMobileOpen(true)}><Menu size={19} /></Button>
           <div className="flex items-center gap-2 text-sm"><span className={cn('size-2 rounded-full', runtime === 'running' ? 'bg-emerald-500' : runtime === 'idle' ? 'bg-amber-500' : 'bg-zinc-400')} /><span className="hidden text-[var(--muted)] sm:inline">{system.data?.active ? `${system.data.active.core} ${system.data.active.version}` : t('noCore')}</span></div>
           <div className="ml-auto flex items-center gap-1">
@@ -68,6 +67,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <Button size="icon" variant="ghost" title={t('theme')} onClick={() => setTheme(theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system')}>
               {theme === 'dark' ? <Moon size={18} /> : theme === 'light' ? <Sun size={18} /> : <CircleGauge size={18} />}
             </Button>
+            <Button size="icon" variant="ghost" title={t('logout')} aria-label={t('logout')} onClick={() => setSession(null)}><LogOut size={18} /></Button>
           </div>
         </header>
         {system.data?.web.password_warning || session?.warning === 'PASSWORD_EMPTY' ? <div className="border-b border-amber-400/40 bg-amber-400/12 px-4 py-2 text-center text-xs font-medium text-amber-800 dark:text-amber-300">{t('emptyPassword')}</div> : null}
