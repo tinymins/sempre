@@ -240,6 +240,30 @@ func TestEmptySystemStateDoesNotRequireConfirmation(t *testing.T) {
 	}
 }
 
+func TestInstallMergeCopiesDeploymentIntoEmptySystemState(t *testing.T) {
+	t.Parallel()
+	source := state.NewDocument()
+	sourceState := source.Core("sing-box").Source("")
+	sourceState.Channels["stable"] = "1.2.3"
+	sourceState.Installed["1.2.3"] = &state.Installation{}
+	source.Selected = &state.Selection{Core: "sing-box", Ref: "stable"}
+	source.Active = &state.Deployment{
+		Core:       "sing-box",
+		Ref:        "stable",
+		Version:    "1.2.3",
+		ConfigHash: testHashA,
+	}
+	source.Configs["sing-box"] = testHashA
+
+	merged := mergeInstallDocument(source, state.NewDocument())
+	if merged.Selected == nil || *merged.Selected != *source.Selected {
+		t.Fatalf("selected = %#v", merged.Selected)
+	}
+	if merged.Active == nil || *merged.Active != *source.Active {
+		t.Fatalf("active = %#v", merged.Active)
+	}
+}
+
 func TestMeaningfulSystemStateRequiresConfirmation(t *testing.T) {
 	t.Parallel()
 	document := state.NewDocument()

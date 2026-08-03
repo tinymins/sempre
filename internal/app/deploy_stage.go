@@ -142,6 +142,7 @@ func (manager *Manager) stageMergedDirectory(source, target string, mode os.File
 func mergeInstallDocument(source, existing state.Document) state.Document {
 	source.Normalize()
 	existing.Normalize()
+	hadExistingState := meaningfulState(existing)
 	result := existing
 	for coreID, sourceCore := range source.Cores {
 		targetCore := result.Core(coreID)
@@ -163,7 +164,7 @@ func mergeInstallDocument(source, existing state.Document) state.Document {
 			result.Configs[coreID] = hash
 		}
 	}
-	if !meaningfulState(existing) {
+	if !hadExistingState {
 		result.Selected = source.Selected
 		result.Active = source.Active
 		result.Previous = source.Previous
