@@ -143,6 +143,13 @@ func (manager *Manager) deployToSystem(
 			return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
 		}
 	}
+	if install || component == DeployAll || component == DeployBin {
+		if err := recoverExecutableBackup(target.ServiceExecutable); err != nil {
+			cleanupCtx, cancel := deploymentCleanupContext(ctx)
+			defer cancel()
+			return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
+		}
+	}
 	if err := activateSwaps(operations); err != nil {
 		cleanupCtx, cancel := deploymentCleanupContext(ctx)
 		defer cancel()
@@ -230,6 +237,11 @@ func (manager *Manager) replaceSystemExecutable(ctx context.Context, target layo
 			defer cancel()
 			return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
 		}
+	}
+	if err := recoverExecutableBackup(target.ServiceExecutable); err != nil {
+		cleanupCtx, cancel := deploymentCleanupContext(ctx)
+		defer cancel()
+		return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
 	}
 	if err := activateSwaps(operations); err != nil {
 		cleanupCtx, cancel := deploymentCleanupContext(ctx)

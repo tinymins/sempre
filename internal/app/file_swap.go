@@ -173,7 +173,7 @@ func (operation *swapOperation) renameFile(source, target string) error {
 	if operation.rename != nil {
 		return operation.rename(source, target)
 	}
-	return os.Rename(source, target)
+	return renamePath(source, target)
 }
 
 func (operation *swapOperation) removePath(path string) error {
@@ -196,6 +196,44 @@ func unusedSibling(target, pattern string) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+func recoverExecutableBackup(target string) error {
+	if _, err := os.Stat(target); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect executable %s: %w", target, err)
+	}
+
+	candidates, err := filepath.Glob(filepath.Join(filepath.Dir(target), ".sempre-backup-*"))
+	if err != nil {
+		return fmt.Errorf("locate executable backup: %w", err)
+	}
+	var newest string
+	var newestInfo fs.FileInfo
+	for _, candidate := range candidates {
+		info, statErr := os.Lstat(candidate)
+		if errors.Is(statErr, os.ErrNotExist) {
+			continue
+		}
+		if statErr != nil {
+			return fmt.Errorf("inspect executable backup %s: %w", candidate, statErr)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		if newestInfo == nil || info.ModTime().After(newestInfo.ModTime()) {
+			newest = candidate
+			newestInfo = info
+		}
+	}
+	if newest == "" {
+		return nil
+	}
+	if err := renamePath(newest, target); err != nil {
+		return fmt.Errorf("recover interrupted executable deployment from %s: %w", newest, err)
+	}
+	return nil
 }
 
 func cleanupStaged(operations []*swapOperation) {
