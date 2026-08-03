@@ -38,6 +38,7 @@ export function RuntimeControlPanel() {
   const value = status.data
   const runtimeState = value?.runtime_state || 'idle'
   const desiredState = value?.desired_state || 'running'
+  const deployment = value?.active || value?.target
   const tone = runtimeTone(runtimeState)
   const actionPending = action.isPending ? action.variables : null
 
@@ -66,11 +67,11 @@ export function RuntimeControlPanel() {
       <div className="grid gap-x-5 gap-y-4 p-4 sm:grid-cols-2 md:p-5 lg:grid-cols-4">
         <RuntimeInfo label={t('desiredState')} value={desiredState === 'running' ? t('running') : t('stopped')} />
         <RuntimeInfo label={t('actualState')} value={runtimeLabel(runtimeState, t)} />
-        <RuntimeInfo label={t('core')} value={value?.active?.exact_reference || '-'} mono />
-        <RuntimeInfo label={t('source')} value={value?.active ? value.active.repository || t('official') : '-'} mono />
-        <RuntimeInfo label={t('selectedReference')} value={value?.active?.ref || '-'} mono />
-        <RuntimeInfo label={t('version')} value={value?.active?.version || '-'} mono />
-        <RuntimeInfo label={t('configuration')} value={compactHash(value?.active?.config_hash)} mono />
+        <RuntimeInfo label={t('core')} value={deployment?.exact_reference || '-'} mono />
+        <RuntimeInfo label={t('source')} value={deployment ? deployment.repository || t('official') : '-'} mono />
+        <RuntimeInfo label={t('selectedReference')} value={deployment?.ref || '-'} mono />
+        <RuntimeInfo label={t('version')} value={deployment?.version || '-'} mono />
+        <RuntimeInfo label={t('configuration')} value={compactHash(deployment?.config_hash)} mono />
         <RuntimeInfo label="PID" value={value?.pid ? String(value.pid) : '-'} />
         <RuntimeInfo label={t('runtimeUptime')} value={formatDuration(value?.uptime_seconds)} />
         <RuntimeInfo label={t('restarts')} value={String(value?.restart_count || 0)} />

@@ -28,6 +28,9 @@ func TestManagedRuntimeStatusExplainsMissingDeployment(t *testing.T) {
 	if status.Actions.Start.Allowed || status.Actions.Start.Reason == "" || status.Actions.Restart.Allowed {
 		t.Fatalf("actions = %#v", status.Actions)
 	}
+	if !status.Actions.Stop.Allowed {
+		t.Fatalf("stop must remain available while desired state is running: %#v", status.Actions)
+	}
 	if _, err := manager.ManagedRuntimeAction(RuntimeStart); err == nil {
 		t.Fatal("start without an active deployment succeeded")
 	} else {
@@ -35,6 +38,60 @@ func TestManagedRuntimeStatusExplainsMissingDeployment(t *testing.T) {
 		if !errors.As(err, &actionError) || actionError.Code != "RUNTIME_NOT_READY" {
 			t.Fatalf("start error = %v", err)
 		}
+	}
+}
+
+func TestManagedRuntimeActionsRecoverInitialFailure(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{RuntimeStart, RuntimeRestart} {
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+			manager := failedInitialRuntimeManager(t)
+			before, err := manager.ManagedRuntimeStatus()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if before.RuntimeState != "failed" || before.Active != nil || before.Target == nil {
+				t.Fatalf("failed status = %#v", before)
+			}
+			if !before.Actions.Start.Allowed || !before.Actions.Stop.Allowed || !before.Actions.Restart.Allowed {
+				t.Fatalf("failed actions = %#v", before.Actions)
+			}
+
+			after, err := manager.ManagedRuntimeAction(action)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expectedState := "starting"
+			if action == RuntimeRestart {
+				expectedState = "restarting"
+			}
+			if after.RuntimeState != expectedState || after.Active == nil || !after.Pending {
+				t.Fatalf("%s status = %#v", action, after)
+			}
+			document, err := manager.store.Read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if document.Active == nil || document.Active.ConfigHash != testHashA || !document.Pending {
+				t.Fatalf("%s document = %#v", action, document)
+			}
+		})
+	}
+}
+
+func TestManagedRuntimeStopPersistsAfterInitialFailure(t *testing.T) {
+	t.Parallel()
+	manager := failedInitialRuntimeManager(t)
+	status, err := manager.ManagedRuntimeAction(RuntimeStop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.DesiredState != state.DesiredStopped || status.RuntimeState != "stopped" || status.Active != nil {
+		t.Fatalf("stopped status = %#v", status)
+	}
+	if status.Actions.Stop.Allowed || !status.Actions.Start.Allowed || !status.Actions.Restart.Allowed {
+		t.Fatalf("stopped actions = %#v", status.Actions)
 	}
 }
 
@@ -272,6 +329,23 @@ func readyRuntimeManager(t *testing.T) *Manager {
 			Version:    "1.2.3",
 			ConfigHash: testHashA,
 		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return manager
+}
+
+func failedInitialRuntimeManager(t *testing.T) *Manager {
+	t.Helper()
+	manager := readyRuntimeManager(t)
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Active = nil
+		document.Pending = false
+		document.LastError = "startup failed: exit status 1"
+		document.Runtime.State = "failed"
+		document.Runtime.PID = 0
+		document.Runtime.LastError = "exit status 1"
 		return nil
 	}); err != nil {
 		t.Fatal(err)

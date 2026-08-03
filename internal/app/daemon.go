@@ -36,11 +36,11 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err != nil {
 					return supervisor.Plan{}, err
 				}
-				if document.Active == nil {
-					return supervisor.Plan{}, supervisor.ErrIdle
-				}
 				if document.DesiredState == state.DesiredStopped {
 					return supervisor.Plan{}, supervisor.ErrStopped
+				}
+				if document.Active == nil {
+					return supervisor.Plan{}, supervisor.ErrIdle
 				}
 				deployment, adapter, err := manager.active(document)
 				if err != nil {
@@ -226,6 +226,18 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				logf("managed core stopped")
 				return manager.store.Update(func(document *state.Document) error {
 					if document.Active == nil {
+						if document.DesiredState == state.DesiredStopped {
+							document.Runtime.State = "stopped"
+							document.Runtime.PID = 0
+							document.Runtime.LastExit = "stopped by user"
+							document.Runtime.LastTransition = time.Now().UTC()
+							return nil
+						}
+						if document.Runtime.LastError != "" || document.LastError != "" {
+							document.Runtime.State = "failed"
+							document.Runtime.PID = 0
+							return nil
+						}
 						if document.Runtime.State == "idle" && document.Runtime.PID == 0 {
 							return nil
 						}
@@ -254,8 +266,8 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				_ = os.Remove(manager.paths.CoreControl)
 				logf("waiting for an active core deployment")
 				return manager.store.Update(func(document *state.Document) error {
-					if document.Runtime.State == "failed" &&
-						(document.Runtime.LastError != "" || document.LastError != "") {
+					if document.Runtime.LastError != "" || document.LastError != "" {
+						document.Runtime.State = "failed"
 						document.Runtime.PID = 0
 						return nil
 					}

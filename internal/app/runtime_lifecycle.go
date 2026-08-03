@@ -39,6 +39,7 @@ type RuntimeStatus struct {
 	DesiredState   string             `json:"desired_state"`
 	RuntimeState   string             `json:"runtime_state"`
 	Active         *RuntimeDeployment `json:"active"`
+	Target         *RuntimeDeployment `json:"target,omitempty"`
 	PID            int                `json:"pid"`
 	StartedAt      *time.Time         `json:"started_at"`
 	UptimeSeconds  int64              `json:"uptime_seconds"`
@@ -76,7 +77,7 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 		return RuntimeStatus{}, err
 	}
 	current := manager.runtimeStatusValue(document)
-	readyErr := manager.runtimeReadiness(document)
+	deployment, readyErr := manager.runtimeDeployment(document)
 
 	switch action {
 	case RuntimeStart:
@@ -88,6 +89,9 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 			return current, nil
 		}
 		err = manager.store.Update(func(document *state.Document) error {
+			if err := manager.ensureRuntimeDeployment(document, deployment); err != nil {
+				return err
+			}
 			document.DesiredState = state.DesiredRunning
 			if document.Runtime.State == "stopping" {
 				document.Runtime.State = "restarting"
@@ -95,18 +99,20 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 				document.Runtime.State = "starting"
 			}
 			document.Runtime.PID = 0
+			document.Runtime.LastError = ""
 			document.Runtime.LastTransition = time.Now().UTC()
 			return nil
 		})
 	case RuntimeStop:
-		if document.DesiredState == state.DesiredStopped &&
-			(document.Runtime.State == "stopped" || document.Runtime.State == "idle") {
+		if document.DesiredState == state.DesiredStopped {
 			return current, nil
 		}
 		err = manager.store.Update(func(document *state.Document) error {
 			document.DesiredState = state.DesiredStopped
 			if document.Active == nil {
-				document.Runtime = state.Runtime{State: "idle", LastTransition: time.Now().UTC()}
+				document.Runtime.State = "stopped"
+				document.Runtime.PID = 0
+				document.Runtime.LastTransition = time.Now().UTC()
 			} else if document.Runtime.PID > 0 || isRuntimeTransition(document.Runtime.State) || document.Runtime.State == "running" {
 				document.Runtime.State = "stopping"
 				document.Runtime.LastTransition = time.Now().UTC()
@@ -125,6 +131,9 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 			return current, nil
 		}
 		err = manager.store.Update(func(document *state.Document) error {
+			if err := manager.ensureRuntimeDeployment(document, deployment); err != nil {
+				return err
+			}
 			document.DesiredState = state.DesiredRunning
 			if document.Runtime.PID > 0 || document.Runtime.State == "running" {
 				document.Runtime.State = "stopping"
@@ -132,6 +141,7 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 				document.Runtime.State = "restarting"
 				document.Runtime.PID = 0
 			}
+			document.Runtime.LastError = ""
 			document.Runtime.LastTransition = time.Now().UTC()
 			return nil
 		})
@@ -146,6 +156,7 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 }
 
 func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatus {
+	deployment, readyErr := manager.runtimeDeployment(document)
 	runtimeState := document.Runtime.State
 	if runtimeState == "" {
 		if document.Active == nil {
@@ -160,6 +171,9 @@ func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatu
 	if lastError == "" {
 		lastError = document.LastError
 	}
+	if runtimeState == "idle" && document.DesiredState == state.DesiredRunning && lastError != "" && readyErr == nil {
+		runtimeState = "failed"
+	}
 	if document.Runtime.PID > 0 && !processAlive(document.Runtime.PID) {
 		runtimeState = "failed"
 		lastError = fmt.Sprintf("recorded PID %d is not running", document.Runtime.PID)
@@ -172,17 +186,12 @@ func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatu
 		Pending:      document.Pending,
 		LastExit:     document.Runtime.LastExit,
 		LastError:    lastError,
-		Actions:      manager.runtimeActions(document, runtimeState),
+		Actions:      manager.runtimeActions(document, runtimeState, readyErr),
 	}
 	if document.Active != nil {
-		status.Active = &RuntimeDeployment{
-			Core:           document.Active.Core,
-			Repository:     document.Active.Repository,
-			Ref:            document.Active.Ref,
-			Version:        document.Active.Version,
-			ExactReference: exactRef(core.Ref{Core: document.Active.Core, Repository: document.Active.Repository}, document.Active.Version).String(),
-			ConfigHash:     document.Active.ConfigHash,
-		}
+		status.Active = runtimeDeploymentValue(*document.Active)
+	} else if readyErr == nil {
+		status.Target = runtimeDeploymentValue(deployment)
 	}
 	if !document.Runtime.StartedAt.IsZero() {
 		started := document.Runtime.StartedAt
@@ -198,15 +207,14 @@ func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatu
 	return status
 }
 
-func (manager *Manager) runtimeActions(document state.Document, runtimeState string) RuntimeActions {
-	readyErr := manager.runtimeReadiness(document)
+func (manager *Manager) runtimeActions(document state.Document, runtimeState string, readyErr error) RuntimeActions {
 	readyReason := ""
 	if readyErr != nil {
 		readyReason = readyErr.Error()
 	}
 	start := RuntimeActionAvailability{Allowed: readyErr == nil}
 	restart := RuntimeActionAvailability{Allowed: readyErr == nil}
-	stop := RuntimeActionAvailability{Allowed: document.DesiredState == state.DesiredRunning && runtimeState != "idle"}
+	stop := RuntimeActionAvailability{Allowed: document.DesiredState == state.DesiredRunning}
 	if readyErr != nil {
 		start.Reason = readyReason
 		restart.Reason = readyReason
@@ -230,25 +238,63 @@ func (manager *Manager) runtimeActions(document state.Document, runtimeState str
 	if document.DesiredState == state.DesiredStopped {
 		stop.Allowed = false
 		stop.Reason = "managed core is already stopped"
-	} else if runtimeState == "idle" {
-		stop.Reason = "no active core deployment is available"
 	}
 	return RuntimeActions{Start: start, Stop: stop, Restart: restart}
 }
 
 func (manager *Manager) runtimeReadiness(document state.Document) error {
-	if document.Active == nil {
-		return fmt.Errorf("no active core deployment; select a core and import a configuration first")
+	_, err := manager.runtimeDeployment(document)
+	return err
+}
+
+func (manager *Manager) runtimeDeployment(document state.Document) (state.Deployment, error) {
+	var deployment state.Deployment
+	if document.Active != nil {
+		deployment = *document.Active
+	} else {
+		var err error
+		deployment, _, err = manager.configurationTarget(document)
+		if err != nil {
+			return state.Deployment{}, err
+		}
+		if deployment.ConfigHash == "" {
+			return state.Deployment{}, fmt.Errorf("no active configuration; import a configuration first")
+		}
 	}
-	binary := manager.paths.CoreBinary(document.Active.Core, document.Active.Repository, document.Active.Version)
+	binary := manager.paths.CoreBinary(deployment.Core, deployment.Repository, deployment.Version)
 	if _, err := os.Stat(binary); err != nil {
-		return fmt.Errorf("active core binary is unavailable: %w", err)
+		return state.Deployment{}, fmt.Errorf("managed core binary is unavailable: %w", err)
 	}
-	config := manager.paths.Config(document.Active.Core, document.Active.ConfigHash)
+	config := manager.paths.Config(deployment.Core, deployment.ConfigHash)
 	if _, err := os.Stat(config); err != nil {
-		return fmt.Errorf("active configuration is unavailable: %w", err)
+		return state.Deployment{}, fmt.Errorf("managed configuration is unavailable: %w", err)
+	}
+	return deployment, nil
+}
+
+func (manager *Manager) ensureRuntimeDeployment(document *state.Document, expected state.Deployment) error {
+	current, err := manager.runtimeDeployment(*document)
+	if err != nil {
+		return err
+	}
+	if current != expected {
+		return fmt.Errorf("managed core deployment changed while applying the runtime action; retry the action")
+	}
+	if document.Active == nil {
+		document.Stage(current)
 	}
 	return nil
+}
+
+func runtimeDeploymentValue(deployment state.Deployment) *RuntimeDeployment {
+	return &RuntimeDeployment{
+		Core:           deployment.Core,
+		Repository:     deployment.Repository,
+		Ref:            deployment.Ref,
+		Version:        deployment.Version,
+		ExactReference: exactRef(core.Ref{Core: deployment.Core, Repository: deployment.Repository}, deployment.Version).String(),
+		ConfigHash:     deployment.ConfigHash,
+	}
 }
 
 func runtimeActionFailure(code string, err error) *RuntimeActionError {

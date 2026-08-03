@@ -29,17 +29,20 @@ export interface RuntimeActionAvailability {
   reason?: string
 }
 
+export interface ManagedRuntimeDeployment {
+  core: string
+  repository?: string
+  ref: string
+  version: string
+  exact_reference: string
+  config_hash: string
+}
+
 export interface ManagedRuntimeStatus {
   desired_state: 'running' | 'stopped'
   runtime_state: 'idle' | 'stopped' | 'starting' | 'running' | 'stopping' | 'restarting' | 'failed'
-  active: null | {
-    core: string
-    repository?: string
-    ref: string
-    version: string
-    exact_reference: string
-    config_hash: string
-  }
+  active: ManagedRuntimeDeployment | null
+  target?: ManagedRuntimeDeployment
   pid: number
   started_at: string | null
   uptime_seconds: number

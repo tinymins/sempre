@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
@@ -31,13 +31,32 @@ const runningStatus: ManagedRuntimeStatus = {
   },
 }
 
+const retryableFailureStatus: ManagedRuntimeStatus = {
+  ...runningStatus,
+  runtime_state: 'failed',
+  active: null,
+  target: runningStatus.active!,
+  pid: 0,
+  started_at: null,
+  uptime_seconds: 0,
+  last_error: 'startup failed: exit status 1',
+  actions: {
+    start: { allowed: true },
+    stop: { allowed: true },
+    restart: { allowed: true },
+  },
+}
+
 describe('RuntimeControlPanel', () => {
   beforeEach(() => {
     localStorage.setItem('sempre.locale', 'en')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
   })
 
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
 
   it('confirms a managed-core stop and applies the accepted status', async () => {
     let current = runningStatus
@@ -71,6 +90,30 @@ describe('RuntimeControlPanel', () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/stop', expect.objectContaining({ method: 'POST' })))
     await waitFor(() => expect(screen.getAllByText('Stopped').length).toBeGreaterThan(0))
+  })
+
+  it('keeps all lifecycle actions available after a retryable startup failure', async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/runtime/restart') && init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          action: 'restart',
+          status: { ...retryableFailureStatus, runtime_state: 'restarting', active: retryableFailureStatus.target, pending: true },
+        }), { status: 202, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify(retryableFailureStatus), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetch)
+    renderRuntimePanel()
+
+    const start = await screen.findByRole('button', { name: 'Start managed core' })
+    await waitFor(() => expect(start).toBeEnabled())
+    expect(screen.getByRole('button', { name: 'Stop managed core' })).toBeEnabled()
+    const restart = screen.getByRole('button', { name: 'Restart managed core' })
+    expect(restart).toBeEnabled()
+    fireEvent.click(restart)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/restart', expect.objectContaining({ method: 'POST' })))
   })
 })
 
