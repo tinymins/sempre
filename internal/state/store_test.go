@@ -22,9 +22,9 @@ func TestStoreInitializesAndPersists(t *testing.T) {
 	}
 	if err := store.Update(func(document *Document) error {
 		document.Subscription.URL = "https://example.com/config.json?token=secret"
-		coreState := document.Core("sing-box")
-		coreState.Installed["1.2.3"] = &Installation{}
-		coreState.Channels["stable"] = "1.2.3"
+		source := document.Core("sing-box").Source("")
+		source.Installed["1.2.3"] = &Installation{}
+		source.Channels["stable"] = "1.2.3"
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestStoreInitializesAndPersists(t *testing.T) {
 	if document.Subscription.Interval != "24h" {
 		t.Fatalf("interval = %q", document.Subscription.Interval)
 	}
-	if got := document.Cores["sing-box"].Channels["stable"]; got != "1.2.3" {
+	if got := document.Cores["sing-box"].Default.Channels["stable"]; got != "1.2.3" {
 		t.Fatalf("stable = %q", got)
 	}
 	info, err := os.Stat(paths.State)
@@ -99,6 +99,24 @@ func TestStoreMigratesSelectedCoreFromSchemaOne(t *testing.T) {
 		document.Selected.Ref != "1.2.3" {
 		t.Fatalf("migrated document = %#v", document)
 	}
+	if document.Cores["sing-box"].Default.Installed["1.2.3"] == nil || document.Cores["sing-box"].Default.Channels["stable"] != "1.2.3" {
+		t.Fatalf("legacy source was not migrated to default: %#v", document.Cores["sing-box"])
+	}
+}
+
+func TestDocumentKeepsSameVersionInDifferentRepositories(t *testing.T) {
+	t.Parallel()
+	document := NewDocument()
+	coreState := document.Core("sing-box")
+	coreState.Source("").Installed["1.2.3"] = &Installation{}
+	coreState.Source("tinymins/sing-box").Installed["1.2.3"] = &Installation{}
+	document.Selected = &Selection{Core: "sing-box", Repository: "tinymins/sing-box", Ref: "1.2.3"}
+	if err := document.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if coreState.Default.Installed["1.2.3"] == coreState.Custom["tinymins/sing-box"].Installed["1.2.3"] {
+		t.Fatal("repositories share installation state")
+	}
 }
 
 func TestInitializeRecoversValidPreviousState(t *testing.T) {
@@ -140,8 +158,7 @@ func TestStoreRejectsUnsafePersistedPaths(t *testing.T) {
 	}
 	document := NewDocument()
 	document.Cores["../escape"] = &CoreState{
-		Channels:  map[string]string{},
-		Installed: map[string]*Installation{},
+		Default: SourceState{Channels: map[string]string{}, Installed: map[string]*Installation{}},
 	}
 	data, err := json.Marshal(document)
 	if err != nil {
@@ -155,12 +172,24 @@ func TestStoreRejectsUnsafePersistedPaths(t *testing.T) {
 	}
 }
 
+func TestDocumentRejectsUnsafeRepositoryPath(t *testing.T) {
+	t.Parallel()
+	document := NewDocument()
+	document.Core("sing-box").Custom["tinymins/.."] = &SourceState{
+		Channels:  map[string]string{},
+		Installed: map[string]*Installation{},
+	}
+	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "invalid repository") {
+		t.Fatalf("unsafe repository error = %v", err)
+	}
+}
+
 func TestDocumentRejectsInvalidConfigurationHash(t *testing.T) {
 	t.Parallel()
 	document := NewDocument()
-	coreState := document.Core("sing-box")
-	coreState.Installed["1.2.3"] = &Installation{}
-	coreState.Channels["stable"] = "1.2.3"
+	source := document.Core("sing-box").Source("")
+	source.Installed["1.2.3"] = &Installation{}
+	source.Channels["stable"] = "1.2.3"
 	document.Configs["sing-box"] = "short"
 	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "invalid configuration hash") {
 		t.Fatalf("invalid hash error = %v", err)

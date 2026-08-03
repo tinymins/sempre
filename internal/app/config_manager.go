@@ -91,7 +91,7 @@ func (manager *Manager) ValidateConfigContent(ctx context.Context, data []byte) 
 	return manager.validateConfiguration(
 		ctx,
 		adapter,
-		manager.paths.CoreBinary(target.Core, target.Version),
+		manager.paths.CoreBinary(target.Core, target.Repository, target.Version),
 		path,
 		manager.output,
 		manager.errors,
@@ -343,7 +343,7 @@ func (manager *Manager) activateConfig(
 	if err != nil {
 		return Change{}, err
 	}
-	binary := manager.paths.CoreBinary(target.Core, target.Version)
+	binary := manager.paths.CoreBinary(target.Core, target.Repository, target.Version)
 	candidate, err := os.CreateTemp(manager.paths.Runtime, "config-candidate-*.json")
 	if err != nil {
 		return Change{}, err
@@ -384,6 +384,7 @@ func (manager *Manager) activateConfig(
 			return err
 		}
 		if currentTarget.Core != target.Core ||
+			currentTarget.Repository != target.Repository ||
 			currentTarget.Ref != target.Ref ||
 			currentTarget.Version != target.Version {
 			return fmt.Errorf("core selection changed while activating configuration; retry the command")

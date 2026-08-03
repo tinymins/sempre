@@ -247,12 +247,15 @@ func (paths Layout) EnsureInstanceLockDirectory() error {
 	return ensureRoot(filepath.Dir(paths.InstanceLock), paths.instanceLockMode, paths.test)
 }
 
-func (paths Layout) CoreVersionDir(core, version string) string {
-	return filepath.Join(paths.Cores, core, version)
+func (paths Layout) CoreVersionDir(core, repository, version string) string {
+	if repository == "" {
+		return filepath.Join(paths.Cores, core, version)
+	}
+	return filepath.Join(paths.Cores, core, "sources", filepath.FromSlash(repository), version)
 }
 
-func (paths Layout) CoreBinary(core, version string) string {
-	return filepath.Join(paths.CoreVersionDir(core, version), executableName(core))
+func (paths Layout) CoreBinary(core, repository, version string) string {
+	return filepath.Join(paths.CoreVersionDir(core, repository, version), executableName(core))
 }
 
 func (paths Layout) Config(core, hash string) string {

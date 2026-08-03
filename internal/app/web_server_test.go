@@ -133,6 +133,46 @@ func TestControlPlaneStaysAvailableWithoutCore(t *testing.T) {
 	}
 }
 
+func TestCoresAPIDistinguishesSameVersionRepositories(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Core("sing-box").Source("tinymins/sing-box").Installed["1.2.3"] = &state.Installation{Explicit: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	newAdminServer(manager).cores(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/cores", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var result struct {
+		Installed []struct {
+			Repository string `json:"repository"`
+			Reference  string `json:"reference"`
+			Official   bool   `json:"official"`
+			Version    string `json:"version"`
+		} `json:"installed"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Installed) != 2 {
+		t.Fatalf("installations = %#v", result.Installed)
+	}
+	byReference := map[string]bool{}
+	for _, item := range result.Installed {
+		byReference[item.Reference] = true
+		if item.Version != "1.2.3" {
+			t.Fatalf("version = %q", item.Version)
+		}
+	}
+	if !byReference["sing-box@1.2.3"] || !byReference["sing-box:tinymins/sing-box@1.2.3"] {
+		t.Fatalf("references = %#v", byReference)
+	}
+}
+
 func testJSONRequest(t *testing.T, method, target, origin, token string, body any) *http.Response {
 	t.Helper()
 	var input io.Reader

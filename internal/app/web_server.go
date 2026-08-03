@@ -23,6 +23,7 @@ import (
 
 	"github.com/tinymins/sempre/internal/buildinfo"
 	"github.com/tinymins/sempre/internal/control"
+	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/release"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
@@ -476,28 +477,47 @@ func (admin *adminServer) cores(writer http.ResponseWriter, request *http.Reques
 	}
 	type installation struct {
 		Core         string              `json:"core"`
+		Repository   string              `json:"repository"`
+		Reference    string              `json:"reference"`
+		Official     bool                `json:"official"`
 		Version      string              `json:"version"`
 		Channels     []string            `json:"channels"`
 		Installation *state.Installation `json:"installation"`
 	}
 	result := make([]installation, 0)
 	for coreID, coreState := range document.Cores {
-		for version, item := range coreState.Installed {
-			entry := installation{Core: coreID, Version: version, Channels: []string{}, Installation: item}
-			for channel, target := range coreState.Channels {
-				if target == version {
-					entry.Channels = append(entry.Channels, channel)
-				}
+		adapter, err := admin.manager.registry.Get(coreID)
+		if err != nil {
+			admin.internalError(writer, err)
+			return
+		}
+		for _, source := range coreState.SourceEntries() {
+			repository := source.Repository
+			official := repository == ""
+			if official {
+				repository = adapter.DefaultRepository()
 			}
-			sort.Strings(entry.Channels)
-			result = append(result, entry)
+			for version, item := range source.State.Installed {
+				reference := core.Ref{Core: coreID, Repository: source.Repository, Value: version}.String()
+				entry := installation{Core: coreID, Repository: repository, Reference: reference, Official: official, Version: version, Channels: []string{}, Installation: item}
+				for channel, target := range source.State.Channels {
+					if target == version {
+						entry.Channels = append(entry.Channels, channel)
+					}
+				}
+				sort.Strings(entry.Channels)
+				result = append(result, entry)
+			}
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {
-		if result[i].Core == result[j].Core {
-			return result[i].Version < result[j].Version
+		if result[i].Core != result[j].Core {
+			return result[i].Core < result[j].Core
 		}
-		return result[i].Core < result[j].Core
+		if result[i].Repository != result[j].Repository {
+			return result[i].Repository < result[j].Repository
+		}
+		return result[i].Version < result[j].Version
 	})
 	apiWriteJSON(writer, http.StatusOK, map[string]any{
 		"supported": admin.manager.CoreIDs(), "installed": result,

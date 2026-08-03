@@ -33,7 +33,9 @@ var (
 
 func (fakeAdapter) ID() string { return "sing-box" }
 
-func (fakeAdapter) Resolve(context.Context, string, core.Target) (core.Package, error) {
+func (fakeAdapter) DefaultRepository() string { return "SagerNet/sing-box" }
+
+func (fakeAdapter) Resolve(context.Context, string, string, core.Target) (core.Package, error) {
 	return core.Package{}, nil
 }
 
@@ -62,16 +64,16 @@ func newTestManager(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	manager.registry = core.NewRegistry(fakeAdapter{})
-	if err := os.MkdirAll(paths.CoreVersionDir("sing-box", "1.2.3"), 0o700); err != nil {
+	if err := os.MkdirAll(paths.CoreVersionDir("sing-box", "", "1.2.3"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(paths.CoreBinary("sing-box", "1.2.3"), []byte("fake"), 0o700); err != nil {
+	if err := os.WriteFile(paths.CoreBinary("sing-box", "", "1.2.3"), []byte("fake"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := manager.store.Update(func(document *state.Document) error {
-		coreState := document.Core("sing-box")
-		coreState.Channels["stable"] = "1.2.3"
-		coreState.Installed["1.2.3"] = &state.Installation{}
+		source := document.Core("sing-box").Source("")
+		source.Channels["stable"] = "1.2.3"
+		source.Installed["1.2.3"] = &state.Installation{}
 		document.Selected = &state.Selection{Core: "sing-box", Ref: "stable"}
 		return nil
 	}); err != nil {
@@ -129,7 +131,7 @@ func TestUseExactVersionPromotesExplicitReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !document.Cores["sing-box"].Installed["1.2.3"].Explicit {
+	if !document.Cores["sing-box"].Default.Installed["1.2.3"].Explicit {
 		t.Fatal("exact use did not create an explicit reference")
 	}
 }
@@ -139,8 +141,8 @@ func TestExactVersionCanBeSelectedBeforeConfiguration(t *testing.T) {
 	manager := newTestManager(t)
 	if err := manager.store.Update(func(document *state.Document) error {
 		document.Selected = nil
-		delete(document.Cores["sing-box"].Channels, "stable")
-		document.Cores["sing-box"].Installed["1.2.3"].Explicit = true
+		delete(document.Cores["sing-box"].Default.Channels, "stable")
+		document.Cores["sing-box"].Default.Installed["1.2.3"].Explicit = true
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -191,7 +193,7 @@ func TestRemoveCoreDeletesVersionAndAliases(t *testing.T) {
 	if document.Cores["sing-box"] != nil {
 		t.Fatalf("core state = %#v", document.Cores["sing-box"])
 	}
-	if _, err := os.Stat(manager.paths.CoreVersionDir("sing-box", "1.2.3")); !os.IsNotExist(err) {
+	if _, err := os.Stat(manager.paths.CoreVersionDir("sing-box", "", "1.2.3")); !os.IsNotExist(err) {
 		t.Fatalf("version directory still exists: %v", err)
 	}
 }
@@ -204,15 +206,105 @@ func TestRemoveCoreRejectsSelectedVersion(t *testing.T) {
 	}
 }
 
+func TestSameVersionCanCoexistAcrossRepositories(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	customRepository := "tinymins/sing-box"
+	customDirectory := manager.paths.CoreVersionDir("sing-box", customRepository, "1.2.3")
+	if err := os.MkdirAll(customDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manager.paths.CoreBinary("sing-box", customRepository, "1.2.3"), []byte("custom"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Core("sing-box").Source(customRepository).Installed["1.2.3"] = &state.Installation{Explicit: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.UseCore(context.Background(), "sing-box:tinymins/sing-box@1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.RemoveCore("sing-box@1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	document, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Selected == nil || document.Selected.Repository != customRepository || document.Cores["sing-box"].Custom[customRepository].Installed["1.2.3"] == nil {
+		t.Fatalf("custom installation was not preserved: %#v", document)
+	}
+	if _, err := os.Stat(manager.paths.CoreBinary("sing-box", customRepository, "1.2.3")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExplicitDefaultRepositoryUsesDefaultSource(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	reference, _, err := manager.resolveReference("sing-box:SagerNet/sing-box@1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reference.Repository != "" || reference.String() != "sing-box@1.2.3" {
+		t.Fatalf("reference = %#v", reference)
+	}
+}
+
+func TestStageCoresPreservesRepositoryIsolation(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	repository := "tinymins/sing-box"
+	customBinary := manager.paths.CoreBinary("sing-box", repository, "1.2.3")
+	if err := os.MkdirAll(filepath.Dir(customBinary), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(customBinary, []byte("custom"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Core("sing-box").Source(repository).Installed["1.2.3"] = &state.Installation{Explicit: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	document, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := layout.At(t.TempDir())
+	operation, err := manager.stageCores(context.Background(), target, document, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer operation.cleanup()
+	if err := operation.activate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := operation.commit(); err != nil {
+		t.Fatal(err)
+	}
+	for _, binary := range []string{
+		target.CoreBinary("sing-box", "", "1.2.3"),
+		target.CoreBinary("sing-box", repository, "1.2.3"),
+	} {
+		if _, err := os.Stat(binary); err != nil {
+			t.Fatalf("staged binary %q: %v", binary, err)
+		}
+	}
+}
+
 func TestCollectWeakVersionRemovesOnlyUnreferencedInstall(t *testing.T) {
 	t.Parallel()
 	manager := newTestManager(t)
-	versionDir := manager.paths.CoreVersionDir("sing-box", "1.2.3")
+	versionDir := manager.paths.CoreVersionDir("sing-box", "", "1.2.3")
 	collected := false
 	if err := manager.store.Update(func(document *state.Document) error {
 		document.Selected = nil
-		delete(document.Cores["sing-box"].Channels, "stable")
-		collected = manager.collectWeakVersion(document, "sing-box", "1.2.3")
+		delete(document.Cores["sing-box"].Default.Channels, "stable")
+		collected = manager.collectWeakVersion(document, "sing-box", "", "1.2.3")
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -226,7 +318,7 @@ func TestCollectWeakVersionRemovesOnlyUnreferencedInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if document.Cores["sing-box"].Installed["1.2.3"] != nil {
+	if document.Cores["sing-box"].Default.Installed["1.2.3"] != nil {
 		t.Fatal("weak unreferenced install was retained")
 	}
 	if _, err := os.Stat(versionDir); !os.IsNotExist(err) {

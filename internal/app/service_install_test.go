@@ -71,7 +71,7 @@ func TestCoreDeploymentMergesManagedVersions(t *testing.T) {
 	t.Parallel()
 	source := newTestManager(t)
 	target := layout.SystemAt(t.TempDir())
-	extra := target.CoreVersionDir("sing-box", "9.9.9")
+	extra := target.CoreVersionDir("sing-box", "", "9.9.9")
 	if err := os.MkdirAll(extra, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestCoreDeploymentMergesManagedVersions(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		target.CoreBinary("sing-box", "1.2.3"),
+		target.CoreBinary("sing-box", "", "1.2.3"),
 		filepath.Join(extra, "sing-box"),
 	} {
 		if _, err := os.Stat(path); err != nil {
@@ -109,7 +109,7 @@ func TestAllDeploymentReplacesExtraCoreAndKeepsLogs(t *testing.T) {
 	t.Parallel()
 	source := newTestManager(t)
 	target := layout.SystemAt(t.TempDir())
-	extra := target.CoreVersionDir("sing-box", "9.9.9")
+	extra := target.CoreVersionDir("sing-box", "", "9.9.9")
 	if err := os.MkdirAll(extra, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestAllDeploymentReplacesExtraCoreAndKeepsLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := os.Stat(target.CoreBinary("sing-box", "1.2.3")); err != nil {
+	if _, err := os.Stat(target.CoreBinary("sing-box", "", "1.2.3")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(extra); !errors.Is(err, os.ErrNotExist) {
@@ -166,10 +166,10 @@ func TestDataDeploymentCopiesStateAndReferencedConfigsOnly(t *testing.T) {
 	t.Parallel()
 	source := newTestManager(t)
 	target := layout.SystemAt(t.TempDir())
-	if err := os.MkdirAll(target.CoreVersionDir("sing-box", "1.2.3"), 0o700); err != nil {
+	if err := os.MkdirAll(target.CoreVersionDir("sing-box", "", "1.2.3"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(target.CoreBinary("sing-box", "1.2.3"), []byte("fake"), 0o700); err != nil {
+	if err := os.WriteFile(target.CoreBinary("sing-box", "", "1.2.3"), []byte("fake"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(target.Runtime, 0o700); err != nil {
@@ -347,7 +347,7 @@ func TestCoreDeployRestoresRunningService(t *testing.T) {
 	if strings.Join(controller.calls, ",") != "status,stop,start" {
 		t.Fatalf("service calls = %v", controller.calls)
 	}
-	if _, err := os.Stat(target.CoreBinary("sing-box", "1.2.3")); err != nil {
+	if _, err := os.Stat(target.CoreBinary("sing-box", "", "1.2.3")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -356,10 +356,10 @@ func TestFailedDeployRestoresFilesAndRunningService(t *testing.T) {
 	t.Parallel()
 	source := newTestManager(t)
 	target := layout.SystemAt(t.TempDir())
-	if err := os.MkdirAll(target.CoreVersionDir("sing-box", "1.2.3"), 0o700); err != nil {
+	if err := os.MkdirAll(target.CoreVersionDir("sing-box", "", "1.2.3"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	targetBinary := target.CoreBinary("sing-box", "1.2.3")
+	targetBinary := target.CoreBinary("sing-box", "", "1.2.3")
 	if err := os.WriteFile(targetBinary, []byte("old"), 0o700); err != nil {
 		t.Fatal(err)
 	}

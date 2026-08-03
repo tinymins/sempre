@@ -12,19 +12,35 @@ import (
 const Stable = "stable"
 
 var (
-	namePattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
+	namePattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9_.-]{1,100}$`)
+	versionPattern    = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
 )
 
 type Ref struct {
-	Core  string
-	Value string
+	Core       string
+	Repository string
+	Value      string
 }
 
 func ParseRef(value string) (Ref, error) {
-	name, reference, found := strings.Cut(strings.TrimSpace(value), "@")
+	value = strings.TrimSpace(value)
+	if strings.Count(value, "@") > 1 {
+		return Ref{}, fmt.Errorf("invalid core reference %q", value)
+	}
+	source, reference, found := strings.Cut(value, "@")
+	if strings.Count(source, ":") > 1 {
+		return Ref{}, fmt.Errorf("invalid core source %q", source)
+	}
+	name, repository, hasRepository := strings.Cut(source, ":")
 	if !namePattern.MatchString(name) {
 		return Ref{}, fmt.Errorf("invalid core name %q", name)
+	}
+	if hasRepository {
+		if !validRepository(repository) {
+			return Ref{}, fmt.Errorf("invalid GitHub repository %q; expected owner/repository", repository)
+		}
+		repository = strings.ToLower(repository)
 	}
 	if !found {
 		reference = Stable
@@ -35,11 +51,23 @@ func ParseRef(value string) (Ref, error) {
 	if reference != Stable && !versionPattern.MatchString(strings.TrimPrefix(reference, "v")) {
 		return Ref{}, fmt.Errorf("invalid core version or channel %q", reference)
 	}
-	return Ref{Core: name, Value: strings.TrimPrefix(reference, "v")}, nil
+	return Ref{Core: name, Repository: repository, Value: strings.TrimPrefix(reference, "v")}, nil
+}
+
+func validRepository(repository string) bool {
+	if !repositoryPattern.MatchString(repository) {
+		return false
+	}
+	_, name, _ := strings.Cut(repository, "/")
+	return name != "." && name != ".."
 }
 
 func (ref Ref) String() string {
-	return ref.Core + "@" + ref.Value
+	source := ref.Core
+	if ref.Repository != "" {
+		source += ":" + ref.Repository
+	}
+	return source + "@" + ref.Value
 }
 
 func (ref Ref) IsChannel() bool {
@@ -86,7 +114,8 @@ type RuntimePreparer interface {
 
 type Adapter interface {
 	ID() string
-	Resolve(context.Context, string, Target) (Package, error)
+	DefaultRepository() string
+	Resolve(context.Context, string, string, Target) (Package, error)
 	ExecutableName(Target) string
 	Version(context.Context, string) (string, error)
 	Validate(context.Context, string, string, string, io.Writer, io.Writer) error

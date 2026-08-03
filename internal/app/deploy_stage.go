@@ -141,13 +141,16 @@ func mergeInstallDocument(source, existing state.Document) state.Document {
 	result := existing
 	for coreID, sourceCore := range source.Cores {
 		targetCore := result.Core(coreID)
-		for version, installation := range sourceCore.Installed {
-			copy := *installation
-			targetCore.Installed[version] = &copy
-		}
-		for channel, version := range sourceCore.Channels {
-			if targetCore.Channels[channel] == "" {
-				targetCore.Channels[channel] = version
+		for _, entry := range sourceCore.SourceEntries() {
+			targetSource := targetCore.Source(entry.Repository)
+			for version, installation := range entry.State.Installed {
+				copy := *installation
+				targetSource.Installed[version] = &copy
+			}
+			for channel, version := range entry.State.Channels {
+				if targetSource.Channels[channel] == "" {
+					targetSource.Channels[channel] = version
+				}
 			}
 		}
 	}
@@ -194,26 +197,27 @@ func (manager *Manager) stageCores(
 			operation.cleanup()
 			return nil, err
 		}
-		for _, version := range sortedVersions(document.Cores[coreID]) {
+		for _, installed := range sortedInstallations(document.Cores[coreID]) {
+			version := installed.Version
 			if err := validateCoreVersion(coreID, version); err != nil {
 				operation.cleanup()
 				return nil, err
 			}
-			actual, err := adapter.Version(ctx, manager.paths.CoreBinary(coreID, version))
+			actual, err := adapter.Version(ctx, manager.paths.CoreBinary(coreID, installed.Repository, version))
 			if err != nil {
 				operation.cleanup()
-				return nil, fmt.Errorf("validate portable %s@%s: %w", coreID, version, err)
+				return nil, fmt.Errorf("validate portable %s: %w", exactRef(core.Ref{Core: coreID, Repository: installed.Repository}, version), err)
 			}
 			if actual != version {
 				operation.cleanup()
 				return nil, fmt.Errorf("portable %s reports version %s, expected %s", coreID, actual, version)
 			}
-			destination := filepath.Join(staging, coreID, version)
+			destination := stagedCoreVersionDir(staging, coreID, installed.Repository, version)
 			if err := os.RemoveAll(destination); err != nil {
 				operation.cleanup()
 				return nil, err
 			}
-			if err := copyDirectory(manager.paths.CoreVersionDir(coreID, version), destination, 0o700); err != nil {
+			if err := copyDirectory(manager.paths.CoreVersionDir(coreID, installed.Repository, version), destination, 0o700); err != nil {
 				operation.cleanup()
 				return nil, fmt.Errorf("stage %s@%s: %w", coreID, version, err)
 			}
@@ -232,11 +236,12 @@ func (manager *Manager) validateTargetCores(
 		if err != nil {
 			return err
 		}
-		for _, version := range sortedVersions(document.Cores[coreID]) {
+		for _, installed := range sortedInstallations(document.Cores[coreID]) {
+			version := installed.Version
 			if err := validateCoreVersion(coreID, version); err != nil {
 				return err
 			}
-			actual, err := adapter.Version(ctx, target.CoreBinary(coreID, version))
+			actual, err := adapter.Version(ctx, target.CoreBinary(coreID, installed.Repository, version))
 			if err != nil {
 				return fmt.Errorf("system core %s@%s is required by data deployment: %w", coreID, version, err)
 			}
@@ -298,7 +303,7 @@ func sameDeploymentData(left, right state.Document) bool {
 func deploymentReplacementSummary(document state.Document) string {
 	selected := "none"
 	if document.Selected != nil {
-		selected = document.Selected.Core + "@" + document.Selected.Ref
+		selected = selectionRef(*document.Selected).String()
 	}
 	active := "none"
 	if document.Active != nil {
@@ -310,7 +315,9 @@ func deploymentReplacementSummary(document state.Document) string {
 	}
 	versions := 0
 	for _, coreState := range document.Cores {
-		versions += len(coreState.Installed)
+		for _, source := range coreState.SourceEntries() {
+			versions += len(source.State.Installed)
+		}
 	}
 	return fmt.Sprintf(
 		"Existing system data will be replaced:\n  Selected: %s\n  Active: %s\n  Core versions: %d\n  Subscription configured: %s",
@@ -353,13 +360,32 @@ func sortedCoreIDs(document state.Document) []string {
 	return ids
 }
 
-func sortedVersions(coreState *state.CoreState) []string {
-	versions := make([]string, 0, len(coreState.Installed))
-	for version := range coreState.Installed {
-		versions = append(versions, version)
+type installedCore struct {
+	Repository string
+	Version    string
+}
+
+func sortedInstallations(coreState *state.CoreState) []installedCore {
+	var installations []installedCore
+	for _, source := range coreState.SourceEntries() {
+		for version := range source.State.Installed {
+			installations = append(installations, installedCore{Repository: source.Repository, Version: version})
+		}
 	}
-	sort.Strings(versions)
-	return versions
+	sort.Slice(installations, func(i, j int) bool {
+		if installations[i].Repository == installations[j].Repository {
+			return installations[i].Version < installations[j].Version
+		}
+		return installations[i].Repository < installations[j].Repository
+	})
+	return installations
+}
+
+func stagedCoreVersionDir(staging, coreID, repository, version string) string {
+	if repository == "" {
+		return filepath.Join(staging, coreID, version)
+	}
+	return filepath.Join(staging, coreID, "sources", filepath.FromSlash(repository), version)
 }
 
 func validateCoreVersion(coreID, version string) error {

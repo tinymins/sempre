@@ -215,16 +215,21 @@ func (manager *Manager) configurationTarget(document state.Document) (state.Depl
 	if coreState == nil {
 		return state.Deployment{}, nil, fmt.Errorf("%s is not installed", selection.Core)
 	}
+	source := coreState.LookupSource(selection.Repository)
+	if source == nil {
+		return state.Deployment{}, nil, fmt.Errorf("%s is not installed", selectionRef(*selection))
+	}
 	version := selection.Ref
 	if selection.Ref == core.Stable {
-		version = coreState.Channels[selection.Ref]
+		version = source.Channels[selection.Ref]
 	}
-	if version == "" || coreState.Installed[version] == nil {
-		return state.Deployment{}, nil, fmt.Errorf("%s@%s is not installed", selection.Core, selection.Ref)
+	if version == "" || source.Installed[version] == nil {
+		return state.Deployment{}, nil, fmt.Errorf("%s is not installed", selectionRef(*selection))
 	}
 	adapter, err := manager.registry.Get(selection.Core)
 	return state.Deployment{
 		Core:       selection.Core,
+		Repository: selection.Repository,
 		Ref:        selection.Ref,
 		Version:    version,
 		ConfigHash: document.Configs[selection.Core],

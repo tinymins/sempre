@@ -1,11 +1,57 @@
 package singbox
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/release"
 )
+
+type fakeReleases struct {
+	repository string
+	version    string
+	item       release.GitHubRelease
+}
+
+func (releases *fakeReleases) LatestStable(_ context.Context, repository string) (release.GitHubRelease, error) {
+	releases.repository = repository
+	return releases.item, nil
+}
+
+func (releases *fakeReleases) Version(_ context.Context, repository, version string) (release.GitHubRelease, error) {
+	releases.repository = repository
+	releases.version = version
+	return releases.item, nil
+}
+
+func TestResolveUsesCustomRepositoryAndExactPrerelease(t *testing.T) {
+	t.Parallel()
+	releases := &fakeReleases{item: release.GitHubRelease{
+		Tag:        "v1.13.15-ddns.1",
+		Prerelease: true,
+		Assets: []release.Asset{{
+			Name:   "sing-box-1.13.15-ddns.1-linux-amd64.tar.gz",
+			URL:    "https://github.com/tinymins/sing-box/releases/download/v1.13.15-ddns.1/archive.tar.gz",
+			Digest: "sha256:test",
+			Size:   42,
+		}},
+	}}
+	adapter := &Adapter{releases: releases}
+	item, err := adapter.Resolve(context.Background(), "tinymins/sing-box", "1.13.15-ddns.1", core.Target{OS: "linux", Arch: "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if releases.repository != "tinymins/sing-box" || releases.version != "1.13.15-ddns.1" {
+		t.Fatalf("release query = %s@%s", releases.repository, releases.version)
+	}
+	if item.Version != "1.13.15-ddns.1" || item.Name != "sing-box-1.13.15-ddns.1-linux-amd64.tar.gz" {
+		t.Fatalf("package = %#v", item)
+	}
+}
 
 func TestPrepareRuntimeIsolatesControlAPIFromUserConfig(t *testing.T) {
 	t.Parallel()

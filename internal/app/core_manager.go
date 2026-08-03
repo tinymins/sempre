@@ -28,36 +28,43 @@ func (manager *Manager) InstallCore(ctx context.Context, value string) (Change, 
 }
 
 func (manager *Manager) installCore(ctx context.Context, value string) (Change, error) {
-	reference, err := core.ParseRef(value)
+	reference, adapter, err := manager.resolveReference(value)
 	if err != nil {
 		return Change{}, err
 	}
-	adapter, err := manager.registry.Get(reference.Core)
+	resolved, err := adapter.Resolve(ctx, reference.Repository, reference.Value, core.CurrentTarget())
 	if err != nil {
 		return Change{}, err
 	}
-	resolved, err := adapter.Resolve(ctx, reference.Value, core.CurrentTarget())
+	document, err := manager.store.Read()
 	if err != nil {
 		return Change{}, err
 	}
-	binary, installed, err := manager.installPackage(ctx, adapter, resolved)
+	if coreState := document.Cores[reference.Core]; coreState != nil {
+		if source := coreState.LookupSource(reference.Repository); source != nil {
+			if installation := source.Installed[resolved.Version]; installation != nil && installation.Source != "" && installation.Source != resolved.URL {
+				return Change{}, fmt.Errorf("%s is already installed from %s; remove it before installing a different artifact", exactRef(reference, resolved.Version), installation.Source)
+			}
+		}
+	}
+	binary, installed, err := manager.installPackage(ctx, adapter, reference.Repository, resolved)
 	if err != nil {
 		return Change{}, err
 	}
 	actual, err := adapter.Version(ctx, binary)
 	if err != nil {
 		if installed {
-			_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, resolved.Version))
+			_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, reference.Repository, resolved.Version))
 		}
 		return Change{}, err
 	}
 	if actual != resolved.Version {
 		if installed {
-			_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, resolved.Version))
+			_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, reference.Repository, resolved.Version))
 		}
 		return Change{}, fmt.Errorf("%s reports version %s, expected %s", reference.Core, actual, resolved.Version)
 	}
-	document, err := manager.store.Read()
+	document, err = manager.store.Read()
 	if err != nil {
 		return Change{}, err
 	}
@@ -66,7 +73,7 @@ func (manager *Manager) installCore(ctx context.Context, value string) (Change, 
 			config := manager.paths.Config(reference.Core, configHash)
 			if err := manager.validateConfiguration(ctx, adapter, binary, config, manager.output, manager.errors); err != nil {
 				if installed {
-					_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, resolved.Version))
+					_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, reference.Repository, resolved.Version))
 				}
 				return Change{}, fmt.Errorf("candidate %s@%s rejected the active configuration: %w", reference.Core, resolved.Version, err)
 			}
@@ -78,10 +85,11 @@ func (manager *Manager) installCore(ctx context.Context, value string) (Change, 
 	var cleanupVersion string
 	err = manager.store.Update(func(document *state.Document) error {
 		coreState := document.Core(reference.Core)
-		installation := coreState.Installed[resolved.Version]
+		source := coreState.Source(reference.Repository)
+		installation := source.Installed[resolved.Version]
 		if installation == nil {
 			installation = &state.Installation{}
-			coreState.Installed[resolved.Version] = installation
+			source.Installed[resolved.Version] = installation
 			change.Changed = true
 		}
 		installation.Digest = resolved.Digest
@@ -90,9 +98,9 @@ func (manager *Manager) installCore(ctx context.Context, value string) (Change, 
 			installation.InstalledAt = time.Now().UTC()
 		}
 		if reference.IsChannel() {
-			previousVersion = coreState.Channels[reference.Value]
+			previousVersion = source.Channels[reference.Value]
 			if previousVersion != resolved.Version {
-				coreState.Channels[reference.Value] = resolved.Version
+				source.Channels[reference.Value] = resolved.Version
 				change.Changed = true
 			}
 		} else if !installation.Explicit {
@@ -104,6 +112,7 @@ func (manager *Manager) installCore(ctx context.Context, value string) (Change, 
 			if configHash := document.Configs[reference.Core]; configHash != "" {
 				deployment := state.Deployment{
 					Core:       reference.Core,
+					Repository: reference.Repository,
 					Ref:        reference.Value,
 					Version:    resolved.Version,
 					ConfigHash: configHash,
@@ -114,25 +123,25 @@ func (manager *Manager) installCore(ctx context.Context, value string) (Change, 
 				}
 			}
 		}
-		if manager.collectWeakVersion(document, reference.Core, previousVersion) {
+		if manager.collectWeakVersion(document, reference.Core, reference.Repository, previousVersion) {
 			cleanupVersion = previousVersion
 		}
 		return nil
 	})
 	if err != nil {
 		if installed {
-			_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, resolved.Version))
+			_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, reference.Repository, resolved.Version))
 		}
 		return Change{}, err
 	}
 	if cleanupVersion != "" {
-		_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, cleanupVersion))
+		_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, reference.Repository, cleanupVersion))
 	}
 	action := "is already installed"
 	if change.Changed {
 		action = "installed"
 	}
-	change.Message = fmt.Sprintf("%s@%s %s", reference.Core, resolved.Version, action)
+	change.Message = fmt.Sprintf("%s %s", exactRef(reference, resolved.Version), action)
 	if reference.IsChannel() {
 		change.CurrentDetail = reference.Value + " -> " + resolved.Version
 		if previousVersion != "" && previousVersion != resolved.Version {
@@ -154,12 +163,12 @@ func (manager *Manager) UpdateCores(ctx context.Context, value string) ([]Change
 
 func (manager *Manager) updateCores(ctx context.Context, value string) ([]Change, error) {
 	if value != "" {
-		reference, err := core.ParseRef(value)
+		reference, _, err := manager.resolveReference(value)
 		if err != nil {
 			return nil, err
 		}
 		if !reference.IsChannel() {
-			return nil, fmt.Errorf("exact core versions are immutable; update a channel such as %s@stable", reference.Core)
+			return nil, fmt.Errorf("exact core versions are immutable; update a channel such as %s", core.Ref{Core: reference.Core, Repository: reference.Repository, Value: core.Stable})
 		}
 		change, err := manager.installCore(ctx, reference.String())
 		if err != nil {
@@ -174,8 +183,10 @@ func (manager *Manager) updateCores(ctx context.Context, value string) ([]Change
 	}
 	var references []string
 	for name, coreState := range document.Cores {
-		for channel := range coreState.Channels {
-			references = append(references, name+"@"+channel)
+		for _, source := range coreState.SourceEntries() {
+			for channel := range source.State.Channels {
+				references = append(references, core.Ref{Core: name, Repository: source.Repository, Value: channel}.String())
+			}
 		}
 	}
 	sort.Strings(references)
@@ -204,7 +215,7 @@ func (manager *Manager) UseCore(ctx context.Context, value string) (Change, erro
 }
 
 func (manager *Manager) useCore(ctx context.Context, value string) (Change, error) {
-	reference, err := core.ParseRef(value)
+	reference, adapter, err := manager.resolveReference(value)
 	if err != nil {
 		return Change{}, err
 	}
@@ -218,11 +229,7 @@ func (manager *Manager) useCore(ctx context.Context, value string) (Change, erro
 	}
 	configHash := document.Configs[reference.Core]
 	if configHash != "" {
-		adapter, err := manager.registry.Get(reference.Core)
-		if err != nil {
-			return Change{}, err
-		}
-		binary := manager.paths.CoreBinary(reference.Core, version)
+		binary := manager.paths.CoreBinary(reference.Core, reference.Repository, version)
 		config := manager.paths.Config(reference.Core, configHash)
 		if err := manager.validateConfiguration(ctx, adapter, binary, config, manager.output, manager.errors); err != nil {
 			return Change{}, fmt.Errorf("candidate %s rejected the active configuration: %w", reference, err)
@@ -237,12 +244,12 @@ func (manager *Manager) useCore(ctx context.Context, value string) (Change, erro
 		if currentVersion != version || document.Configs[reference.Core] != configHash {
 			return fmt.Errorf("core state changed while selecting %s; retry the command", reference)
 		}
-		installation := document.Cores[reference.Core].Installed[version]
+		installation := document.Cores[reference.Core].LookupSource(reference.Repository).Installed[version]
 		if !reference.IsChannel() && !installation.Explicit {
 			installation.Explicit = true
 			change.Changed = true
 		}
-		selection := state.Selection{Core: reference.Core, Ref: reference.Value}
+		selection := state.Selection{Core: reference.Core, Repository: reference.Repository, Ref: reference.Value}
 		selectionChanged := document.Selected == nil || *document.Selected != selection
 		if selectionChanged {
 			document.Selected = &selection
@@ -254,6 +261,7 @@ func (manager *Manager) useCore(ctx context.Context, value string) (Change, erro
 		}
 		deployment := state.Deployment{
 			Core:       reference.Core,
+			Repository: reference.Repository,
 			Ref:        reference.Value,
 			Version:    version,
 			ConfigHash: configHash,
@@ -292,7 +300,7 @@ func (manager *Manager) RemoveCore(value string) (Change, error) {
 }
 
 func (manager *Manager) removeCore(value string) (Change, error) {
-	reference, err := core.ParseRef(value)
+	reference, _, err := manager.resolveReference(value)
 	if err != nil {
 		return Change{}, err
 	}
@@ -304,17 +312,17 @@ func (manager *Manager) removeCore(value string) (Change, error) {
 	if err != nil {
 		return Change{}, err
 	}
-	if selectionReferencesVersion(document, reference.Core, version) {
-		return Change{}, fmt.Errorf("cannot remove %s@%s: it is selected", reference.Core, version)
+	if selectionReferencesVersion(document, reference.Core, reference.Repository, version) {
+		return Change{}, fmt.Errorf("cannot remove %s: it is selected", exactRef(reference, version))
 	}
-	if document.Active != nil && document.Active.Core == reference.Core && document.Active.Version == version {
-		return Change{}, fmt.Errorf("cannot remove %s@%s: it is active", reference.Core, version)
+	if deploymentReferencesVersion(document.Active, reference.Core, reference.Repository, version) {
+		return Change{}, fmt.Errorf("cannot remove %s: it is active", exactRef(reference, version))
 	}
-	if document.Previous != nil && document.Previous.Core == reference.Core && document.Previous.Version == version {
-		return Change{}, fmt.Errorf("cannot remove %s@%s: it is retained for rollback", reference.Core, version)
+	if deploymentReferencesVersion(document.Previous, reference.Core, reference.Repository, version) {
+		return Change{}, fmt.Errorf("cannot remove %s: it is retained for rollback", exactRef(reference, version))
 	}
 
-	versionDir := manager.paths.CoreVersionDir(reference.Core, version)
+	versionDir := manager.paths.CoreVersionDir(reference.Core, reference.Repository, version)
 	removedDir := ""
 	if _, err := os.Stat(versionDir); err == nil {
 		parent := filepath.Dir(versionDir)
@@ -338,19 +346,23 @@ func (manager *Manager) removeCore(value string) (Change, error) {
 			return err
 		}
 		if currentVersion != version ||
-			selectionReferencesVersion(*document, reference.Core, version) ||
-			(document.Active != nil && document.Active.Core == reference.Core && document.Active.Version == version) ||
-			(document.Previous != nil && document.Previous.Core == reference.Core && document.Previous.Version == version) {
-			return fmt.Errorf("core state changed while removing %s@%s; retry the command", reference.Core, version)
+			selectionReferencesVersion(*document, reference.Core, reference.Repository, version) ||
+			deploymentReferencesVersion(document.Active, reference.Core, reference.Repository, version) ||
+			deploymentReferencesVersion(document.Previous, reference.Core, reference.Repository, version) {
+			return fmt.Errorf("core state changed while removing %s; retry the command", exactRef(reference, version))
 		}
 		coreState := document.Cores[reference.Core]
-		for channel, target := range coreState.Channels {
+		source := coreState.LookupSource(reference.Repository)
+		for channel, target := range source.Channels {
 			if target == version {
-				delete(coreState.Channels, channel)
+				delete(source.Channels, channel)
 			}
 		}
-		delete(coreState.Installed, version)
-		if len(coreState.Channels) == 0 && len(coreState.Installed) == 0 {
+		delete(source.Installed, version)
+		if reference.Repository != "" && len(source.Channels) == 0 && len(source.Installed) == 0 {
+			delete(coreState.Custom, reference.Repository)
+		}
+		if coreState.Empty() {
 			delete(document.Cores, reference.Core)
 		}
 		return nil
@@ -363,12 +375,12 @@ func (manager *Manager) removeCore(value string) (Change, error) {
 	}
 	if removedDir != "" {
 		if err := os.RemoveAll(removedDir); err != nil {
-			return Change{}, fmt.Errorf("%s@%s removed, but temporary files could not be cleaned up: %w", reference.Core, version, err)
+			return Change{}, fmt.Errorf("%s removed, but temporary files could not be cleaned up: %w", exactRef(reference, version), err)
 		}
 	}
 	return Change{
 		Changed: true,
-		Message: fmt.Sprintf("%s@%s removed", reference.Core, version),
+		Message: fmt.Sprintf("%s removed", exactRef(reference, version)),
 	}, nil
 }
 
@@ -388,35 +400,53 @@ func (manager *Manager) ListCores(filter string) (string, error) {
 	for _, name := range ids {
 		fmt.Fprintln(&builder, name)
 		coreState := document.Cores[name]
-		if coreState == nil || len(coreState.Installed) == 0 {
+		if coreState == nil || coreState.Empty() {
 			fmt.Fprintln(&builder, "  not installed")
 			continue
 		}
-		versions := make([]string, 0, len(coreState.Installed))
-		for version := range coreState.Installed {
-			versions = append(versions, version)
-		}
-		sort.Strings(versions)
-		for _, version := range versions {
-			installation := coreState.Installed[version]
-			var labels []string
-			if installation.Explicit {
-				labels = append(labels, "explicit")
+		adapter, _ := manager.registry.Get(name)
+		entries := coreState.SourceEntries()
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Repository < entries[j].Repository })
+		for _, entry := range entries {
+			if len(entry.State.Installed) == 0 {
+				continue
 			}
-			for channel, target := range coreState.Channels {
-				if target == version {
-					labels = append(labels, channel)
+			repository := entry.Repository
+			kind := "custom"
+			if repository == "" {
+				repository = adapter.DefaultRepository()
+				kind = "default"
+			}
+			fmt.Fprintf(&builder, "  %s [%s]\n", repository, kind)
+			versions := make([]string, 0, len(entry.State.Installed))
+			for version := range entry.State.Installed {
+				versions = append(versions, version)
+			}
+			sort.Strings(versions)
+			for _, version := range versions {
+				installation := entry.State.Installed[version]
+				var labels []string
+				if installation.Explicit {
+					labels = append(labels, "explicit")
 				}
+				for channel, target := range entry.State.Channels {
+					if target == version {
+						labels = append(labels, channel)
+					}
+				}
+				if deploymentReferencesVersion(document.Active, name, entry.Repository, version) {
+					labels = append(labels, "active")
+				}
+				if selectionReferencesVersion(document, name, entry.Repository, version) {
+					labels = append(labels, "selected")
+				}
+				sort.Strings(labels)
+				suffix := ""
+				if len(labels) > 0 {
+					suffix = " [" + strings.Join(labels, ", ") + "]"
+				}
+				fmt.Fprintf(&builder, "    %s%s\n", version, suffix)
 			}
-			if document.Active != nil && document.Active.Core == name && document.Active.Version == version {
-				labels = append(labels, "active")
-			}
-			sort.Strings(labels)
-			suffix := ""
-			if len(labels) > 0 {
-				suffix = " [" + strings.Join(labels, ", ") + "]"
-			}
-			fmt.Fprintf(&builder, "  %s%s\n", version, suffix)
 		}
 	}
 	return strings.TrimRight(builder.String(), "\n"), nil
@@ -431,7 +461,7 @@ func (manager *Manager) CurrentCore() (string, error) {
 	if document.Selected == nil {
 		fmt.Fprintln(&builder, "Selected: none")
 	} else {
-		fmt.Fprintf(&builder, "Selected: %s@%s\n", document.Selected.Core, document.Selected.Ref)
+		fmt.Fprintf(&builder, "Selected: %s\n", selectionRef(*document.Selected))
 	}
 	if document.Active == nil {
 		fmt.Fprintln(&builder, "Active: none")
@@ -448,9 +478,10 @@ func (manager *Manager) CurrentCore() (string, error) {
 func (manager *Manager) installPackage(
 	ctx context.Context,
 	adapter core.Adapter,
+	repository string,
 	item core.Package,
 ) (string, bool, error) {
-	finalDir := manager.paths.CoreVersionDir(adapter.ID(), item.Version)
+	finalDir := manager.paths.CoreVersionDir(adapter.ID(), repository, item.Version)
 	finalBinary := filepath.Join(finalDir, adapter.ExecutableName(core.CurrentTarget()))
 	if _, err := os.Stat(finalBinary); err == nil {
 		return finalBinary, false, nil
@@ -554,7 +585,7 @@ func copyTree(source, destination string) error {
 	})
 }
 
-func (manager *Manager) collectWeakVersion(document *state.Document, coreName, version string) bool {
+func (manager *Manager) collectWeakVersion(document *state.Document, coreName, repository, version string) bool {
 	if version == "" {
 		return false
 	}
@@ -562,34 +593,41 @@ func (manager *Manager) collectWeakVersion(document *state.Document, coreName, v
 	if coreState == nil {
 		return false
 	}
-	installation := coreState.Installed[version]
+	source := coreState.LookupSource(repository)
+	if source == nil {
+		return false
+	}
+	installation := source.Installed[version]
 	if installation == nil || installation.Explicit {
 		return false
 	}
-	for _, target := range coreState.Channels {
+	for _, target := range source.Channels {
 		if target == version {
 			return false
 		}
 	}
-	if selectionReferencesVersion(*document, coreName, version) {
+	if selectionReferencesVersion(*document, coreName, repository, version) {
 		return false
 	}
-	if document.Active != nil && document.Active.Core == coreName && document.Active.Version == version {
+	if deploymentReferencesVersion(document.Active, coreName, repository, version) {
 		return false
 	}
-	if document.Previous != nil && document.Previous.Core == coreName && document.Previous.Version == version {
+	if deploymentReferencesVersion(document.Previous, coreName, repository, version) {
 		return false
 	}
-	delete(coreState.Installed, version)
+	delete(source.Installed, version)
+	if repository != "" && len(source.Channels) == 0 && len(source.Installed) == 0 {
+		delete(coreState.Custom, repository)
+	}
 	return true
 }
 
 func deploymentLabel(deployment state.Deployment) string {
-	return fmt.Sprintf("%s@%s -> %s", deployment.Core, deployment.Ref, deployment.Version)
+	return fmt.Sprintf("%s -> %s", core.Ref{Core: deployment.Core, Repository: deployment.Repository, Value: deployment.Ref}, deployment.Version)
 }
 
 func selectionMatches(selection *state.Selection, reference core.Ref) bool {
-	return selection != nil && selection.Core == reference.Core && selection.Ref == reference.Value
+	return selection != nil && selection.Core == reference.Core && selection.Repository == reference.Repository && selection.Ref == reference.Value
 }
 
 func resolveInstalledVersion(document state.Document, reference core.Ref) (string, error) {
@@ -597,21 +635,53 @@ func resolveInstalledVersion(document state.Document, reference core.Ref) (strin
 	if coreState == nil {
 		return "", fmt.Errorf("%s is not installed", reference.Core)
 	}
+	source := coreState.LookupSource(reference.Repository)
+	if source == nil {
+		return "", fmt.Errorf("%s is not installed", reference)
+	}
 	version := reference.Value
 	if reference.IsChannel() {
-		version = coreState.Channels[reference.Value]
+		version = source.Channels[reference.Value]
 	}
-	if version == "" || coreState.Installed[version] == nil {
+	if version == "" || source.Installed[version] == nil {
 		return "", fmt.Errorf("%s is not installed; run 'sempre core install %s' first", reference, reference)
 	}
 	return version, nil
 }
 
-func selectionReferencesVersion(document state.Document, coreName, version string) bool {
-	if document.Selected == nil || document.Selected.Core != coreName {
+func selectionReferencesVersion(document state.Document, coreName, repository, version string) bool {
+	if document.Selected == nil || document.Selected.Core != coreName || document.Selected.Repository != repository {
 		return false
 	}
-	selected := core.Ref{Core: document.Selected.Core, Value: document.Selected.Ref}
+	selected := core.Ref{Core: document.Selected.Core, Repository: document.Selected.Repository, Value: document.Selected.Ref}
 	selectedVersion, err := resolveInstalledVersion(document, selected)
 	return err == nil && selectedVersion == version
+}
+
+func deploymentReferencesVersion(deployment *state.Deployment, coreName, repository, version string) bool {
+	return deployment != nil && deployment.Core == coreName && deployment.Repository == repository && deployment.Version == version
+}
+
+func selectionRef(selection state.Selection) core.Ref {
+	return core.Ref{Core: selection.Core, Repository: selection.Repository, Value: selection.Ref}
+}
+
+func exactRef(reference core.Ref, version string) core.Ref {
+	reference.Value = version
+	return reference
+}
+
+func (manager *Manager) resolveReference(value string) (core.Ref, core.Adapter, error) {
+	reference, err := core.ParseRef(value)
+	if err != nil {
+		return core.Ref{}, nil, err
+	}
+	adapter, err := manager.registry.Get(reference.Core)
+	if err != nil {
+		return core.Ref{}, nil, err
+	}
+	if strings.EqualFold(reference.Repository, adapter.DefaultRepository()) {
+		reference.Repository = ""
+	}
+	return reference, adapter, nil
 }

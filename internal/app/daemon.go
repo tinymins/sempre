@@ -43,7 +43,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err != nil {
 					return supervisor.Plan{}, err
 				}
-				binary := manager.paths.CoreBinary(deployment.Core, deployment.Version)
+				binary := manager.paths.CoreBinary(deployment.Core, deployment.Repository, deployment.Version)
 				config := manager.paths.Config(deployment.Core, deployment.ConfigHash)
 				if _, err := os.Stat(binary); err != nil {
 					return supervisor.Plan{}, fmt.Errorf("active core binary is unavailable: %w", err)
@@ -108,6 +108,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 						State:          "starting",
 						PID:            pid,
 						Core:           plan.Deployment.Core,
+						Repository:     plan.Deployment.Repository,
 						Version:        plan.Deployment.Version,
 						StartedAt:      time.Now().UTC(),
 						RestartCount:   document.Runtime.RestartCount,
@@ -118,15 +119,16 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			},
 			Healthy: func(plan supervisor.Plan) error {
 				logf("healthy %s", deploymentLabel(plan.Deployment))
-				var cleanupCore, cleanupVersion string
+				var cleanupCore, cleanupRepository, cleanupVersion string
 				err := manager.store.Update(func(document *state.Document) error {
 					if document.Pending && state.SameDeployment(document.Active, &plan.Deployment) {
 						old := document.Previous
 						document.Previous = nil
 						document.Pending = false
 						document.LastError = ""
-						if old != nil && manager.collectWeakVersion(document, old.Core, old.Version) {
+						if old != nil && manager.collectWeakVersion(document, old.Core, old.Repository, old.Version) {
 							cleanupCore = old.Core
+							cleanupRepository = old.Repository
 							cleanupVersion = old.Version
 						}
 					}
@@ -135,7 +137,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 					return nil
 				})
 				if err == nil && cleanupVersion != "" {
-					_ = os.RemoveAll(manager.paths.CoreVersionDir(cleanupCore, cleanupVersion))
+					_ = os.RemoveAll(manager.paths.CoreVersionDir(cleanupCore, cleanupRepository, cleanupVersion))
 				}
 				if err == nil {
 					err = manager.garbageCollectConfigs()
@@ -308,37 +310,28 @@ func (manager *Manager) deploymentSpec(ctx context.Context, referenceValue strin
 		return state.Deployment{}, core.RunSpec{}, err
 	}
 	if referenceValue != "" {
-		reference, err := core.ParseRef(referenceValue)
+		reference, resolvedAdapter, err := manager.resolveReference(referenceValue)
 		if err != nil {
 			return state.Deployment{}, core.RunSpec{}, err
 		}
-		coreState := document.Cores[reference.Core]
-		if coreState == nil {
-			return state.Deployment{}, core.RunSpec{}, fmt.Errorf("%s is not installed", reference.Core)
-		}
-		version := reference.Value
-		if reference.IsChannel() {
-			version = coreState.Channels[reference.Value]
-		}
-		if coreState.Installed[version] == nil {
-			return state.Deployment{}, core.RunSpec{}, fmt.Errorf("%s is not installed", reference)
-		}
-		adapter, err = manager.registry.Get(reference.Core)
+		version, err := resolveInstalledVersion(document, reference)
 		if err != nil {
 			return state.Deployment{}, core.RunSpec{}, err
 		}
+		adapter = resolvedAdapter
 		configHash := document.Configs[reference.Core]
 		if configHash == "" {
 			return state.Deployment{}, core.RunSpec{}, fmt.Errorf("%s has no active configuration", reference.Core)
 		}
 		deployment = state.Deployment{
 			Core:       reference.Core,
+			Repository: reference.Repository,
 			Ref:        reference.Value,
 			Version:    version,
 			ConfigHash: configHash,
 		}
 	}
-	binary := manager.paths.CoreBinary(deployment.Core, deployment.Version)
+	binary := manager.paths.CoreBinary(deployment.Core, deployment.Repository, deployment.Version)
 	config := manager.paths.Config(deployment.Core, deployment.ConfigHash)
 	dataDir := filepath.Join(manager.paths.Runtime, deployment.Core)
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {

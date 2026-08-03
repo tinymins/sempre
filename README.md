@@ -115,6 +115,8 @@ Sempre treats mutable channels and exact versions differently:
 ```text
 sempre core install sing-box@stable
 sempre core install sing-box@1.13.15
+sempre core install sing-box:tinymins/sing-box@stable
+sempre core install sing-box:tinymins/sing-box@1.13.15-ddns.1
 sempre core list
 sempre core use sing-box@stable
 sempre core use sing-box@1.13.15
@@ -122,6 +124,18 @@ sempre run --core sing-box@1.13.15
 sempre core update sing-box@stable
 sempre core remove sing-box@1.13.15
 ```
+
+Core references use `<adapter>[:<github-owner>/<repository>][@<stable-or-version>]`.
+The repository defaults to `SagerNet/sing-box`, so `sing-box@1.13.15` is the
+official-source shorthand. Repository and version are separate identity
+dimensions: an official `1.13.15` and a fork's `1.13.15` can be installed and
+selected independently without changing the version reported by either
+binary. A custom source must remain explicit in later commands, for example
+`sempre core use sing-box:tinymins/sing-box@1.13.15-ddns.1`.
+
+`stable` keeps its existing meaning for every repository: the latest
+non-draft, non-prerelease GitHub Release. Install a prerelease fork build by
+its exact version. Sempre does not provide an implicit prerelease channel.
 
 An exact install is retained until explicitly removed. A channel is a weak
 reference to a concrete version. When `stable` advances, its previous version
@@ -314,7 +328,8 @@ resources/
 |-- state.json
 |-- web.json
 |-- cores/
-|   `-- sing-box/<version>/
+|   |-- sing-box/<version>/
+|   `-- sing-box/sources/<owner>/<repository>/<version>/
 |-- configs/
 |   `-- sing-box/<sha256>.json
 |-- ui/
@@ -354,8 +369,10 @@ artifact attestations. Release binaries are currently unsigned at the operating
 system level.
 
 Sempre itself does not redistribute sing-box. Core releases are downloaded at
-runtime from the official GitHub release and verified against the SHA-256
-digest supplied by GitHub's release API.
+runtime from the selected GitHub repository and verified against the SHA-256
+digest supplied by GitHub's release API. A custom repository still uses the
+sing-box adapter contract, asset naming, configuration validation, and binary
+version verification; arbitrary executables are not accepted.
 
 ## License
 

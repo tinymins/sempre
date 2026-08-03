@@ -20,7 +20,12 @@ import (
 const repository = "SagerNet/sing-box"
 
 type Adapter struct {
-	releases *release.Client
+	releases releaseResolver
+}
+
+type releaseResolver interface {
+	LatestStable(context.Context, string) (release.GitHubRelease, error)
+	Version(context.Context, string, string) (release.GitHubRelease, error)
 }
 
 func New() *Adapter {
@@ -31,18 +36,25 @@ func (adapter *Adapter) ID() string {
 	return "sing-box"
 }
 
-func (adapter *Adapter) Resolve(ctx context.Context, reference string, target core.Target) (core.Package, error) {
+func (adapter *Adapter) DefaultRepository() string {
+	return repository
+}
+
+func (adapter *Adapter) Resolve(ctx context.Context, source, reference string, target core.Target) (core.Package, error) {
+	if source == "" {
+		source = repository
+	}
 	var (
 		item release.GitHubRelease
 		err  error
 	)
 	if reference == core.Stable {
-		item, err = adapter.releases.LatestStable(ctx, repository)
+		item, err = adapter.releases.LatestStable(ctx, source)
 		if err == nil && item.Prerelease {
 			err = fmt.Errorf("latest release %s is a prerelease", item.Tag)
 		}
 	} else {
-		item, err = adapter.releases.Version(ctx, repository, reference)
+		item, err = adapter.releases.Version(ctx, source, reference)
 	}
 	if err != nil {
 		return core.Package{}, err

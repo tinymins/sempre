@@ -36,7 +36,7 @@ func setup(root, coreBinary string) error {
 	if err != nil {
 		return err
 	}
-	if err := state.WriteAtomic(paths.CoreBinary("sing-box", "1.2.3"), coreData, 0o755); err != nil {
+	if err := state.WriteAtomic(paths.CoreBinary("sing-box", "", "1.2.3"), coreData, 0o755); err != nil {
 		return err
 	}
 	configData := []byte("{\"log\":{\"disabled\":true},\"inbounds\":[],\"outbounds\":[]}")
@@ -46,9 +46,9 @@ func setup(root, coreBinary string) error {
 		return err
 	}
 	return store.Update(func(document *state.Document) error {
-		coreState := document.Core("sing-box")
-		coreState.Channels["stable"] = "1.2.3"
-		coreState.Installed["1.2.3"] = &state.Installation{
+		source := document.Core("sing-box").Source("")
+		source.Channels["stable"] = "1.2.3"
+		source.Installed["1.2.3"] = &state.Installation{
 			Explicit:    true,
 			Digest:      "sha256:integration-test",
 			Source:      "integration-test",

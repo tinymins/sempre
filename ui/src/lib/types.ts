@@ -13,6 +13,7 @@ export interface RuntimeState {
   state?: string
   pid?: number
   core?: string
+  repository?: string
   version?: string
   started_at?: string
   restart_count?: number
@@ -26,8 +27,8 @@ export interface SystemStatus {
   mode: string
   service: string
   runtime: RuntimeState
-  selected?: { core: string; ref: string }
-  active?: { core: string; ref: string; version: string; config_hash: string }
+  selected?: { core: string; repository?: string; ref: string }
+  active?: { core: string; repository?: string; ref: string; version: string; config_hash: string }
   pending: boolean
   last_error?: string
   web: { listen: string; local_url: string; password_set: boolean; password_warning: boolean }
@@ -88,6 +89,9 @@ export interface ConnectionSnapshot { download_total: number; upload_total: numb
 
 export interface CoreInstallation {
   core: string
+  repository: string
+  reference: string
+  official: boolean
   version: string
   channels: string[]
   installation: { explicit: boolean; digest: string; source: string; installed_at: string }
@@ -95,8 +99,8 @@ export interface CoreInstallation {
 export interface CoresResponse {
   supported: string[]
   installed: CoreInstallation[]
-  selected?: { core: string; ref: string }
-  active?: { core: string; ref: string; version: string; config_hash: string }
+  selected?: { core: string; repository?: string; ref: string }
+  active?: { core: string; repository?: string; ref: string; version: string; config_hash: string }
 }
 export interface Subscription {
   url?: string

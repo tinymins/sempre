@@ -22,6 +22,20 @@ func TestAtCreatesPortableLayout(t *testing.T) {
 	}
 }
 
+func TestCorePathsIsolateRepositoriesWithTheSameVersion(t *testing.T) {
+	t.Parallel()
+	paths := At(t.TempDir())
+	official := paths.CoreBinary("sing-box", "", "1.2.3")
+	custom := paths.CoreBinary("sing-box", "tinymins/sing-box", "1.2.3")
+	if official == custom {
+		t.Fatal("default and custom repositories share a binary path")
+	}
+	wantCustom := filepath.Join(paths.Cores, "sing-box", "sources", "tinymins", "sing-box", "1.2.3", executableName("sing-box"))
+	if custom != wantCustom {
+		t.Fatalf("custom binary = %q, want %q", custom, wantCustom)
+	}
+}
+
 func TestPortableAndSystemModesShareInstanceLock(t *testing.T) {
 	portable, err := ForMode(Portable)
 	if err != nil {

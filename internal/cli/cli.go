@@ -636,12 +636,12 @@ Web and UI:
 
 Core versions:
   sempre core list
-  sempre core install <core[@stable|@version]>
-  sempre core update [core[@stable]]
-  sempre core use <core@stable|core@version>
-  sempre core remove <core@stable|core@version>
+  sempre core install <core[:owner/repository][@stable|@version]>
+  sempre core update [core[:owner/repository]@stable]
+  sempre core use <core[:owner/repository]@stable|core[:owner/repository]@version>
+  sempre core remove <core[:owner/repository]@stable|core[:owner/repository]@version>
   sempre core current
-  sempre run [--core core@stable|core@version]
+  sempre run [--core core[:owner/repository]@stable|core[:owner/repository]@version]
 
 Configuration:
   sempre subscription set <https-url>

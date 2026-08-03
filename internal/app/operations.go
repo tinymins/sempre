@@ -118,7 +118,7 @@ func (manager *Manager) Status(ctx context.Context) (string, error) {
 	if document.Selected == nil {
 		fmt.Fprintln(&builder, "Selected: none")
 	} else {
-		fmt.Fprintf(&builder, "Selected: %s@%s\n", document.Selected.Core, document.Selected.Ref)
+		fmt.Fprintf(&builder, "Selected: %s\n", selectionRef(*document.Selected))
 	}
 	if document.Active == nil {
 		fmt.Fprintln(&builder, "Core: not selected")
@@ -188,7 +188,7 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 	if document.Active == nil {
 		check("active core", fmt.Errorf("not selected"))
 	} else {
-		binary := manager.paths.CoreBinary(document.Active.Core, document.Active.Version)
+		binary := manager.paths.CoreBinary(document.Active.Core, document.Active.Repository, document.Active.Version)
 		_, binaryErr := os.Stat(binary)
 		check("active core binary", binaryErr)
 		config := manager.paths.Config(document.Active.Core, document.Active.ConfigHash)
