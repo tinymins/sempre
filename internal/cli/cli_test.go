@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -117,6 +120,33 @@ func TestRunStatelessManagesPortableMarker(t *testing.T) {
 	enabled, err := layout.PortableMarkerEnabled(executable)
 	if err != nil || !enabled {
 		t.Fatalf("marker = %v, %v", enabled, err)
+	}
+}
+
+func TestUIReadyRequiresSuccessfulRootResponse(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		status int
+		want   bool
+	}{
+		{name: "installed", status: http.StatusOK, want: true},
+		{name: "missing", status: http.StatusServiceUnavailable, want: false},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.URL.Path != "/" {
+					t.Fatalf("path = %q", request.URL.Path)
+				}
+				writer.WriteHeader(test.status)
+			}))
+			defer server.Close()
+			if got := uiReady(context.Background(), server.URL); got != test.want {
+				t.Fatalf("uiReady() = %v, want %v", got, test.want)
+			}
+		})
 	}
 }
 

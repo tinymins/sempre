@@ -107,6 +107,9 @@ func build() error {
 	if err := buildUI(root, dist, bunBinary, version); err != nil {
 		return err
 	}
+	if err := writeDistributionResources(dist); err != nil {
+		return err
+	}
 	ldflags := strings.Join([]string{
 		"-s", "-w",
 		"-X", "github.com/tinymins/sempre/internal/buildinfo.Version=" + version,
@@ -171,6 +174,27 @@ func buildUI(root, dist, bunBinary, version string) error {
 	return nil
 }
 
+func writeDistributionResources(dist string) error {
+	directory := filepath.Join(dist, "resources")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(filepath.Join(dist, "sempre-ui.zip"))
+	if err != nil {
+		return err
+	}
+	archive := filepath.Join(directory, "sempre-ui.zip")
+	if err := os.WriteFile(archive, data, 0o644); err != nil {
+		return err
+	}
+	digest, err := hashFile(archive)
+	if err != nil {
+		return err
+	}
+	checksums := []byte(fmt.Sprintf("%s  sempre-ui.zip\n", digest))
+	return os.WriteFile(filepath.Join(directory, "SHA256SUMS"), checksums, 0o644)
+}
+
 func writeBundle(dist string, item target) error {
 	archive, err := os.Create(filepath.Join(dist, item.bundleName()))
 	if err != nil {
@@ -188,16 +212,12 @@ func writeBundle(dist string, item target) error {
 	if err := addFileToZIP(writer, filepath.Join(dist, item.name), filepath.ToSlash(filepath.Join(prefix, executable)), 0o755); err != nil {
 		return closeWithError(err)
 	}
-	uiArchive := filepath.Join(dist, "sempre-ui.zip")
+	uiArchive := filepath.Join(dist, "resources", "sempre-ui.zip")
 	if err := addFileToZIP(writer, uiArchive, filepath.ToSlash(filepath.Join(prefix, "resources", "sempre-ui.zip")), 0o600); err != nil {
 		return closeWithError(err)
 	}
-	digest, err := hashFile(uiArchive)
-	if err != nil {
-		return closeWithError(err)
-	}
-	checksums := []byte(fmt.Sprintf("%s  sempre-ui.zip\n", digest))
-	if err := addBytesToZIP(writer, checksums, filepath.ToSlash(filepath.Join(prefix, "resources", "SHA256SUMS")), 0o600); err != nil {
+	checksums := filepath.Join(dist, "resources", "SHA256SUMS")
+	if err := addFileToZIP(writer, checksums, filepath.ToSlash(filepath.Join(prefix, "resources", "SHA256SUMS")), 0o600); err != nil {
 		return closeWithError(err)
 	}
 	return closeWithError(nil)
@@ -238,17 +258,6 @@ func addFileToZIP(writer *zip.Writer, source, name string, mode os.FileMode) err
 		return err
 	}
 	_, err = io.Copy(destination, file)
-	return err
-}
-
-func addBytesToZIP(writer *zip.Writer, data []byte, name string, mode os.FileMode) error {
-	header := &zip.FileHeader{Name: name, Method: zip.Deflate}
-	header.SetMode(mode)
-	destination, err := writer.CreateHeader(header)
-	if err != nil {
-		return err
-	}
-	_, err = destination.Write(data)
 	return err
 }
 

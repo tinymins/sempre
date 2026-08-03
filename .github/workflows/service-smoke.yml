@@ -45,6 +45,8 @@ jobs:
         shell: pwsh
         if: runner.os == 'Windows'
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           New-Item -ItemType Directory -Path smoke
           go build -o smoke/sempre.exe ./cmd/sempre
           go build -o smoke/testcore.exe ./internal/integration/testcore

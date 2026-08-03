@@ -92,7 +92,11 @@ func (manager *Manager) stageInstallation(
 		}
 		operations = append(operations, operation)
 	}
-	resources, err := manager.stageMergedDirectory(manager.paths.Resources, target.Resources, 0o600)
+	resources, err := manager.stageMergedDirectory(
+		filepath.Join(filepath.Dir(executable), "resources"),
+		target.Resources,
+		0o600,
+	)
 	if err != nil {
 		return fail(err)
 	}

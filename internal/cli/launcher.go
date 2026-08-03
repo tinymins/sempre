@@ -121,6 +121,11 @@ func waitAndOpenSystem(ctx context.Context, output io.Writer) error {
 	for {
 		endpoint, endpointErr := webconfig.ReadEndpoint(paths.Endpoint)
 		if endpointErr == nil && healthy(ctx, endpoint.LocalURL) {
+			if !uiReady(ctx, endpoint.LocalURL) {
+				fmt.Fprintln(output, "Service:", endpoint.LocalURL)
+				fmt.Fprintln(output, "Web UI: not installed")
+				return nil
+			}
 			fmt.Fprintln(output, "Web UI:", endpoint.LocalURL)
 			return openBrowser(endpoint.LocalURL)
 		}
@@ -132,6 +137,21 @@ func waitAndOpenSystem(ctx context.Context, output io.Writer) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+func uiReady(ctx context.Context, baseURL string) bool {
+	requestCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/", nil)
+	if err != nil {
+		return false
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	return response.StatusCode == http.StatusOK
 }
 
 func healthy(ctx context.Context, baseURL string) bool {

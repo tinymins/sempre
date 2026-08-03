@@ -160,19 +160,6 @@ func (manager *Manager) deployToSystem(
 			return rollbackDeployment(ctx, manager.service, operations, current, false, target, err)
 		}
 	}
-	if install {
-		targetManager, managerErr := New(target, manager.output, manager.errors)
-		if managerErr != nil {
-			return rollbackDeployment(ctx, manager.service, operations, current, false, target, managerErr)
-		}
-		metadata, uiErr := targetManager.ui.Current()
-		if uiErr != nil || metadata.SourceType == "official" {
-			if _, uiErr := targetManager.InstallOfficialUI(ctx); uiErr != nil {
-				return rollbackDeployment(ctx, manager.service, operations, current, false, target, uiErr)
-			}
-		}
-	}
-
 	repairRegistration := install || component == DeployAll || component == DeployBin
 	if repairRegistration {
 		if err := manager.service.Install(ctx, target.ServiceExecutable, target.Home); err != nil {
@@ -197,7 +184,25 @@ func (manager *Manager) deployToSystem(
 	if err := commitSwaps(operations); err != nil {
 		return fmt.Errorf("deployment committed but backup cleanup failed: %w", err)
 	}
+	if install {
+		manager.installBundledUIBestEffort(target)
+	}
 	return nil
+}
+
+func (manager *Manager) installBundledUIBestEffort(target layout.Layout) {
+	targetManager, err := New(target, manager.output, manager.errors)
+	if err != nil {
+		fmt.Fprintln(manager.errors, "WARNING: initialize installed UI:", err)
+		return
+	}
+	metadata, currentErr := targetManager.ui.Current()
+	if currentErr == nil && metadata.SourceType != "official" {
+		return
+	}
+	if _, found, err := targetManager.installBundledUI(); found && err != nil {
+		fmt.Fprintln(manager.errors, "WARNING: install bundled UI:", err)
+	}
 }
 
 func readSystemDeploymentState(paths layout.Layout) (state.Document, error) {

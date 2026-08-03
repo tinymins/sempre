@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -414,6 +415,53 @@ func TestRollbackUsesCleanupContextAfterCancellation(t *testing.T) {
 	}
 	if controller.startContextErr != nil {
 		t.Fatalf("cleanup context was canceled: %v", controller.startContextErr)
+	}
+}
+
+func TestSystemInstallSucceedsWithoutBundledUI(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	controller := &recordingService{state: service.NotInstalled}
+	source.service = controller
+
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if controller.state != service.Running {
+		t.Fatalf("service state = %s", controller.state)
+	}
+	if strings.Join(controller.calls, ",") != "status,install,start" {
+		t.Fatalf("service calls = %v", controller.calls)
+	}
+}
+
+func TestInvalidBundledUIDoesNotRollBackSystemInstall(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	controller := &recordingService{state: service.NotInstalled}
+	source.service = controller
+	var errorsOutput bytes.Buffer
+	source.errors = &errorsOutput
+	if err := os.MkdirAll(target.Resources, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target.Resources, "sempre-ui.zip"), []byte("invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target.Resources, "SHA256SUMS"), []byte("invalid  sempre-ui.zip\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if controller.state != service.Running {
+		t.Fatalf("service state = %s", controller.state)
+	}
+	if !strings.Contains(errorsOutput.String(), "WARNING: install bundled UI") {
+		t.Fatalf("warning output = %q", errorsOutput.String())
 	}
 }
 

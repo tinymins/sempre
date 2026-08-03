@@ -91,8 +91,9 @@ Bundles are recommended because they include the verified official UI:
 | Linux | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-arm64.zip) |
 | macOS | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-arm64.zip) |
 
-Standalone binaries remain available and download `sempre-ui.zip` from the
-matching release during installation:
+Standalone binaries remain available and install the service without a UI.
+Place the canonical `resources/` directory beside a standalone binary for an
+offline UI install, or add the UI later with `sempre ui install official`:
 
 | Platform | amd64 | arm64 |
 | --- | --- | --- |
@@ -359,9 +360,10 @@ bun run build
 ```
 
 The build command validates both projects and emits Windows, Linux, and macOS
-binaries for amd64 and arm64, `sempre-ui.zip`, six self-contained bundle ZIPs,
-and `dist/SHA256SUMS`. Windows resources use an `asInvoker` manifest; UAC is
-requested at runtime only for privileged commands.
+binaries for amd64 and arm64, `sempre-ui.zip`, the canonical
+`resources/{sempre-ui.zip,SHA256SUMS}` directory, six self-contained bundle
+ZIPs, and `dist/SHA256SUMS`. Windows resources use an `asInvoker` manifest; UAC
+is requested at runtime only for privileged commands.
 
 Tagged release builds use Go 1.25.12, derive their embedded build date from the
 Git commit timestamp, publish per-target CycloneDX SBOMs, and attach GitHub

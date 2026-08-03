@@ -200,6 +200,11 @@ func (command *CLI) runPortable(ctx context.Context) error {
 		for {
 			endpoint, err := webconfig.ReadEndpoint(command.manager.Paths().Endpoint)
 			if err == nil && healthy(ctx, endpoint.LocalURL) {
+				if !uiReady(ctx, endpoint.LocalURL) {
+					fmt.Fprintln(command.output, "Portable service:", endpoint.LocalURL)
+					fmt.Fprintln(command.output, "Portable Web UI: not installed")
+					return
+				}
 				fmt.Fprintln(command.output, "Portable Web UI:", endpoint.LocalURL)
 				if err := openBrowser(endpoint.LocalURL); err != nil {
 					fmt.Fprintln(command.errors, "ERROR:", err)

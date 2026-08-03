@@ -836,14 +836,10 @@ func (admin *adminServer) uiRemove(writer http.ResponseWriter, request *http.Req
 }
 
 func (manager *Manager) InstallOfficialUI(ctx context.Context) (uiassets.Metadata, error) {
-	archive := filepath.Join(manager.paths.Resources, "sempre-ui.zip")
-	if info, err := os.Stat(archive); err == nil && info.Mode().IsRegular() {
-		digest, err := checksumFromFile(filepath.Join(manager.paths.Resources, "SHA256SUMS"), "sempre-ui.zip")
-		if err != nil {
-			return uiassets.Metadata{}, fmt.Errorf("verify bundled UI: %w", err)
-		}
-		return manager.ui.InstallFile(archive, "official", "bundle", digest)
+	if metadata, found, err := manager.installBundledUI(); found || err != nil {
+		return metadata, err
 	}
+
 	client := release.NewClient()
 	var item release.GitHubRelease
 	var err error
@@ -861,6 +857,26 @@ func (manager *Manager) InstallOfficialUI(ctx context.Context) (uiassets.Metadat
 		}
 	}
 	return uiassets.Metadata{}, fmt.Errorf("release %s has no sempre-ui.zip", item.Tag)
+}
+
+func (manager *Manager) installBundledUI() (uiassets.Metadata, bool, error) {
+	archive := filepath.Join(manager.paths.Resources, "sempre-ui.zip")
+	info, err := os.Stat(archive)
+	if errors.Is(err, os.ErrNotExist) {
+		return uiassets.Metadata{}, false, nil
+	}
+	if err != nil {
+		return uiassets.Metadata{}, true, fmt.Errorf("inspect bundled UI: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return uiassets.Metadata{}, true, fmt.Errorf("bundled UI is not a regular file: %s", archive)
+	}
+	digest, err := checksumFromFile(filepath.Join(manager.paths.Resources, "SHA256SUMS"), "sempre-ui.zip")
+	if err != nil {
+		return uiassets.Metadata{}, true, fmt.Errorf("verify bundled UI: %w", err)
+	}
+	metadata, err := manager.ui.InstallFile(archive, "official", "bundle", digest)
+	return metadata, true, err
 }
 
 func checksumFromFile(path, name string) (string, error) {
