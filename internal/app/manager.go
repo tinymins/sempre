@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -9,12 +10,16 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
+	"github.com/tinymins/sempre/internal/control"
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/core/singbox"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
+	uiassets "github.com/tinymins/sempre/internal/ui"
+	"github.com/tinymins/sempre/internal/webconfig"
 )
 
 type Change struct {
@@ -46,17 +51,26 @@ func (manager *Manager) validateConfiguration(
 }
 
 type Manager struct {
-	paths    layout.Layout
-	store    *state.Store
-	registry *core.Registry
-	output   io.Writer
-	errors   io.Writer
-	service  service.Controller
+	paths     layout.Layout
+	store     *state.Store
+	registry  *core.Registry
+	output    io.Writer
+	errors    io.Writer
+	service   service.Controller
+	web       *webconfig.Store
+	ui        *uiassets.Manager
+	reload    chan struct{}
+	controlMu sync.RWMutex
+	control   *control.Client
 }
 
 func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
 	store := state.New(paths)
 	if err := store.Initialize(); err != nil {
+		return nil, err
+	}
+	webStore := webconfig.New(paths.WebConfig)
+	if err := webStore.Initialize(); err != nil {
 		return nil, err
 	}
 	return &Manager{
@@ -66,7 +80,45 @@ func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
 		output:   output,
 		errors:   errorOutput,
 		service:  service.New(),
+		web:      webStore,
+		ui:       uiassets.New(paths.UI, paths.UICurrent),
+		reload:   make(chan struct{}, 1),
 	}, nil
+}
+
+func (manager *Manager) RequestReload() {
+	select {
+	case manager.reload <- struct{}{}:
+	default:
+	}
+}
+
+func (manager *Manager) setControl(client *control.Client) {
+	manager.controlMu.Lock()
+	manager.control = client
+	manager.controlMu.Unlock()
+}
+
+func (manager *Manager) controlClient() (*control.Client, error) {
+	manager.controlMu.RLock()
+	client := manager.control
+	manager.controlMu.RUnlock()
+	if client != nil {
+		return client, nil
+	}
+	data, err := os.ReadFile(manager.paths.CoreControl)
+	if err != nil {
+		return nil, fmt.Errorf("no managed core control API is available")
+	}
+	var spec core.ControlSpec
+	if err := json.Unmarshal(data, &spec); err != nil || spec.BaseURL == "" || spec.Secret == "" {
+		return nil, fmt.Errorf("managed core control metadata is invalid")
+	}
+	return control.New(spec.BaseURL, spec.Secret), nil
+}
+
+func (manager *Manager) RuntimeControl() (*control.Client, error) {
+	return manager.controlClient()
 }
 
 func (manager *Manager) Paths() layout.Layout {

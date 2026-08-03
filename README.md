@@ -21,14 +21,16 @@ SagerNet, Project X, MetaCubeX, or their respective projects.
 ## Why
 
 Sempre replaces platform-specific wrapper scripts and third-party service
-hosts with one Go binary:
+hosts with one Go binary and a separately replaceable Web UI:
 
 ```text
+Browser / CLI
+      |
+Sempre API on localhost:33211
+      |
+sempre daemon ---- selected core@version
+      |
 Windows SCM / systemd / launchd
-                |
-          sempre daemon
-                |
-      selected core@version
 ```
 
 Windows service support is implemented directly with the Windows SCM API.
@@ -36,46 +38,61 @@ Sempre does not download, bundle, or invoke NSSM or PowerShell.
 
 ## Quick Start
 
-Run Sempre from any directory. Normal commands use protected machine-wide
-storage and request administrator access through native UAC on Windows or
-`sudo` on Unix when required.
+Download and extract the bundle for your platform, then run:
 
 ```text
-sempre core install sing-box
+sempre install
+```
+
+`install` can be run repeatedly to install or repair Sempre. It copies the
+binary and bundled UI to protected system storage, registers the native
+service, starts the Web control plane, and opens it in the default browser.
+No proxy core or configuration is required at installation time; the service
+reports `idle` until one is configured.
+
+Running the binary without arguments, including by double-clicking it, shows
+only the current version/status and four actions:
+
+| Action | Result |
+| --- | --- |
+| Open Web UI | Opens the discovered local control-plane address |
+| Install / Repair | Runs the idempotent system installation |
+| Uninstall | Keeps configuration by default, with an explicit purge choice |
+| Run Portable | Runs the Web control plane and selected core beside the binary |
+
+The launcher contains no settings. Configure everything through the Web UI or
+the equivalent CLI commands. A complete CLI setup remains available:
+
+```text
+sempre core install sing-box@stable
 sempre core use sing-box@stable
 sempre subscription set https://example.com/sing-box.json
-sempre service install
-sempre status
+sempre open
 ```
 
-Use a local configuration instead of a subscription:
+To keep both the binary and its data in one movable directory:
 
 ```text
-sempre core install sing-box@1.13.15
-sempre core use sing-box@1.13.15
-sempre config import ./config.json
-sempre service install
+sempre --portable portable run
 ```
 
-Running Sempre without arguments opens an interactive menu.
-
-To keep both the binary and its data in one movable directory, explicitly
-enable portable mode:
-
-```text
-sempre portable enable
-sempre status
-```
-
-The marker command creates `.sempre-portable` beside the executable. You can
-also select a mode for one invocation with `--portable` or `--system`;
-`--system` overrides an existing portable marker.
+`sempre portable enable` creates a persistent `.sempre-portable` marker beside
+the executable. `--portable` and `--system` select a mode for one invocation.
 
 ## Downloads
 
 Canonical releases are published at
 [github.com/tinymins/sempre/releases](https://github.com/tinymins/sempre/releases).
-The latest binaries have stable asset URLs:
+Bundles are recommended because they include the verified official UI:
+
+| Platform | amd64 | arm64 |
+| --- | --- | --- |
+| Windows | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-windows-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-windows-arm64.zip) |
+| Linux | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-arm64.zip) |
+| macOS | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-arm64.zip) |
+
+Standalone binaries remain available and download `sempre-ui.zip` from the
+matching release during installation:
 
 | Platform | amd64 | arm64 |
 | --- | --- | --- |
@@ -159,6 +176,44 @@ is applied automatically. Interactive changes ask before restarting a running
 service; use `--yes` to restart without prompting or `--no-restart` to leave the
 change pending.
 
+## Web Control Plane
+
+Sempre always serves its versioned API and installed UI while the daemon is
+running, including when no core has been selected. The default listener is
+`127.0.0.1:33211`; discovery metadata is written beside the installed binary,
+so `sempre open` and the launcher do not assume a hard-coded port.
+
+```text
+sempre web status --json
+sempre web listen 127.0.0.1:33211
+printf 'new-password\n' | sempre web password set --stdin
+sempre web password clear
+sempre ui status
+sempre ui install official
+sempre ui install https://example.com/sempre-ui.zip --sha256 <digest>
+sempre ui install ./sempre-ui.zip --sha256 <digest>
+sempre ui update
+sempre ui remove
+```
+
+An empty administrator password is accepted only by a same-origin UI and is
+shown as a warning. A password is required for cross-origin UI access; stored
+passwords use Argon2id and successful logins receive an expiring bearer
+session. Changing the listener is a live rebind: Sempre opens the new socket
+before closing the old one and rolls the configuration back on failure.
+
+The official React console covers status and live traffic, proxy selection and
+latency checks, providers, connections, rules, local traffic aggregation,
+logs, core versions, subscriptions, validated configuration editing, listener
+and password settings, and UI lifecycle management. Runtime features are also
+available under `sempre runtime`; run `sempre help` for the command map.
+
+UI archives are independent third-party components. A compatible ZIP has
+`index.html` and `sempre-ui.json` at its root, declares Sempre API major 1, and
+is size/path/symlink checked before an atomic activation. Only one UI is active
+at a time. A locally installed custom UI is preserved by `sempre install`;
+official UI installations are refreshed from the bundle or matching release.
+
 ## Services
 
 ```text
@@ -170,11 +225,13 @@ sempre service restart
 sempre service status
 ```
 
-`service install` validates the selected deployment, registers Sempre with the
-native system service manager, enables it, and starts it. It also copies Sempre
-to a protected system executable directory, so the original download can be
-moved or deleted afterwards. `service uninstall` retains the installed binary
-and system data.
+`service install` registers Sempre with the native system service manager,
+enables it, and starts it. It also copies Sempre and bundled resources to a
+protected system executable directory, so the original download can be moved
+or deleted afterwards. Core and configuration state is merged with an existing
+installation. `service uninstall` removes only the service registration;
+top-level `uninstall` removes the application while retaining configuration,
+subscription, listener, and password unless `--purge` is supplied.
 
 Portable mode can explicitly deploy prepared offline assets to the system
 service:
@@ -224,7 +281,10 @@ sempre version
 ```
 
 Logs rotate at 10 MiB with three backups. Sempre does not assume a Clash API
-port, TUN interface name, or the presence of another proxy product. `status`
+port supplied by the user configuration, TUN interface name, or the presence
+of another proxy product. For supported cores, Sempre generates a protected
+temporary runtime configuration with a random loopback control port and secret;
+the original configuration is never rewritten. `status`
 cross-checks the recorded PID with the operating system and the shared instance
 lock, so interrupted or forcibly terminated processes are reported as stale.
 `doctor` checks files, configuration validation, process consistency, and the
@@ -246,12 +306,19 @@ Portable mode keeps the following structure beside the executable:
 ```text
 sempre.exe
 .sempre-portable
+endpoint.json
+resources/
+|-- sempre-ui.zip
+`-- SHA256SUMS
 .sempre/
 |-- state.json
+|-- web.json
 |-- cores/
 |   `-- sing-box/<version>/
 |-- configs/
 |   `-- sing-box/<sha256>.json
+|-- ui/
+|   `-- current/
 |-- logs/
 `-- run/
 ```
@@ -261,18 +328,24 @@ The system service always runs the protected system executable with
 
 ## Build
 
-Go 1.25 or newer is required. The build is pure Go and uses `CGO_ENABLED=0`.
+Go 1.25 or newer and Bun 1.3.14 are required. The backend build is pure Go and
+uses `CGO_ENABLED=0`.
 
 ```text
+bun install --cwd ui --frozen-lockfile
+bun run lint
+bun run tsc
+bun run test
 go test ./...
 go test -race ./...
 go vet ./...
 go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
-go run ./cmd/build
+bun run build
 ```
 
-The build command emits Windows, Linux, and macOS binaries for amd64 and arm64,
-plus `dist/SHA256SUMS`. Windows resources use an `asInvoker` manifest; UAC is
+The build command validates both projects and emits Windows, Linux, and macOS
+binaries for amd64 and arm64, `sempre-ui.zip`, six self-contained bundle ZIPs,
+and `dist/SHA256SUMS`. Windows resources use an `asInvoker` manifest; UAC is
 requested at runtime only for privileged commands.
 
 Tagged release builds use Go 1.25.12, derive their embedded build date from the

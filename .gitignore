@@ -1,7 +1,9 @@
 /dist/
 /.cache/
 /.sempre/
+/ui/dist/
+/ui/node_modules/
+*.tsbuildinfo
 *.syso
 *.exe
 *.test
-

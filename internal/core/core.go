@@ -70,6 +70,20 @@ type RunSpec struct {
 	WorkingDir string
 }
 
+type ControlSpec struct {
+	BaseURL string
+	Secret  string
+}
+
+type RuntimeSpec struct {
+	Config  string
+	Control ControlSpec
+}
+
+type RuntimePreparer interface {
+	PrepareRuntime(string, string) (RuntimeSpec, error)
+}
+
 type Adapter interface {
 	ID() string
 	Resolve(context.Context, string, Target) (Package, error)

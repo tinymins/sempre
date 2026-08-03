@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "name": "Sempre Console",
+  "version": "0.2.0",
+  "entry": "index.html",
+  "api": { "major": 1 }
+}

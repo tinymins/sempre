@@ -45,13 +45,7 @@ func (manager *Manager) installSystemService(ctx context.Context, allowReplace b
 	if err != nil {
 		return err
 	}
-	if manager.paths.Mode == layout.Portable {
-		return manager.deployToSystem(ctx, systemPaths, DeployAll, allowReplace, true)
-	}
-	if _, _, err := manager.deploymentSpec(ctx, ""); err != nil {
-		return fmt.Errorf("system deployment is not ready: %w", err)
-	}
-	return manager.replaceSystemExecutable(ctx, systemPaths)
+	return manager.deployToSystem(ctx, systemPaths, DeployAll, allowReplace, true)
 }
 
 func (manager *Manager) deploySystemService(
@@ -105,7 +99,7 @@ func (manager *Manager) deployToSystem(
 	if err != nil {
 		return err
 	}
-	if component == DeployAll || component == DeployData {
+	if !install && (component == DeployAll || component == DeployData) {
 		if _, _, err := manager.deploymentSpec(ctx, ""); err != nil {
 			return fmt.Errorf("portable deployment is not ready: %w", err)
 		}
@@ -126,7 +120,16 @@ func (manager *Manager) deployToSystem(
 		return fmt.Errorf("system service is not installed; run 'sempre service install' first")
 	}
 
-	operations, err := manager.stageDeployment(ctx, target, component, sourceDocument)
+	var operations []*swapOperation
+	if install {
+		targetDocument, readErr := readSystemDeploymentState(target)
+		if readErr != nil {
+			return readErr
+		}
+		operations, err = manager.stageInstallation(ctx, target, sourceDocument, targetDocument)
+	} else {
+		operations, err = manager.stageDeployment(ctx, target, component, sourceDocument)
+	}
 	if err != nil {
 		return err
 	}
@@ -145,9 +148,21 @@ func (manager *Manager) deployToSystem(
 		defer cancel()
 		return errors.Join(err, restoreServiceState(cleanupCtx, manager.service, current))
 	}
-	if component == DeployAll {
+	if component == DeployAll || install {
 		if err := target.Ensure(); err != nil {
 			return rollbackDeployment(ctx, manager.service, operations, current, false, target, err)
+		}
+	}
+	if install {
+		targetManager, managerErr := New(target, manager.output, manager.errors)
+		if managerErr != nil {
+			return rollbackDeployment(ctx, manager.service, operations, current, false, target, managerErr)
+		}
+		metadata, uiErr := targetManager.ui.Current()
+		if uiErr != nil || metadata.SourceType == "official" {
+			if _, uiErr := targetManager.InstallOfficialUI(ctx); uiErr != nil {
+				return rollbackDeployment(ctx, manager.service, operations, current, false, target, uiErr)
+			}
 		}
 	}
 

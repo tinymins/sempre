@@ -1,0 +1,11 @@
+{
+  "name": "sempre-workspace",
+  "private": true,
+  "scripts": {
+    "lint": "bun --cwd=ui run lint",
+    "tsc": "bun --cwd=ui run tsc",
+    "test": "bun --cwd=ui run test",
+    "build:ui": "bun --cwd=ui run build",
+    "build": "go run ./cmd/build"
+  }
+}

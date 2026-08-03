@@ -1,9 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +21,10 @@ type target struct {
 	os   string
 	arch string
 	name string
+}
+
+func (item target) bundleName() string {
+	return fmt.Sprintf("sempre-bundle-%s-%s.zip", item.os, item.arch)
 }
 
 func main() {
@@ -44,6 +51,16 @@ func build() error {
 		return err
 	}
 	if err := run(root, nil, goBinary, "vet", "./..."); err != nil {
+		return err
+	}
+	bunBinary, err := exec.LookPath(executableName("bun"))
+	if err != nil {
+		return fmt.Errorf("locate Bun: %w", err)
+	}
+	if err := run(root, nil, bunBinary, "--cwd=ui", "run", "lint"); err != nil {
+		return err
+	}
+	if err := run(root, nil, bunBinary, "--cwd=ui", "run", "test"); err != nil {
 		return err
 	}
 
@@ -87,6 +104,9 @@ func build() error {
 	}
 	commit := gitOutput(root, "rev-parse", "--short=12", "HEAD")
 	date := gitOutput(root, "show", "-s", "--format=%cI", "HEAD")
+	if err := buildUI(root, dist, bunBinary, version); err != nil {
+		return err
+	}
 	ldflags := strings.Join([]string{
 		"-s", "-w",
 		"-X", "github.com/tinymins/sempre/internal/buildinfo.Version=" + version,
@@ -112,8 +132,124 @@ func build() error {
 		if err := run(root, environment, goBinary, "build", "-trimpath", "-ldflags", ldflags, "-o", output, "./cmd/sempre"); err != nil {
 			return err
 		}
+		if err := writeBundle(dist, item); err != nil {
+			return err
+		}
 	}
-	return writeChecksums(dist, targets)
+	names := []string{"sempre-ui.zip"}
+	for _, item := range targets {
+		names = append(names, item.name, item.bundleName())
+	}
+	return writeChecksums(dist, names)
+}
+
+func buildUI(root, dist, bunBinary, version string) error {
+	if err := run(root, nil, bunBinary, "--cwd=ui", "run", "build"); err != nil {
+		return err
+	}
+	uiDist := filepath.Join(root, "ui", "dist")
+	manifestPath := filepath.Join(uiDist, "sempre-ui.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read UI manifest: %w", err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("decode UI manifest: %w", err)
+	}
+	manifest["version"] = version
+	data, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(manifestPath, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write UI manifest: %w", err)
+	}
+	if err := zipDirectory(filepath.Join(dist, "sempre-ui.zip"), uiDist); err != nil {
+		return fmt.Errorf("archive UI: %w", err)
+	}
+	return nil
+}
+
+func writeBundle(dist string, item target) error {
+	archive, err := os.Create(filepath.Join(dist, item.bundleName()))
+	if err != nil {
+		return err
+	}
+	writer := zip.NewWriter(archive)
+	closeWithError := func(cause error) error {
+		return errors.Join(cause, writer.Close(), archive.Close())
+	}
+	prefix := fmt.Sprintf("sempre-%s-%s", item.os, item.arch)
+	executable := "sempre"
+	if item.os == "windows" {
+		executable += ".exe"
+	}
+	if err := addFileToZIP(writer, filepath.Join(dist, item.name), filepath.ToSlash(filepath.Join(prefix, executable)), 0o755); err != nil {
+		return closeWithError(err)
+	}
+	uiArchive := filepath.Join(dist, "sempre-ui.zip")
+	if err := addFileToZIP(writer, uiArchive, filepath.ToSlash(filepath.Join(prefix, "resources", "sempre-ui.zip")), 0o600); err != nil {
+		return closeWithError(err)
+	}
+	digest, err := hashFile(uiArchive)
+	if err != nil {
+		return closeWithError(err)
+	}
+	checksums := []byte(fmt.Sprintf("%s  sempre-ui.zip\n", digest))
+	if err := addBytesToZIP(writer, checksums, filepath.ToSlash(filepath.Join(prefix, "resources", "SHA256SUMS")), 0o600); err != nil {
+		return closeWithError(err)
+	}
+	return closeWithError(nil)
+}
+
+func zipDirectory(destination, source string) error {
+	archive, err := os.Create(destination)
+	if err != nil {
+		return err
+	}
+	writer := zip.NewWriter(archive)
+	err = filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		return addFileToZIP(writer, path, filepath.ToSlash(relative), 0o600)
+	})
+	return errors.Join(err, writer.Close(), archive.Close())
+}
+
+func addFileToZIP(writer *zip.Writer, source, name string, mode os.FileMode) error {
+	file, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+	header.SetMode(mode)
+	destination, err := writer.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(destination, file)
+	return err
+}
+
+func addBytesToZIP(writer *zip.Writer, data []byte, name string, mode os.FileMode) error {
+	header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+	header.SetMode(mode)
+	destination, err := writer.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+	_, err = destination.Write(data)
+	return err
 }
 
 func checkFormatting(root string) error {
@@ -122,7 +258,7 @@ func checkFormatting(root string) error {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "dist") {
+		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "dist" || entry.Name() == "node_modules") {
 			return filepath.SkipDir
 		}
 		if !entry.IsDir() && filepath.Ext(path) == ".go" {
@@ -189,11 +325,7 @@ func gitOutput(root string, arguments ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func writeChecksums(dist string, targets []target) error {
-	names := make([]string, 0, len(targets))
-	for _, item := range targets {
-		names = append(names, item.name)
-	}
+func writeChecksums(dist string, names []string) error {
 	sort.Strings(names)
 	file, err := os.Create(filepath.Join(dist, "SHA256SUMS"))
 	if err != nil {

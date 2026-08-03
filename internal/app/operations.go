@@ -39,6 +39,26 @@ func (manager *Manager) InstallService(ctx context.Context, allowReplace bool) e
 	})
 }
 
+func (manager *Manager) InstallApplication(ctx context.Context, allowReplace bool) error {
+	executable, err := layout.CurrentExecutable()
+	if err != nil {
+		return err
+	}
+	portable := layout.PortableAt(executable)
+	if portable.State != manager.paths.State {
+		if _, err := os.Stat(portable.State); err == nil {
+			source, err := New(portable, manager.output, manager.errors)
+			if err != nil {
+				return err
+			}
+			return source.InstallService(ctx, allowReplace)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return manager.InstallService(ctx, allowReplace)
+}
+
 func (manager *Manager) DeployService(
 	ctx context.Context,
 	component DeployComponent,
@@ -62,9 +82,7 @@ func (manager *Manager) startService(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := systemManager.deploymentSpec(ctx, ""); err != nil {
-		return err
-	}
+	_ = systemManager
 	return manager.service.Start(ctx)
 }
 
@@ -81,9 +99,7 @@ func (manager *Manager) restartService(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := systemManager.deploymentSpec(ctx, ""); err != nil {
-		return err
-	}
+	_ = systemManager
 	return manager.service.Restart(ctx)
 }
 

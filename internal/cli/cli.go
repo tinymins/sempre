@@ -18,6 +18,7 @@ import (
 type Options struct {
 	Yes       bool
 	NoRestart bool
+	JSON      bool
 	Mode      layout.Mode
 	Elevated  bool
 }
@@ -44,6 +45,9 @@ func Run(ctx context.Context, arguments []string, input io.Reader, output, error
 	if err != nil {
 		fmt.Fprintln(errorOutput, "ERROR:", err)
 		return 1
+	}
+	if len(arguments) == 0 {
+		return runLauncher(ctx, input, output, errorOutput)
 	}
 	if handled, code := runStateless(ctx, arguments, executable, output, errorOutput); handled {
 		return code
@@ -76,9 +80,6 @@ func Run(ctx context.Context, arguments []string, input io.Reader, output, error
 		input:   bufio.NewReader(input),
 		output:  output,
 		errors:  errorOutput,
-	}
-	if len(arguments) == 0 {
-		return command.menu(ctx, options)
 	}
 	if err := command.execute(ctx, arguments, options); err != nil {
 		fmt.Fprintln(errorOutput, "ERROR:", err)
@@ -120,6 +121,23 @@ func (command *CLI) execute(ctx context.Context, arguments []string, options Opt
 			return usageError()
 		}
 		return command.manager.RunDaemon(ctx)
+	case "install":
+		if len(arguments) != 1 {
+			return usageError()
+		}
+		if err := command.manager.InstallApplication(ctx, true); err != nil {
+			return err
+		}
+		fmt.Fprintln(command.output, "Sempre installed, enabled, and started.")
+		return waitAndOpenSystem(ctx, command.output)
+	case "uninstall":
+		return command.uninstall(ctx, arguments[1:], options)
+	case "web":
+		return command.web(ctx, arguments[1:], options)
+	case "ui":
+		return command.ui(ctx, arguments[1:], options)
+	case "runtime":
+		return command.runtime(ctx, arguments[1:], options)
 	case "core":
 		return command.core(ctx, arguments[1:], options)
 	case "subscription":
@@ -129,7 +147,10 @@ func (command *CLI) execute(ctx context.Context, arguments []string, options Opt
 	case "service":
 		return command.service(ctx, arguments[1:], options)
 	case "portable":
-		return fmt.Errorf("portable mode is changed before data initialization; run 'sempre portable enable|disable'")
+		if len(arguments) == 2 && arguments[1] == "run" {
+			return command.runPortable(ctx)
+		}
+		return fmt.Errorf("portable accepts run, enable, or disable")
 	case "run":
 		return command.run(ctx, arguments[1:])
 	case "update":
@@ -480,6 +501,8 @@ func parseGlobalOptions(arguments []string) ([]string, Options, error) {
 			options.Yes = true
 		case "--no-restart":
 			options.NoRestart = true
+		case "--json":
+			options.JSON = true
 		case "--elevated":
 			options.Elevated = true
 		case "--system":
@@ -511,6 +534,9 @@ func invocationArguments(arguments []string, options Options) []string {
 	if options.NoRestart {
 		result = append(result, "--no-restart")
 	}
+	if options.JSON {
+		result = append(result, "--json")
+	}
 	if options.Elevated {
 		result = append(result, "--elevated")
 	}
@@ -519,11 +545,13 @@ func invocationArguments(arguments []string, options Options) []string {
 
 func requiresAdministrator(arguments []string, mode layout.Mode) bool {
 	if len(arguments) == 0 {
-		return menuRequiresAdministrator(mode)
+		return false
 	}
 	switch arguments[0] {
-	case "help", "-h", "--help", "version", "portable":
+	case "help", "-h", "--help", "version", "open":
 		return false
+	case "portable":
+		return len(arguments) == 2 && arguments[1] == "run"
 	case "service":
 		return len(arguments) < 2 || arguments[1] != "status"
 	case "run":
@@ -546,6 +574,12 @@ func runStateless(
 			return true, 0
 		case "version":
 			fmt.Fprintf(output, "Sempre %s (%s, %s)\n", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
+			return true, 0
+		case "open":
+			if err := openSystemUI(ctx); err != nil {
+				fmt.Fprintln(errorOutput, "ERROR:", err)
+				return true, 1
+			}
 			return true, 0
 		}
 	}
@@ -588,6 +622,17 @@ func usageError() error {
 }
 
 const usage = `Sempre - cross-platform lifecycle manager for proxy cores
+
+Main entry points:
+  sempre install
+  sempre uninstall [--purge]
+  sempre open
+  sempre portable run
+
+Web and UI:
+  sempre web <status|listen|password>
+  sempre ui <status|install|update|remove>
+  sempre runtime <overview|capabilities|config|proxies|providers|rules|connections|dns|events|reload>
 
 Core versions:
   sempre core list

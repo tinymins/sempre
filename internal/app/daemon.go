@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/tinymins/sempre/internal/control"
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/state"
 	"github.com/tinymins/sempre/internal/supervisor"
@@ -34,6 +36,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err != nil {
 					return supervisor.Plan{}, err
 				}
+				if document.Active == nil {
+					return supervisor.Plan{}, supervisor.ErrIdle
+				}
 				deployment, adapter, err := manager.active(document)
 				if err != nil {
 					return supervisor.Plan{}, err
@@ -53,9 +58,21 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err := manager.validateConfiguration(runCtx, adapter, binary, config, logger, logger); err != nil {
 					return supervisor.Plan{}, err
 				}
+				runtimeSpec := core.RuntimeSpec{Config: config}
+				if preparer, ok := adapter.(core.RuntimePreparer); ok {
+					runtimeDirectory := filepath.Join(manager.paths.Runtime, deployment.Core, "control")
+					if err := os.RemoveAll(runtimeDirectory); err != nil {
+						return supervisor.Plan{}, err
+					}
+					runtimeSpec, err = preparer.PrepareRuntime(config, runtimeDirectory)
+					if err != nil {
+						return supervisor.Plan{}, err
+					}
+				}
 				return supervisor.Plan{
 					Deployment: deployment,
-					Spec:       adapter.Run(binary, config, dataDir),
+					Spec:       adapter.Run(binary, runtimeSpec.Config, dataDir),
+					Control:    runtimeSpec.Control,
 				}, nil
 			},
 			ResolveFailure: func(failure error) (bool, error) {
@@ -73,6 +90,19 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			NextUpdate: manager.nextSubscriptionUpdate,
 			Started: func(plan supervisor.Plan, pid int) error {
 				logf("started %s with PID %d", deploymentLabel(plan.Deployment), pid)
+				if plan.Control.BaseURL != "" {
+					manager.setControl(control.New(plan.Control.BaseURL, plan.Control.Secret))
+					data, err := json.Marshal(plan.Control)
+					if err != nil {
+						return err
+					}
+					if err := state.WriteAtomic(manager.paths.CoreControl, append(data, '\n'), 0o600); err != nil {
+						return err
+					}
+				} else {
+					manager.setControl(nil)
+					_ = os.Remove(manager.paths.CoreControl)
+				}
 				return manager.store.Update(func(document *state.Document) error {
 					document.Runtime = state.Runtime{
 						State:          "starting",
@@ -121,6 +151,8 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				return err
 			},
 			Exited: func(plan supervisor.Plan, failure error, restarts int) error {
+				manager.setControl(nil)
+				_ = os.Remove(manager.paths.CoreControl)
 				logf("exited %s: %v", deploymentLabel(plan.Deployment), failure)
 				return manager.store.Update(func(document *state.Document) error {
 					document.Runtime.State = "restarting"
@@ -132,6 +164,8 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				})
 			},
 			Stopped: func() error {
+				manager.setControl(nil)
+				_ = os.Remove(manager.paths.CoreControl)
 				logf("daemon stopped")
 				return manager.store.Update(func(document *state.Document) error {
 					document.Runtime.State = "stopped"
@@ -140,10 +174,25 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 					return nil
 				})
 			},
-			Log: logf,
+			Idle: func() error {
+				manager.setControl(nil)
+				_ = os.Remove(manager.paths.CoreControl)
+				logf("waiting for an active core deployment")
+				return manager.store.Update(func(document *state.Document) error {
+					document.Runtime = state.Runtime{
+						State:          "idle",
+						LastTransition: time.Now().UTC(),
+					}
+					return nil
+				})
+			},
+			Log:    logf,
+			Reload: manager.reload,
 		},
 	}
-	return manager.service.Run(ctx, runner.Run)
+	return manager.service.Run(ctx, func(serviceContext context.Context) error {
+		return manager.runControlPlane(serviceContext, runner.Run)
+	})
 }
 
 func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (bool, error) {

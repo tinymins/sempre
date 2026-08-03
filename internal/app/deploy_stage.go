@@ -68,6 +68,109 @@ func (manager *Manager) stageDeployment(
 	return operations, nil
 }
 
+func (manager *Manager) stageInstallation(
+	ctx context.Context,
+	target layout.Layout,
+	source, existing state.Document,
+) ([]*swapOperation, error) {
+	var operations []*swapOperation
+	fail := func(err error) ([]*swapOperation, error) {
+		cleanupStaged(operations)
+		return nil, err
+	}
+	if err := target.EnsureServiceExecutableDirectory(); err != nil {
+		return nil, err
+	}
+	executable, err := layout.CurrentExecutable()
+	if err != nil {
+		return nil, err
+	}
+	if !sameFile(executable, target.ServiceExecutable) {
+		operation, err := stageExecutable(executable, target.ServiceExecutable)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, operation)
+	}
+	resources, err := manager.stageMergedDirectory(manager.paths.Resources, target.Resources, 0o600)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, resources)
+	cores, err := manager.stageCores(ctx, target, source, true)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, cores)
+	configs, err := manager.stageMergedDirectory(manager.paths.Configs, target.Configs, 0o600)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, configs)
+	merged := mergeInstallDocument(source, existing)
+	stateFile, err := stageStateFile(target.State, merged)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, stateFile)
+	return operations, nil
+}
+
+func (manager *Manager) stageMergedDirectory(source, target string, mode os.FileMode) (*swapOperation, error) {
+	staging, err := stageDirectory(target)
+	if err != nil {
+		return nil, err
+	}
+	operation := &swapOperation{staged: staging, target: target}
+	if err := copyDirectoryIfExists(target, staging, mode); err != nil {
+		operation.cleanup()
+		return nil, err
+	}
+	if !sameFile(source, target) {
+		if err := copyDirectoryIfExists(source, staging, mode); err != nil {
+			operation.cleanup()
+			return nil, err
+		}
+	}
+	return operation, nil
+}
+
+func mergeInstallDocument(source, existing state.Document) state.Document {
+	source.Normalize()
+	existing.Normalize()
+	result := existing
+	for coreID, sourceCore := range source.Cores {
+		targetCore := result.Core(coreID)
+		for version, installation := range sourceCore.Installed {
+			copy := *installation
+			targetCore.Installed[version] = &copy
+		}
+		for channel, version := range sourceCore.Channels {
+			if targetCore.Channels[channel] == "" {
+				targetCore.Channels[channel] = version
+			}
+		}
+	}
+	for coreID, hash := range source.Configs {
+		if result.Configs[coreID] == "" {
+			result.Configs[coreID] = hash
+		}
+	}
+	if !meaningfulState(existing) {
+		result.Selected = source.Selected
+		result.Active = source.Active
+		result.Previous = source.Previous
+		result.Pending = source.Pending
+		result.LastError = source.LastError
+		result.Subscription = source.Subscription
+	} else if result.Subscription.URL == "" && source.Subscription.URL != "" {
+		result.Subscription = source.Subscription
+	}
+	result.Runtime = state.Runtime{}
+	result.Normalize()
+	return result
+}
+
 func (manager *Manager) stageCores(
 	ctx context.Context,
 	target layout.Layout,

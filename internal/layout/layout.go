@@ -22,6 +22,12 @@ type Layout struct {
 	Root              string
 	Home              string
 	State             string
+	WebConfig         string
+	UI                string
+	UICurrent         string
+	Resources         string
+	Endpoint          string
+	CoreControl       string
 	Lock              string
 	OperationLock     string
 	ConfigLock        string
@@ -112,6 +118,16 @@ func portableLayout(executable string) Layout {
 	return newLayout(Portable, root, home, filepath.Join(home, "logs"), filepath.Join(home, "run"), executable)
 }
 
+func PortableAt(executable string) Layout {
+	paths := portableLayout(executable)
+	system, err := systemLayout()
+	if err == nil {
+		paths.InstanceLock = system.InstanceLock
+		paths.instanceLockMode = System
+	}
+	return paths
+}
+
 func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layout {
 	root, _ = filepath.Abs(root)
 	home, _ = filepath.Abs(home)
@@ -122,6 +138,12 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		Root:              root,
 		Home:              home,
 		State:             filepath.Join(home, "state.json"),
+		WebConfig:         filepath.Join(home, "web.json"),
+		UI:                filepath.Join(home, "ui"),
+		UICurrent:         filepath.Join(home, "ui", "current"),
+		Resources:         filepath.Join(root, "resources"),
+		Endpoint:          filepath.Join(root, "endpoint.json"),
+		CoreControl:       filepath.Join(run, "control.json"),
 		Lock:              filepath.Join(run, "state.lock"),
 		OperationLock:     filepath.Join(run, "operation.lock"),
 		ConfigLock:        filepath.Join(run, "config.lock"),

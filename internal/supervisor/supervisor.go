@@ -17,9 +17,12 @@ const (
 	maxBackoff   = 60 * time.Second
 )
 
+var ErrIdle = errors.New("no active core deployment")
+
 type Plan struct {
 	Deployment state.Deployment
 	Spec       core.RunSpec
+	Control    core.ControlSpec
 }
 
 type Hooks struct {
@@ -32,7 +35,9 @@ type Hooks struct {
 	EarlyFailure    func(Plan, error) error
 	Exited          func(Plan, error, int) error
 	Stopped         func() error
+	Idle            func() error
 	Log             func(string, ...any)
+	Reload          <-chan struct{}
 }
 
 type Runner struct {
@@ -79,17 +84,32 @@ func (runner *Runner) Run(ctx context.Context) error {
 		}
 		plan, err := runner.Hooks.Resolve(ctx)
 		if err != nil {
+			if errors.Is(err, ErrIdle) {
+				if runner.Hooks.Idle != nil {
+					_ = runner.Hooks.Idle()
+				}
+				if runner.waitIdle(ctx) {
+					continue
+				}
+				_ = runner.Hooks.Stopped()
+				return nil
+			}
 			if runner.Hooks.ResolveFailure != nil {
 				retry, rollbackErr := runner.Hooks.ResolveFailure(err)
 				if rollbackErr != nil {
-					return errors.Join(err, rollbackErr)
+					runner.Hooks.Log("resolve failure handling failed: %v", errors.Join(err, rollbackErr))
 				}
 				if retry {
 					backoff = time.Second
 					continue
 				}
 			}
-			return err
+			if err := runner.waitRetry(ctx, backoff); err != nil {
+				_ = runner.Hooks.Stopped()
+				return nil
+			}
+			backoff = nextBackoff(backoff)
+			continue
 		}
 		command := exec.Command(plan.Spec.Path, plan.Spec.Args...)
 		command.Dir = plan.Spec.WorkingDir
@@ -137,6 +157,15 @@ func (runner *Runner) Run(ctx context.Context) error {
 				closeProcess(process)
 				_ = runner.Hooks.Stopped()
 				return nil
+			case <-runner.Hooks.Reload:
+				if updateTimer != nil {
+					updateTimer.Stop()
+				}
+				intentionalRestart = true
+				grace.Stop()
+				stopProcess(process, waited)
+				closeProcess(process)
+				break processLoop
 			case <-grace.C:
 				healthy = true
 				backoff = time.Second
@@ -183,6 +212,39 @@ func (runner *Runner) Run(ctx context.Context) error {
 		if intentionalRestart {
 			backoff = time.Second
 		}
+	}
+}
+
+func (runner *Runner) waitIdle(ctx context.Context) bool {
+	timer, updates := runner.updateTimer()
+	if timer != nil {
+		defer timer.Stop()
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-runner.Hooks.Reload:
+		return true
+	case <-updates:
+		if runner.Hooks.ScheduledUpdate != nil {
+			if _, err := runner.Hooks.ScheduledUpdate(ctx); err != nil {
+				runner.Hooks.Log("scheduled subscription update failed while idle: %v", err)
+			}
+		}
+		return true
+	}
+}
+
+func (runner *Runner) waitRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-runner.Hooks.Reload:
+		return nil
+	case <-timer.C:
+		return nil
 	}
 }
 

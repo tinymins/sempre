@@ -74,6 +74,8 @@ func TestAdministratorRequirement(t *testing.T) {
 		{[]string{"service", "status"}, layout.System, false},
 		{[]string{"service", "install"}, layout.Portable, true},
 		{[]string{"run"}, layout.Portable, true},
+		{[]string{"portable", "run"}, layout.Portable, true},
+		{[]string{"portable", "enable"}, layout.System, false},
 		{[]string{"version"}, layout.System, false},
 	} {
 		if got := requiresAdministrator(test.arguments, test.mode); got != test.want {

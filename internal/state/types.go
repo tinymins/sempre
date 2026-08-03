@@ -184,7 +184,7 @@ func (document Document) Validate() error {
 		return fmt.Errorf("invalid runtime version %q", document.Runtime.Version)
 	}
 	switch document.Runtime.State {
-	case "", "starting", "running", "restarting", "stopped", "failed":
+	case "", "idle", "starting", "running", "restarting", "stopped", "failed":
 	default:
 		return fmt.Errorf("invalid runtime state %q", document.Runtime.State)
 	}

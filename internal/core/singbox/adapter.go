@@ -2,9 +2,15 @@ package singbox
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/tinymins/sempre/internal/core"
@@ -109,4 +115,74 @@ func (adapter *Adapter) Run(binary, config, dataDir string) core.RunSpec {
 	}
 }
 
+func (adapter *Adapter) PrepareRuntime(config, runtimeDirectory string) (core.RuntimeSpec, error) {
+	data, err := os.ReadFile(config)
+	if err != nil {
+		return core.RuntimeSpec{}, fmt.Errorf("read sing-box configuration: %w", err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(data, &document); err != nil {
+		return core.RuntimeSpec{}, fmt.Errorf("decode sing-box configuration: %w", err)
+	}
+	experimental := object(document["experimental"])
+	clashAPI := object(experimental["clash_api"])
+	address, err := availableLoopbackAddress()
+	if err != nil {
+		return core.RuntimeSpec{}, err
+	}
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(secretBytes); err != nil {
+		return core.RuntimeSpec{}, fmt.Errorf("generate internal core API secret: %w", err)
+	}
+	secret := hex.EncodeToString(secretBytes)
+	clashAPI["external_controller"] = address
+	clashAPI["secret"] = secret
+	clashAPI["external_ui"] = ""
+	clashAPI["external_ui_download_url"] = ""
+	clashAPI["external_ui_download_detour"] = ""
+	clashAPI["access_control_allow_origin"] = []string{"http://localhost.invalid"}
+	clashAPI["access_control_allow_private_network"] = false
+	experimental["clash_api"] = clashAPI
+	document["experimental"] = experimental
+
+	runtimeConfig := filepath.Join(runtimeDirectory, "config.json")
+	encoded, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return core.RuntimeSpec{}, err
+	}
+	if err := os.MkdirAll(runtimeDirectory, 0o700); err != nil {
+		return core.RuntimeSpec{}, err
+	}
+	if err := os.WriteFile(runtimeConfig, append(encoded, '\n'), 0o600); err != nil {
+		return core.RuntimeSpec{}, fmt.Errorf("write sing-box runtime configuration: %w", err)
+	}
+	return core.RuntimeSpec{
+		Config: runtimeConfig,
+		Control: core.ControlSpec{
+			BaseURL: "http://" + address,
+			Secret:  secret,
+		},
+	}, nil
+}
+
+func object(value any) map[string]any {
+	if result, ok := value.(map[string]any); ok {
+		return result
+	}
+	return map[string]any{}
+}
+
+func availableLoopbackAddress() (string, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", fmt.Errorf("reserve internal core API address: %w", err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		return "", err
+	}
+	return address, nil
+}
+
 var _ core.Adapter = (*Adapter)(nil)
+var _ core.RuntimePreparer = (*Adapter)(nil)

@@ -31,6 +31,73 @@ func (manager *Manager) ImportConfig(ctx context.Context, source string) (Change
 	return change, err
 }
 
+func (manager *Manager) SaveConfigContent(ctx context.Context, data []byte) (Change, error) {
+	if int64(len(data)) > MaxConfigSize {
+		return Change{}, fmt.Errorf("configuration exceeds %d bytes", MaxConfigSize)
+	}
+	var change Change
+	err := manager.withOperation(func() error {
+		var err error
+		change, err = manager.activateConfig(ctx, data, nil)
+		return err
+	})
+	return change, err
+}
+
+func (manager *Manager) CurrentConfigContent() ([]byte, string, error) {
+	document, err := manager.store.Read()
+	if err != nil {
+		return nil, "", err
+	}
+	if document.Selected == nil {
+		return nil, "", fmt.Errorf("no core is selected")
+	}
+	hash := document.Configs[document.Selected.Core]
+	if hash == "" {
+		return nil, "", fmt.Errorf("selected core has no configuration")
+	}
+	data, err := os.ReadFile(manager.paths.Config(document.Selected.Core, hash))
+	if err != nil {
+		return nil, "", fmt.Errorf("read active configuration: %w", err)
+	}
+	return data, hash, nil
+}
+
+func (manager *Manager) ValidateConfigContent(ctx context.Context, data []byte) error {
+	if int64(len(data)) > MaxConfigSize {
+		return fmt.Errorf("configuration exceeds %d bytes", MaxConfigSize)
+	}
+	document, err := manager.store.Read()
+	if err != nil {
+		return err
+	}
+	target, adapter, err := manager.configurationTarget(document)
+	if err != nil {
+		return err
+	}
+	candidate, err := os.CreateTemp(manager.paths.Runtime, "config-validate-*.json")
+	if err != nil {
+		return err
+	}
+	path := candidate.Name()
+	defer os.Remove(path)
+	if _, err := candidate.Write(data); err != nil {
+		candidate.Close()
+		return err
+	}
+	if err := candidate.Close(); err != nil {
+		return err
+	}
+	return manager.validateConfiguration(
+		ctx,
+		adapter,
+		manager.paths.CoreBinary(target.Core, target.Version),
+		path,
+		manager.output,
+		manager.errors,
+	)
+}
+
 func (manager *Manager) importConfig(ctx context.Context, source string) (Change, error) {
 	file, err := os.Open(source)
 	if err != nil {

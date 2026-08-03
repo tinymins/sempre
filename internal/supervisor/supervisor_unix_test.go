@@ -94,7 +94,7 @@ func TestRunnerRetriesAfterResolveRollback(t *testing.T) {
 			Stopped: func() error { return nil },
 		},
 	}
-	if err := runner.Run(ctx); !errors.Is(err, context.Canceled) {
+	if err := runner.Run(ctx); err != nil {
 		t.Fatalf("runner error = %v", err)
 	}
 	if rollbacks.Load() != 1 || resolves.Load() != 2 {
