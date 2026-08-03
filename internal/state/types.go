@@ -8,7 +8,12 @@ import (
 	"time"
 )
 
-const SchemaVersion = 3
+const SchemaVersion = 4
+
+const (
+	DesiredRunning = "running"
+	DesiredStopped = "stopped"
+)
 
 var (
 	coreIDPattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -28,6 +33,7 @@ type Document struct {
 	Cores        map[string]*CoreState `json:"cores"`
 	Configs      map[string]string     `json:"configs"`
 	Subscription Subscription          `json:"subscription"`
+	DesiredState string                `json:"desired_state"`
 	Runtime      Runtime               `json:"runtime"`
 }
 
@@ -83,18 +89,22 @@ type Runtime struct {
 	PID            int       `json:"pid,omitempty"`
 	Core           string    `json:"core,omitempty"`
 	Repository     string    `json:"repository,omitempty"`
+	Ref            string    `json:"ref,omitempty"`
 	Version        string    `json:"version,omitempty"`
+	ConfigHash     string    `json:"config_hash,omitempty"`
 	StartedAt      time.Time `json:"started_at,omitempty"`
 	RestartCount   int       `json:"restart_count,omitempty"`
 	LastExit       string    `json:"last_exit,omitempty"`
+	LastError      string    `json:"last_error,omitempty"`
 	LastTransition time.Time `json:"last_transition,omitempty"`
 }
 
 func NewDocument() Document {
 	return Document{
-		Schema:  SchemaVersion,
-		Cores:   map[string]*CoreState{},
-		Configs: map[string]string{},
+		Schema:       SchemaVersion,
+		Cores:        map[string]*CoreState{},
+		Configs:      map[string]string{},
+		DesiredState: DesiredRunning,
 		Subscription: Subscription{
 			Interval: "24h",
 		},
@@ -103,6 +113,9 @@ func NewDocument() Document {
 
 func (document *Document) Normalize() {
 	previousSchema := document.Schema
+	if previousSchema <= 3 && document.DesiredState == "" {
+		document.DesiredState = DesiredRunning
+	}
 	if document.Schema <= 1 && document.Selected == nil && document.Active != nil {
 		document.Selected = &Selection{
 			Core:       document.Active.Core,
@@ -149,6 +162,11 @@ func (document *Document) Normalize() {
 func (document Document) Validate() error {
 	if document.Schema != SchemaVersion {
 		return fmt.Errorf("unsupported state schema %d", document.Schema)
+	}
+	switch document.DesiredState {
+	case DesiredRunning, DesiredStopped:
+	default:
+		return fmt.Errorf("invalid desired runtime state %q", document.DesiredState)
 	}
 	for coreID, coreState := range document.Cores {
 		if !coreIDPattern.MatchString(coreID) {
@@ -219,8 +237,14 @@ func (document Document) Validate() error {
 	if document.Runtime.Version != "" && !versionPattern.MatchString(document.Runtime.Version) {
 		return fmt.Errorf("invalid runtime version %q", document.Runtime.Version)
 	}
+	if document.Runtime.Ref != "" && document.Runtime.Ref != "stable" && !versionPattern.MatchString(document.Runtime.Ref) {
+		return fmt.Errorf("invalid runtime reference %q", document.Runtime.Ref)
+	}
+	if document.Runtime.ConfigHash != "" && !hashPattern.MatchString(document.Runtime.ConfigHash) {
+		return fmt.Errorf("invalid runtime configuration hash %q", document.Runtime.ConfigHash)
+	}
 	switch document.Runtime.State {
-	case "", "idle", "starting", "running", "restarting", "stopped", "failed":
+	case "", "idle", "starting", "running", "stopping", "restarting", "stopped", "failed":
 	default:
 		return fmt.Errorf("invalid runtime state %q", document.Runtime.State)
 	}

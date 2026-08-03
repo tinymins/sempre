@@ -17,7 +17,10 @@ const (
 	maxBackoff   = 60 * time.Second
 )
 
-var ErrIdle = errors.New("no active core deployment")
+var (
+	ErrIdle    = errors.New("no active core deployment")
+	ErrStopped = errors.New("managed core is stopped")
+)
 
 type Plan struct {
 	Deployment state.Deployment
@@ -30,8 +33,12 @@ type Hooks struct {
 	ResolveFailure  func(error) (bool, error)
 	ScheduledUpdate func(context.Context) (bool, error)
 	NextUpdate      func() (time.Duration, bool)
+	AcquireStart    func(Plan) (release func(), allowed bool, err error)
+	Starting        func(Plan) error
 	Started         func(Plan, int) error
 	Healthy         func(Plan) error
+	Stopping        func(Plan) error
+	Restarting      func(Plan) error
 	EarlyFailure    func(Plan, error) error
 	Exited          func(Plan, error, int) error
 	Stopped         func() error
@@ -77,18 +84,32 @@ func RunForeground(ctx context.Context, spec core.RunSpec, stdout, stderr interf
 func (runner *Runner) Run(ctx context.Context) error {
 	backoff := time.Second
 	restarts := 0
+	restarting := false
 	for {
 		if err := ctx.Err(); err != nil {
-			_ = runner.Hooks.Stopped()
+			if runner.Hooks.Stopped != nil {
+				_ = runner.Hooks.Stopped()
+			}
 			return nil
 		}
 		plan, err := runner.Hooks.Resolve(ctx)
 		if err != nil {
+			if errors.Is(err, ErrStopped) {
+				if runner.Hooks.Stopped != nil {
+					_ = runner.Hooks.Stopped()
+				}
+				if runner.waitInactive(ctx) {
+					restarting = false
+					continue
+				}
+				return nil
+			}
 			if errors.Is(err, ErrIdle) {
 				if runner.Hooks.Idle != nil {
 					_ = runner.Hooks.Idle()
 				}
-				if runner.waitIdle(ctx) {
+				if runner.waitInactive(ctx) {
+					restarting = false
 					continue
 				}
 				_ = runner.Hooks.Stopped()
@@ -101,6 +122,7 @@ func (runner *Runner) Run(ctx context.Context) error {
 				}
 				if retry {
 					backoff = time.Second
+					restarting = true
 					continue
 				}
 			}
@@ -109,7 +131,38 @@ func (runner *Runner) Run(ctx context.Context) error {
 				return nil
 			}
 			backoff = nextBackoff(backoff)
+			restarting = true
 			continue
+		}
+		if restarting && runner.Hooks.Restarting != nil {
+			if err := runner.Hooks.Restarting(plan); err != nil {
+				return err
+			}
+		}
+		releaseStart := func() {}
+		if runner.Hooks.AcquireStart != nil {
+			var allowed bool
+			releaseStart, allowed, err = runner.Hooks.AcquireStart(plan)
+			if err != nil {
+				if releaseStart != nil {
+					releaseStart()
+				}
+				return err
+			}
+			if releaseStart == nil {
+				releaseStart = func() {}
+			}
+			if !allowed {
+				releaseStart()
+				restarting = false
+				continue
+			}
+		}
+		if runner.Hooks.Starting != nil {
+			if err := runner.Hooks.Starting(plan); err != nil {
+				releaseStart()
+				return err
+			}
 		}
 		command := exec.Command(plan.Spec.Path, plan.Spec.Args...)
 		command.Dir = plan.Spec.WorkingDir
@@ -118,32 +171,39 @@ func (runner *Runner) Run(ctx context.Context) error {
 		configureCommand(command)
 		if err := command.Start(); err != nil {
 			_ = runner.Hooks.EarlyFailure(plan, err)
-			if err := waitBackoff(ctx, backoff); err != nil {
+			restarts++
+			_ = runner.Hooks.Exited(plan, err, restarts)
+			releaseStart()
+			if err := waitBackoff(ctx, runner.Hooks.Reload, backoff); err != nil {
 				_ = runner.Hooks.Stopped()
 				return nil
 			}
 			backoff = nextBackoff(backoff)
-			restarts++
+			restarting = true
 			continue
 		}
 		process, err := attachProcess(command)
 		if err != nil {
+			releaseStart()
 			_ = command.Process.Kill()
 			_ = command.Wait()
 			return err
 		}
 		if err := runner.Hooks.Started(plan, command.Process.Pid); err != nil {
+			releaseStart()
 			_ = forceStop(process)
 			_ = command.Wait()
 			closeProcess(process)
 			return err
 		}
+		releaseStart()
 		waited := make(chan error, 1)
 		go func() { waited <- command.Wait() }()
 		grace := time.NewTimer(startupGrace)
 		updateTimer, updateChannel := runner.updateTimer()
 		healthy := false
 		intentionalRestart := false
+		restarting = false
 
 	processLoop:
 		for {
@@ -153,6 +213,9 @@ func (runner *Runner) Run(ctx context.Context) error {
 					updateTimer.Stop()
 				}
 				grace.Stop()
+				if runner.Hooks.Stopping != nil {
+					_ = runner.Hooks.Stopping(plan)
+				}
 				stopProcess(process, waited)
 				closeProcess(process)
 				_ = runner.Hooks.Stopped()
@@ -163,6 +226,9 @@ func (runner *Runner) Run(ctx context.Context) error {
 				}
 				intentionalRestart = true
 				grace.Stop()
+				if runner.Hooks.Stopping != nil {
+					_ = runner.Hooks.Stopping(plan)
+				}
 				stopProcess(process, waited)
 				closeProcess(process)
 				break processLoop
@@ -185,6 +251,9 @@ func (runner *Runner) Run(ctx context.Context) error {
 				}
 				intentionalRestart = true
 				grace.Stop()
+				if runner.Hooks.Stopping != nil {
+					_ = runner.Hooks.Stopping(plan)
+				}
 				stopProcess(process, waited)
 				closeProcess(process)
 				break processLoop
@@ -201,21 +270,23 @@ func (runner *Runner) Run(ctx context.Context) error {
 				}
 				restarts++
 				_ = runner.Hooks.Exited(plan, waitErr, restarts)
-				if err := waitBackoff(ctx, backoff); err != nil {
+				if err := waitBackoff(ctx, runner.Hooks.Reload, backoff); err != nil {
 					_ = runner.Hooks.Stopped()
 					return nil
 				}
 				backoff = nextBackoff(backoff)
+				restarting = true
 				break processLoop
 			}
 		}
 		if intentionalRestart {
 			backoff = time.Second
+			restarting = true
 		}
 	}
 }
 
-func (runner *Runner) waitIdle(ctx context.Context) bool {
+func (runner *Runner) waitInactive(ctx context.Context) bool {
 	timer, updates := runner.updateTimer()
 	if timer != nil {
 		defer timer.Stop()
@@ -277,12 +348,14 @@ func stopProcess(process *processHandle, waited <-chan error) {
 	}
 }
 
-func waitBackoff(ctx context.Context, delay time.Duration) error {
+func waitBackoff(ctx context.Context, reload <-chan struct{}, delay time.Duration) error {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-reload:
+		return nil
 	case <-timer.C:
 		return nil
 	}

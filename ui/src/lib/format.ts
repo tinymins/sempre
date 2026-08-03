@@ -16,3 +16,13 @@ export function compactHash(value?: string) {
   if (!value) return '-'
   return `${value.slice(0, 8)}...${value.slice(-6)}`
 }
+
+export function formatDuration(seconds = 0) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0s'
+  const total = Math.floor(seconds)
+  const days = Math.floor(total / 86400)
+  const hours = Math.floor((total % 86400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const remainder = total % 60
+  return [days ? `${days}d` : '', hours ? `${hours}h` : '', minutes ? `${minutes}m` : '', `${remainder}s`].filter(Boolean).join(' ')
+}

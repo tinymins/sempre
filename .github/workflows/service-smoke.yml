@@ -43,6 +43,31 @@ jobs:
             sleep 0.2
           done
           sudo ./smoke/sempre --system doctor
+          runtime_status=""
+          for ((attempt = 0; attempt < 100; attempt++)); do
+            if runtime_status=$(sudo ./smoke/sempre --system runtime status 2>/dev/null) && grep -q "State: running" <<<"$runtime_status"; then
+              break
+            fi
+            sleep 0.2
+          done
+          grep -q "Desired: running" <<<"$runtime_status"
+          grep -q "State: running" <<<"$runtime_status"
+          sudo ./smoke/sempre --system runtime stop | grep -q "State: stopped"
+          sudo ./smoke/sempre --portable service restart
+          runtime_status=""
+          for ((attempt = 0; attempt < 100; attempt++)); do
+            if runtime_status=$(sudo ./smoke/sempre --system runtime status 2>/dev/null) && grep -q "State: stopped" <<<"$runtime_status"; then
+              break
+            fi
+            sleep 0.2
+          done
+          grep -q "Desired: stopped" <<<"$runtime_status"
+          grep -q "State: stopped" <<<"$runtime_status"
+          printf '%s\n' '{"log":{"disabled":true},"inbounds":[],"outbounds":[],"revision":2}' > smoke/config-updated.json
+          sudo ./smoke/sempre --system config import smoke/config-updated.json | grep -q "next time it starts"
+          sudo ./smoke/sempre --system runtime status | grep -q "State: stopped"
+          sudo ./smoke/sempre --system runtime start | grep -q "State: running"
+          sudo ./smoke/sempre --system runtime restart | grep -q "State: running"
           sudo ./smoke/sempre --portable service stop
           sudo ./smoke/sempre --portable service start
           sudo ./smoke/sempre --portable service restart
@@ -68,6 +93,36 @@ jobs:
             Start-Sleep -Milliseconds 200
           }
           ./smoke/sempre.exe --system doctor
+          $runtimeStatus = ''
+          for ($attempt = 0; $attempt -lt 100; $attempt++) {
+            try {
+              $runtimeStatus = ./smoke/sempre.exe --system runtime status 2>$null | Out-String
+              if ($runtimeStatus -match 'State: running') { break }
+            } catch {}
+            Start-Sleep -Milliseconds 200
+          }
+          if ($runtimeStatus -notmatch 'Desired: running' -or $runtimeStatus -notmatch 'State: running') { throw "managed core did not reach running: $runtimeStatus" }
+          $runtimeStatus = ./smoke/sempre.exe --system runtime stop | Out-String
+          if ($runtimeStatus -notmatch 'State: stopped') { throw "managed core did not stop: $runtimeStatus" }
+          ./smoke/sempre.exe --portable service restart
+          $runtimeStatus = ''
+          for ($attempt = 0; $attempt -lt 100; $attempt++) {
+            try {
+              $runtimeStatus = ./smoke/sempre.exe --system runtime status 2>$null | Out-String
+              if ($runtimeStatus -match 'State: stopped') { break }
+            } catch {}
+            Start-Sleep -Milliseconds 200
+          }
+          if ($runtimeStatus -notmatch 'Desired: stopped' -or $runtimeStatus -notmatch 'State: stopped') { throw "stopped intent was not preserved: $runtimeStatus" }
+          Set-Content -Path smoke/config-updated.json -NoNewline -Value '{"log":{"disabled":true},"inbounds":[],"outbounds":[],"revision":2}'
+          $configResult = ./smoke/sempre.exe --system config import smoke/config-updated.json | Out-String
+          if ($configResult -notmatch 'next time it starts') { throw "stopped config import did not defer activation: $configResult" }
+          $runtimeStatus = ./smoke/sempre.exe --system runtime status | Out-String
+          if ($runtimeStatus -notmatch 'State: stopped') { throw "config import started the managed core: $runtimeStatus" }
+          $runtimeStatus = ./smoke/sempre.exe --system runtime start | Out-String
+          if ($runtimeStatus -notmatch 'State: running') { throw "managed core did not start: $runtimeStatus" }
+          $runtimeStatus = ./smoke/sempre.exe --system runtime restart | Out-String
+          if ($runtimeStatus -notmatch 'State: running') { throw "managed core did not restart: $runtimeStatus" }
           ./smoke/sempre.exe --portable service stop
           ./smoke/sempre.exe --portable service start
           ./smoke/sempre.exe --portable service restart

@@ -94,6 +94,7 @@ func TestStoreMigratesSelectedCoreFromSchemaOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	if document.Schema != SchemaVersion ||
+		document.DesiredState != DesiredRunning ||
 		document.Selected == nil ||
 		document.Selected.Core != "sing-box" ||
 		document.Selected.Ref != "1.2.3" {
@@ -101,6 +102,61 @@ func TestStoreMigratesSelectedCoreFromSchemaOne(t *testing.T) {
 	}
 	if document.Cores["sing-box"].Default.Installed["1.2.3"] == nil || document.Cores["sing-box"].Default.Channels["stable"] != "1.2.3" {
 		t.Fatalf("legacy source was not migrated to default: %#v", document.Cores["sing-box"])
+	}
+}
+
+func TestStoreMigratesSchemaThreeToDesiredRunning(t *testing.T) {
+	t.Parallel()
+	paths := layout.At(t.TempDir())
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	legacy := NewDocument()
+	legacy.Schema = 3
+	legacy.DesiredState = ""
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.State, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	document, err := New(paths).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Schema != SchemaVersion || document.DesiredState != DesiredRunning {
+		t.Fatalf("migrated document = %#v", document)
+	}
+}
+
+func TestStorePersistsDesiredStopped(t *testing.T) {
+	t.Parallel()
+	store := New(layout.At(t.TempDir()))
+	if err := store.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(document *Document) error {
+		document.DesiredState = DesiredStopped
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	document, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.DesiredState != DesiredStopped {
+		t.Fatalf("desired state = %q", document.DesiredState)
+	}
+}
+
+func TestDocumentRejectsInvalidDesiredState(t *testing.T) {
+	t.Parallel()
+	document := NewDocument()
+	document.DesiredState = "paused"
+	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "invalid desired runtime state") {
+		t.Fatalf("invalid desired state error = %v", err)
 	}
 }
 

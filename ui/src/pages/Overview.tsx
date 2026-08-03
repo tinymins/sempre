@@ -9,6 +9,7 @@ import { useSession } from '../lib/session'
 import type { Overview as OverviewData, RuntimeEvent, SystemStatus } from '../lib/types'
 import { Card, EmptyState, Badge, PageTitle } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
+import { RuntimeControlPanel } from '../components/RuntimeControlPanel'
 
 export function Overview() {
   const { t } = useI18n()
@@ -42,8 +43,9 @@ export function Overview() {
       <PageTitle title={t('overview')} detail={system.data?.active ? `${system.data.active.core} ${system.data.active.version}` : t('noCore')}>
         <Badge tone={system.data?.runtime.state === 'running' ? 'success' : 'warning'}>{system.data?.runtime.state || t('loading')}</Badge>
       </PageTitle>
+      <RuntimeControlPanel />
       {system.data && system.data.runtime.state !== 'running' ? (
-        <EmptyState title={t('noCore')} detail={t('noCoreDetail')} />
+        <EmptyState title={system.data.active ? t('coreNotRunning') : t('noCore')} detail={system.data.active ? t('coreNotRunningDetail') : t('noCoreDetail')} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">

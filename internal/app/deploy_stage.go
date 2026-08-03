@@ -143,6 +143,7 @@ func mergeInstallDocument(source, existing state.Document) state.Document {
 	source.Normalize()
 	existing.Normalize()
 	hadExistingState := meaningfulState(existing)
+	hadExistingDeployment := meaningfulDeploymentState(existing)
 	result := existing
 	for coreID, sourceCore := range source.Cores {
 		targetCore := result.Core(coreID)
@@ -164,13 +165,16 @@ func mergeInstallDocument(source, existing state.Document) state.Document {
 			result.Configs[coreID] = hash
 		}
 	}
-	if !hadExistingState {
+	if !hadExistingDeployment {
 		result.Selected = source.Selected
 		result.Active = source.Active
 		result.Previous = source.Previous
 		result.Pending = source.Pending
 		result.LastError = source.LastError
 		result.Subscription = source.Subscription
+		if !hadExistingState {
+			result.DesiredState = source.DesiredState
+		}
 	} else if result.Subscription.URL == "" && source.Subscription.URL != "" {
 		result.Subscription = source.Subscription
 	}
@@ -290,6 +294,11 @@ func deploymentDocument(document state.Document) state.Document {
 }
 
 func meaningfulState(document state.Document) bool {
+	return meaningfulDeploymentState(document) ||
+		document.DesiredState == state.DesiredStopped
+}
+
+func meaningfulDeploymentState(document state.Document) bool {
 	return document.Selected != nil ||
 		document.Active != nil ||
 		document.Previous != nil ||

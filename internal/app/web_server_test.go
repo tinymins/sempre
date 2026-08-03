@@ -8,9 +8,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/tinymins/sempre/internal/controlplane"
 	"github.com/tinymins/sempre/internal/state"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
@@ -122,6 +124,20 @@ func TestControlPlaneStaysAvailableWithoutCore(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	client, err := controlplane.Discover(manager.paths.DaemonControl)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	var runtimeStatus RuntimeStatus
+	if err := client.Get(ctx, "/api/v1/runtime/status", &runtimeStatus); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if runtimeStatus.RuntimeState != "idle" {
+		cancel()
+		t.Fatalf("runtime status = %#v", runtimeStatus)
+	}
 	cancel()
 	select {
 	case err := <-done:
@@ -130,6 +146,11 @@ func TestControlPlaneStaysAvailableWithoutCore(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("control plane did not stop")
+	}
+	for _, path := range []string{manager.paths.Endpoint, manager.paths.DaemonControl} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("control endpoint %q remains after shutdown: %v", path, err)
+		}
 	}
 }
 

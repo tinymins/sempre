@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/tinymins/sempre/internal/app"
@@ -13,6 +14,7 @@ import (
 	"github.com/tinymins/sempre/internal/elevate"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/service"
+	"github.com/tinymins/sempre/internal/state"
 )
 
 type Options struct {
@@ -454,26 +456,27 @@ func (command *CLI) applyRestart(ctx context.Context, change app.Change, options
 	if !change.Changed || !change.NeedsRestart {
 		return nil
 	}
-	if command.manager.Paths().Mode != layout.System {
-		fmt.Fprintln(command.output, "Change saved; portable deployments are applied the next time they run.")
-		return nil
-	}
-	current, err := command.manager.ServiceState(ctx)
+	document, err := command.manager.State()
 	if err != nil {
-		fmt.Fprintln(command.output, "Change saved; service status is unavailable. Run 'sempre service restart' to apply it.")
+		return err
+	}
+	if document.DesiredState == state.DesiredStopped {
+		fmt.Fprintln(command.output, "Change saved; the managed core is stopped and the change will take effect the next time it starts.")
 		return nil
 	}
-	if current != service.Running {
-		fmt.Fprintln(command.output, "Change saved; it will take effect the next time the service starts.")
+	if _, err := os.Stat(command.manager.Paths().DaemonControl); errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintln(command.output, "Change saved; it will take effect the next time the Sempre daemon starts.")
 		return nil
+	} else if err != nil {
+		return err
 	}
 	if options.NoRestart {
-		fmt.Fprintln(command.output, "Change saved; the running service was not restarted.")
+		fmt.Fprintln(command.output, "Change saved; the running managed core was not restarted.")
 		return nil
 	}
 	restart := options.Yes
 	if !options.Yes {
-		fmt.Fprint(command.output, "Restart the running service now? [y/N]: ")
+		fmt.Fprint(command.output, "Restart the running managed core now? [y/N]: ")
 		line, readErr := command.input.ReadString('\n')
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
 			return readErr
@@ -482,13 +485,13 @@ func (command *CLI) applyRestart(ctx context.Context, change app.Change, options
 			strings.EqualFold(strings.TrimSpace(line), "yes")
 	}
 	if !restart {
-		fmt.Fprintln(command.output, "Change saved; run 'sempre service restart' when ready.")
+		fmt.Fprintln(command.output, "Change saved; run 'sempre runtime restart' when ready.")
 		return nil
 	}
-	if err := command.execute(ctx, []string{"service", "restart"}, options); err != nil {
-		return fmt.Errorf("change saved, but service restart failed: %w", err)
+	if err := command.runtimeLifecycle(ctx, []string{"restart"}, options); err != nil {
+		return fmt.Errorf("change saved, but managed core restart failed: %w", err)
 	}
-	fmt.Fprintln(command.output, "Change applied and service restarted successfully.")
+	fmt.Fprintln(command.output, "Change applied and the managed core restarted successfully.")
 	return nil
 }
 
@@ -632,7 +635,7 @@ Main entry points:
 Web and UI:
   sempre web <status|listen|password>
   sempre ui <status|install|update|remove>
-  sempre runtime <overview|capabilities|config|proxies|providers|rules|connections|dns|events|reload>
+  sempre runtime <status|start|stop|restart|overview|capabilities|config|proxies|providers|rules|connections|dns|events|reload>
 
 Core versions:
   sempre core list
@@ -665,6 +668,6 @@ Modes:
   sempre --portable <command>     Use .sempre beside the executable
   sempre portable enable|disable Manage the .sempre-portable marker
 
-Mutating commands accept --yes to restart a running service without prompting,
-or --no-restart to save the change without restarting.
+Mutating commands accept --yes to restart a running managed core without
+prompting, or --no-restart to save the change without restarting it.
 `

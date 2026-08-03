@@ -18,6 +18,41 @@ export interface RuntimeState {
   started_at?: string
   restart_count?: number
   last_exit?: string
+  last_error?: string
+  last_transition?: string
+  ref?: string
+  config_hash?: string
+}
+
+export interface RuntimeActionAvailability {
+  allowed: boolean
+  reason?: string
+}
+
+export interface ManagedRuntimeStatus {
+  desired_state: 'running' | 'stopped'
+  runtime_state: 'idle' | 'stopped' | 'starting' | 'running' | 'stopping' | 'restarting' | 'failed'
+  active: null | {
+    core: string
+    repository?: string
+    ref: string
+    version: string
+    exact_reference: string
+    config_hash: string
+  }
+  pid: number
+  started_at: string | null
+  uptime_seconds: number
+  restart_count: number
+  pending: boolean
+  last_transition: string | null
+  last_exit?: string
+  last_error?: string
+  actions: {
+    start: RuntimeActionAvailability
+    stop: RuntimeActionAvailability
+    restart: RuntimeActionAvailability
+  }
 }
 
 export interface SystemStatus {
@@ -26,6 +61,7 @@ export interface SystemStatus {
   date: string
   mode: string
   service: string
+  desired_state: 'running' | 'stopped'
   runtime: RuntimeState
   selected?: { core: string; repository?: string; ref: string }
   active?: { core: string; repository?: string; ref: string; version: string; config_hash: string }

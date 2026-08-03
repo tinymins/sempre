@@ -51,17 +51,18 @@ func (manager *Manager) validateConfiguration(
 }
 
 type Manager struct {
-	paths     layout.Layout
-	store     *state.Store
-	registry  *core.Registry
-	output    io.Writer
-	errors    io.Writer
-	service   service.Controller
-	web       *webconfig.Store
-	ui        *uiassets.Manager
-	reload    chan struct{}
-	controlMu sync.RWMutex
-	control   *control.Client
+	paths       layout.Layout
+	store       *state.Store
+	registry    *core.Registry
+	output      io.Writer
+	errors      io.Writer
+	service     service.Controller
+	web         *webconfig.Store
+	ui          *uiassets.Manager
+	reload      chan struct{}
+	lifecycleMu sync.Mutex
+	controlMu   sync.RWMutex
+	control     *control.Client
 }
 
 func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
@@ -91,6 +92,18 @@ func (manager *Manager) RequestReload() {
 	case manager.reload <- struct{}{}:
 	default:
 	}
+}
+
+func (manager *Manager) RequestReloadIfRunning() (bool, error) {
+	document, err := manager.store.Read()
+	if err != nil {
+		return false, err
+	}
+	if document.DesiredState != state.DesiredRunning {
+		return false, nil
+	}
+	manager.RequestReload()
+	return true, nil
 }
 
 func (manager *Manager) setControl(client *control.Client) {

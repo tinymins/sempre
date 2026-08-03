@@ -1,25 +1,27 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Download, FileJson, KeyRound, Package, RefreshCw, Save, ServerCog, Trash2, Upload } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { Activity, CheckCircle2, Download, FileJson, KeyRound, Package, Power, RefreshCw, Save, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import { api, uploadUI } from '../lib/api'
 import { compactHash, formatDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { CoresResponse, Subscription, UIMetadata } from '../lib/types'
-import { Badge, Button, Card, Field, Input, PageTitle, Spinner } from '../components/ui'
+import type { CoresResponse, ManagedRuntimeStatus, Subscription, SystemStatus, UIMetadata } from '../lib/types'
+import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
+import { RuntimeControlPanel } from '../components/RuntimeControlPanel'
 
-type Tab = 'core' | 'subscription' | 'config' | 'web'
+type Tab = 'runtime' | 'core' | 'subscription' | 'config' | 'web'
+type ChangeResult = { NeedsRestart?: boolean; changes?: ChangeResult[] }
 
 export function Management() {
   const { t } = useI18n()
-  const [tab, setTab] = useState<Tab>('core')
+  const [tab, setTab] = useState<Tab>('runtime')
   const tabs: Array<{ value: Tab; label: string; icon: typeof Package }> = [
-    { value: 'core', label: t('coreTab'), icon: Package }, { value: 'subscription', label: t('subscriptionTab'), icon: Download },
+    { value: 'runtime', label: t('runtimeTab'), icon: Activity }, { value: 'core', label: t('coreTab'), icon: Package }, { value: 'subscription', label: t('subscriptionTab'), icon: Download },
     { value: 'config', label: t('configTab'), icon: FileJson }, { value: 'web', label: t('webUITab'), icon: ServerCog },
   ]
-  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <CorePanel /> : tab === 'subscription' ? <SubscriptionPanel /> : tab === 'config' ? <ConfigPanel /> : <WebUIPanel />}</div>
+  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'runtime' ? <RuntimeControlPanel /> : tab === 'core' ? <CorePanel /> : tab === 'subscription' ? <SubscriptionPanel /> : tab === 'config' ? <ConfigPanel /> : <WebUIPanel />}</div>
 }
 
 function CorePanel() {
@@ -30,8 +32,8 @@ function CorePanel() {
   const [notice, setNotice] = useState('')
   const cores = useQuery({ queryKey: ['cores'], queryFn: () => api<CoresResponse>(session!, '/cores') })
   const action = useMutation({
-    mutationFn: ({ operation, value }: { operation: string; value?: string }) => api(session!, `/cores/${operation}`, { method: 'POST', body: JSON.stringify({ reference: value || '' }) }),
-    onSuccess: () => { setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['cores'] }); queryClient.invalidateQueries({ queryKey: ['system'] }) },
+    mutationFn: ({ operation, value }: { operation: string; value?: string }) => api<ChangeResult>(session!, `/cores/${operation}`, { method: 'POST', body: JSON.stringify({ reference: value || '' }) }),
+    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); queryClient.invalidateQueries({ queryKey: ['cores'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) },
     onError: (error) => setNotice(error.message),
   })
   return <Section title={t('core')} icon={<Package size={18} />} notice={notice}>
@@ -57,8 +59,8 @@ function SubscriptionPanel() {
   const url = urlDraft ?? subscription.data?.url ?? ''
   const interval = intervalDraft ?? subscription.data?.interval ?? '24h'
   const mutate = useMutation({
-    mutationFn: (update: boolean) => api(session!, update ? '/subscription/update' : '/subscription', { method: update ? 'POST' : 'PATCH', body: update ? undefined : JSON.stringify({ url, interval }) }),
-    onSuccess: () => { setNotice(t('operationDone')); setURL(null); setIntervalValue(null); queryClient.invalidateQueries({ queryKey: ['subscription'] }) }, onError: (error) => setNotice(error.message),
+    mutationFn: (update: boolean) => api<ChangeResult>(session!, update ? '/subscription/update' : '/subscription', { method: update ? 'POST' : 'PATCH', body: update ? undefined : JSON.stringify({ url, interval }) }),
+    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); setURL(null); setIntervalValue(null); queryClient.invalidateQueries({ queryKey: ['subscription'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) }, onError: (error) => setNotice(error.message),
   })
   return <Section title={t('subscriptionTab')} icon={<Download size={18} />} notice={notice}><div className="grid max-w-3xl gap-5"><Field label={t('subscriptionURL')}><Input value={url} onChange={(event) => setURL(event.target.value)} placeholder="https://example.com/config.json" /></Field><Field label={t('schedule')}><Input value={interval} onChange={(event) => setIntervalValue(event.target.value)} placeholder="24h or off" /></Field><div className="flex gap-2"><Button variant="primary" disabled={mutate.isPending} onClick={() => mutate.mutate(false)}><Save size={16} />{t('save')}</Button><Button disabled={mutate.isPending || !subscription.data?.url} onClick={() => mutate.mutate(true)}><RefreshCw size={16} />{t('updateNow')}</Button></div>{subscription.data?.last_result ? <div className="grid grid-cols-2 gap-4 border-t border-[var(--border)] pt-5 text-sm"><Info label={t('lastResult')} value={subscription.data.last_result} /><Info label={t('update')} value={formatDate(subscription.data.last_check)} /></div> : null}</div></Section>
 }
@@ -74,12 +76,12 @@ function ConfigPanel() {
   const content = contentDraft ?? current.data?.content ?? '{}\n'
   const parsed = useMemo(() => { try { return JSON.parse(content) as Record<string, any> } catch { return {} } }, [content])
   const save = useMutation({
-    mutationFn: (validateOnly: boolean) => api(session!, validateOnly ? '/configs/validate' : '/configs/current', { method: validateOnly ? 'POST' : 'PUT', body: JSON.stringify({ content }) }),
-    onSuccess: (_result, validateOnly) => { setNotice(validateOnly ? t('validated') : t('operationDone')); if (!validateOnly) setContent(null); queryClient.invalidateQueries({ queryKey: ['config'] }) }, onError: (error) => setNotice(error.message),
+    mutationFn: (validateOnly: boolean) => api<ChangeResult>(session!, validateOnly ? '/configs/validate' : '/configs/current', { method: validateOnly ? 'POST' : 'PUT', body: JSON.stringify({ content }) }),
+    onSuccess: (result, validateOnly) => { setNotice(validateOnly ? t('validated') : changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); if (!validateOnly) setContent(null); queryClient.invalidateQueries({ queryKey: ['config'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) }, onError: (error) => setNotice(error.message),
   })
   const patchCommon = useMutation({
-    mutationFn: (patch: Record<string, unknown>) => api(session!, '/configs/common', { method: 'PATCH', body: JSON.stringify(patch) }),
-    onSuccess: () => { setNotice(t('operationDone')); setContent(null); queryClient.invalidateQueries({ queryKey: ['config'] }); current.refetch() }, onError: (error) => setNotice(error.message),
+    mutationFn: (patch: Record<string, unknown>) => api<ChangeResult>(session!, '/configs/common', { method: 'PATCH', body: JSON.stringify(patch) }),
+    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); setContent(null); queryClient.invalidateQueries({ queryKey: ['config'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }); current.refetch() }, onError: (error) => setNotice(error.message),
   })
   function commonPatch() {
     patchCommon.mutate({
@@ -104,6 +106,8 @@ function WebUIPanel() {
   const [password, setPassword] = useState('')
   const [source, setSource] = useState('')
   const [notice, setNotice] = useState('')
+  const [serviceNotice, setServiceNotice] = useState('')
+  const [serviceConfirm, setServiceConfirm] = useState<'restart' | 'stop' | null>(null)
   const web = useQuery({ queryKey: ['web'], queryFn: () => api<{ listen: string; local_url: string; password_set: boolean; password_warning: boolean }>(session!, '/web') })
   const ui = useQuery({ queryKey: ['ui'], queryFn: () => api<{ installed: boolean; metadata?: UIMetadata }>(session!, '/ui') })
   const listen = listenDraft ?? web.data?.listen ?? '127.0.0.1:33211'
@@ -115,14 +119,16 @@ function WebUIPanel() {
     mutationFn: ({ operation, body }: { operation: 'install' | 'update' | 'remove'; body?: unknown }) => api(session!, '/ui' + (operation === 'remove' ? '' : `/${operation}`), { method: operation === 'remove' ? 'DELETE' : 'POST', body: body ? JSON.stringify(body) : undefined }),
     onSuccess: () => { setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) }, onError: (error) => setNotice(error.message),
   })
-  const serviceMutation = useMutation({ mutationFn: (action: string) => api(session!, '/service/action', { method: 'POST', body: JSON.stringify({ action }) }), onSuccess: () => setNotice(t('operationDone')), onError: (error) => setNotice(error.message) })
+  const serviceMutation = useMutation({ mutationFn: (action: string) => api(session!, '/service/action', { method: 'POST', body: JSON.stringify({ action }) }), onSuccess: () => { setServiceNotice(t('operationAccepted')); setServiceConfirm(null) }, onError: (error) => setServiceNotice(error.message) })
   async function upload(file?: File) {
     if (!file) return
     try { await uploadUI(session!, file); setNotice(t('operationDone')); await ui.refetch() } catch (error) { setNotice(error instanceof Error ? error.message : String(error)) }
   }
   return <div className="grid gap-5 xl:grid-cols-2">
-    <Section title="Web" icon={<ServerCog size={18} />} notice={notice}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div><div className="flex gap-2 border-t border-[var(--border)] pt-5"><Button onClick={() => serviceMutation.mutate('restart')}><RefreshCw size={16} />{t('restart')}</Button><Button variant="danger" onClick={() => serviceMutation.mutate('stop')}>{t('stop')}</Button></div></div></Section>
+    <Section title="Web" icon={<ServerCog size={18} />} notice={notice}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div></div></Section>
     <Section title="UI" icon={<Package size={18} />}><div className="mb-5 rounded-lg bg-[var(--surface-hover)] p-4"><p className="text-sm font-semibold">{ui.data?.metadata?.manifest.name || t('noData')}</p><p className="mt-1 break-all text-xs text-[var(--muted)]">{ui.data?.metadata ? `${ui.data.metadata.manifest.version} · ${ui.data.metadata.source_type} · ${compactHash(ui.data.metadata.sha256)}` : t('noDataDetail')}</p></div><div className="grid gap-4"><Button variant="primary" onClick={() => uiMutation.mutate({ operation: 'install', body: { source: 'official' } })}><Download size={16} />{t('officialUI')}</Button><Field label={t('customURL')}><div className="flex gap-2"><Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="https://example.com/sempre-ui.zip" /><Button disabled={!source} onClick={() => uiMutation.mutate({ operation: 'install', body: { source } })}>{t('install')}</Button></div></Field><label className="flex h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"><Upload size={17} />{t('uploadZIP')}<input className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => void upload(event.target.files?.[0])} /></label><div className="flex gap-2"><Button disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'update' })}><RefreshCw size={16} />{t('update')}</Button><Button variant="danger" disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'remove' })}><Trash2 size={16} />{t('remove')}</Button></div></div></Section>
+    <div className="xl:col-span-2"><Section title={t('systemServiceActions')} icon={<ShieldAlert size={18} />} notice={serviceNotice}><div className="flex flex-wrap items-center justify-between gap-4"><div><Badge tone="danger">{t('dangerZone')}</Badge><p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">{t('serviceRestartWarning')}</p></div><div className="flex gap-2"><Button disabled={serviceMutation.isPending} onClick={() => setServiceConfirm('restart')}><RefreshCw size={16} />{t('restart')}</Button><Button variant="danger" disabled={serviceMutation.isPending} onClick={() => setServiceConfirm('stop')}><Power size={16} />{t('stop')}</Button></div></div></Section></div>
+    <ConfirmDialog open={serviceConfirm !== null} title={serviceConfirm === 'stop' ? t('serviceStopTitle') : t('restart')} detail={serviceConfirm === 'stop' ? t('serviceStopWarning') : t('serviceRestartWarning')} acknowledgement={serviceConfirm === 'stop' ? t('serviceStopAcknowledgement') : undefined} confirmLabel={serviceConfirm === 'stop' ? t('stop') : t('restart')} cancelLabel={t('cancel')} pending={serviceMutation.isPending} onCancel={() => setServiceConfirm(null)} onConfirm={() => { if (serviceConfirm) serviceMutation.mutate(serviceConfirm) }} />
   </div>
 }
 
@@ -135,6 +141,13 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 }
 
 function Info({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-[var(--muted)]">{label}</p><p className="mt-1 font-medium">{value}</p></div> }
+
+function changeNotice(result: ChangeResult, queryClient: QueryClient, completed: string, deferred: string) {
+  const needsRestart = Boolean(result.NeedsRestart || result.changes?.some((change) => change.NeedsRestart))
+  const system = queryClient.getQueryData<SystemStatus>(['system'])
+  const runtime = queryClient.getQueryData<ManagedRuntimeStatus>(['runtime', 'status'])
+  return needsRestart && (system?.desired_state === 'stopped' || runtime?.desired_state === 'stopped') ? deferred : completed
+}
 
 function setPath(document: Record<string, any>, path: string, value: unknown) {
   const parts = path.split('.')

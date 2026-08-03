@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+import { useState, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '../lib/cn'
 
@@ -83,4 +83,59 @@ export function Spinner() {
 
 export function PageTitle({ title, detail, children }: { title: string; detail?: string; children?: ReactNode }) {
   return <div className="flex min-h-10 items-start justify-between gap-4"><div><h1 className="text-xl font-semibold">{title}</h1>{detail ? <p className="mt-1 text-sm text-[var(--muted)]">{detail}</p> : null}</div>{children}</div>
+}
+
+export function ConfirmDialog({
+  open,
+  title,
+  detail,
+  confirmLabel,
+  cancelLabel,
+  acknowledgement,
+  pending = false,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean
+  title: string
+  detail: string
+  confirmLabel: string
+  cancelLabel: string
+  acknowledgement?: string
+  pending?: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  if (!open) return null
+  return <ConfirmDialogContent title={title} detail={detail} confirmLabel={confirmLabel} cancelLabel={cancelLabel} acknowledgement={acknowledgement} pending={pending} onCancel={onCancel} onConfirm={onConfirm} />
+}
+
+function ConfirmDialogContent({
+  title,
+  detail,
+  confirmLabel,
+  cancelLabel,
+  acknowledgement,
+  pending = false,
+  onCancel,
+  onConfirm,
+}: {
+  title: string
+  detail: string
+  confirmLabel: string
+  cancelLabel: string
+  acknowledgement?: string
+  pending?: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const [acknowledged, setAcknowledged] = useState(false)
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onCancel() }}>
+    <div role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl">
+      <h2 id="confirm-dialog-title" className="text-base font-semibold">{title}</h2>
+      <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{detail}</p>
+      {acknowledgement ? <label className="mt-4 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/8 p-3 text-sm leading-5"><input className="mt-0.5 size-4 shrink-0 accent-red-600" type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>{acknowledgement}</span></label> : null}
+      <div className="mt-5 flex justify-end gap-2"><Button disabled={pending} onClick={onCancel}>{cancelLabel}</Button><Button variant="danger" disabled={pending || Boolean(acknowledgement && !acknowledged)} onClick={onConfirm}>{pending ? <Spinner /> : null}{confirmLabel}</Button></div>
+    </div>
+  </div>
 }

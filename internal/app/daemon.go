@@ -39,6 +39,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if document.Active == nil {
 					return supervisor.Plan{}, supervisor.ErrIdle
 				}
+				if document.DesiredState == state.DesiredStopped {
+					return supervisor.Plan{}, supervisor.ErrStopped
+				}
 				deployment, adapter, err := manager.active(document)
 				if err != nil {
 					return supervisor.Plan{}, err
@@ -88,6 +91,32 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				return change.Changed, nil
 			},
 			NextUpdate: manager.nextSubscriptionUpdate,
+			AcquireStart: func(plan supervisor.Plan) (func(), bool, error) {
+				manager.lifecycleMu.Lock()
+				release := manager.lifecycleMu.Unlock
+				document, err := manager.store.Read()
+				if err != nil {
+					return release, false, err
+				}
+				allowed := document.DesiredState == state.DesiredRunning &&
+					state.SameDeployment(document.Active, &plan.Deployment)
+				return release, allowed, nil
+			},
+			Starting: func(plan supervisor.Plan) error {
+				logf("starting %s", deploymentLabel(plan.Deployment))
+				return manager.store.Update(func(document *state.Document) error {
+					document.Runtime.State = "starting"
+					document.Runtime.PID = 0
+					document.Runtime.Core = plan.Deployment.Core
+					document.Runtime.Repository = plan.Deployment.Repository
+					document.Runtime.Ref = plan.Deployment.Ref
+					document.Runtime.Version = plan.Deployment.Version
+					document.Runtime.ConfigHash = plan.Deployment.ConfigHash
+					document.Runtime.StartedAt = time.Time{}
+					document.Runtime.LastTransition = time.Now().UTC()
+					return nil
+				})
+			},
 			Started: func(plan supervisor.Plan, pid int) error {
 				logf("started %s with PID %d", deploymentLabel(plan.Deployment), pid)
 				if plan.Control.BaseURL != "" {
@@ -104,16 +133,14 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 					_ = os.Remove(manager.paths.CoreControl)
 				}
 				return manager.store.Update(func(document *state.Document) error {
-					document.Runtime = state.Runtime{
-						State:          "starting",
-						PID:            pid,
-						Core:           plan.Deployment.Core,
-						Repository:     plan.Deployment.Repository,
-						Version:        plan.Deployment.Version,
-						StartedAt:      time.Now().UTC(),
-						RestartCount:   document.Runtime.RestartCount,
-						LastTransition: time.Now().UTC(),
-					}
+					document.Runtime.State = "starting"
+					document.Runtime.PID = pid
+					document.Runtime.Core = plan.Deployment.Core
+					document.Runtime.Repository = plan.Deployment.Repository
+					document.Runtime.Ref = plan.Deployment.Ref
+					document.Runtime.Version = plan.Deployment.Version
+					document.Runtime.ConfigHash = plan.Deployment.ConfigHash
+					document.Runtime.StartedAt = time.Now().UTC()
 					return nil
 				})
 			},
@@ -133,6 +160,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 						}
 					}
 					document.Runtime.State = "running"
+					document.Runtime.LastError = ""
 					document.Runtime.LastTransition = time.Now().UTC()
 					return nil
 				})
@@ -144,6 +172,28 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				}
 				return err
 			},
+			Stopping: func(plan supervisor.Plan) error {
+				logf("stopping %s", deploymentLabel(plan.Deployment))
+				return manager.store.Update(func(document *state.Document) error {
+					document.Runtime.State = "stopping"
+					if document.DesiredState == state.DesiredStopped {
+						document.Runtime.LastExit = "stopped by user"
+					} else {
+						document.Runtime.LastExit = "restart requested"
+					}
+					document.Runtime.LastTransition = time.Now().UTC()
+					return nil
+				})
+			},
+			Restarting: func(plan supervisor.Plan) error {
+				logf("restarting %s", deploymentLabel(plan.Deployment))
+				return manager.store.Update(func(document *state.Document) error {
+					document.Runtime.State = "restarting"
+					document.Runtime.PID = 0
+					document.Runtime.LastTransition = time.Now().UTC()
+					return nil
+				})
+			},
 			EarlyFailure: func(plan supervisor.Plan, failure error) error {
 				logf("startup failed for %s: %v", deploymentLabel(plan.Deployment), failure)
 				_, err := manager.rollbackPendingDeployment(
@@ -152,14 +202,19 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				)
 				return err
 			},
-			Exited: func(plan supervisor.Plan, failure error, restarts int) error {
+			Exited: func(plan supervisor.Plan, failure error, _ int) error {
 				manager.setControl(nil)
 				_ = os.Remove(manager.paths.CoreControl)
 				logf("exited %s: %v", deploymentLabel(plan.Deployment), failure)
 				return manager.store.Update(func(document *state.Document) error {
-					document.Runtime.State = "restarting"
+					if document.DesiredState == state.DesiredStopped {
+						document.Runtime.State = "stopped"
+					} else {
+						document.Runtime.State = "failed"
+						document.Runtime.LastError = fmt.Sprint(failure)
+					}
+					document.Runtime.RestartCount++
 					document.Runtime.PID = 0
-					document.Runtime.RestartCount = restarts
 					document.Runtime.LastExit = fmt.Sprint(failure)
 					document.Runtime.LastTransition = time.Now().UTC()
 					return nil
@@ -168,10 +223,28 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			Stopped: func() error {
 				manager.setControl(nil)
 				_ = os.Remove(manager.paths.CoreControl)
-				logf("daemon stopped")
+				logf("managed core stopped")
 				return manager.store.Update(func(document *state.Document) error {
+					if document.Active == nil {
+						if document.Runtime.State == "idle" && document.Runtime.PID == 0 {
+							return nil
+						}
+						document.Runtime = state.Runtime{
+							State:          "idle",
+							LastTransition: time.Now().UTC(),
+						}
+						return nil
+					}
+					if document.Runtime.State == "stopped" && document.Runtime.PID == 0 {
+						return nil
+					}
 					document.Runtime.State = "stopped"
 					document.Runtime.PID = 0
+					if document.DesiredState == state.DesiredStopped {
+						document.Runtime.LastExit = "stopped by user"
+					} else {
+						document.Runtime.LastExit = "Sempre service stopped"
+					}
 					document.Runtime.LastTransition = time.Now().UTC()
 					return nil
 				})
@@ -181,6 +254,14 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				_ = os.Remove(manager.paths.CoreControl)
 				logf("waiting for an active core deployment")
 				return manager.store.Update(func(document *state.Document) error {
+					if document.Runtime.State == "failed" &&
+						(document.Runtime.LastError != "" || document.LastError != "") {
+						document.Runtime.PID = 0
+						return nil
+					}
+					if document.Runtime.State == "idle" && document.Runtime.PID == 0 {
+						return nil
+					}
 					document.Runtime = state.Runtime{
 						State:          "idle",
 						LastTransition: time.Now().UTC(),
@@ -218,6 +299,7 @@ func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (
 		document.Runtime.State = "failed"
 		document.Runtime.PID = 0
 		document.Runtime.LastExit = fmt.Sprint(failure)
+		document.Runtime.LastError = fmt.Sprint(failure)
 		document.Runtime.LastTransition = time.Now().UTC()
 		return nil
 	})

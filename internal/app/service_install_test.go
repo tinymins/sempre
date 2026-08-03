@@ -264,6 +264,32 @@ func TestInstallMergeCopiesDeploymentIntoEmptySystemState(t *testing.T) {
 	}
 }
 
+func TestInstallMergeCopiesDeploymentButPreservesStoppedIntent(t *testing.T) {
+	t.Parallel()
+	source := state.NewDocument()
+	sourceState := source.Core("sing-box").Source("")
+	sourceState.Channels["stable"] = "1.2.3"
+	sourceState.Installed["1.2.3"] = &state.Installation{}
+	source.Selected = &state.Selection{Core: "sing-box", Ref: "stable"}
+	source.Active = &state.Deployment{
+		Core:       "sing-box",
+		Ref:        "stable",
+		Version:    "1.2.3",
+		ConfigHash: testHashA,
+	}
+	source.Configs["sing-box"] = testHashA
+
+	existing := state.NewDocument()
+	existing.DesiredState = state.DesiredStopped
+	merged := mergeInstallDocument(source, existing)
+	if merged.Active == nil || *merged.Active != *source.Active {
+		t.Fatalf("active = %#v", merged.Active)
+	}
+	if merged.DesiredState != state.DesiredStopped {
+		t.Fatalf("desired state = %q", merged.DesiredState)
+	}
+}
+
 func TestMeaningfulSystemStateRequiresConfirmation(t *testing.T) {
 	t.Parallel()
 	document := state.NewDocument()

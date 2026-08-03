@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/tinymins/sempre/internal/app"
 	"github.com/tinymins/sempre/internal/layout"
 )
 
@@ -147,6 +150,56 @@ func TestUIReadyRequiresSuccessfulRootResponse(t *testing.T) {
 				t.Fatalf("uiReady() = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestManagedRuntimeCompletionSemantics(t *testing.T) {
+	t.Parallel()
+	before := app.RuntimeStatus{PID: 41, RuntimeState: "running", DesiredState: "running"}
+	for _, test := range []struct {
+		operation string
+		status    app.RuntimeStatus
+		want      bool
+	}{
+		{operation: "start", status: app.RuntimeStatus{RuntimeState: "starting", DesiredState: "running"}},
+		{operation: "start", status: app.RuntimeStatus{RuntimeState: "running", DesiredState: "running"}, want: true},
+		{operation: "stop", status: app.RuntimeStatus{RuntimeState: "stopping", DesiredState: "stopped"}},
+		{operation: "stop", status: app.RuntimeStatus{RuntimeState: "stopped", DesiredState: "stopped"}, want: true},
+		{operation: "stop", status: app.RuntimeStatus{RuntimeState: "idle", DesiredState: "stopped"}, want: true},
+		{operation: "restart", status: app.RuntimeStatus{RuntimeState: "running", DesiredState: "running", PID: 41}},
+		{operation: "restart", status: app.RuntimeStatus{RuntimeState: "running", DesiredState: "running", PID: 42}, want: true},
+	} {
+		if got := managedRuntimeComplete(test.operation, before, test.status); got != test.want {
+			t.Errorf("managedRuntimeComplete(%q, %#v) = %v", test.operation, test.status, got)
+		}
+	}
+}
+
+func TestManagedRuntimeStatusOutput(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	command := &CLI{output: &output}
+	status := app.RuntimeStatus{
+		DesiredState:  "running",
+		RuntimeState:  "running",
+		PID:           1234,
+		UptimeSeconds: 90,
+		RestartCount:  2,
+		Active: &app.RuntimeDeployment{
+			ExactReference: "sing-box@1.2.3",
+			ConfigHash:     strings.Repeat("a", 64),
+		},
+	}
+	if err := command.writeManagedRuntimeStatus(status, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"Desired: running", "State: running", "Core: sing-box@1.2.3",
+		"Config: aaaaaaaaaaaa", "PID: 1234", "Uptime: 1m30s", "Restarts: 2",
+	} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("status output does not contain %q:\n%s", expected, output.String())
+		}
 	}
 }
 

@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tinymins/sempre/internal/app"
 	"github.com/tinymins/sempre/internal/control"
+	"github.com/tinymins/sempre/internal/controlplane"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/webconfig"
@@ -229,6 +231,9 @@ func (command *CLI) runtime(ctx context.Context, arguments []string, options Opt
 	if len(arguments) == 0 {
 		return usageError()
 	}
+	if arguments[0] == "status" || arguments[0] == "start" || arguments[0] == "stop" || arguments[0] == "restart" || arguments[0] == "reload" {
+		return command.runtimeLifecycle(ctx, arguments, options)
+	}
 	client, err := command.manager.RuntimeControl()
 	if err != nil {
 		return err
@@ -305,15 +310,149 @@ func (command *CLI) runtime(ctx context.Context, arguments []string, options Opt
 			_, err := fmt.Fprintln(command.output, string(data))
 			return err
 		})
-	case "reload":
-		command.manager.RequestReload()
-		if command.manager.Paths().Mode == layout.System {
-			return command.manager.RestartService(ctx)
-		}
-		return nil
 	default:
 		return usageError()
 	}
+}
+
+func (command *CLI) runtimeLifecycle(ctx context.Context, arguments []string, options Options) error {
+	if len(arguments) != 1 {
+		return usageError()
+	}
+	client, err := controlplane.Discover(command.manager.Paths().DaemonControl)
+	if err != nil {
+		return err
+	}
+	operation := arguments[0]
+	if operation == "status" {
+		var status app.RuntimeStatus
+		if err := client.Get(ctx, "/api/v1/runtime/status", &status); err != nil {
+			return err
+		}
+		return command.writeManagedRuntimeStatus(status, options.JSON)
+	}
+	if operation == "reload" {
+		var result struct {
+			Status app.RuntimeStatus `json:"status"`
+		}
+		if err := client.Post(ctx, "/api/v1/runtime/reload", nil, &result); err != nil {
+			return err
+		}
+		if options.JSON {
+			return writeCLIJSON(command.output, result.Status)
+		}
+		fmt.Fprintln(command.output, "Managed core reconciliation scheduled.")
+		return nil
+	}
+
+	var before app.RuntimeStatus
+	if err := client.Get(ctx, "/api/v1/runtime/status", &before); err != nil {
+		return err
+	}
+	var accepted struct {
+		Status app.RuntimeStatus `json:"status"`
+	}
+	if err := client.Post(ctx, "/api/v1/runtime/"+operation, nil, &accepted); err != nil {
+		return err
+	}
+	status, err := waitManagedRuntime(ctx, client, operation, before, accepted.Status)
+	if err != nil {
+		return err
+	}
+	return command.writeManagedRuntimeStatus(status, options.JSON)
+}
+
+func waitManagedRuntime(
+	ctx context.Context,
+	client *controlplane.Client,
+	operation string,
+	before app.RuntimeStatus,
+	current app.RuntimeStatus,
+) (app.RuntimeStatus, error) {
+	deadline := time.NewTimer(60 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if managedRuntimeComplete(operation, before, current) {
+			return current, nil
+		}
+		if current.RuntimeState == "failed" {
+			message := current.LastError
+			if message == "" {
+				message = "managed core entered failed state"
+			}
+			return current, fmt.Errorf("%s", message)
+		}
+		select {
+		case <-ctx.Done():
+			return current, ctx.Err()
+		case <-deadline.C:
+			return current, fmt.Errorf("timed out waiting for managed core to %s (current state: %s)", operation, current.RuntimeState)
+		case <-ticker.C:
+			if err := client.Get(ctx, "/api/v1/runtime/status", &current); err != nil {
+				return current, err
+			}
+		}
+	}
+}
+
+func managedRuntimeComplete(operation string, before, current app.RuntimeStatus) bool {
+	switch operation {
+	case "stop":
+		return current.DesiredState == "stopped" && (current.RuntimeState == "stopped" || current.RuntimeState == "idle")
+	case "restart":
+		return current.RuntimeState == "running" && (before.PID == 0 || current.PID != before.PID)
+	default:
+		return current.RuntimeState == "running"
+	}
+}
+
+func (command *CLI) writeManagedRuntimeStatus(status app.RuntimeStatus, jsonOutput bool) error {
+	if jsonOutput {
+		return writeCLIJSON(command.output, status)
+	}
+	coreReference := "none"
+	configHash := "none"
+	if status.Active != nil {
+		coreReference = status.Active.ExactReference
+		configHash = status.Active.ConfigHash
+		if len(configHash) > 12 {
+			configHash = configHash[:12]
+		}
+	}
+	fmt.Fprintln(command.output, "Desired:", status.DesiredState)
+	fmt.Fprintln(command.output, "State:", status.RuntimeState)
+	fmt.Fprintln(command.output, "Core:", coreReference)
+	fmt.Fprintln(command.output, "Config:", configHash)
+	fmt.Fprintln(command.output, "PID:", valueOrNone(status.PID))
+	fmt.Fprintln(command.output, "Uptime:", (time.Duration(status.UptimeSeconds) * time.Second).String())
+	fmt.Fprintln(command.output, "Restarts:", status.RestartCount)
+	fmt.Fprintln(command.output, "Last transition:", timeOrNone(status.LastTransition))
+	fmt.Fprintln(command.output, "Last exit:", stringOrNone(status.LastExit))
+	fmt.Fprintln(command.output, "Last error:", stringOrNone(status.LastError))
+	return nil
+}
+
+func valueOrNone(value int) string {
+	if value == 0 {
+		return "none"
+	}
+	return strconv.Itoa(value)
+}
+
+func timeOrNone(value *time.Time) string {
+	if value == nil {
+		return "none"
+	}
+	return value.Format(time.RFC3339)
+}
+
+func stringOrNone(value string) string {
+	if value == "" {
+		return "none"
+	}
+	return value
 }
 
 func (command *CLI) runtimeProxies(ctx context.Context, client *control.Client, arguments []string) error {

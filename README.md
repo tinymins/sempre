@@ -187,9 +187,37 @@ normal output and logs.
 
 Automatic subscription checks run every 24 hours by default. The interval is
 configurable with a minimum of five minutes. A changed scheduled configuration
-is applied automatically. Interactive changes ask before restarting a running
-service; use `--yes` to restart without prompting or `--no-restart` to leave the
-change pending.
+is applied automatically while the managed core is expected to run. Interactive
+changes ask before restarting a running managed core; use `--yes` to restart
+without prompting or `--no-restart` to leave the change pending. When the core
+has been explicitly stopped, changes are validated and saved without starting
+it, and take effect on the next start.
+
+## Managed Runtime
+
+Sempre Service and its managed core have separate lifecycles. Stopping the
+managed core leaves the Web console and API online:
+
+```text
+sempre runtime status
+sempre runtime start
+sempre runtime stop
+sempre runtime restart
+```
+
+`runtime status` reports the persisted desired state, observed runtime state,
+exact core reference, configuration hash, PID, uptime, restart count, last
+transition, exit, and error. Start, stop, and restart are idempotent and are
+serialized by the daemon so concurrent CLI and Web requests cannot create two
+core processes. An explicit stop persists across Sempre Service and operating
+system restarts. Restarting a stopped core changes its desired state to running
+and starts it.
+
+The same lifecycle is exposed to authenticated Web clients at
+`GET /api/v1/runtime/status` and `POST /api/v1/runtime/{start,stop,restart}`.
+Mutation requests return `202 Accepted`; clients poll status until the runtime
+reaches its terminal state. Local CLI commands discover a protected,
+loopback-only daemon endpoint and use the same API and lifecycle manager.
 
 ## Web Control Plane
 
@@ -217,7 +245,8 @@ passwords use Argon2id and successful logins receive an expiring bearer
 session. Changing the listener is a live rebind: Sempre opens the new socket
 before closing the old one and rolls the configuration back on failure.
 
-The official React console covers status and live traffic, proxy selection and
+The official React console covers managed-core status and lifecycle controls,
+live traffic, proxy selection and
 latency checks, providers, connections, rules, local traffic aggregation,
 logs, core versions, subscriptions, validated configuration editing, listener
 and password settings, and UI lifecycle management. Runtime features are also
@@ -315,6 +344,12 @@ System mode is the default:
 | Windows | `%ProgramFiles%\Sempre\sempre.exe` | `%ProgramData%\Sempre` | `%ProgramData%\Sempre\logs` | `%ProgramData%\Sempre\run` |
 | Linux | `/usr/local/libexec/sempre/sempre` | `/var/lib/sempre` | `/var/log/sempre` | `/run/sempre` |
 | macOS | `/Library/Application Support/Sempre/bin/sempre` | `/Library/Application Support/Sempre/data` | `/Library/Logs/Sempre` | `/var/run/sempre` |
+
+State schema 4 adds the persisted managed-core desired state. Schema 1-3 state
+is migrated with `desired_state=running` to preserve the previous automatic
+startup behavior. Older Sempre releases reject schema 4 instead of silently
+discarding an explicit stopped intent; downgrade by restoring a pre-upgrade
+state snapshot or migrating the state document with the matching release.
 
 Portable mode keeps the following structure beside the executable:
 

@@ -23,6 +23,7 @@ import (
 
 	"github.com/tinymins/sempre/internal/buildinfo"
 	"github.com/tinymins/sempre/internal/control"
+	"github.com/tinymins/sempre/internal/controlplane"
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/release"
 	"github.com/tinymins/sempre/internal/service"
@@ -123,10 +124,11 @@ func (store *authStore) cleanupLocked(now time.Time) {
 }
 
 type adminServer struct {
-	manager *Manager
-	auth    *authStore
-	runtime *webRuntime
-	handler http.Handler
+	manager     *Manager
+	auth        *authStore
+	runtime     *webRuntime
+	handler     http.Handler
+	daemonToken string
 }
 
 type webRuntime struct {
@@ -136,10 +138,14 @@ type webRuntime struct {
 	listener net.Listener
 	address  string
 	done     chan error
+	token    string
 }
 
-func newAdminServer(manager *Manager) *adminServer {
+func newAdminServer(manager *Manager, daemonToken ...string) *adminServer {
 	admin := &adminServer{manager: manager, auth: newAuthStore()}
+	if len(daemonToken) > 0 {
+		admin.daemonToken = daemonToken[0]
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", admin.health)
 	mux.HandleFunc("POST /api/v1/auth/login", admin.login)
@@ -181,6 +187,10 @@ func newAdminServer(manager *Manager) *adminServer {
 	mux.HandleFunc("POST /api/v1/runtime/connections/close", admin.runtimeConnectionClose)
 	mux.HandleFunc("POST /api/v1/runtime/dns/query", admin.runtimeDNSQuery)
 	mux.HandleFunc("POST /api/v1/runtime/cache/flush", admin.runtimeCacheFlush)
+	mux.HandleFunc("GET /api/v1/runtime/status", admin.runtimeStatus)
+	mux.HandleFunc("POST /api/v1/runtime/start", admin.runtimeStart)
+	mux.HandleFunc("POST /api/v1/runtime/stop", admin.runtimeStop)
+	mux.HandleFunc("POST /api/v1/runtime/restart", admin.runtimeRestart)
 	mux.HandleFunc("POST /api/v1/runtime/reload", admin.runtimeReload)
 	mux.HandleFunc("GET /api/v1/runtime/events", admin.runtimeEvents)
 	mux.HandleFunc("/", admin.static)
@@ -189,10 +199,15 @@ func newAdminServer(manager *Manager) *adminServer {
 }
 
 func (manager *Manager) runControlPlane(ctx context.Context, runCore func(context.Context) error) error {
-	admin := newAdminServer(manager)
+	token, err := controlplane.NewToken()
+	if err != nil {
+		return err
+	}
+	admin := newAdminServer(manager, token)
 	runtime := &webRuntime{
 		manager: manager,
 		done:    make(chan error, 4),
+		token:   token,
 	}
 	runtime.server = &http.Server{
 		Handler:           admin.handler,
@@ -214,6 +229,7 @@ func (manager *Manager) runControlPlane(ctx context.Context, runCore func(contex
 		defer cancel()
 		_ = runtime.server.Shutdown(shutdownCtx)
 		_ = os.Remove(manager.paths.Endpoint)
+		_ = os.Remove(manager.paths.DaemonControl)
 	}()
 	for {
 		select {
@@ -305,11 +321,18 @@ func (runtime *webRuntime) writeEndpoint(address string) error {
 	if err := os.MkdirAll(runtime.manager.paths.Root, 0o755); err != nil {
 		return err
 	}
-	return webconfig.WriteEndpoint(runtime.manager.paths.Endpoint, webconfig.Endpoint{
+	if err := webconfig.WriteEndpoint(runtime.manager.paths.Endpoint, webconfig.Endpoint{
 		Version:  buildinfo.Version,
 		Bind:     address,
 		LocalURL: localURL,
-	})
+	}); err != nil {
+		return err
+	}
+	if err := controlplane.WriteEndpoint(runtime.manager.paths.DaemonControl, localURL, runtime.token); err != nil {
+		_ = os.Remove(runtime.manager.paths.Endpoint)
+		return err
+	}
+	return nil
 }
 
 func (admin *adminServer) middleware(next http.Handler) http.Handler {
@@ -338,13 +361,26 @@ func (admin *adminServer) middleware(next http.Handler) http.Handler {
 			request.URL.Path != apiPrefix+"/health" &&
 			request.URL.Path != apiPrefix+"/auth/login" {
 			token := strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")
-			if token == "" || !admin.auth.valid(token) {
+			if !admin.validDaemonRequest(request) && (token == "" || !admin.auth.valid(token)) {
 				apiWriteError(writer, http.StatusUnauthorized, "UNAUTHORIZED", "a valid administrator session is required", nil)
 				return
 			}
 		}
 		next.ServeHTTP(writer, request)
 	})
+}
+
+func (admin *adminServer) validDaemonRequest(request *http.Request) bool {
+	value := request.Header.Get(controlplane.TokenHeader)
+	if !controlplane.EqualToken(value, admin.daemonToken) {
+		return false
+	}
+	host, _, err := net.SplitHostPort(request.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	address := net.ParseIP(host)
+	return address != nil && address.IsLoopback()
 }
 
 func (admin *adminServer) sameOrigin(request *http.Request, origin string) bool {
@@ -425,16 +461,17 @@ func (admin *adminServer) system(writer http.ResponseWriter, request *http.Reque
 		capabilities = client.Capabilities(request.Context())
 	}
 	apiWriteJSON(writer, http.StatusOK, map[string]any{
-		"version":    buildinfo.Version,
-		"commit":     buildinfo.Commit,
-		"date":       buildinfo.Date,
-		"mode":       admin.manager.paths.Mode,
-		"service":    serviceState,
-		"runtime":    document.Runtime,
-		"selected":   document.Selected,
-		"active":     document.Active,
-		"pending":    document.Pending,
-		"last_error": document.LastError,
+		"version":       buildinfo.Version,
+		"commit":        buildinfo.Commit,
+		"date":          buildinfo.Date,
+		"mode":          admin.manager.paths.Mode,
+		"service":       serviceState,
+		"desired_state": document.DesiredState,
+		"runtime":       document.Runtime,
+		"selected":      document.Selected,
+		"active":        document.Active,
+		"pending":       document.Pending,
+		"last_error":    document.LastError,
 		"web": map[string]any{
 			"listen": web.Listen, "local_url": localURL,
 			"password_set": web.Password != "", "password_warning": web.Password == "",
@@ -548,9 +585,17 @@ func (admin *adminServer) coreUpdate(writer http.ResponseWriter, request *http.R
 		admin.operationError(writer, err)
 		return
 	}
-	for _, change := range changes {
+	for index := range changes {
+		change := &changes[index]
 		if change.NeedsRestart {
-			admin.manager.RequestReload()
+			reloaded, reloadErr := admin.manager.RequestReloadIfRunning()
+			if reloadErr != nil {
+				admin.internalError(writer, reloadErr)
+				return
+			}
+			if !reloaded {
+				change.Message += "; it will take effect the next time the managed core starts"
+			}
 		}
 	}
 	apiWriteJSON(writer, http.StatusOK, map[string]any{"changes": changes})
@@ -612,9 +657,17 @@ func (admin *adminServer) subscriptionPatch(writer http.ResponseWriter, request 
 		}
 		changes = append(changes, change)
 	}
-	for _, change := range changes {
+	for index := range changes {
+		change := &changes[index]
 		if change.NeedsRestart {
-			admin.manager.RequestReload()
+			reloaded, reloadErr := admin.manager.RequestReloadIfRunning()
+			if reloadErr != nil {
+				admin.internalError(writer, reloadErr)
+				return
+			}
+			if !reloaded {
+				change.Message += "; it will take effect the next time the managed core starts"
+			}
 		}
 	}
 	apiWriteJSON(writer, http.StatusOK, map[string]any{"changes": changes})
@@ -1099,9 +1152,49 @@ func (admin *adminServer) runtimeCacheFlush(writer http.ResponseWriter, request 
 	admin.writeRuntimeResult(writer, map[string]bool{"flushed": err == nil}, err)
 }
 
+func (admin *adminServer) runtimeStatus(writer http.ResponseWriter, _ *http.Request) {
+	status, err := admin.manager.ManagedRuntimeStatus()
+	if err != nil {
+		admin.internalError(writer, err)
+		return
+	}
+	apiWriteJSON(writer, http.StatusOK, status)
+}
+
+func (admin *adminServer) runtimeStart(writer http.ResponseWriter, _ *http.Request) {
+	admin.runtimeAction(writer, RuntimeStart)
+}
+
+func (admin *adminServer) runtimeStop(writer http.ResponseWriter, _ *http.Request) {
+	admin.runtimeAction(writer, RuntimeStop)
+}
+
+func (admin *adminServer) runtimeRestart(writer http.ResponseWriter, _ *http.Request) {
+	admin.runtimeAction(writer, RuntimeRestart)
+}
+
+func (admin *adminServer) runtimeAction(writer http.ResponseWriter, action string) {
+	status, err := admin.manager.ManagedRuntimeAction(action)
+	if err != nil {
+		var actionError *RuntimeActionError
+		if errors.As(err, &actionError) {
+			apiWriteError(writer, http.StatusConflict, actionError.Code, actionError.Message, map[string]any{"status": status})
+			return
+		}
+		admin.internalError(writer, err)
+		return
+	}
+	apiWriteJSON(writer, http.StatusAccepted, map[string]any{"action": action, "status": status})
+}
+
 func (admin *adminServer) runtimeReload(writer http.ResponseWriter, request *http.Request) {
 	admin.manager.RequestReload()
-	apiWriteJSON(writer, http.StatusAccepted, map[string]bool{"scheduled": true})
+	status, err := admin.manager.ManagedRuntimeStatus()
+	if err != nil {
+		admin.internalError(writer, err)
+		return
+	}
+	apiWriteJSON(writer, http.StatusAccepted, map[string]any{"scheduled": true, "status": status})
 }
 
 type runtimeEvent struct {
@@ -1280,7 +1373,14 @@ func (admin *adminServer) writeChange(writer http.ResponseWriter, change Change,
 		return
 	}
 	if change.NeedsRestart {
-		admin.manager.RequestReload()
+		reloaded, reloadErr := admin.manager.RequestReloadIfRunning()
+		if reloadErr != nil {
+			admin.internalError(writer, reloadErr)
+			return
+		}
+		if !reloaded {
+			change.Message += "; it will take effect the next time the managed core starts"
+		}
 	}
 	apiWriteJSON(writer, http.StatusOK, change)
 }

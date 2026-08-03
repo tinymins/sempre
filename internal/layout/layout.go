@@ -27,6 +27,7 @@ type Layout struct {
 	UICurrent         string
 	Resources         string
 	Endpoint          string
+	DaemonControl     string
 	CoreControl       string
 	Lock              string
 	OperationLock     string
@@ -143,6 +144,7 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		UICurrent:         filepath.Join(home, "ui", "current"),
 		Resources:         filepath.Join(root, "resources"),
 		Endpoint:          filepath.Join(root, "endpoint.json"),
+		DaemonControl:     filepath.Join(run, "sempre-control.json"),
 		CoreControl:       filepath.Join(run, "control.json"),
 		Lock:              filepath.Join(run, "state.lock"),
 		OperationLock:     filepath.Join(run, "operation.lock"),

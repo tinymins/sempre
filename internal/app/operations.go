@@ -135,6 +135,7 @@ func (manager *Manager) Status(ctx context.Context) (string, error) {
 		fmt.Fprintln(&builder, "System service:", serviceState)
 	}
 	runtime := document.Runtime
+	fmt.Fprintln(&builder, "Desired core state:", document.DesiredState)
 	runtimeStatus, runtimeErr := manager.runtimeStatus(document)
 	if runtimeErr != nil {
 		fmt.Fprintln(&builder, "Supervisor: unavailable:", runtimeErr)
@@ -247,7 +248,12 @@ func (manager *Manager) runtimeStatus(document state.Document) (string, error) {
 		), nil
 	}
 	if locked {
-		return "starting or stopping; instance lock held before PID was recorded", nil
+		switch runtimeState.State {
+		case "idle", "stopped", "failed":
+			return fmt.Sprintf("%s, no running process", runtimeState.State), nil
+		default:
+			return "starting or stopping; instance lock held before PID was recorded", nil
+		}
 	}
 	switch runtimeState.State {
 	case "running", "starting", "restarting":
