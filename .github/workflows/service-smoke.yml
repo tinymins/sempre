@@ -36,6 +36,12 @@ jobs:
           sudo ./smoke/sempre --portable service install --yes
           sudo ./smoke/sempre --portable service install --yes
           ./smoke/sempre service status
+          for ((attempt = 0; attempt < 50; attempt++)); do
+            if sudo ./smoke/sempre --system status | grep -q "Supervisor: running"; then
+              break
+            fi
+            sleep 0.2
+          done
           sudo ./smoke/sempre --system doctor
           sudo ./smoke/sempre --portable service stop
           sudo ./smoke/sempre --portable service start
@@ -54,6 +60,13 @@ jobs:
           ./smoke/sempre.exe --portable service install --yes
           ./smoke/sempre.exe --portable service install --yes
           ./smoke/sempre.exe service status
+          for ($attempt = 0; $attempt -lt 50; $attempt++) {
+            $status = ./smoke/sempre.exe --system status
+            if ($status -match '^Supervisor: running') {
+              break
+            }
+            Start-Sleep -Milliseconds 200
+          }
           ./smoke/sempre.exe --system doctor
           ./smoke/sempre.exe --portable service stop
           ./smoke/sempre.exe --portable service start
