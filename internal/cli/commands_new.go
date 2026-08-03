@@ -414,9 +414,13 @@ func (command *CLI) writeManagedRuntimeStatus(status app.RuntimeStatus, jsonOutp
 	}
 	coreReference := "none"
 	configHash := "none"
-	if status.Active != nil {
-		coreReference = status.Active.ExactReference
-		configHash = status.Active.ConfigHash
+	deployment := status.Active
+	if deployment == nil {
+		deployment = status.Target
+	}
+	if deployment != nil {
+		coreReference = deployment.ExactReference
+		configHash = deployment.ConfigHash
 		if len(configHash) > 12 {
 			configHash = configHash[:12]
 		}

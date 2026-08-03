@@ -203,6 +203,32 @@ func TestManagedRuntimeStatusOutput(t *testing.T) {
 	}
 }
 
+func TestManagedRuntimeStatusOutputUsesRetryTarget(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	command := &CLI{output: &output}
+	status := app.RuntimeStatus{
+		DesiredState: "running",
+		RuntimeState: "failed",
+		Target: &app.RuntimeDeployment{
+			ExactReference: "sing-box:tinymins/sing-box@1.13.15-ddns.1",
+			ConfigHash:     strings.Repeat("b", 64),
+		},
+	}
+	if err := command.writeManagedRuntimeStatus(status, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"State: failed",
+		"Core: sing-box:tinymins/sing-box@1.13.15-ddns.1",
+		"Config: bbbbbbbbbbbb",
+	} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("status output does not contain %q:\n%s", expected, output.String())
+		}
+	}
+}
+
 type testWriter struct {
 	t *testing.T
 }
