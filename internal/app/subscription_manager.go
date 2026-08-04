@@ -37,6 +37,26 @@ func (manager *Manager) CreateSubscriptionProfile(name string) (subscriptions.Pr
 	return profile, err
 }
 
+func (manager *Manager) RenameSubscriptionProfile(id, name string) (subscriptions.Profile, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return subscriptions.Profile{}, fmt.Errorf("profile name is required")
+	}
+	var renamed subscriptions.Profile
+	err := manager.withOperation(func() error {
+		return manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
+			profile, err := subscriptions.FindProfile(catalog, id)
+			if err != nil {
+				return err
+			}
+			profile.Name = name
+			renamed = *profile
+			return nil
+		})
+	})
+	return renamed, err
+}
+
 func (manager *Manager) SaveSubscriptionProfile(ctx context.Context, id string, candidate subscriptions.Profile) (Change, subscriptions.RenderResult, error) {
 	var change Change
 	var rendered subscriptions.RenderResult

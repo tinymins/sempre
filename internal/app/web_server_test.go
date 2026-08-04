@@ -254,6 +254,39 @@ func TestSubscriptionPreviewAndTraceHTTPContracts(t *testing.T) {
 	}
 }
 
+func TestSubscriptionProfilePatchRenamesProfile(t *testing.T) {
+	manager := newTestManager(t)
+	catalog, activeProfileID, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileID := activeProfileID
+	admin := newAdminServer(manager, "daemon-secret")
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/subscriptions/"+profileID, strings.NewReader(`{"name":"  Primary set  "}`))
+	request.RemoteAddr = "127.0.0.1:12345"
+	request.Header.Set(controlplane.TokenHeader, "daemon-secret")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	admin.handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var profile subscriptions.Profile
+	if err := json.Unmarshal(recorder.Body.Bytes(), &profile); err != nil {
+		t.Fatal(err)
+	}
+	if profile.ID != profileID || profile.Name != "Primary set" {
+		t.Fatalf("profile = %#v", profile)
+	}
+	updated, updatedActiveProfileID, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedActiveProfileID != profileID || updated.Profiles[0].Name != "Primary set" || len(updated.Profiles) != len(catalog.Profiles) {
+		t.Fatalf("catalog = %#v", updated)
+	}
+}
+
 func testJSONRequest(t *testing.T, method, target, origin, token string, body any) *http.Response {
 	t.Helper()
 	var input io.Reader

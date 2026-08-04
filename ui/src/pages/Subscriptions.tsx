@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
-import { Activity, CheckCircle2, FileJson, Plus, Power, RefreshCw, Trash2 } from 'lucide-react'
+import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, Power, RefreshCw, Trash2, X } from 'lucide-react'
+import { Dropdown } from '@acme/components'
 import type { ProxyDebugFormat } from '@acme/types'
 import { AcmeContentBoundary } from '../components/AcmeContentBoundary'
-import { Badge, Button, Card, Field, Input, PageTitle, Spinner } from '../components/ui'
+import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { parseJSONC } from '../lib/jsonc'
@@ -18,6 +19,7 @@ import ProxySubscribeModal from '../features/subscriptions/toolbox/ProxySubscrib
 
 type SaveResponse = { change: { changed: boolean; message: string }; render?: { warnings?: string[] } }
 type Section = 'editor' | 'diagnostics'
+type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
 
 export function Subscriptions() {
   const { t } = useI18n()
@@ -25,7 +27,10 @@ export function Subscriptions() {
   const queryClient = useQueryClient()
   const [selectedID, setSelectedID] = useState('')
   const [draft, setDraft] = useState<SubscriptionProfile | null>(null)
-  const [newName, setNewName] = useState('')
+  const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null)
+  const [nameValue, setNameValue] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [deleteProfile, setDeleteProfile] = useState<SubscriptionProfile | null>(null)
   const [notice, setNotice] = useState('')
   const [section, setSection] = useState<Section>('editor')
   const [format, setFormat] = useState<ProxyDebugFormat>('sing-box-v13')
@@ -58,20 +63,39 @@ export function Subscriptions() {
   })
 
   const create = useMutation({
-    mutationFn: () => api<SubscriptionProfile>(session!, '/subscriptions', { method: 'POST', body: JSON.stringify({ name: newName.trim() }) }),
+    mutationFn: (name: string) => api<SubscriptionProfile>(session!, '/subscriptions', { method: 'POST', body: JSON.stringify({ name }) }),
     onSuccess: async (profile) => {
-      setNewName('')
+      await invalidate()
       setSelectedID(profile.id)
       setDraft(null)
+      setNameDialog(null)
+      setNameValue('')
+      setNameError('')
+    },
+    onError: (error) => setNameError(error.message),
+  })
+
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api<SubscriptionProfile>(session!, `/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+    onSuccess: async (profile) => {
+      queryClient.setQueryData<SubscriptionCatalogResponse>(['subscriptions'], (value) => value ? {
+        ...value,
+        profiles: value.profiles.map((item) => item.id === profile.id ? profile : item),
+      } : value)
+      setDraft((value) => value?.id === profile.id ? { ...value, name: profile.name } : value)
+      setNameDialog(null)
+      setNameValue('')
+      setNameError('')
       await invalidate()
     },
-    onError: (error) => setNotice(error.message),
+    onError: (error) => setNameError(error.message),
   })
 
   const remove = useMutation({
-    mutationFn: (id: string) => api(session!, `/subscriptions/${id}`, { method: 'DELETE' }),
+    mutationFn: (profile: SubscriptionProfile) => api(session!, `/subscriptions/${profile.id}`, { method: 'DELETE' }),
     onSuccess: async () => {
-      setSelectedID('')
+      setDeleteProfile(null)
+      setSelectedID(catalog.data?.active_profile_id || '')
       setDraft(null)
       await invalidate()
     },
@@ -79,7 +103,7 @@ export function Subscriptions() {
   })
 
   const action = useMutation({
-    mutationFn: (operation: 'activate' | 'refresh') => api<SaveResponse>(session!, `/subscriptions/${effectiveSelectedID}/${operation}`, { method: 'POST' }),
+    mutationFn: ({ id, operation }: { id: string; operation: 'activate' | 'refresh' }) => api<SaveResponse>(session!, `/subscriptions/${id}/${operation}`, { method: 'POST' }),
     onSuccess: async (result) => {
       setNotice(result.change.message)
       await invalidate()
@@ -95,30 +119,80 @@ export function Subscriptions() {
 
   const isActive = currentProfile?.id === catalog.data?.active_profile_id
   const resetDraft = () => setDraft(null)
+  const openNameDialog = (state: NameDialogState) => {
+    setNameDialog(state)
+    setNameValue(state.mode === 'rename' ? state.profile.name : '')
+    setNameError('')
+  }
+  const closeNameDialog = () => {
+    if (create.isPending || rename.isPending) return
+    setNameDialog(null)
+    setNameValue('')
+    setNameError('')
+  }
+  const submitName = () => {
+    if (!nameDialog) return
+    const name = nameValue.trim()
+    if (!name) {
+      setNameError(t('subscriptionSetNameRequired'))
+      return
+    }
+    const renamedID = nameDialog.mode === 'rename' ? nameDialog.profile.id : ''
+    if (profiles.some((profile) => profile.id !== renamedID && profile.name.trim().toLowerCase() === name.toLowerCase())) {
+      setNameError(t('subscriptionSetNameUsed'))
+      return
+    }
+    setNameError('')
+    if (nameDialog.mode === 'create') {
+      create.mutate(name)
+    } else {
+      rename.mutate({ id: nameDialog.profile.id, name })
+    }
+  }
 
   return (
     <div className="space-y-5">
       <PageTitle title={t('subscriptions')}>
-        <Button disabled={!currentProfile || action.isPending} onClick={() => action.mutate('refresh')}>
+        <Button disabled={!currentProfile || action.isPending} onClick={() => currentProfile && action.mutate({ id: currentProfile.id, operation: 'refresh' })}>
           <RefreshCw size={16} />{t('updateNow')}
         </Button>
       </PageTitle>
 
-      <div className="flex items-end gap-1 overflow-x-auto border-b border-[var(--border)]">
-        {profiles.map((profile) => (
-          <button
-            key={profile.id}
-            className={`flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${effectiveSelectedID === profile.id ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)]'}`}
-            onClick={() => { setSelectedID(profile.id); setDraft(null) }}
-          >
-            {profile.id === catalog.data?.active_profile_id ? <span className="size-2 rounded-full bg-emerald-500" /> : null}
-            {profile.name || t('defaultSubscription')}
-          </button>
-        ))}
-        <div className="flex shrink-0 items-center gap-1 pb-1 pl-2">
-          <Input className="w-36" value={newName} onChange={(event) => setNewName(event.target.value)} placeholder={t('profileName')} />
-          <Button size="icon" title={t('addProfile')} disabled={!newName.trim() || create.isPending} onClick={() => create.mutate()}><Plus size={16} /></Button>
-        </div>
+      <div role="tablist" aria-label={t('subscriptionSets')} className="flex items-end gap-1 overflow-x-auto border-b border-[var(--border)]">
+        {profiles.map((profile) => {
+          const selected = effectiveSelectedID === profile.id
+          return (
+            <div key={profile.id} className={`flex h-10 shrink-0 items-center border-b-2 ${selected ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)]'}`}>
+              <button
+                role="tab"
+                aria-selected={selected}
+                className="flex h-full min-w-0 items-center gap-2 pl-3 pr-2 text-sm font-medium"
+                onClick={() => { setSelectedID(profile.id); setDraft(null) }}
+              >
+                {profile.id === catalog.data?.active_profile_id ? <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-emerald-500" /> : null}
+                <span className="max-w-48 truncate">{profile.name || t('defaultSubscriptionSet')}</span>
+              </button>
+              {selected ? (
+                <SubscriptionSetMenu
+                  profile={profile}
+                  active={profile.id === catalog.data?.active_profile_id}
+                  last={profiles.length <= 1}
+                  pending={action.isPending || remove.isPending}
+                  onRename={() => openNameDialog({ mode: 'rename', profile })}
+                  onActivate={() => action.mutate({ id: profile.id, operation: 'activate' })}
+                  onDelete={() => setDeleteProfile(profile)}
+                />
+              ) : null}
+            </div>
+          )
+        })}
+        <button
+          type="button"
+          className="flex h-10 shrink-0 items-center gap-2 border-b-2 border-transparent px-3 text-sm font-medium text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+          onClick={() => openNameDialog({ mode: 'create' })}
+        >
+          <Plus size={16} />{t('newSubscriptionSet')}
+        </button>
       </div>
 
       {notice ? <div className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm break-words">{notice}</div> : null}
@@ -126,8 +200,7 @@ export function Subscriptions() {
       {currentProfile ? (
         <>
           <Card className="p-4">
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px_180px]">
-              <Field label={t('profileName')}><Input value={currentProfile.name} onChange={(event) => setDraft({ ...currentProfile, name: event.target.value })} /></Field>
+            <div className="grid gap-4 md:grid-cols-[180px_minmax(240px,1fr)]">
               <Field label={t('schedule')}>
                 <Input
                   value={catalog.data?.schedule.interval || '24h'}
@@ -141,12 +214,9 @@ export function Subscriptions() {
               </label>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-4">
-              {isActive ? <Badge tone="success">{t('activeProfile')}</Badge> : <Button disabled={action.isPending} onClick={() => action.mutate('activate')}><CheckCircle2 size={16} />{t('activate')}</Button>}
+              {isActive ? <Badge tone="success">{t('activeSubscriptionSet')}</Badge> : null}
               <span className="text-xs text-[var(--muted)]">{currentProfile.last_compiler_target || t('compilerTarget')} · {currentProfile.last_result || t('noData')}</span>
-              <div className="ml-auto flex gap-2">
-                <Button onClick={() => api(session!, '/runtime/restart', { method: 'POST' }).then(() => setNotice(t('operationAccepted')))}><Power size={16} />{t('restartNow')}</Button>
-                <Button size="icon" variant="ghost" title={t('remove')} disabled={isActive || profiles.length <= 1 || remove.isPending} onClick={() => remove.mutate(currentProfile.id)}><Trash2 size={16} /></Button>
-              </div>
+              <Button className="ml-auto" onClick={() => api(session!, '/runtime/restart', { method: 'POST' }).then(() => setNotice(t('operationAccepted')))}><Power size={16} />{t('restartNow')}</Button>
             </div>
           </Card>
 
@@ -196,6 +266,133 @@ export function Subscriptions() {
           </AcmeContentBoundary>
         </>
       ) : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
+
+      <SubscriptionSetNameDialog
+        state={nameDialog}
+        value={nameValue}
+        error={nameError}
+        pending={create.isPending || rename.isPending}
+        onChange={(value) => { setNameValue(value); setNameError('') }}
+        onCancel={closeNameDialog}
+        onSubmit={submitName}
+      />
+      <ConfirmDialog
+        open={deleteProfile !== null}
+        title={t('deleteSubscriptionSet')}
+        detail={`${t('deleteSubscriptionSetDetail')} ${deleteProfile?.name || t('defaultSubscriptionSet')}`}
+        confirmLabel={t('deleteSubscriptionSet')}
+        cancelLabel={t('cancel')}
+        pending={remove.isPending}
+        onCancel={() => { if (!remove.isPending) setDeleteProfile(null) }}
+        onConfirm={() => { if (deleteProfile) remove.mutate(deleteProfile) }}
+      />
+    </div>
+  )
+}
+
+function SubscriptionSetMenu({
+  profile,
+  active,
+  last,
+  pending,
+  onRename,
+  onActivate,
+  onDelete,
+}: {
+  profile: SubscriptionProfile
+  active: boolean
+  last: boolean
+  pending: boolean
+  onRename: () => void
+  onActivate: () => void
+  onDelete: () => void
+}) {
+  const { t } = useI18n()
+  const deleteReason = active ? t('activeSubscriptionSetDeleteReason') : last ? t('lastSubscriptionSetDeleteReason') : ''
+  return (
+    <div className="mr-1 shrink-0">
+      <Dropdown
+        trigger={['click']}
+        placement="bottomRight"
+        menu={{
+          items: [
+            { key: 'rename', icon: <Pencil size={15} />, label: t('renameSubscriptionSet'), disabled: pending, onClick: onRename },
+            {
+              key: 'activate',
+              icon: <CheckCircle2 size={15} />,
+              label: <SubscriptionSetMenuLabel label={t('activateSubscriptionSet')} reason={active ? t('alreadyActiveSubscriptionSet') : ''} />,
+              disabled: active || pending,
+              onClick: onActivate,
+            },
+            {
+              key: 'delete',
+              icon: <Trash2 size={15} />,
+              label: <SubscriptionSetMenuLabel label={t('deleteSubscriptionSet')} reason={deleteReason} />,
+              disabled: Boolean(deleteReason) || pending,
+              danger: true,
+              onClick: onDelete,
+            },
+          ],
+        }}
+      >
+        <button
+          type="button"
+          className="grid size-7 place-items-center rounded text-current hover:bg-emerald-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          title={t('manageSubscriptionSet')}
+          aria-label={`${t('manageSubscriptionSet')}: ${profile.name || t('defaultSubscriptionSet')}`}
+          aria-haspopup="menu"
+        >
+          <MoreHorizontal size={16} />
+        </button>
+      </Dropdown>
+    </div>
+  )
+}
+
+function SubscriptionSetMenuLabel({ label, reason = '' }: { label: string; reason?: string }) {
+  return (
+    <span className="block min-w-48">
+      <span className="block">{label}</span>
+      {reason ? <span className="mt-0.5 block text-xs text-[var(--muted)]">{reason}</span> : null}
+    </span>
+  )
+}
+
+function SubscriptionSetNameDialog({ state, value, error, pending, onChange, onCancel, onSubmit }: { state: NameDialogState | null; value: string; error: string; pending: boolean; onChange: (value: string) => void; onCancel: () => void; onSubmit: () => void }) {
+  const { t } = useI18n()
+  useEffect(() => {
+    if (!state || pending) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [state, pending, onCancel])
+  if (!state) return null
+  const creating = state.mode === 'create'
+  const title = creating ? t('newSubscriptionSet') : t('renameSubscriptionSet')
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!pending) onSubmit()
+  }
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onCancel() }}>
+      <form role="dialog" aria-modal="true" aria-labelledby="subscription-set-dialog-title" className="w-full max-w-sm rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl" onSubmit={submit}>
+        <div className="flex items-center gap-3">
+          <h2 id="subscription-set-dialog-title" className="text-base font-semibold">{title}</h2>
+          <Button className="ml-auto" type="button" size="icon" variant="ghost" title={t('close')} disabled={pending} onClick={onCancel}><X size={17} /></Button>
+        </div>
+        <div className="mt-4">
+          <Field label={t('subscriptionSetName')}>
+            <Input autoFocus aria-invalid={Boolean(error)} aria-describedby={error ? 'subscription-set-name-error' : undefined} value={value} onChange={(event) => onChange(event.target.value)} />
+          </Field>
+          {error ? <p id="subscription-set-name-error" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" disabled={pending} onClick={onCancel}>{t('cancel')}</Button>
+          <Button type="submit" variant="primary" disabled={pending || !value.trim()}>{pending ? <Spinner /> : null}{creating ? t('createSubscriptionSet') : t('renameSubscriptionSet')}</Button>
+        </div>
+      </form>
     </div>
   )
 }

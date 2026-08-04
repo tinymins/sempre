@@ -165,6 +165,7 @@ func newAdminServer(manager *Manager, daemonToken ...string) *adminServer {
 	mux.HandleFunc("GET /api/v1/subscriptions/defaults", admin.subscriptionDefaults)
 	mux.HandleFunc("POST /api/v1/subscriptions/cache/clear", admin.subscriptionCacheClear)
 	mux.HandleFunc("GET /api/v1/subscriptions/{id}", admin.subscriptionProfileGet)
+	mux.HandleFunc("PATCH /api/v1/subscriptions/{id}", admin.subscriptionProfilePatch)
 	mux.HandleFunc("PUT /api/v1/subscriptions/{id}", admin.subscriptionProfilePut)
 	mux.HandleFunc("DELETE /api/v1/subscriptions/{id}", admin.subscriptionProfileDelete)
 	mux.HandleFunc("POST /api/v1/subscriptions/{id}/activate", admin.subscriptionProfileActivate)

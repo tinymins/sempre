@@ -50,6 +50,21 @@ func (admin *adminServer) subscriptionProfileGet(writer http.ResponseWriter, req
 	apiWriteJSON(writer, http.StatusOK, map[string]any{"profile": profile, "active": active == profile.ID, "schedule": schedule, "auto_restart": autoRestart})
 }
 
+func (admin *adminServer) subscriptionProfilePatch(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Name string `json:"name"`
+	}
+	if !admin.decode(writer, request, &input) {
+		return
+	}
+	profile, err := admin.manager.RenameSubscriptionProfile(request.PathValue("id"), input.Name)
+	if err != nil {
+		admin.operationError(writer, err)
+		return
+	}
+	apiWriteJSON(writer, http.StatusOK, profile)
+}
+
 func (admin *adminServer) subscriptionProfilePut(writer http.ResponseWriter, request *http.Request) {
 	var profile subscriptions.Profile
 	if !admin.decode(writer, request, &profile) {

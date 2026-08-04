@@ -2,11 +2,89 @@ package app
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
+
+func TestRenameSubscriptionProfileOnlyChangesName(t *testing.T) {
+	manager := newTestManager(t)
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := subscriptions.FindProfile(&catalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := *current
+
+	renamed, err := manager.RenameSubscriptionProfile(active, "  Primary  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Name != "Primary" {
+		t.Fatalf("renamed profile name = %q", renamed.Name)
+	}
+	renamed.Name = before.Name
+	if !reflect.DeepEqual(renamed, before) {
+		t.Fatalf("rename changed profile fields: before=%#v after=%#v", before, renamed)
+	}
+
+	stored, storedActive, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedActive != active {
+		t.Fatalf("active profile changed from %q to %q", active, storedActive)
+	}
+	profile, err := subscriptions.FindProfile(&stored, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.Name != "Primary" {
+		t.Fatalf("stored profile name = %q", profile.Name)
+	}
+}
+
+func TestRenameSubscriptionProfileRejectsInvalidNames(t *testing.T) {
+	manager := newTestManager(t)
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondary, err := manager.CreateSubscriptionProfile("Secondary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name    string
+		id      string
+		value   string
+		message string
+	}{
+		{name: "empty", id: active, value: "  ", message: "profile name is required"},
+		{name: "duplicate", id: active, value: " secondary ", message: "already used"},
+		{name: "missing", id: "missing", value: "Renamed", message: "was not found"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, renameErr := manager.RenameSubscriptionProfile(test.id, test.value)
+			if renameErr == nil || !strings.Contains(renameErr.Error(), test.message) {
+				t.Fatalf("rename error = %v, want message containing %q", renameErr, test.message)
+			}
+		})
+	}
+	stored, _, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Profiles) != len(catalog.Profiles)+1 || stored.Profiles[1].ID != secondary.ID || stored.Profiles[1].Name != "Secondary" {
+		t.Fatalf("failed rename changed catalog: %#v", stored.Profiles)
+	}
+}
 
 func TestSubscriptionProfileAndCustomNodeConstraints(t *testing.T) {
 	manager := newTestManager(t)
