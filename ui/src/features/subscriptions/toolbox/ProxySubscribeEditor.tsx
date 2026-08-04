@@ -3,6 +3,7 @@ import {
   Checkbox,
   type FormFieldValues,
   Form,
+  Input,
   Modal,
   Select,
   Tabs,
@@ -13,9 +14,14 @@ import type { SubscribeItem } from "@acme/types";
 import Editor, { loader, type Monaco } from "@monaco-editor/react";
 import { parse as parseJsonc, type ParseError } from "jsonc-parser";
 import * as monacoRuntime from "monaco-editor";
-import { useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
-import { message } from "@/lib/message";
 import type { CustomNode, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionSource } from "@/lib/types";
 import DnsConfigEditor from "./DnsConfigEditor";
 import PrivateAccessEditor from "./PrivateAccessEditor";
@@ -241,9 +247,10 @@ interface Props {
   profile: SubscriptionProfile;
   defaults: SubscriptionEditorConfig;
   customNodes: CustomNode[];
-  saving: boolean;
   onSave: (profile: SubscriptionProfile) => Promise<void> | void;
-  onCancel: () => void;
+  schedule: { interval: string; autoRestart: boolean };
+  onScheduleSave: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void;
+  diagnostics: ReactNode;
 }
 
 const TABS = [
@@ -251,11 +258,20 @@ const TABS = [
   { label: "subscribeUrl", value: "subscribeUrl" },
   { label: "ruleList", value: "ruleList" },
   { label: "group", value: "group" },
-  { label: "customConfig", value: "customConfig" },
+  { label: "customRules", value: "customConfig" },
+  { label: "advancedConfig", value: "advancedConfig" },
   { label: "dnsConfig", value: "dnsConfig" },
   { label: "privateAccessConfig", value: "privateAccessConfig" },
   { label: "servers", value: "servers" },
+  { label: "diagnostics", value: "diagnostics" },
 ];
+
+const AUTOSAVE_DELAY = 800;
+
+type SaveFeedback = {
+  state: "idle" | "waiting" | "saving" | "saved" | "error";
+  message?: string;
+};
 
 function profileFormValues(profile: SubscriptionProfile): FormFieldValues {
   const items: SubscribeItem[] = profile.sources
@@ -297,6 +313,7 @@ function profileFormValues(profile: SubscriptionProfile): FormFieldValues {
     useSystemDnsConfig: profile.use_system_dns,
     privateAccessConfig: profile.editor.private_access_config ?? "",
     servers: profile.editor.servers || "[]",
+    advancedConfig: JSON.stringify(profile.custom_config ?? {}, null, 2),
     selectedCustomNodeIds: profile.custom_node_ids ?? [],
   };
 }
@@ -307,24 +324,64 @@ function isValidJsonc(value: string) {
   return errors.length === 0;
 }
 
-const ProxySubscribeModal = ({
+const ProxySubscribeEditor = ({
   profile,
   defaults,
   customNodes,
-  saving,
   onSave,
-  onCancel,
+  schedule,
+  onScheduleSave,
+  diagnostics,
 }: Props) => {
     const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState("basic");
     const [manualServersEditorOpen, setManualServersEditorOpen] =
       useState(false);
     const [manualServersDraft, setManualServersDraft] = useState("");
+    const [manualServersError, setManualServersError] = useState("");
     const [rawSources, setRawSources] = useState<SubscriptionSource[]>(() =>
       profile.sources.filter((source) => source.type === "raw"),
     );
+    const [scheduleInterval, setScheduleInterval] = useState(schedule.interval);
+    const [autoRestart, setAutoRestart] = useState(schedule.autoRestart);
+    const [profileFeedback, setProfileFeedback] = useState<SaveFeedback>({ state: "idle" });
+    const [scheduleFeedback, setScheduleFeedback] = useState<SaveFeedback>({ state: "idle" });
     const [form] = Form.useForm(profileFormValues(profile));
     const manualServers = Form.useWatch("servers", form) as string | undefined;
+
+    const mountedRef = useRef(true);
+    const profileRef = useRef(profile);
+    const rawSourcesRef = useRef(rawSources);
+    const onSaveRef = useRef(onSave);
+    const onScheduleSaveRef = useRef(onScheduleSave);
+    const buildCandidateRef = useRef<(() => Promise<SubscriptionProfile>) | undefined>(undefined);
+    const runAutosaveRef = useRef<() => Promise<void>>(async () => undefined);
+    const runScheduleSaveRef = useRef<() => Promise<void>>(async () => undefined);
+    const profileTimerRef = useRef<number | undefined>(undefined);
+    const profileRevisionRef = useRef(0);
+    const profileSaveRequestedRef = useRef(false);
+    const profileSaveInFlightRef = useRef(false);
+    const scheduleTimerRef = useRef<number | undefined>(undefined);
+    const schedulePatchRef = useRef<{ interval?: string; auto_restart?: boolean }>({});
+    const scheduleSaveInFlightRef = useRef(false);
+
+    useEffect(() => {
+      profileRef.current = profile;
+      rawSourcesRef.current = rawSources;
+      onSaveRef.current = onSave;
+      onScheduleSaveRef.current = onScheduleSave;
+    }, [profile, rawSources, onSave, onScheduleSave]);
+
+    useEffect(() => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+        window.clearTimeout(profileTimerRef.current);
+        window.clearTimeout(scheduleTimerRef.current);
+        if (profileSaveRequestedRef.current) void runAutosaveRef.current();
+        if (Object.keys(schedulePatchRef.current).length > 0) void runScheduleSaveRef.current();
+      };
+    }, [profile.id]);
 
     // 获取 tabs 的本地化标签
     const localizedTabs = TABS.map((tab) => ({
@@ -332,74 +389,134 @@ const ProxySubscribeModal = ({
       label: t(`proxy.tabs.${tab.label}`),
     }));
 
-    const handleSubmit = async () => {
-      try {
-        const values = await form.validateFields();
-
-        // 验证 JSONC 格式是否正确
-        const validateJsonc = (field: string) => {
-          if (!values[field]) return true;
-          if (isValidJsonc(values[field])) return true;
-          message.error(`${field} ${t("proxy.form.jsonFormatError")}`);
-          return false;
-        };
-
-        // 验证所有 JSONC 字段
-        const fields = [
-          "ruleList",
-          "group",
-          "customConfig",
-          "dnsConfig",
-          "privateAccessConfig",
-          "servers",
-        ];
-        for (const field of fields) {
-          if (!validateJsonc(field)) {
-            throw new Error(`${field} ${t("proxy.form.jsonFormatError")}`);
-          }
+    const buildCandidate = async (): Promise<SubscriptionProfile> => {
+      const values = await form.validateFields();
+      const fields = ["ruleList", "group", "customConfig", "dnsConfig", "privateAccessConfig", "servers", "advancedConfig"];
+      for (const field of fields) {
+        if (values[field] && !isValidJsonc(values[field])) {
+          throw new Error(`${t(`proxy.tabs.${field === "customConfig" ? "customRules" : field}`)}: ${t("proxy.form.jsonFormatError")}`);
         }
-
-        // 过滤空白的 subscribeItems，清空旧字段
-        const cleanedItems = (
-          (values.subscribeItems as SubscribeItem[]) || []
-        ).filter((item: SubscribeItem) => item.url?.trim());
-
-        const sources: SubscriptionSource[] = cleanedItems.map((item: SubscribeItem) => ({
-          id: item.id || crypto.randomUUID(),
-          type: "url",
-          enabled: item.enabled,
-          url: item.url.trim(),
-          prefix: item.prefix || undefined,
-          remark: item.remark || undefined,
-          user_agent: item.fetchUa || "clash.meta",
-          fetch_mode: item.fetchMode ?? "auto",
-          cache_ttl_minutes: item.cacheTtlMinutes,
-        }));
-        await onSave({
-          ...profile,
-          remark: values.remark || "",
-          log_level: values.logLevel ?? "info",
-          sources: [...sources, ...rawSources],
-          custom_node_ids: values.selectedCustomNodeIds ?? [],
-          use_system_rules: values.useSystemRuleList ?? true,
-          use_system_groups: values.useSystemGroup ?? true,
-          use_system_filters: values.useSystemFilter ?? true,
-          use_system_custom_config: values.useSystemCustomConfig ?? true,
-          use_system_dns: values.useSystemDnsConfig ?? true,
-          editor: {
-            rule_list: values.ruleList || "",
-            group: values.group || "",
-            filter: values.filter || "",
-            custom_config: values.customConfig || "",
-            dns_config: values.dnsConfig || "",
-            private_access_config: values.privateAccessConfig || "",
-            servers: values.servers || "[]",
-          },
-        });
-      } catch (error) {
-        console.error(error);
       }
+      const advancedConfig = parseJsonc(values.advancedConfig || "{}") as unknown;
+      const customRules = parseJsonc(values.customConfig || "[]") as unknown;
+      if (!Array.isArray(customRules) || customRules.some((rule) => typeof rule !== "string")) {
+        throw new Error(t("proxy.form.customRulesArrayError"));
+      }
+      if (!advancedConfig || Array.isArray(advancedConfig) || typeof advancedConfig !== "object") {
+        throw new Error(t("proxy.form.advancedConfigObjectError"));
+      }
+      const cleanedItems = ((values.subscribeItems as SubscribeItem[]) || [])
+        .filter((item: SubscribeItem) => item.url?.trim());
+      const sources: SubscriptionSource[] = cleanedItems.map((item: SubscribeItem) => ({
+        id: item.id || crypto.randomUUID(),
+        type: "url",
+        enabled: item.enabled,
+        url: item.url.trim(),
+        prefix: item.prefix || undefined,
+        remark: item.remark || undefined,
+        user_agent: item.fetchUa || "clash.meta",
+        fetch_mode: item.fetchMode ?? "auto",
+        cache_ttl_minutes: item.cacheTtlMinutes,
+      }));
+      return {
+        ...profileRef.current,
+        remark: values.remark || "",
+        log_level: values.logLevel ?? "info",
+        sources: [...sources, ...rawSourcesRef.current],
+        custom_node_ids: values.selectedCustomNodeIds ?? [],
+        custom_config: advancedConfig as Record<string, unknown>,
+        use_system_rules: values.useSystemRuleList ?? true,
+        use_system_groups: values.useSystemGroup ?? true,
+        use_system_filters: values.useSystemFilter ?? true,
+        use_system_custom_config: values.useSystemCustomConfig ?? true,
+        use_system_dns: values.useSystemDnsConfig ?? true,
+        editor: {
+          rule_list: values.ruleList || "",
+          group: values.group || "",
+          filter: values.filter || "",
+          custom_config: values.customConfig || "",
+          dns_config: values.dnsConfig || "",
+          private_access_config: values.privateAccessConfig || "",
+          servers: values.servers || "[]",
+        },
+      };
     };
+    useEffect(() => {
+      buildCandidateRef.current = buildCandidate;
+    });
+
+    const runAutosave = useCallback(async () => {
+      window.clearTimeout(profileTimerRef.current);
+      if (profileSaveInFlightRef.current) return;
+      profileSaveRequestedRef.current = false;
+      let candidate: SubscriptionProfile;
+      try {
+        candidate = await buildCandidateRef.current!();
+      } catch (error) {
+        if (mountedRef.current) setProfileFeedback({ state: "error", message: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      const revision = profileRevisionRef.current;
+      profileSaveInFlightRef.current = true;
+      if (mountedRef.current) setProfileFeedback({ state: "saving" });
+      try {
+        await onSaveRef.current(candidate);
+        if (mountedRef.current && revision === profileRevisionRef.current && !profileSaveRequestedRef.current) {
+          setProfileFeedback({ state: "saved" });
+        }
+      } catch (error) {
+        if (mountedRef.current) setProfileFeedback({ state: "error", message: error instanceof Error ? error.message : String(error) });
+      } finally {
+        profileSaveInFlightRef.current = false;
+        if (profileSaveRequestedRef.current || revision !== profileRevisionRef.current) {
+          profileSaveRequestedRef.current = true;
+          void runAutosaveRef.current();
+        }
+      }
+    }, []);
+    useEffect(() => {
+      runAutosaveRef.current = runAutosave;
+    }, [runAutosave]);
+
+    const queueAutosave = useCallback(() => {
+      profileRevisionRef.current += 1;
+      profileSaveRequestedRef.current = true;
+      window.clearTimeout(profileTimerRef.current);
+      if (mountedRef.current) setProfileFeedback({ state: "waiting" });
+      profileTimerRef.current = window.setTimeout(() => void runAutosaveRef.current(), AUTOSAVE_DELAY);
+    }, []);
+
+    const runScheduleSave = useCallback(async () => {
+      window.clearTimeout(scheduleTimerRef.current);
+      if (scheduleSaveInFlightRef.current || Object.keys(schedulePatchRef.current).length === 0) return;
+      const patch = schedulePatchRef.current;
+      schedulePatchRef.current = {};
+      scheduleSaveInFlightRef.current = true;
+      if (mountedRef.current) setScheduleFeedback({ state: "saving" });
+      try {
+        await onScheduleSaveRef.current(patch);
+        if (mountedRef.current && Object.keys(schedulePatchRef.current).length === 0) setScheduleFeedback({ state: "saved" });
+      } catch (error) {
+        if (mountedRef.current) setScheduleFeedback({ state: "error", message: error instanceof Error ? error.message : String(error) });
+      } finally {
+        scheduleSaveInFlightRef.current = false;
+        if (Object.keys(schedulePatchRef.current).length > 0) void runScheduleSaveRef.current();
+      }
+    }, []);
+    useEffect(() => {
+      runScheduleSaveRef.current = runScheduleSave;
+    }, [runScheduleSave]);
+
+    const queueScheduleSave = useCallback((patch: { interval?: string; auto_restart?: boolean }, immediate = false) => {
+      schedulePatchRef.current = { ...schedulePatchRef.current, ...patch };
+      window.clearTimeout(scheduleTimerRef.current);
+      if (mountedRef.current) setScheduleFeedback({ state: "waiting" });
+      if (immediate) {
+        void runScheduleSaveRef.current();
+      } else {
+        scheduleTimerRef.current = window.setTimeout(() => void runScheduleSaveRef.current(), AUTOSAVE_DELAY);
+      }
+    }, []);
 
     const manualServerCount = (() => {
       try {
@@ -412,6 +529,7 @@ const ProxySubscribeModal = ({
 
     const openManualServersEditor = () => {
       setManualServersDraft(manualServers || JSON.stringify([], null, 2));
+      setManualServersError("");
       setManualServersEditorOpen(true);
     };
 
@@ -419,8 +537,10 @@ const ProxySubscribeModal = ({
       if (isValidJsonc(manualServersDraft)) {
         form.setFieldValue("servers", manualServersDraft);
         setManualServersEditorOpen(false);
+        setManualServersError("");
+        queueAutosave();
       } else {
-        message.error(`servers ${t("proxy.form.jsonFormatError")}`);
+        setManualServersError(t("proxy.form.jsonFormatError"));
       }
       return undefined;
     };
@@ -459,8 +579,9 @@ const ProxySubscribeModal = ({
 
     return (
       <div className="min-h-0 rounded-lg border border-black/[0.08] bg-white/50 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
-          <div className="mb-4 shrink-0">
+          <div className="mb-3 shrink-0 overflow-x-auto pb-1">
             <Tabs
+              className="min-w-[920px]"
               type="segment"
               activeKey={activeTab}
               onChange={(key) => setActiveTab(key)}
@@ -470,8 +591,9 @@ const ProxySubscribeModal = ({
               }))}
             />
           </div>
+          <SaveStatus profile={profileFeedback} schedule={scheduleFeedback} />
 
-          <Form form={form} layout="vertical">
+          <Form form={form} layout="vertical" onValuesChange={queueAutosave}>
             {/* 基础信息 */}
             <div style={{ display: activeTab === "basic" ? "block" : "none" }}>
               <Form.Item label={t("proxy.form.remark")} name="remark">
@@ -510,6 +632,30 @@ const ProxySubscribeModal = ({
                   ]}
                 />
               </Form.Item>
+              <div className="grid gap-4 border-t border-gray-200 pt-4 dark:border-gray-700 md:grid-cols-2">
+                <label className="grid gap-1.5 text-sm font-medium">
+                  <span>{t("proxy.form.updateSchedule")}</span>
+                  <Input
+                    value={scheduleInterval}
+                    onChange={(event) => {
+                      const interval = event.target.value;
+                      setScheduleInterval(interval);
+                      queueScheduleSave({ interval });
+                    }}
+                  />
+                </label>
+                <label className="flex min-h-9 items-center gap-2 self-end rounded-md border border-[var(--border)] px-3 text-sm">
+                  <Checkbox
+                    checked={autoRestart}
+                    onChange={(event) => {
+                      const value = event.target.checked;
+                      setAutoRestart(value);
+                      queueScheduleSave({ auto_restart: value }, true);
+                    }}
+                  />
+                  <span>{t("proxy.form.restartAfterScheduledUpdates")}</span>
+                </label>
+              </div>
             </div>
 
             {/* 订阅源 */}
@@ -533,9 +679,19 @@ const ProxySubscribeModal = ({
                       className="min-w-0 flex-1 bg-transparent text-sm outline-none"
                       value={source.remark ?? ""}
                       placeholder={t("proxy.form.subscribeItemRemark")}
-                      onChange={(event) => setRawSources((current) => current.map((item, position) => position === index ? { ...item, remark: event.target.value } : item))}
-                    />
-                    <Button variant="text" size="small" danger onClick={() => setRawSources((current) => current.filter((_, position) => position !== index))}>
+                    onChange={(event) => {
+                      const next = rawSourcesRef.current.map((item, position) => position === index ? { ...item, remark: event.target.value } : item);
+                      rawSourcesRef.current = next;
+                      setRawSources(next);
+                      queueAutosave();
+                    }}
+                  />
+                    <Button variant="text" size="small" danger onClick={() => {
+                      const next = rawSourcesRef.current.filter((_, position) => position !== index);
+                      rawSourcesRef.current = next;
+                      setRawSources(next);
+                      queueAutosave();
+                    }}>
                       {t("proxy.actions.delete")}
                     </Button>
                   </div>
@@ -543,7 +699,12 @@ const ProxySubscribeModal = ({
                     rows={8}
                     value={source.content ?? ""}
                     placeholder="proxies:"
-                    onChange={(event) => setRawSources((current) => current.map((item, position) => position === index ? { ...item, content: event.target.value } : item))}
+                    onChange={(event) => {
+                      const next = rawSourcesRef.current.map((item, position) => position === index ? { ...item, content: event.target.value } : item);
+                      rawSourcesRef.current = next;
+                      setRawSources(next);
+                      queueAutosave();
+                    }}
                   />
                 </div>
               ))}
@@ -551,7 +712,12 @@ const ProxySubscribeModal = ({
                 className="!mt-3"
                 variant="dashed"
                 block
-                onClick={() => setRawSources((current) => [...current, { id: crypto.randomUUID(), type: "raw", enabled: true, content: "", remark: "" }])}
+                onClick={() => {
+                  const next: SubscriptionSource[] = [...rawSourcesRef.current, { id: crypto.randomUUID(), type: "raw", enabled: true, content: "", remark: "" }];
+                  rawSourcesRef.current = next;
+                  setRawSources(next);
+                  queueAutosave();
+                }}
               >
                 {t("proxy.form.addRawSource")}
               </Button>
@@ -606,6 +772,15 @@ const ProxySubscribeModal = ({
                 </div>
               ),
             )}
+
+            <div className={activeTab === "advancedConfig" ? "" : "hidden"}>
+              <Form.Item
+                label={t("proxy.form.advancedConfigLabel")}
+                name="advancedConfig"
+              >
+                <JsoncEditor placeholder={t("proxy.form.advancedConfigPlaceholder")} />
+              </Form.Item>
+            </div>
 
             {/* DNS 配置 */}
             <div className={activeTab === "dnsConfig" ? "" : "hidden"}>
@@ -681,10 +856,7 @@ const ProxySubscribeModal = ({
               </div>
             </div>
           </Form>
-          <div className="mt-5 flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-700">
-            <Button onClick={onCancel}>{t("common.cancel")}</Button>
-            <Button variant="primary" loading={saving} onClick={handleSubmit}>{t("common.save")}</Button>
-          </div>
+          {activeTab === "diagnostics" ? <div>{diagnostics}</div> : null}
         <Modal
           title={t("proxy.form.serversLabel")}
           open={manualServersEditorOpen}
@@ -700,9 +872,29 @@ const ProxySubscribeModal = ({
             onChange={setManualServersDraft}
             placeholder={t("proxy.form.serversPlaceholder")}
           />
+          {manualServersError ? <p role="alert" className="mt-2 text-sm text-red-500">{manualServersError}</p> : null}
         </Modal>
       </div>
     );
 };
 
-export default ProxySubscribeModal;
+function SaveStatus({ profile, schedule }: { profile: SaveFeedback; schedule: SaveFeedback }) {
+  const { t } = useTranslation();
+  const feedback = profile.state === "error" ? profile
+    : schedule.state === "error" ? schedule
+      : profile.state === "saving" || schedule.state === "saving" ? { state: "saving" as const }
+        : profile.state === "waiting" || schedule.state === "waiting" ? { state: "waiting" as const }
+          : profile.state === "saved" || schedule.state === "saved" ? { state: "saved" as const }
+            : { state: "idle" as const };
+  const label = feedback.state === "waiting" ? t("proxy.autosave.waiting")
+    : feedback.state === "saving" ? t("proxy.autosave.saving")
+      : feedback.state === "saved" ? t("proxy.autosave.saved")
+        : feedback.message || "";
+  return (
+    <div className="mb-4 min-h-6 border-b border-gray-200 pb-3 text-sm dark:border-gray-700">
+      {label ? <p role={feedback.state === "error" ? "alert" : "status"} className={feedback.state === "error" ? "break-words text-red-500" : "text-[var(--text-secondary)]"}>{label}</p> : null}
+    </div>
+  );
+}
+
+export default ProxySubscribeEditor;

@@ -9,7 +9,7 @@ import { Subscriptions } from './Subscriptions'
 vi.mock('../features/subscriptions/toolbox/MessageBridge', () => ({ MessageBridge: () => null }))
 vi.mock('../features/subscriptions/toolbox/ProxyDebugModal', () => ({ default: () => null }))
 vi.mock('../features/subscriptions/toolbox/ProxyPreviewModal', () => ({ default: () => null }))
-vi.mock('../features/subscriptions/toolbox/ProxySubscribeModal', () => ({ default: () => <div data-testid="subscription-editor" /> }))
+vi.mock('../features/subscriptions/toolbox/ProxySubscribeEditor', () => ({ default: () => <div data-testid="subscription-editor" /> }))
 
 type RecordedRequest = { url: string; method: string; body: unknown }
 
@@ -113,6 +113,7 @@ describe('Subscriptions subscription sets', () => {
   it('creates, renames, activates, and deletes subscription sets through dialogs and the tab menu', async () => {
     renderPage()
     expect(await screen.findByRole('tab', { name: 'Primary' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('New subscription set')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'New subscription set' }))
     let dialog = screen.getByRole('dialog', { name: 'New subscription set' })
