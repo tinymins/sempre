@@ -112,9 +112,9 @@ func launcherStatus(ctx context.Context) launcherSnapshot {
 }
 
 func writeLauncherMenu(output io.Writer, installAction string, showPortable bool) int {
-	fmt.Fprintf(output, "\n1. %s\n", installAction)
+	fmt.Fprintln(output, "\n1. Open Web UI")
 	fmt.Fprintln(output, "2. Uninstall")
-	fmt.Fprintln(output, "3. Open Web UI")
+	fmt.Fprintf(output, "3. %s\n", installAction)
 	maxChoice := 3
 	if showPortable {
 		fmt.Fprintln(output, "4. Run Portable")
@@ -127,9 +127,9 @@ func writeLauncherMenu(output io.Writer, installAction string, showPortable bool
 func launcherArguments(choice string, showPortable bool) []string {
 	switch choice {
 	case "1":
-		return []string{"install"}
-	case "3":
 		return []string{"open"}
+	case "3":
+		return []string{"install"}
 	case "4":
 		if showPortable {
 			return []string{"--portable", "portable", "run"}

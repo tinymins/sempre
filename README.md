@@ -56,9 +56,9 @@ only the current version/status and up to four actions:
 
 | Action | Result |
 | --- | --- |
-| Install, Repair, or Upgrade | The launcher chooses one label from the service state and installed version, then runs the idempotent system installation from the current bundle |
-| Uninstall | Keeps configuration by default, with an explicit purge choice |
 | Open Web UI | Opens the discovered local control-plane address |
+| Uninstall | Keeps configuration by default, with an explicit purge choice |
+| Install, Repair, or Upgrade | The launcher chooses one label from the service state and installed version, then runs the idempotent system installation from the current bundle |
 | Run Portable | Runs the Web control plane and selected core beside the binary; shown only while the system service is inactive |
 
 The launcher contains no settings. Configure everything through the Web UI or

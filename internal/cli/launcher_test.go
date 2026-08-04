@@ -61,7 +61,7 @@ func TestLauncherMenuAndArguments(t *testing.T) {
 		for _, showPortable := range []bool{false, true} {
 			var output bytes.Buffer
 			maxChoice := writeLauncherMenu(&output, action, showPortable)
-			want := "\n1. " + action + "\n2. Uninstall\n3. Open Web UI\n"
+			want := "\n1. Open Web UI\n2. Uninstall\n3. " + action + "\n"
 			wantMaxChoice := 3
 			if showPortable {
 				want += "4. Run Portable\n"
@@ -77,8 +77,8 @@ func TestLauncherMenuAndArguments(t *testing.T) {
 		}
 	}
 	for choice, want := range map[string][]string{
-		"1": {"install"},
-		"3": {"open"},
+		"1": {"open"},
+		"3": {"install"},
 		"4": {"--portable", "portable", "run"},
 	} {
 		if got := launcherArguments(choice, true); !reflect.DeepEqual(got, want) {
