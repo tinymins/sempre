@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,8 +31,8 @@ func runLauncher(ctx context.Context, input io.Reader, output, errorOutput io.Wr
 		} else {
 			fmt.Fprintf(output, "status: %s\n", status.service)
 		}
-		maxChoice := writeLauncherMenu(output, status.installAction, status.showPortable)
-		fmt.Fprintf(output, "\nSelect [0-%d]: ", maxChoice)
+		actions := writeLauncherMenu(output, status.installAction, status.showOpen, status.showPortable)
+		fmt.Fprintf(output, "\nSelect [0-%d]: ", len(actions))
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			fmt.Fprintln(errorOutput, "ERROR:", err)
@@ -41,14 +42,20 @@ func runLauncher(ctx context.Context, input io.Reader, output, errorOutput io.Wr
 		switch choice {
 		case "", "0":
 			return 0
-		case "1", "2", "4":
-			arguments := launcherArguments(choice, status.showPortable)
-			if arguments == nil {
-				fmt.Fprintln(errorOutput, "Invalid selection.")
-				continue
-			}
-			return Run(ctx, arguments, reader, output, errorOutput)
-		case "3":
+		}
+		action, ok := launcherSelection(choice, actions)
+		if !ok {
+			fmt.Fprintln(errorOutput, "Invalid selection.")
+			continue
+		}
+		switch action {
+		case launcherOpen:
+			return Run(ctx, []string{"open"}, reader, output, errorOutput)
+		case launcherInstall:
+			return Run(ctx, []string{"install"}, reader, output, errorOutput)
+		case launcherPortable:
+			return Run(ctx, []string{"--portable", "portable", "run"}, reader, output, errorOutput)
+		case launcherUninstall:
 			fmt.Fprintln(output, "\n1. Uninstall and keep configuration")
 			fmt.Fprintln(output, "2. Full uninstall and remove all data")
 			fmt.Fprintln(output, "0. Cancel")
@@ -62,8 +69,6 @@ func runLauncher(ctx context.Context, input io.Reader, output, errorOutput io.Wr
 			default:
 				continue
 			}
-		default:
-			fmt.Fprintln(errorOutput, "Invalid selection.")
 		}
 	}
 }
@@ -72,6 +77,7 @@ type launcherSnapshot struct {
 	service       string
 	address       string
 	installAction string
+	showOpen      bool
 	showPortable  bool
 }
 
@@ -85,6 +91,7 @@ func launcherStatus(ctx context.Context) launcherSnapshot {
 	endpointHealthy := endpointErr == nil && healthy(ctx, endpoint.LocalURL)
 	result := launcherSnapshot{
 		installAction: launcherInstallAction(ctx, paths.ServiceExecutable, serviceState, serviceErr),
+		showOpen:      endpointHealthy,
 		showPortable:  launcherPortableAvailable(serviceState, serviceErr, endpointHealthy),
 	}
 	if endpointHealthy {
@@ -111,33 +118,40 @@ func launcherStatus(ctx context.Context) launcherSnapshot {
 	return result
 }
 
-func writeLauncherMenu(output io.Writer, installAction string, showPortable bool) int {
-	fmt.Fprintln(output, "\n1. Open Web UI")
-	fmt.Fprintf(output, "2. %s\n", installAction)
-	fmt.Fprintln(output, "3. Uninstall")
-	maxChoice := 3
+type launcherAction string
+
+const (
+	launcherOpen      launcherAction = "open"
+	launcherInstall   launcherAction = "install"
+	launcherUninstall launcherAction = "uninstall"
+	launcherPortable  launcherAction = "portable"
+)
+
+func writeLauncherMenu(output io.Writer, installAction string, showOpen, showPortable bool) []launcherAction {
+	fmt.Fprintln(output)
+	actions := make([]launcherAction, 0, 4)
+	writeAction := func(action launcherAction, label string) {
+		actions = append(actions, action)
+		fmt.Fprintf(output, "%d. %s\n", len(actions), label)
+	}
+	if showOpen {
+		writeAction(launcherOpen, "Open Web UI")
+	}
+	writeAction(launcherInstall, installAction)
+	writeAction(launcherUninstall, "Uninstall")
 	if showPortable {
-		fmt.Fprintln(output, "4. Run Portable")
-		maxChoice = 4
+		writeAction(launcherPortable, "Run Portable")
 	}
 	fmt.Fprintln(output, "0. Exit")
-	return maxChoice
+	return actions
 }
 
-func launcherArguments(choice string, showPortable bool) []string {
-	switch choice {
-	case "1":
-		return []string{"open"}
-	case "2":
-		return []string{"install"}
-	case "4":
-		if showPortable {
-			return []string{"--portable", "portable", "run"}
-		}
-		return nil
-	default:
-		return nil
+func launcherSelection(choice string, actions []launcherAction) (launcherAction, bool) {
+	selection, err := strconv.Atoi(choice)
+	if err != nil || selection < 1 || selection > len(actions) {
+		return "", false
 	}
+	return actions[selection-1], true
 }
 
 func launcherPortableAvailable(state service.State, serviceErr error, endpointHealthy bool) bool {

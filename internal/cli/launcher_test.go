@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,38 +56,52 @@ func TestParseSempreVersion(t *testing.T) {
 	}
 }
 
-func TestLauncherMenuAndArguments(t *testing.T) {
+func TestLauncherMenuAndSelection(t *testing.T) {
 	t.Parallel()
 	for _, action := range []string{"Install", "Repair", "Upgrade"} {
-		for _, showPortable := range []bool{false, true} {
-			var output bytes.Buffer
-			maxChoice := writeLauncherMenu(&output, action, showPortable)
-			want := "\n1. Open Web UI\n2. " + action + "\n3. Uninstall\n"
-			wantMaxChoice := 3
-			if showPortable {
-				want += "4. Run Portable\n"
-				wantMaxChoice = 4
-			}
-			want += "0. Exit\n"
-			if output.String() != want {
-				t.Fatalf("menu = %q, want %q", output.String(), want)
-			}
-			if maxChoice != wantMaxChoice {
-				t.Fatalf("max choice = %d, want %d", maxChoice, wantMaxChoice)
-			}
+		for _, test := range []struct {
+			name         string
+			showOpen     bool
+			showPortable bool
+			want         string
+			wantActions  []launcherAction
+		}{
+			{
+				name:        "installed and running",
+				showOpen:    true,
+				want:        "\n1. Open Web UI\n2. " + action + "\n3. Uninstall\n0. Exit\n",
+				wantActions: []launcherAction{launcherOpen, launcherInstall, launcherUninstall},
+			},
+			{
+				name:         "not installed",
+				showPortable: true,
+				want:         "\n1. " + action + "\n2. Uninstall\n3. Run Portable\n0. Exit\n",
+				wantActions:  []launcherAction{launcherInstall, launcherUninstall, launcherPortable},
+			},
+		} {
+			t.Run(action+"/"+test.name, func(t *testing.T) {
+				t.Parallel()
+				var output bytes.Buffer
+				actions := writeLauncherMenu(&output, action, test.showOpen, test.showPortable)
+				if output.String() != test.want {
+					t.Fatalf("menu = %q, want %q", output.String(), test.want)
+				}
+				if !slices.Equal(actions, test.wantActions) {
+					t.Fatalf("actions = %v, want %v", actions, test.wantActions)
+				}
+				for index, want := range test.wantActions {
+					got, ok := launcherSelection(fmt.Sprint(index+1), actions)
+					if !ok || got != want {
+						t.Fatalf("selection %d = %q, %t; want %q, true", index+1, got, ok, want)
+					}
+				}
+			})
 		}
 	}
-	for choice, want := range map[string][]string{
-		"1": {"open"},
-		"2": {"install"},
-		"4": {"--portable", "portable", "run"},
-	} {
-		if got := launcherArguments(choice, true); !reflect.DeepEqual(got, want) {
-			t.Fatalf("choice %s arguments = %#v, want %#v", choice, got, want)
+	for _, choice := range []string{"", "0", "4", "invalid"} {
+		if action, ok := launcherSelection(choice, []launcherAction{launcherInstall}); ok {
+			t.Fatalf("selection %q = %q, true; want invalid", choice, action)
 		}
-	}
-	if got := launcherArguments("4", false); got != nil {
-		t.Fatalf("hidden portable choice arguments = %#v, want nil", got)
 	}
 }
 
@@ -118,10 +133,24 @@ func TestLauncherPortableAvailable(t *testing.T) {
 	}
 }
 
-func TestLauncherChoiceThreeOpensUninstallMenu(t *testing.T) {
+func TestLauncherUninstallSelectionOpensConfirmationMenu(t *testing.T) {
+	status := launcherStatus(context.Background())
+	var menuOutput bytes.Buffer
+	actions := writeLauncherMenu(&menuOutput, status.installAction, status.showOpen, status.showPortable)
+	uninstallChoice := 0
+	for index, action := range actions {
+		if action == launcherUninstall {
+			uninstallChoice = index + 1
+			break
+		}
+	}
+	if uninstallChoice == 0 {
+		t.Fatal("uninstall action missing from launcher menu")
+	}
 	var output bytes.Buffer
 	var errorOutput bytes.Buffer
-	code := runLauncher(context.Background(), strings.NewReader("3\n0\n0\n"), &output, &errorOutput)
+	input := fmt.Sprintf("%d\n0\n0\n", uninstallChoice)
+	code := runLauncher(context.Background(), strings.NewReader(input), &output, &errorOutput)
 	if code != 0 {
 		t.Fatalf("exit code = %d, errors = %s", code, errorOutput.String())
 	}
