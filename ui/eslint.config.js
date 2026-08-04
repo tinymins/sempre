@@ -23,4 +23,17 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },
+  {
+    files: ['src/components/acme/**/*.{ts,tsx}'],
+    rules: {
+      // This vendored package is authored with Biome. TypeScript still checks
+      // unused symbols; these compiler-oriented React rules are not compatible
+      // with its Floating UI refs and effect-driven transition state.
+      '@typescript-eslint/no-unused-vars': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+      'react-hooks/immutability': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
 )

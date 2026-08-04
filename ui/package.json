@@ -12,8 +12,11 @@
   },
   "dependencies": {
     "@codemirror/lang-json": "latest",
-    "@uiw/react-codemirror": "latest",
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
+    "@floating-ui/react": "^0.27.19",
     "@tanstack/react-query": "latest",
+    "@uiw/react-codemirror": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
     "lucide-react": "latest",
