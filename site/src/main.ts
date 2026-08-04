@@ -20,6 +20,7 @@ function applyLocale(next: Locale) {
   locale = next
   localStorage.setItem('sempre.site.locale', locale)
   document.documentElement.lang = locale
+  document.title = copy[locale].title
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((element) => {
     const key = element.dataset.i18n as CopyKey
     element.textContent = copy[locale][key]

@@ -59,6 +59,28 @@ test('platform command, script link, copy, and canonical translations work toget
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
 })
 
+test('mobile Chinese content is readable without desktop center dividers', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.addInitScript(() => localStorage.setItem('sempre.site.locale', 'zh-CN'))
+  await page.goto('/')
+
+  await expect(page.getByRole('heading', { name: '换核心、升版本时，管理界面始终在线。' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '切换失败自动回退' })).toBeVisible()
+  await expect(page.getByText('新版本通过配置校验后才会启用；启动失败就自动恢复上一个可用版本。')).toBeVisible()
+  await expect(page).toHaveTitle('Sempre — 代理核心生命周期管理器')
+
+  const dividers = await page.locator('.glass-story, .formal-band, .formal-footer').evaluateAll((elements) =>
+    elements.map((element) => getComputedStyle(element, '::before').display),
+  )
+  expect(dividers.every((display) => display === 'none')).toBe(true)
+
+  await page.evaluate(() => {
+    document.body.classList.add('is-ready')
+    document.querySelectorAll('[data-reveal]').forEach((element) => element.classList.add('is-visible'))
+  })
+  await page.screenshot({ path: 'test-results/homepage/zh-mobile-content.png', fullPage: true })
+})
+
 test('theme menu persists manual choices and system mode follows the OS', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 })
   await page.emulateMedia({ colorScheme: 'light' })

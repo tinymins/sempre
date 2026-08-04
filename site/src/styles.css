@@ -385,6 +385,12 @@
 }
 
 @media (max-width: 900px) {
+  .glass-story::before,
+  .formal-band::before,
+  .formal-footer::before {
+    display: none;
+  }
+
   .formal-home .site-hero h1 {
     font-size: 72px;
   }
