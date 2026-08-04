@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050706" />
+    <title>Sempre — Obsidian Console Prototype</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/prototypes/base.css" />
+    <link rel="stylesheet" href="/src/prototypes/obsidian-console.css" />
+  </head>
+  <body class="obsidian-console">
+    <a class="skip-link" href="#main" data-en="Skip to content" data-zh="跳到正文">Skip to content</a>
+    <header class="prototype-header console-header">
+      <a class="prototype-brand" href="#top" aria-label="Sempre home">
+        <span class="prototype-brand-mark"><i data-lucide="server-cog"></i></span><span>Sempre</span><small>CONTROL / 01</small>
+      </a>
+      <nav class="prototype-nav" aria-label="Primary navigation">
+        <a href="#runtime" data-en="Runtime" data-zh="运行状态">Runtime</a>
+        <a href="#architecture" data-en="Architecture" data-zh="架构">Architecture</a>
+        <a href="https://github.com/tinymins/sempre/releases/latest" data-en="Release" data-zh="版本">Release</a>
+      </nav>
+      <div class="prototype-actions">
+        <span class="console-online"><i></i><span data-en="SYSTEM ONLINE" data-zh="系统在线">SYSTEM ONLINE</span></span>
+        <button class="prototype-icon-button" type="button" data-language title="切换到中文" aria-label="切换到中文"><i data-lucide="languages"></i><span data-language-label>中文</span></button>
+        <a class="prototype-icon-button" href="https://github.com/tinymins/sempre" title="GitHub" aria-label="GitHub"><i data-lucide="git-fork"></i></a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="prototype-hero console-hero" id="top" data-scene>
+        <div class="console-backplane" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <div class="console-scan" aria-hidden="true"></div>
+        <div class="console-hero-inner">
+          <div class="console-copy">
+            <p class="prototype-eyebrow" data-en="Core lifecycle / under control" data-zh="核心生命周期 / 尽在掌控">Core lifecycle / under control</p>
+            <h1>Sempre</h1>
+            <p class="console-thesis" data-en="Always current. Always running." data-zh="始终最新，持续运行。">Always current. Always running.</p>
+            <p class="prototype-lead" data-en="One native control plane installs, validates, switches, supervises, and rolls back every managed core." data-zh="一个原生控制平面负责每个托管核心的安装、验证、切换、守护与回滚。">One native control plane installs, validates, switches, supervises, and rolls back every managed core.</p>
+            <div class="console-proof">
+              <span><i data-lucide="shield-check"></i><strong>SHA-256</strong><small data-en="Verified" data-zh="已校验">Verified</small></span>
+              <span><i data-lucide="activity"></i><strong>0</strong><small data-en="Restarts" data-zh="重启次数">Restarts</small></span>
+              <span><i data-lucide="zap"></i><strong>3h 39m</strong><small data-en="Uptime" data-zh="运行时间">Uptime</small></span>
+            </div>
+          </div>
+
+          <div class="console-stage" id="runtime" data-tilt>
+            <div class="console-stage-frame">
+              <div class="console-stage-bar"><span><i></i><i></i><i></i></span><strong>sempre://localhost:33211/overview</strong><span class="stage-secure"><i data-lucide="shield-check"></i>LOCAL</span></div>
+              <img src="/assets/control-plane-dark.webp" width="1600" height="860" alt="Sempre runtime control plane" data-en-alt="Sempre runtime control plane" data-zh-alt="Sempre 运行控制平面" />
+              <div class="console-screen-scan" aria-hidden="true"></div>
+            </div>
+            <div class="hud hud-runtime"><span class="hud-code">RUNTIME / 01</span><strong data-en="Supervisor running" data-zh="守护进程运行中">Supervisor running</strong><small>PID 12842 · 0 restarts</small><i data-lucide="activity"></i></div>
+            <div class="hud hud-core"><span class="hud-code">CORE / CURRENT</span><strong>sing-box 1.13.15</strong><small>official / stable</small><i data-lucide="circle-check"></i></div>
+            <div class="hud hud-traffic"><span class="hud-code">NETWORK / LIVE</span><strong>6.4 MiB/s</strong><small>12 active connections</small><i data-lucide="network"></i></div>
+          </div>
+
+          <div class="console-installer" data-reveal>
+            <div class="console-installer-head"><span class="mono">$ INSTALL_SEMPRE</span><div class="platform-switch" role="group" aria-label="Installation platform"><button type="button" data-platform="posix" aria-pressed="true">Linux / macOS</button><button type="button" data-platform="windows" aria-pressed="false">PowerShell</button></div></div>
+            <div class="command-line"><span class="command-prompt" aria-hidden="true">›</span><code data-command-output>curl -fsSL https://sempre.run/install | sh</code><button class="command-copy" type="button" data-copy title="Copy install command" aria-label="Copy install command"><i data-lucide="copy"></i></button></div>
+            <div class="command-meta"><span class="trust-line"><i data-lucide="file-check-2"></i><span data-en="Checksum locked to release" data-zh="校验和锁定到具体版本">Checksum locked to release</span></span><a href="/install" data-script-link data-en="READ SOURCE" data-zh="查看源码">READ SOURCE</a></div>
+          </div>
+        </div>
+        <a class="scroll-cue console-scroll" href="#architecture"><span data-en="Trace the ownership chain" data-zh="追踪所有权链">Trace the ownership chain</span><i data-lucide="arrow-down"></i></a>
+      </section>
+
+      <section class="console-story" id="architecture" data-scene>
+        <div class="console-story-head" data-reveal>
+          <p class="prototype-eyebrow" data-en="One chain / no wrapper stack" data-zh="一条链路 / 无包装层">One chain / no wrapper stack</p>
+          <h2 data-en="Every state transition has an owner." data-zh="每次状态切换都有明确的所有者。">Every state transition has an owner.</h2>
+          <p data-en="Sempre directly registers with the operating system, validates the next deployment, and keeps the previous known-good state ready for rollback." data-zh="Sempre 直接向操作系统注册服务，验证下一次部署，并保留上一份已知良好状态用于回滚。">Sempre directly registers with the operating system, validates the next deployment, and keeps the previous known-good state ready for rollback.</p>
+        </div>
+        <div class="console-chain">
+          <div class="chain-spine" aria-hidden="true"><i></i></div>
+          <article data-reveal><span class="chain-index">01</span><i data-lucide="monitor"></i><div><small>OPERATOR</small><h3>Browser / CLI</h3><p data-en="One local operating surface." data-zh="统一的本地操作界面。">One local operating surface.</p></div><strong>CONNECTED</strong></article>
+          <article data-reveal data-reveal-delay="1"><span class="chain-index">02</span><i data-lucide="server-cog"></i><div><small>CONTROL</small><h3>Sempre API</h3><p data-en="Configuration, releases, and runtime state." data-zh="配置、版本与运行状态。">Configuration, releases, and runtime state.</p></div><strong>READY</strong></article>
+          <article data-reveal data-reveal-delay="2"><span class="chain-index">03</span><i data-lucide="activity"></i><div><small>SUPERVISION</small><h3>sempre daemon</h3><p data-en="Validation, activation, and rollback." data-zh="验证、激活与回滚。">Validation, activation, and rollback.</p></div><strong>RUNNING</strong></article>
+          <article data-reveal data-reveal-delay="3"><span class="chain-index">04</span><i data-lucide="box"></i><div><small>PROCESS</small><h3>core@version</h3><p data-en="The replaceable managed process." data-zh="可替换的托管进程。">The replaceable managed process.</p></div><strong>HEALTHY</strong></article>
+        </div>
+        <div class="console-platforms"><span>Windows SCM</span><span>systemd</span><span>launchd</span><p data-en="Registered directly. No third-party service host." data-zh="直接注册，不使用第三方服务宿主。">Registered directly. No third-party service host.</p></div>
+      </section>
+    </main>
+    <div class="copy-toast" role="status" aria-live="polite" data-copy-status></div>
+    <script type="module" src="/src/prototypes/runtime.ts"></script>
+  </body>
+</html>

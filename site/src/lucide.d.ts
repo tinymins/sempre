@@ -5,20 +5,27 @@ declare module 'lucide' {
     attrs?: Record<string, string>
   }): void
   export const Activity: IconNode
+  export const ArrowDown: IconNode
   export const ArrowRight: IconNode
   export const ArrowUpRight: IconNode
   export const BadgeCheck: IconNode
   export const Box: IconNode
+  export const Check: IconNode
   export const Command: IconNode
   export const Copy: IconNode
+  export const CircleCheck: IconNode
   export const FileCheck2: IconNode
   export const FileJson2: IconNode
   export const GitFork: IconNode
   export const Languages: IconNode
   export const Monitor: IconNode
   export const MonitorDot: IconNode
+  export const Moon: IconNode
+  export const Network: IconNode
   export const Server: IconNode
   export const ServerCog: IconNode
   export const ShieldCheck: IconNode
+  export const Sun: IconNode
   export const Terminal: IconNode
+  export const Zap: IconNode
 }

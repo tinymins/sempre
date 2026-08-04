@@ -21,6 +21,7 @@ export const copy = {
     trustLead: 'Every target ships with checksums, a CycloneDX SBOM, and GitHub build provenance. Bundle verification happens before the privileged installer starts.',
     viewRelease: 'View the latest release', footerTagline: 'Any core. Always current. Always running.', releases: 'Releases', security: 'Security',
     independent: 'Independent community project. Not affiliated with proxy core projects.', copied: 'Install command copied', copyCommand: 'Copy install command',
+    theme: 'Theme', themeSystem: 'System', themeLight: 'Light', themeDark: 'Dark',
     meta: 'Sempre installs, updates, switches, and supervises proxy cores as a native system service.',
   },
   'zh-CN': {
@@ -43,6 +44,7 @@ export const copy = {
     trustLead: '每个目标都提供校验和、CycloneDX SBOM 和 GitHub 构建证明；特权安装器启动前必须先通过 Bundle 校验。',
     viewRelease: '查看最新发行版', footerTagline: '任意核心，持续更新，始终运行。', releases: '发行版', security: '安全',
     independent: '独立社区项目，与各代理核心项目没有隶属关系。', copied: '安装命令已复制', copyCommand: '复制安装命令',
+    theme: '主题', themeSystem: '跟随系统', themeLight: '浅色', themeDark: '深色',
     meta: 'Sempre 以原生系统服务安装、更新、切换和守护代理核心。',
   },
 } as const

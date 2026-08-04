@@ -1,0 +1,241 @@
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --glass-bg: #080b0a;
+  --glass-panel: rgb(16 22 19 / 72%);
+  --glass-border: rgb(234 255 245 / 18%);
+  --glass-text: #f4faf7;
+  --glass-muted: #9fada6;
+  --glass-green: #5de2a5;
+  --glass-cyan: #68cdda;
+  --glass-paper: #0d1411;
+  --glass-paper-2: #111916;
+  --glass-ink: #eef5f1;
+  --glass-subtle: #92a098;
+  --glass-line: rgb(226 247 236 / 13%);
+  --glass-header: rgb(10 14 12 / 58%);
+  --glass-header-solid: rgb(10 14 12 / 82%);
+  --glass-overlay: rgb(4 7 5 / 34%);
+  --glass-shadow: rgb(0 0 0 / 45%);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --glass-bg: #edf3f0;
+  --glass-panel: rgb(255 255 255 / 68%);
+  --glass-border: rgb(22 61 43 / 16%);
+  --glass-text: #111714;
+  --glass-muted: #5f6d66;
+  --glass-green: #087d55;
+  --glass-cyan: #167b86;
+  --glass-paper: #f8faf9;
+  --glass-paper-2: #e5ece8;
+  --glass-ink: #101613;
+  --glass-subtle: #64726a;
+  --glass-line: rgb(18 50 35 / 13%);
+  --glass-header: rgb(248 251 249 / 62%);
+  --glass-header-solid: rgb(248 251 249 / 88%);
+  --glass-overlay: rgb(239 246 242 / 48%);
+  --glass-shadow: rgb(39 66 52 / 18%);
+}
+
+.spatial-glass,
+.glass-hero,
+.glass-story,
+.glass-header,
+.glass-installer,
+.glass-status,
+.window-chrome {
+  transition: background-color 320ms ease, border-color 320ms ease, color 320ms ease, box-shadow 320ms ease;
+}
+
+.spatial-glass,
+.glass-hero {
+  background: var(--glass-bg);
+  color: var(--glass-text);
+}
+
+.glass-header {
+  border-color: var(--glass-border);
+  background: var(--glass-header);
+  color: var(--glass-text);
+  box-shadow: 0 18px 60px var(--glass-shadow);
+}
+
+.has-scrolled .glass-header {
+  border-color: var(--glass-border);
+  background: var(--glass-header-solid);
+  box-shadow: 0 18px 60px var(--glass-shadow);
+}
+
+.glass-header .prototype-nav,
+.glass-header .prototype-icon-button {
+  color: var(--glass-muted);
+}
+
+.glass-header .prototype-nav a:hover,
+.glass-header .prototype-icon-button:hover {
+  color: var(--glass-green);
+}
+
+.glass-header .prototype-icon-button {
+  border-color: var(--glass-border);
+  background: color-mix(in srgb, var(--glass-panel) 72%, transparent);
+}
+
+.glass-hero {
+  border-color: var(--glass-line);
+}
+
+.glass-hero::after {
+  background: var(--glass-overlay);
+}
+
+.glass-backdrop {
+  opacity: 0.28;
+  filter: blur(28px) saturate(0.76) contrast(1.08);
+}
+
+.glass-backdrop::after {
+  background: var(--glass-overlay);
+}
+
+.glass-depth-lines::before,
+.glass-depth-lines::after,
+.glass-depth-lines span {
+  border-color: var(--glass-line);
+}
+
+.glass-copy h1 {
+  color: var(--glass-text);
+  text-shadow: 0 18px 70px var(--glass-shadow);
+}
+
+.glass-statement {
+  color: var(--glass-text);
+}
+
+.glass-copy .prototype-lead,
+.release-note,
+.glass-scroll {
+  color: var(--glass-muted);
+}
+
+.glass-installer {
+  border-color: var(--glass-border);
+  background: var(--glass-panel);
+  box-shadow: 0 28px 100px var(--glass-shadow), inset 0 1px rgb(255 255 255 / 8%);
+}
+
+.glass-installer-top,
+.glass-installer .command-meta {
+  border-color: var(--glass-line);
+}
+
+.glass-installer .platform-switch {
+  border-color: var(--glass-border);
+  background: color-mix(in srgb, var(--glass-bg) 64%, transparent);
+}
+
+.glass-installer .platform-switch button,
+.glass-installer .command-meta {
+  color: var(--glass-muted);
+}
+
+.glass-installer .platform-switch button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--glass-green) 13%, transparent);
+  color: var(--glass-text);
+}
+
+.glass-installer .command-line code,
+.glass-installer .command-meta a,
+.glass-installer-top strong {
+  color: var(--glass-text);
+}
+
+.glass-installer .command-copy {
+  border-color: var(--glass-border);
+  background: color-mix(in srgb, var(--glass-text) 6%, transparent);
+  color: var(--glass-muted);
+}
+
+.glass-product-window,
+.glass-story-product figure {
+  border-color: var(--glass-border);
+  background: var(--glass-paper);
+  box-shadow: 0 48px 120px var(--glass-shadow);
+}
+
+.window-chrome {
+  border-color: var(--glass-line);
+  background: color-mix(in srgb, var(--glass-paper) 88%, transparent);
+  color: var(--glass-muted);
+}
+
+.glass-status {
+  border-color: var(--glass-border);
+  background: color-mix(in srgb, var(--glass-paper) 78%, transparent);
+  box-shadow: 0 20px 55px var(--glass-shadow), inset 0 1px rgb(255 255 255 / 7%);
+}
+
+.glass-status small {
+  color: var(--glass-muted);
+}
+
+.glass-status strong {
+  color: var(--glass-text);
+}
+
+.glass-story {
+  background: var(--glass-paper);
+  color: var(--glass-ink);
+}
+
+.glass-story::before {
+  background: var(--glass-line);
+}
+
+.glass-story-heading .prototype-eyebrow,
+.glass-steps article > svg {
+  color: var(--glass-green);
+}
+
+.glass-story-heading > p:last-child,
+.glass-steps article > span,
+.glass-steps p {
+  color: var(--glass-subtle);
+}
+
+.glass-steps article,
+.glass-steps article:last-child {
+  border-color: var(--glass-line);
+}
+
+.glass-story-product figcaption {
+  border-color: var(--glass-border);
+  background: color-mix(in srgb, var(--glass-paper) 84%, transparent);
+  color: var(--glass-ink);
+}
+
+.story-halo {
+  background: var(--glass-green);
+}
+
+:root[data-theme="light"] .glass-reflection {
+  opacity: 0.08;
+}
+
+:root[data-theme="light"] .status-pulse {
+  box-shadow: 0 0 0 5px rgb(8 125 85 / 9%), 0 0 24px rgb(8 125 85 / 30%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-glass,
+  .glass-hero,
+  .glass-story,
+  .glass-header,
+  .glass-installer,
+  .glass-status,
+  .window-chrome {
+    transition-duration: 0.01ms;
+  }
+}

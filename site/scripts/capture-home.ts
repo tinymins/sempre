@@ -11,7 +11,10 @@ await mkdir(dirname(output), { recursive: true })
 const browser = await chromium.launch()
 try {
   const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 })
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
+  await page.addInitScript(() => localStorage.setItem('sempre.site.theme', 'dark'))
   await page.goto(siteURL, { waitUntil: 'networkidle' })
+  await page.waitForTimeout(500)
   await page.screenshot({ path: output, type: 'png' })
   console.log(output)
 } finally {

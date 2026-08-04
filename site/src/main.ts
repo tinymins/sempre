@@ -1,9 +1,11 @@
 import {
-  Activity, ArrowRight, ArrowUpRight, BadgeCheck, Box, Command, Copy, createIcons,
-  FileCheck2, FileJson2, GitFork, Languages, Monitor, MonitorDot, Server, ServerCog,
-  ShieldCheck, Terminal,
+  Activity, ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Box, Check, CircleCheck, Command,
+  Copy, createIcons, FileCheck2, FileJson2, GitFork, Languages, Monitor, MonitorDot,
+  Moon, Server, ServerCog, ShieldCheck, Sun, Terminal,
 } from 'lucide'
 import { copy, resolveInitialLocale, type CopyKey, type Locale } from './content'
+import { initMotion } from './motion'
+import { initTheme } from './theme'
 import './styles.css'
 
 const commands = {
@@ -39,6 +41,11 @@ function applyLocale(next: Locale) {
     copyButton.setAttribute('aria-label', copy[locale].copyCommand)
     copyButton.setAttribute('title', copy[locale].copyCommand)
   }
+  const themeButton = document.querySelector<HTMLElement>('[data-theme-trigger]')
+  if (themeButton) {
+    themeButton.setAttribute('aria-label', copy[locale].theme)
+    themeButton.setAttribute('title', copy[locale].theme)
+  }
   const description = document.querySelector<HTMLMetaElement>('meta[name="description"]')
   if (description) description.content = copy[locale].meta
 }
@@ -59,20 +66,22 @@ async function copyInstallCommand() {
   const status = document.querySelector<HTMLElement>('[data-copy-status]')
   if (!status) return
   status.textContent = copy[locale].copied
-  status.classList.add('visible')
-  window.setTimeout(() => status.classList.remove('visible'), 1800)
+  status.classList.add('is-visible')
+  window.setTimeout(() => status.classList.remove('is-visible'), 1800)
 }
 
 createIcons({
   icons: {
-    Activity, ArrowRight, ArrowUpRight, BadgeCheck, Box, Command, Copy, FileCheck2,
-    FileJson2, GitFork, Languages, Monitor, MonitorDot, Server, ServerCog, ShieldCheck,
-    Terminal,
+    Activity, ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Box, Check, CircleCheck, Command,
+    Copy, FileCheck2, FileJson2, GitFork, Languages, Monitor, MonitorDot, Moon, Server,
+    ServerCog, ShieldCheck, Sun, Terminal,
   },
   attrs: { 'aria-hidden': 'true', 'stroke-width': '1.8' },
 })
+initTheme()
 applyLocale(locale)
 setPlatform(platform)
+initMotion()
 
 document.querySelector('[data-language]')?.addEventListener('click', () => {
   applyLocale(locale === 'zh-CN' ? 'en' : 'zh-CN')
