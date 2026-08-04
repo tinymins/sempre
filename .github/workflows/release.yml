@@ -45,7 +45,7 @@ jobs:
           GOBIN="$RUNNER_TEMP" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0
           generate_sbom() {
             GOOS="$1" GOARCH="$2" CGO_ENABLED=0 "$RUNNER_TEMP/cyclonedx-gomod" \
-              app -json -notimestamp -noserial -packages -licenses \
+              app -json -notimestamp -packages -licenses \
               -main cmd/sempre -output "dist/$3.cdx.json" .
           }
           generate_sbom windows amd64 sempre-windows-amd64.exe
