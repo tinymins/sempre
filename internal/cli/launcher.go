@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -20,33 +22,28 @@ import (
 func runLauncher(ctx context.Context, input io.Reader, output, errorOutput io.Writer) int {
 	reader := bufio.NewReader(input)
 	for {
-		status, address := launcherStatus(ctx)
+		status := launcherStatus(ctx)
 		fmt.Fprintln(output, "Sempre")
 		fmt.Fprintf(output, "version: %s\n", buildinfo.Version)
-		if address != "" {
-			fmt.Fprintf(output, "status: %s, listening on %s\n", status, address)
+		if status.address != "" {
+			fmt.Fprintf(output, "status: %s, listening on %s\n", status.service, status.address)
 		} else {
-			fmt.Fprintf(output, "status: %s\n", status)
+			fmt.Fprintf(output, "status: %s\n", status.service)
 		}
-		fmt.Fprintln(output, "\n1. Open Web UI")
-		fmt.Fprintln(output, "2. Install / Repair")
-		fmt.Fprintln(output, "3. Uninstall")
-		fmt.Fprintln(output, "4. Run Portable")
-		fmt.Fprintln(output, "0. Exit")
+		writeLauncherMenu(output, status.installAction)
 		fmt.Fprint(output, "\nSelect [0-4]: ")
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			fmt.Fprintln(errorOutput, "ERROR:", err)
 			return 1
 		}
-		switch strings.TrimSpace(line) {
+		choice := strings.TrimSpace(line)
+		switch choice {
 		case "", "0":
 			return 0
-		case "1":
-			return Run(ctx, []string{"open"}, reader, output, errorOutput)
+		case "1", "3", "4":
+			return Run(ctx, launcherArguments(choice), reader, output, errorOutput)
 		case "2":
-			return Run(ctx, []string{"install"}, reader, output, errorOutput)
-		case "3":
 			fmt.Fprintln(output, "\n1. Uninstall and keep configuration")
 			fmt.Fprintln(output, "2. Full uninstall and remove all data")
 			fmt.Fprintln(output, "0. Cancel")
@@ -60,38 +57,113 @@ func runLauncher(ctx context.Context, input io.Reader, output, errorOutput io.Wr
 			default:
 				continue
 			}
-		case "4":
-			return Run(ctx, []string{"--portable", "portable", "run"}, reader, output, errorOutput)
 		default:
 			fmt.Fprintln(errorOutput, "Invalid selection.")
 		}
 	}
 }
 
-func launcherStatus(ctx context.Context) (string, string) {
+type launcherSnapshot struct {
+	service       string
+	address       string
+	installAction string
+}
+
+func launcherStatus(ctx context.Context) launcherSnapshot {
 	paths, err := layout.ForMode(layout.System)
 	if err != nil {
-		return "unavailable", ""
+		return launcherSnapshot{service: "unavailable", installAction: "Install"}
 	}
 	endpoint, endpointErr := webconfig.ReadEndpoint(paths.Endpoint)
 	serviceState, serviceErr := service.New().Status(ctx)
+	result := launcherSnapshot{
+		installAction: launcherInstallAction(ctx, paths.ServiceExecutable, serviceState, serviceErr),
+	}
 	if endpointErr == nil && healthy(ctx, endpoint.LocalURL) {
-		return "running", endpoint.LocalURL
+		result.service = "running"
+		result.address = endpoint.LocalURL
+		return result
 	}
 	if serviceErr != nil {
-		return "unavailable", ""
+		result.service = "unavailable"
+		return result
 	}
 	switch serviceState {
 	case service.NotInstalled:
-		return "not installed", ""
+		result.service = "not installed"
 	case service.Running, service.StartPending:
+		result.service = "starting"
 		if endpointErr == nil {
-			return "starting", endpoint.LocalURL
+			result.address = endpoint.LocalURL
 		}
-		return "starting", ""
 	default:
-		return string(serviceState), valueOrEmpty(endpoint.LocalURL, endpointErr)
+		result.service = string(serviceState)
+		result.address = valueOrEmpty(endpoint.LocalURL, endpointErr)
 	}
+	return result
+}
+
+func writeLauncherMenu(output io.Writer, installAction string) {
+	fmt.Fprintf(output, "\n1. %s\n", installAction)
+	fmt.Fprintln(output, "2. Uninstall")
+	fmt.Fprintln(output, "3. Open Web UI")
+	fmt.Fprintln(output, "4. Run Portable")
+	fmt.Fprintln(output, "0. Exit")
+}
+
+func launcherArguments(choice string) []string {
+	switch choice {
+	case "1":
+		return []string{"install"}
+	case "3":
+		return []string{"open"}
+	case "4":
+		return []string{"--portable", "portable", "run"}
+	default:
+		return nil
+	}
+}
+
+func launcherInstallAction(ctx context.Context, executable string, state service.State, serviceErr error) string {
+	if serviceErr == nil && state == service.NotInstalled {
+		return "Install"
+	}
+	installedVersion, versionErr := installedSempreVersion(ctx, executable)
+	return classifyLauncherInstallAction(buildinfo.Version, state, serviceErr, installedVersion, versionErr)
+}
+
+func classifyLauncherInstallAction(currentVersion string, state service.State, serviceErr error, installedVersion string, versionErr error) string {
+	if serviceErr == nil && state == service.NotInstalled {
+		return "Install"
+	}
+	if versionErr != nil {
+		if serviceErr != nil && errors.Is(versionErr, os.ErrNotExist) {
+			return "Install"
+		}
+		return "Repair"
+	}
+	if installedVersion == currentVersion {
+		return "Repair"
+	}
+	return "Upgrade"
+}
+
+func installedSempreVersion(ctx context.Context, executable string) (string, error) {
+	versionCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(versionCtx, executable, "version").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("read installed Sempre version: %w", err)
+	}
+	return parseSempreVersion(output)
+}
+
+func parseSempreVersion(output []byte) (string, error) {
+	fields := strings.Fields(string(output))
+	if len(fields) < 2 || fields[0] != "Sempre" || fields[1] == "" {
+		return "", fmt.Errorf("invalid Sempre version output %q", strings.TrimSpace(string(output)))
+	}
+	return fields[1], nil
 }
 
 func openSystemUI(ctx context.Context) error {

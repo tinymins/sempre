@@ -44,9 +44,10 @@ Download and extract the bundle for your platform, then run:
 sempre install
 ```
 
-`install` can be run repeatedly to install or repair Sempre. It copies the
-binary and bundled UI to protected system storage, registers the native
-service, starts the Web control plane, and opens it in the default browser.
+`install` can be run repeatedly to install, repair, or upgrade Sempre from the
+current bundle. It copies the binary and bundled UI to protected system storage,
+registers the native service, starts the Web control plane, and opens it in the
+default browser.
 No proxy core or configuration is required at installation time; the service
 reports `idle` until one is configured.
 
@@ -55,9 +56,9 @@ only the current version/status and four actions:
 
 | Action | Result |
 | --- | --- |
-| Open Web UI | Opens the discovered local control-plane address |
-| Install / Repair | Runs the idempotent system installation |
+| Install, Repair, or Upgrade | The launcher chooses one label from the service state and installed version, then runs the idempotent system installation from the current bundle |
 | Uninstall | Keeps configuration by default, with an explicit purge choice |
+| Open Web UI | Opens the discovered local control-plane address |
 | Run Portable | Runs the Web control plane and selected core beside the binary |
 
 The launcher contains no settings. Configure everything through the Web UI or
