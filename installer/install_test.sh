@@ -11,6 +11,8 @@ run_case() {
   architecture=$2
   hash=$3
   want_success=$4
+  expected_command=$5
+  shift 5
   directory=$(mktemp -d "${TMPDIR:-/tmp}/sempre-installer-test.XXXXXX")
   commands="$directory/commands"
   record="$directory/record"
@@ -68,13 +70,20 @@ esac
 mkdir -p "$destination/$prefix"
 cat >"$destination/$prefix/sempre" <<'BINARY'
 #!/bin/sh
-printf '%s\n' "$*" >"$SEMPRE_TEST_RECORD"
+for argument in "$@"; do
+  case "$argument" in
+  --subscription-file=*)
+    printf '%s ' "--subscription=$(cat "${argument#*=}")"
+    ;;
+  *) printf '%s ' "$argument" ;;
+  esac
+done >"$SEMPRE_TEST_RECORD"
 BINARY
 chmod 755 "$destination/$prefix/sempre"
 EOF
   chmod 755 "$commands"/*
 
-  if PATH="$commands:$PATH" SEMPRE_TEST_PLATFORM="$platform" SEMPRE_TEST_ARCH="$architecture" SEMPRE_TEST_RECORD="$record" sh "$installer" >/dev/null 2>"$directory/error"; then
+  if PATH="$commands:$PATH" SEMPRE_TEST_PLATFORM="$platform" SEMPRE_TEST_ARCH="$architecture" SEMPRE_TEST_RECORD="$record" sh "$installer" "$@" >/dev/null 2>"$directory/error"; then
     result=success
   else
     result=failure
@@ -86,13 +95,31 @@ EOF
     exit 1
   fi
   if [ "$want_success" = success ]; then
-    [ "$(cat "$record")" = install ] || exit 1
+    [ "$(cat "$record")" = "$expected_command" ] || {
+      printf 'command = <%s>, want <%s>\n' "$(cat "$record")" "$expected_command" >&2
+      exit 1
+    }
   else
     [ ! -e "$record" ] || exit 1
   fi
   rm -rf "$directory"
 }
 
-run_case Linux x86_64 "$digest" success
-run_case Darwin arm64 "$digest" success
-run_case Linux x86_64 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff failure
+run_case Linux x86_64 "$digest" success 'install '
+run_case Darwin arm64 "$digest" success 'install '
+run_case Linux x86_64 "$digest" success 'install --core=sing-box:tinymins/sing-box@13.11.2 --subscription=https://example.com/subscription?token=secret --ui=tinymins/sempre-ui@stable --ui-sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ' \
+  --core=sing-box:tinymins/sing-box@13.11.2 \
+  --subscription 'https://example.com/subscription?token=secret' \
+  --ui=tinymins/sempre-ui@stable \
+  --ui-sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+run_case Linux x86_64 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff failure ''
+
+if sh "$installer" --unknown=value >/dev/null 2>&1; then
+  printf 'unknown installer option unexpectedly succeeded\n' >&2
+  exit 1
+fi
+
+if sh "$installer" --core --subscription=https://example.com/subscription >/dev/null 2>&1; then
+  printf 'missing installer option value unexpectedly succeeded\n' >&2
+  exit 1
+fi

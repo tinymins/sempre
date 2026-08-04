@@ -1,3 +1,10 @@
+param(
+    [Parameter()][ValidateNotNullOrEmpty()][string]$Core,
+    [Parameter()][ValidateNotNullOrEmpty()][string]$Subscription,
+    [Parameter()][ValidateNotNullOrEmpty()][string]$UI,
+    [Parameter()][ValidateNotNullOrEmpty()][string]$UISha256
+)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -77,7 +84,23 @@ try {
     }
 
     Write-Host 'Installing Sempre system service...'
-    & $Binary install
+    $InstallArguments = [Collections.Generic.List[string]]::new()
+    $InstallArguments.Add('install')
+    if ($Core) {
+        $InstallArguments.Add("--core=$Core")
+    }
+    if ($Subscription) {
+        $SubscriptionFile = Join-Path $TemporaryDirectory 'subscription-url'
+        [IO.File]::WriteAllText($SubscriptionFile, $Subscription, [Text.UTF8Encoding]::new($false))
+        $InstallArguments.Add("--subscription-file=$SubscriptionFile")
+    }
+    if ($UI) {
+        $InstallArguments.Add("--ui=$UI")
+    }
+    if ($UISha256) {
+        $InstallArguments.Add("--ui-sha256=$UISha256")
+    }
+    & $Binary @InstallArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Sempre installer exited with code $LASTEXITCODE."
     }

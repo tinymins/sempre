@@ -59,6 +59,43 @@ test('platform command, script link, copy, and canonical translations work toget
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
 })
 
+test('install options generate quoted POSIX and PowerShell commands', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.getByLabel('Core (optional)').fill('sing-box:tinymins/sing-box@13.11.2')
+  await page.getByLabel('Subscription URL (optional)').fill("https://domain.com/subscription/user's-token")
+  await page.getByLabel('Web UI').selectOption('github')
+  await page.getByLabel('UI source').fill('tinymins/sempre-ui@stable')
+
+  const posix = "curl -fsSL https://sempre.run/install | sh -s -- --core='sing-box:tinymins/sing-box@13.11.2' --subscription='https://domain.com/subscription/user'\"'\"'s-token' --ui='tinymins/sempre-ui@stable'"
+  await expect(page.locator('[data-command-output]')).toHaveText(posix)
+  await page.locator('[data-copy]').click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(posix)
+
+  await page.getByRole('button', { name: 'PowerShell' }).click()
+  const powershell = "& ([scriptblock]::Create((irm https://sempre.run/install.ps1))) -Core 'sing-box:tinymins/sing-box@13.11.2' -Subscription 'https://domain.com/subscription/user''s-token' -UI 'tinymins/sempre-ui@stable'"
+  await expect(page.locator('[data-command-output]')).toHaveText(powershell)
+  const widths = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth }))
+  expect(widths.document).toBeLessThanOrEqual(widths.viewport)
+  await page.screenshot({ path: 'test-results/homepage/install-generator-mobile.png', fullPage: true })
+})
+
+test('HTTPS UI exposes its checksum option and subscription input is never persisted', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Subscription URL (optional)').fill('https://domain.com/private-token')
+  await page.getByLabel('Web UI').selectOption('url')
+  await expect(page.getByLabel('UI source')).toHaveAttribute('placeholder', 'https://example.com/sempre-ui.zip')
+  await page.getByLabel('UI source').fill('https://example.com/custom-ui.zip')
+  await page.getByLabel('UI SHA-256').fill('a'.repeat(64))
+  await expect(page.locator('[data-command-output]')).toContainText("--ui-sha256='" + 'a'.repeat(64) + "'")
+
+  const storageBeforeReload = await page.evaluate(() => ({ ...localStorage }))
+  expect(Object.values(storageBeforeReload)).not.toContain('https://domain.com/private-token')
+  await page.reload()
+  await expect(page.getByLabel('Subscription URL (optional)')).toHaveValue('')
+  await expect(page.locator('[data-command-output]')).toHaveText('curl -fsSL https://sempre.run/install | sh')
+})
+
 test('mobile Chinese content is readable without desktop center dividers', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.addInitScript(() => localStorage.setItem('sempre.site.locale', 'zh-CN'))

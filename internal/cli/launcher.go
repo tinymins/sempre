@@ -227,9 +227,23 @@ func openSystemUI(ctx context.Context) error {
 }
 
 func waitAndOpenSystem(ctx context.Context, output io.Writer) error {
-	paths, err := layout.ForMode(layout.System)
+	endpoint, installedUI, err := waitForSystemReady(ctx)
 	if err != nil {
 		return err
+	}
+	if !installedUI {
+		fmt.Fprintln(output, "Service:", endpoint.LocalURL)
+		fmt.Fprintln(output, "Web UI: not installed")
+		return nil
+	}
+	fmt.Fprintln(output, "Web UI:", endpoint.LocalURL)
+	return openBrowser(endpoint.LocalURL)
+}
+
+func waitForSystemReady(ctx context.Context) (webconfig.Endpoint, bool, error) {
+	paths, err := layout.ForMode(layout.System)
+	if err != nil {
+		return webconfig.Endpoint{}, false, err
 	}
 	deadline := time.NewTimer(20 * time.Second)
 	defer deadline.Stop()
@@ -238,19 +252,13 @@ func waitAndOpenSystem(ctx context.Context, output io.Writer) error {
 	for {
 		endpoint, endpointErr := webconfig.ReadEndpoint(paths.Endpoint)
 		if endpointErr == nil && healthy(ctx, endpoint.LocalURL) {
-			if !uiReady(ctx, endpoint.LocalURL) {
-				fmt.Fprintln(output, "Service:", endpoint.LocalURL)
-				fmt.Fprintln(output, "Web UI: not installed")
-				return nil
-			}
-			fmt.Fprintln(output, "Web UI:", endpoint.LocalURL)
-			return openBrowser(endpoint.LocalURL)
+			return endpoint, uiReady(ctx, endpoint.LocalURL), nil
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return webconfig.Endpoint{}, false, ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("Sempre service started but Web UI did not become ready")
+			return webconfig.Endpoint{}, false, fmt.Errorf("Sempre service started but its control plane did not become ready")
 		case <-ticker.C:
 		}
 	}

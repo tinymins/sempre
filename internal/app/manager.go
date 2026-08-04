@@ -16,6 +16,7 @@ import (
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/core/singbox"
 	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/release"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
@@ -63,6 +64,7 @@ type Manager struct {
 	subscriptions *subscriptions.Store
 	compiler      *subscriptions.Compiler
 	ui            *uiassets.Manager
+	uiReleases    uiassets.ReleaseResolver
 	reload        chan struct{}
 	lifecycleMu   sync.Mutex
 	controlMu     sync.RWMutex
@@ -111,6 +113,7 @@ func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
 		subscriptions: subscriptionStore,
 		compiler:      subscriptions.NewCompiler(subscriptionStore),
 		ui:            uiassets.New(paths.UI, paths.UICurrent),
+		uiReleases:    release.NewClient(),
 		reload:        make(chan struct{}, 1),
 	}, nil
 }

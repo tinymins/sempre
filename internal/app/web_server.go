@@ -855,6 +855,8 @@ func (admin *adminServer) uiUpdate(writer http.ResponseWriter, request *http.Req
 		metadata, err = admin.manager.InstallOfficialUI(request.Context())
 	case "url":
 		metadata, err = admin.manager.ui.InstallURL(request.Context(), current.Source, "")
+	case "github":
+		metadata, err = admin.manager.ui.InstallGitHub(request.Context(), admin.manager.uiReleases, current.Source)
 	default:
 		err = fmt.Errorf("locally uploaded UI has no update source; install another archive")
 	}
@@ -898,7 +900,11 @@ func (manager *Manager) InstallOfficialUI(ctx context.Context) (uiassets.Metadat
 }
 
 func (manager *Manager) installBundledUI() (uiassets.Metadata, bool, error) {
-	archive := filepath.Join(manager.paths.Resources, "sempre-ui.zip")
+	return manager.installBundledUIFrom(manager.paths.Resources)
+}
+
+func (manager *Manager) installBundledUIFrom(resources string) (uiassets.Metadata, bool, error) {
+	archive := filepath.Join(resources, "sempre-ui.zip")
 	info, err := os.Stat(archive)
 	if errors.Is(err, os.ErrNotExist) {
 		return uiassets.Metadata{}, false, nil
@@ -909,7 +915,7 @@ func (manager *Manager) installBundledUI() (uiassets.Metadata, bool, error) {
 	if !info.Mode().IsRegular() {
 		return uiassets.Metadata{}, true, fmt.Errorf("bundled UI is not a regular file: %s", archive)
 	}
-	digest, err := checksumFromFile(filepath.Join(manager.paths.Resources, "SHA256SUMS"), "sempre-ui.zip")
+	digest, err := checksumFromFile(filepath.Join(resources, "SHA256SUMS"), "sempre-ui.zip")
 	if err != nil {
 		return uiassets.Metadata{}, true, fmt.Errorf("verify bundled UI: %w", err)
 	}

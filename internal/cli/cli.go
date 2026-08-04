@@ -124,14 +124,7 @@ func (command *CLI) execute(ctx context.Context, arguments []string, options Opt
 		}
 		return command.manager.RunDaemon(ctx)
 	case "install":
-		if len(arguments) != 1 {
-			return usageError()
-		}
-		if err := command.manager.InstallApplication(ctx, true); err != nil {
-			return err
-		}
-		fmt.Fprintln(command.output, "Sempre installed, enabled, and started.")
-		return waitAndOpenSystem(ctx, command.output)
+		return command.install(ctx, arguments[1:], options)
 	case "uninstall":
 		return command.uninstall(ctx, arguments[1:], options)
 	case "web":
@@ -598,7 +591,7 @@ func usageError() error {
 const usage = `Sempre - cross-platform lifecycle manager for proxy cores
 
 Main entry points:
-  sempre install
+  sempre install [--core <reference>] [--subscription <URL>] [--ui <source>] [--ui-sha256 <digest>]
   sempre uninstall [--purge]
   sempre open
   sempre portable run

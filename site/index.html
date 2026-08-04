@@ -95,6 +95,33 @@
                   <button type="button" data-platform="windows" aria-pressed="false">PowerShell</button>
                 </div>
               </div>
+              <div class="install-options">
+                <label class="install-field">
+                  <span data-i18n="coreOption">Core (optional)</span>
+                  <input type="text" data-install-core data-i18n-placeholder="corePlaceholder" placeholder="sing-box@stable" autocomplete="off" spellcheck="false" />
+                </label>
+                <label class="install-field">
+                  <span data-i18n="subscriptionOption">Subscription URL (optional)</span>
+                  <input type="url" data-install-subscription data-i18n-placeholder="subscriptionPlaceholder" placeholder="https://example.com/subscription" autocomplete="off" spellcheck="false" />
+                </label>
+                <label class="install-field">
+                  <span data-i18n="uiOption">Web UI</span>
+                  <select data-install-ui-mode>
+                    <option value="" data-i18n="uiDefault">Automatic: preserve / official</option>
+                    <option value="official" data-i18n="uiOfficial">Official UI</option>
+                    <option value="github" data-i18n="uiGitHub">GitHub release</option>
+                    <option value="url" data-i18n="uiURL">HTTPS ZIP</option>
+                  </select>
+                </label>
+                <label class="install-field" data-install-ui-source-field hidden>
+                  <span data-i18n="uiSource">UI source</span>
+                  <input type="text" data-install-ui-source data-i18n-placeholder="uiGitHubPlaceholder" placeholder="owner/repo@stable" autocomplete="off" spellcheck="false" />
+                </label>
+                <label class="install-field install-field-digest" data-install-ui-digest-field hidden>
+                  <span data-i18n="uiDigest">UI SHA-256</span>
+                  <input type="text" data-install-ui-digest data-i18n-placeholder="uiDigestPlaceholder" placeholder="64-character digest" autocomplete="off" spellcheck="false" />
+                </label>
+              </div>
               <div class="command-line">
                 <span class="command-prompt" aria-hidden="true">$</span>
                 <code data-command-output>curl -fsSL https://sempre.run/install | sh</code>

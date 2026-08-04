@@ -59,6 +59,12 @@ func (manager *Manager) InstallUI(ctx context.Context, source, digest string) (u
 		if len(source) >= 8 && source[:8] == "https://" {
 			return manager.ui.InstallURL(ctx, source, digest)
 		}
+		if _, err := uiassets.ParseGitHubReference(source); err == nil {
+			if digest != "" {
+				return uiassets.Metadata{}, fmt.Errorf("--sha256 is not accepted for GitHub UI references")
+			}
+			return manager.ui.InstallGitHub(ctx, manager.uiReleases, source)
+		}
 		return manager.ui.InstallFile(source, "local", source, digest)
 	}
 }
@@ -73,6 +79,8 @@ func (manager *Manager) UpdateUI(ctx context.Context) (uiassets.Metadata, error)
 		return manager.InstallOfficialUI(ctx)
 	case "url":
 		return manager.ui.InstallURL(ctx, current.Source, "")
+	case "github":
+		return manager.ui.InstallGitHub(ctx, manager.uiReleases, current.Source)
 	default:
 		return uiassets.Metadata{}, fmt.Errorf("locally installed UI has no update source")
 	}

@@ -4,6 +4,10 @@ set -eu
 
 repository="https://github.com/tinymins/sempre"
 temporary_directory=""
+core=""
+subscription=""
+ui=""
+ui_sha256=""
 
 fail() {
   printf 'sempre installer: %s\n' "$*" >&2
@@ -22,6 +26,44 @@ cleanup() {
 
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+  --core=* | --subscription=* | --ui=* | --ui-sha256=*)
+    option=${1%%=*}
+    value=${1#*=}
+    shift
+    ;;
+  --core | --subscription | --ui | --ui-sha256)
+    option=$1
+    shift
+    [ "$#" -gt 0 ] || fail "$option requires a value"
+    [ "${1#--}" = "$1" ] || fail "$option requires a value"
+    value=$1
+    shift
+    ;;
+  *) fail "unknown option: $1" ;;
+  esac
+  [ -n "$value" ] || fail "$option cannot be empty"
+  case "$option" in
+  --core)
+    [ -z "$core" ] || fail "$option was provided more than once"
+    core=$value
+    ;;
+  --subscription)
+    [ -z "$subscription" ] || fail "$option was provided more than once"
+    subscription=$value
+    ;;
+  --ui)
+    [ -z "$ui" ] || fail "$option was provided more than once"
+    ui=$value
+    ;;
+  --ui-sha256)
+    [ -z "$ui_sha256" ] || fail "$option was provided more than once"
+    ui_sha256=$value
+    ;;
+  esac
+done
 
 require_command curl
 require_command unzip
@@ -104,5 +146,20 @@ fi
 chmod 755 "$binary"
 
 printf 'Installing Sempre system service...\n'
-"$binary" install
+set -- install
+if [ -n "$core" ]; then
+  set -- "$@" "--core=$core"
+fi
+if [ -n "$subscription" ]; then
+  subscription_file="$temporary_directory/subscription-url"
+  (umask 077 && printf '%s' "$subscription" >"$subscription_file")
+  set -- "$@" "--subscription-file=$subscription_file"
+fi
+if [ -n "$ui" ]; then
+  set -- "$@" "--ui=$ui"
+fi
+if [ -n "$ui_sha256" ]; then
+  set -- "$@" "--ui-sha256=$ui_sha256"
+fi
+"$binary" "$@"
 printf 'Sempre %s installed successfully. Open a new terminal and run: sempre status\n' "$tag"

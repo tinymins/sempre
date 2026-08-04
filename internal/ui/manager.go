@@ -50,10 +50,18 @@ type Metadata struct {
 type Manager struct {
 	root    string
 	current string
+	http    *http.Client
 }
 
 func New(root, current string) *Manager {
-	return &Manager{root: root, current: current}
+	return &Manager{
+		root:    root,
+		current: current,
+		http: &http.Client{
+			Timeout:       10 * time.Minute,
+			CheckRedirect: httpsRedirect,
+		},
+	}
 }
 
 func (manager *Manager) Current() (Metadata, error) {
@@ -131,6 +139,14 @@ func (manager *Manager) InstallURL(ctx context.Context, value, expectedDigest st
 }
 
 func (manager *Manager) InstallRemote(ctx context.Context, value, expectedDigest, sourceType string) (Metadata, error) {
+	return manager.installRemote(ctx, value, expectedDigest, sourceType, "")
+}
+
+func (manager *Manager) InstallRemoteSource(ctx context.Context, value, expectedDigest, sourceType, source string) (Metadata, error) {
+	return manager.installRemote(ctx, value, expectedDigest, sourceType, source)
+}
+
+func (manager *Manager) installRemote(ctx context.Context, value, expectedDigest, sourceType, source string) (Metadata, error) {
 	parsed, err := url.Parse(value)
 	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Hostname() == "" || parsed.User != nil {
 		return Metadata{}, fmt.Errorf("UI URL must be an HTTPS URL without credentials")
@@ -150,8 +166,7 @@ func (manager *Manager) InstallRemote(ctx context.Context, value, expectedDigest
 		return Metadata{}, err
 	}
 	request.Header.Set("User-Agent", "Sempre/"+buildinfo.Version)
-	client := &http.Client{Timeout: 10 * time.Minute, CheckRedirect: httpsRedirect}
-	response, err := client.Do(request)
+	response, err := manager.http.Do(request)
 	if err != nil {
 		temporary.Close()
 		return Metadata{}, fmt.Errorf("download UI: %w", err)
@@ -176,7 +191,10 @@ func (manager *Manager) InstallRemote(ctx context.Context, value, expectedDigest
 	if written > MaxArchiveSize {
 		return Metadata{}, fmt.Errorf("UI archive exceeds %d bytes", MaxArchiveSize)
 	}
-	return manager.InstallFile(path, sourceType, parsed.String(), expectedDigest)
+	if source == "" {
+		source = parsed.String()
+	}
+	return manager.InstallFile(path, sourceType, source, expectedDigest)
 }
 
 func (manager *Manager) Remove() error {

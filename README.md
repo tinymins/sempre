@@ -52,6 +52,36 @@ Windows PowerShell:
 irm https://sempre.run/install.ps1 | iex
 ```
 
+The command generator at [sempre.run](https://sempre.run) can include a core,
+subscription URL, and Web UI source in the same verified installation. For
+example:
+
+```sh
+curl -fsSL https://sempre.run/install | sh -s -- --core='sing-box:tinymins/sing-box@13.11.2' --subscription='https://domain.com/some-subscription/xxx1safsadf'
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://sempre.run/install.ps1))) -Core 'sing-box:tinymins/sing-box@13.11.2' -Subscription 'https://domain.com/some-subscription/xxx1safsadf'
+```
+
+Core references use
+`<adapter>[:<github-owner>/<repository>][@<stable-or-version>]`. On a fresh
+installation, omitting `--core`/`-Core` selects `sing-box@stable`; an existing
+selection is preserved. A subscription URL is added to the unnamed default
+subscription set, duplicate URLs are removed, the set is activated and
+refreshed, and the resulting deployment must reach the running state or the
+installer fails. The URL is passed from the online script to Sempre through a
+private temporary file instead of a child-process argument. Because it is
+still present in the command itself, treat shell history and shared terminals
+as sensitive.
+
+The UI option accepts `official`, an HTTPS ZIP, or a GitHub release reference
+such as `tinymins/sempre-ui@stable`. HTTPS ZIPs can include
+`--ui-sha256='<digest>'` or `-UISha256 '<digest>'`. GitHub UI releases must
+contain `sempre-ui.zip` and provide its SHA-256 through release asset metadata
+or `SHA256SUMS`. When the UI option is omitted, a custom installed UI is kept;
+a fresh installation uses the official UI.
+
 The installer detects the operating system and architecture, resolves one
 concrete GitHub Release tag, and verifies the matching bundle against that
 release's `SHA256SUMS` before running it. The scripts are available for review
@@ -67,9 +97,8 @@ sempre install
 `install` can be run repeatedly to install, repair, or upgrade Sempre from the
 current bundle. It copies the binary and bundled UI to protected system storage,
 registers the native service, starts the Web control plane, and opens it in the
-default browser.
-No proxy core or configuration is required at installation time; the service
-reports `idle` until one is configured.
+default browser. Without a subscription or existing configuration, the
+service reports `idle` until one is configured.
 Open a new terminal after installation; `sempre status`, `sempre doctor`, and
 the rest of the CLI are available globally.
 
@@ -284,6 +313,8 @@ printf 'new-password\n' | sempre web password set --stdin
 sempre web password clear
 sempre ui status
 sempre ui install official
+sempre ui install tinymins/sempre-ui@stable
+sempre ui install tinymins/sempre-ui@1.2.3
 sempre ui install https://example.com/sempre-ui.zip --sha256 <digest>
 sempre ui install ./sempre-ui.zip --sha256 <digest>
 sempre ui update
@@ -309,6 +340,9 @@ UI archives are independent third-party components. A compatible ZIP has
 is size/path/symlink checked before an atomic activation. Only one UI is active
 at a time. A locally installed custom UI is preserved by `sempre install`;
 official UI installations are refreshed from the bundle or matching release.
+GitHub sources use `<owner>/<repository>@stable|version`, require a fixed
+`sempre-ui.zip` asset with a published SHA-256, and remain updateable through
+`sempre ui update`.
 
 ## Services
 

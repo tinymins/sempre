@@ -1,0 +1,119 @@
+package app
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
+)
+
+func TestBootstrapCoreReferenceDefaultsOnlyWithoutSelection(t *testing.T) {
+	t.Parallel()
+	if got := bootstrapCoreReference(state.NewDocument(), ""); got != DefaultInstallCore {
+		t.Fatalf("fresh default core = %q", got)
+	}
+	document := state.NewDocument()
+	document.Selected = &state.Selection{Core: "sing-box", Ref: "1.2.3"}
+	if got := bootstrapCoreReference(document, ""); got != "" {
+		t.Fatalf("existing selection was replaced by %q", got)
+	}
+	if got := bootstrapCoreReference(document, " sing-box:tinymins/sing-box@13.11.2 "); got != "sing-box:tinymins/sing-box@13.11.2" {
+		t.Fatalf("explicit core = %q", got)
+	}
+}
+
+func TestPrepareDefaultSubscriptionCreatesActivatesAndPreservesProfiles(t *testing.T) {
+	manager := newTestManager(t)
+	var namedID string
+	if err := manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
+		catalog.Profiles[0].Name = "Primary"
+		secondary := subscriptions.NewProfile("Secondary")
+		namedID = secondary.ID
+		catalog.Profiles = append(catalog.Profiles, secondary)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, changed, err := manager.prepareDefaultSubscription("  https://example.com/subscription?token=secret  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || profile.Name != "" || len(profile.Sources) != 1 || profile.Sources[0].URL != "https://example.com/subscription?token=secret" {
+		t.Fatalf("prepared default profile = %#v, changed = %t", profile, changed)
+	}
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Profiles) != 3 || catalog.Profiles[0].ID != profile.ID || active != profile.ID {
+		t.Fatalf("catalog = %#v, active = %q", catalog.Profiles, active)
+	}
+	if catalog.Profiles[2].ID != namedID || catalog.Profiles[1].Name != "Primary" {
+		t.Fatalf("named profiles were not preserved: %#v", catalog.Profiles)
+	}
+}
+
+func TestPrepareDefaultSubscriptionDeduplicatesAndEnablesURL(t *testing.T) {
+	manager := newTestManager(t)
+	value := "https://example.com/subscription?token=secret"
+	other := "https://other.example/subscription"
+	if err := manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
+		catalog.Profiles[0].Sources = []subscriptions.Source{
+			{ID: subscriptions.NewID(), Type: subscriptions.SourceURL, URL: value, Enabled: false},
+			{ID: subscriptions.NewID(), Type: subscriptions.SourceURL, URL: other, Enabled: true},
+			{ID: subscriptions.NewID(), Type: subscriptions.SourceURL, URL: " " + value + " ", Enabled: true},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	profile, changed, err := manager.prepareDefaultSubscription(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || len(profile.Sources) != 2 {
+		t.Fatalf("profile = %#v, changed = %t", profile, changed)
+	}
+	matches := 0
+	for _, source := range profile.Sources {
+		if strings.TrimSpace(source.URL) == value {
+			matches++
+			if !source.Enabled || source.UserAgent != subscriptions.DefaultUserAgent || source.FetchMode != subscriptions.FetchAuto {
+				t.Fatalf("matching source was not normalized: %#v", source)
+			}
+		}
+	}
+	if matches != 1 || profile.Sources[1].URL != other {
+		t.Fatalf("sources = %#v", profile.Sources)
+	}
+}
+
+func TestValidateBootstrapUIOptions(t *testing.T) {
+	manager := newTestManager(t)
+	validDigest := strings.Repeat("a", 64)
+	for _, options := range []BootstrapOptions{
+		{},
+		{UI: "official"},
+		{UI: "https://example.com/sempre-ui.zip"},
+		{UI: "https://example.com/sempre-ui.zip", UISHA256: validDigest},
+		{UI: "tinymins/sempre-ui@stable"},
+		{UI: "tinymins/sempre-ui@1.2.3"},
+	} {
+		if err := manager.validateBootstrapOptions(options); err != nil {
+			t.Errorf("validateBootstrapOptions(%#v) = %v", options, err)
+		}
+	}
+	for _, options := range []BootstrapOptions{
+		{UI: "./local.zip"},
+		{UI: "http://example.com/ui.zip"},
+		{UI: "official", UISHA256: validDigest},
+		{UI: "tinymins/sempre-ui@stable", UISHA256: validDigest},
+		{UI: "https://example.com/ui.zip", UISHA256: "bad"},
+	} {
+		if err := manager.validateBootstrapOptions(options); err == nil {
+			t.Errorf("validateBootstrapOptions(%#v) unexpectedly succeeded", options)
+		}
+	}
+}
