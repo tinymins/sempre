@@ -91,7 +91,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mapfile -d '' assets < <(find dist -maxdepth 1 -type f -print0 | sort -z)
           gh release create "$GITHUB_REF_NAME" \
-            dist/* \
+            "${assets[@]}" \
             --generate-notes \
             --verify-tag
