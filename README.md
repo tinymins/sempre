@@ -92,7 +92,7 @@ the equivalent CLI commands. A complete CLI setup remains available:
 ```text
 sempre core install sing-box@stable
 sempre core use sing-box@stable
-sempre subscription set https://example.com/sing-box.json
+sempre subscription set https://example.com/subscription
 sempre open
 ```
 
@@ -170,10 +170,11 @@ is removed only when no exact install, active deployment, rollback deployment,
 or other channel still references it.
 
 Installing a version never changes the selected core. Run `core use` after the
-first install; this is allowed before a configuration exists. The next
-`subscription set` or `config import` validates the configuration with that
-selection and activates it. A channel update is validated against the current
-configuration before the channel advances.
+first install; this is allowed before a configuration exists. The next profile
+save, `subscription set`, or `config import` converts the subscription for that
+selection, validates it with the installed core, and stages it. A channel
+update is validated against the current configuration before the channel
+advances.
 
 `core remove` removes the concrete version directory and every channel alias
 that points to it. Removal fails while the version is selected, active, or
@@ -185,39 +186,63 @@ service selection.
 ## Configuration
 
 ```text
-sempre subscription set <https-url>
-sempre subscription update
+sempre subscription list
+sempre subscription create <name>
+sempre subscription show [profile-id]
+sempre subscription save <profile-id> <profile.json>
+sempre subscription use <profile-id>
+sempre subscription update [profile-id]
+sempre subscription render <profile-id> [format]
+sempre subscription source add-url <http-or-https-url>
+sempre subscription source add-raw <file>
+sempre subscription set <http-or-https-url>
 sempre subscription schedule 24h
 sempre subscription schedule off
+sempre subscription auto-restart <true|false>
 sempre subscription status
 sempre subscription clear
 sempre subscription set ""
+sempre custom-node <list|add|update|remove>
 sempre config import <file>
 sempre update
 ```
 
-Both clear forms remove the subscription URL and its check history while
-retaining the active configuration.
+Sempre stores multiple subscription profiles and keeps exactly one active. A
+profile can combine HTTP/HTTPS sources, raw subscription text, and reusable
+custom nodes. `config import` adds its file as a raw source; it no longer
+bypasses conversion by installing a complete core configuration. Both clear
+forms remove the active profile's sources and check history while retaining
+the active configuration.
+
+The Go conversion pipeline accepts Clash YAML/JSON proxy lists and lenient
+Base64 URI subscriptions. It parses VLESS, VMess, Shadowsocks, Trojan,
+Hysteria 2, and AnyTLS URIs, then produces Clash, Clash Meta, or sing-box
+v1.11/v1.12/v1.13 configurations. Linux uses TProxy defaults; Windows and
+macOS previews use TUN defaults. The selected core version and host platform
+choose the format used for an active profile. Rule-provider YAML is fetched
+and embedded for sing-box, so generated configurations do not depend on a
+public Sempre conversion endpoint.
 
 The top-level `update` command updates only the subscription. Core channels
 are updated explicitly with `core update`.
 
-Subscription candidates are limited to 32 MiB, downloaded only through HTTPS,
-validated by the selected core, and stored by content hash. A failed download,
-validation, resolve, or startup leaves the last known good deployment
-available. Sempre retains the current configuration and at most one
-configuration needed for automatic rollback; unreferenced configuration
-objects are collected after a deployment becomes healthy or rolls back.
-Subscription URLs are stored with restricted permissions and are redacted from
-normal output and logs.
+Each subscription response is limited to 32 MiB and may be downloaded through
+HTTP or HTTPS. Redirects remain restricted to those schemes. Fetches retry up
+to three times and use a persistent last-known-good cache keyed by URL,
+User-Agent, and fetch mode. Raw responses and generated configurations are
+stored by content hash. With a selected core, a save must also pass that real
+core's configuration check before it is staged. Failed downloads, conversion,
+validation, resolve, or startup retain the previous deployment. Subscription
+data is stored with restricted permissions and URLs are omitted from normal
+status output and logs.
 
-Automatic subscription checks run every 24 hours by default. The interval is
-configurable with a minimum of five minutes. A changed scheduled configuration
-is applied automatically while the managed core is expected to run. Interactive
-changes ask before restarting a running managed core; use `--yes` to restart
-without prompting or `--no-restart` to leave the change pending. When the core
-has been explicitly stopped, changes are validated and saved without starting
-it, and take effect on the next start.
+Automatic checks for enabled URL sources in the active profile run every 24
+hours by default. The global interval has a five-minute minimum. A changed
+scheduled configuration is staged and, by default, restarts the managed core;
+`subscription auto-restart false` leaves it pending. Interactive profile
+changes never restart the core automatically. Restart it explicitly after
+reviewing the preview, or leave the staged configuration for the next start.
+An empty profile remains valid and retains the last active configuration.
 
 ## Managed Runtime
 
@@ -274,8 +299,9 @@ before closing the old one and rolls the configuration back on failure.
 The official React console covers managed-core status and lifecycle controls,
 live traffic, proxy selection and
 latency checks, providers, connections, rules, local traffic aggregation,
-logs, core versions, subscriptions, validated configuration editing, listener
-and password settings, and UI lifecycle management. Runtime features are also
+logs, core versions, subscription conversion profiles, custom nodes, source
+and field-level diagnostics, configuration previews, listener and password
+settings, and UI lifecycle management. Runtime features are also
 available under `sempre runtime`; run `sempre help` for the command map.
 
 UI archives are independent third-party components. A compatible ZIP has
@@ -298,8 +324,10 @@ sempre service status
 `service install` registers Sempre with the native system service manager,
 enables it, and starts it. It also copies Sempre and bundled resources to a
 protected system executable directory, so the original download can be moved
-or deleted afterwards. Core and configuration state is merged with an existing
-installation. `service uninstall` removes only the service registration;
+or deleted afterwards. Core, configuration, and subscription state is merged
+with an existing installation; meaningful system subscription data takes
+precedence over portable defaults. `service uninstall` removes only the
+service registration;
 top-level `uninstall` removes the application while retaining configuration,
 subscription, listener, and password unless `--purge` is supplied.
 
@@ -310,8 +338,8 @@ service:
 | --- | --- | --- |
 | `service deploy bin` | Sempre service executable and service registration | Core, state, configurations, logs, runtime |
 | `service deploy core` | Managed core/version directories from portable mode | Extra system core versions, state, configurations, logs, runtime |
-| `service deploy data` | State, subscription metadata, and referenced configurations | Sempre binary, cores, logs, runtime |
-| `service deploy all` | Sempre binary, exact managed-core snapshot, state, and referenced configurations | Logs and runtime |
+| `service deploy data` | State, subscription catalogs/cache/snapshots, and referenced configurations | Sempre binary, cores, logs, runtime |
+| `service deploy all` | Sempre binary, exact managed-core snapshot, state, subscription data, and referenced configurations | Logs and runtime |
 
 `service deploy` is available only in portable mode and requires an installed
 system service. A data-only deployment first verifies that every core version

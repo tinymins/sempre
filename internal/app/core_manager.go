@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,6 +25,9 @@ func (manager *Manager) InstallCore(ctx context.Context, value string) (Change, 
 		change, err = manager.installCore(ctx, value)
 		return err
 	})
+	if err == nil {
+		change, err = manager.compileSelectedProfileIfNeeded(ctx, change)
+	}
 	return change, err
 }
 
@@ -205,13 +209,74 @@ func (manager *Manager) updateCores(ctx context.Context, value string) ([]Change
 }
 
 func (manager *Manager) UseCore(ctx context.Context, value string) (Change, error) {
+	before, err := manager.store.Read()
+	if err != nil {
+		return Change{}, err
+	}
 	var change Change
-	err := manager.withOperation(func() error {
+	err = manager.withOperation(func() error {
 		var err error
 		change, err = manager.useCore(ctx, value)
 		return err
 	})
+	if err == nil {
+		change, err = manager.compileSelectedProfileIfNeeded(ctx, change)
+	}
+	if err != nil {
+		after, readErr := manager.store.Read()
+		if readErr == nil && after.Selected != nil && !sameSelection(before.Selected, after.Selected) && after.Configs[after.Selected.Core] == "" {
+			rollbackErr := manager.withOperation(func() error {
+				return manager.store.Update(func(document *state.Document) error {
+					if sameSelection(document.Selected, after.Selected) {
+						document.Selected = cloneSelection(before.Selected)
+					}
+					return nil
+				})
+			})
+			if rollbackErr != nil {
+				err = errors.Join(err, fmt.Errorf("restore previous core selection: %w", rollbackErr))
+			}
+		}
+	}
 	return change, err
+}
+
+func sameSelection(left, right *state.Selection) bool {
+	return (left == nil && right == nil) || (left != nil && right != nil && *left == *right)
+}
+
+func cloneSelection(selection *state.Selection) *state.Selection {
+	if selection == nil {
+		return nil
+	}
+	result := *selection
+	return &result
+}
+
+func (manager *Manager) compileSelectedProfileIfNeeded(ctx context.Context, change Change) (Change, error) {
+	document, err := manager.store.Read()
+	if err != nil {
+		return Change{}, err
+	}
+	if document.Selected == nil || document.Configs[document.Selected.Core] != "" {
+		return change, nil
+	}
+	_, profile, _, err := manager.activeProfile()
+	if err != nil {
+		return Change{}, err
+	}
+	if !subscriptionProfileHasInputs(*profile) {
+		return change, nil
+	}
+	compiled, err := manager.UpdateSubscription(ctx)
+	if err != nil {
+		return Change{}, err
+	}
+	change.Changed = change.Changed || compiled.Changed
+	change.NeedsRestart = change.NeedsRestart || compiled.NeedsRestart
+	change.CurrentDetail = compiled.CurrentDetail
+	change.Message = compiled.Message
+	return change, nil
 }
 
 func (manager *Manager) useCore(ctx context.Context, value string) (Change, error) {

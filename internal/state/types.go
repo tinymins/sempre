@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 const (
 	DesiredRunning = "running"
@@ -23,18 +23,20 @@ var (
 )
 
 type Document struct {
-	Schema       int                   `json:"schema"`
-	UpdatedAt    time.Time             `json:"updated_at"`
-	Selected     *Selection            `json:"selected,omitempty"`
-	Active       *Deployment           `json:"active,omitempty"`
-	Previous     *Deployment           `json:"previous,omitempty"`
-	Pending      bool                  `json:"pending"`
-	LastError    string                `json:"last_error,omitempty"`
-	Cores        map[string]*CoreState `json:"cores"`
-	Configs      map[string]string     `json:"configs"`
-	Subscription Subscription          `json:"subscription"`
-	DesiredState string                `json:"desired_state"`
-	Runtime      Runtime               `json:"runtime"`
+	Schema          int                   `json:"schema"`
+	UpdatedAt       time.Time             `json:"updated_at"`
+	Selected        *Selection            `json:"selected,omitempty"`
+	Active          *Deployment           `json:"active,omitempty"`
+	Previous        *Deployment           `json:"previous,omitempty"`
+	Pending         bool                  `json:"pending"`
+	LastError       string                `json:"last_error,omitempty"`
+	Cores           map[string]*CoreState `json:"cores"`
+	Configs         map[string]string     `json:"configs"`
+	Subscription    Subscription          `json:"subscription"`
+	ActiveProfileID string                `json:"active_profile_id,omitempty"`
+	AutoRestart     bool                  `json:"subscription_auto_restart"`
+	DesiredState    string                `json:"desired_state"`
+	Runtime         Runtime               `json:"runtime"`
 }
 
 type Selection struct {
@@ -105,6 +107,7 @@ func NewDocument() Document {
 		Cores:        map[string]*CoreState{},
 		Configs:      map[string]string{},
 		DesiredState: DesiredRunning,
+		AutoRestart:  true,
 		Subscription: Subscription{
 			Interval: "24h",
 		},
@@ -132,6 +135,9 @@ func (document *Document) Normalize() {
 	}
 	if document.Subscription.Interval == "" {
 		document.Subscription.Interval = "24h"
+	}
+	if previousSchema <= 4 {
+		document.AutoRestart = true
 	}
 	for _, core := range document.Cores {
 		if core == nil {

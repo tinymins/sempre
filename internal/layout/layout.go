@@ -34,6 +34,10 @@ type Layout struct {
 	ConfigLock        string
 	Cores             string
 	Configs           string
+	Subscriptions     string
+	SubscriptionStore string
+	SubscriptionBlobs string
+	SubscriptionCache string
 	Runtime           string
 	Logs              string
 	StdoutLog         string
@@ -152,6 +156,10 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		ConfigLock:        filepath.Join(run, "config.lock"),
 		Cores:             filepath.Join(home, "cores"),
 		Configs:           filepath.Join(home, "configs"),
+		Subscriptions:     filepath.Join(home, "subscriptions"),
+		SubscriptionStore: filepath.Join(home, "subscriptions", "catalog.json"),
+		SubscriptionBlobs: filepath.Join(home, "subscriptions", "blobs"),
+		SubscriptionCache: filepath.Join(home, "subscriptions", "cache"),
 		Runtime:           run,
 		Logs:              logs,
 		StdoutLog:         filepath.Join(logs, "core.stdout.log"),
@@ -211,7 +219,7 @@ func (paths Layout) Ensure() error {
 			return err
 		}
 	}
-	for _, directory := range []string{paths.Cores, paths.Configs} {
+	for _, directory := range []string{paths.Cores, paths.Configs, paths.Subscriptions, paths.SubscriptionBlobs, paths.SubscriptionCache} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", directory, err)
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	"github.com/tinymins/sempre/internal/supervisor"
 )
 
@@ -146,11 +147,13 @@ func (manager *Manager) Status(ctx context.Context) (string, error) {
 	} else {
 		fmt.Fprintf(&builder, "Supervisor: %s, PID %d, restarts %d\n", runtime.State, runtime.PID, runtime.RestartCount)
 	}
-	if document.Subscription.URL == "" {
+	catalog, catalogErr := manager.subscriptions.Read()
+	profile, profileErr := subscriptions.FindProfile(&catalog, document.ActiveProfileID)
+	if catalogErr != nil || profileErr != nil || len(profile.Sources) == 0 {
 		fmt.Fprintln(&builder, "Subscription: not configured")
 	} else {
-		fmt.Fprintf(&builder, "Subscription: %s, every %s\n", redactedURL(document.Subscription.URL), document.Subscription.Interval)
-		if next, ok := nextSubscriptionCheck(document.Subscription); ok {
+		fmt.Fprintf(&builder, "Subscription: %s (%d sources), every %s\n", profile.Name, len(profile.Sources), document.Subscription.Interval)
+		if next, ok := nextSubscriptionCheck(document.Subscription, subscriptionProfileHasScheduledSources(*profile)); ok {
 			fmt.Fprintln(&builder, "Next subscription check:", next.Format(time.RFC3339))
 		}
 	}

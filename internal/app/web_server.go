@@ -28,6 +28,7 @@ import (
 	"github.com/tinymins/sempre/internal/release"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	uiassets "github.com/tinymins/sempre/internal/ui"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
@@ -159,10 +160,29 @@ func newAdminServer(manager *Manager, daemonToken ...string) *adminServer {
 	mux.HandleFunc("GET /api/v1/subscription", admin.subscriptionGet)
 	mux.HandleFunc("PATCH /api/v1/subscription", admin.subscriptionPatch)
 	mux.HandleFunc("POST /api/v1/subscription/update", admin.subscriptionUpdate)
+	mux.HandleFunc("GET /api/v1/subscriptions", admin.subscriptionsGet)
+	mux.HandleFunc("POST /api/v1/subscriptions", admin.subscriptionsCreate)
+	mux.HandleFunc("GET /api/v1/subscriptions/defaults", admin.subscriptionDefaults)
+	mux.HandleFunc("POST /api/v1/subscriptions/cache/clear", admin.subscriptionCacheClear)
+	mux.HandleFunc("GET /api/v1/subscriptions/{id}", admin.subscriptionProfileGet)
+	mux.HandleFunc("PUT /api/v1/subscriptions/{id}", admin.subscriptionProfilePut)
+	mux.HandleFunc("DELETE /api/v1/subscriptions/{id}", admin.subscriptionProfileDelete)
+	mux.HandleFunc("POST /api/v1/subscriptions/{id}/activate", admin.subscriptionProfileActivate)
+	mux.HandleFunc("POST /api/v1/subscriptions/{id}/refresh", admin.subscriptionProfileRefresh)
+	mux.HandleFunc("POST /api/v1/subscriptions/{id}/render", admin.subscriptionProfileRender)
+	mux.HandleFunc("POST /api/v1/subscriptions/{id}/preview", admin.subscriptionProfileRender)
+	mux.HandleFunc("POST /api/v1/subscriptions/{id}/trace", admin.subscriptionProfileTrace)
+	mux.HandleFunc("POST /api/v1/subscriptions/source/test", admin.subscriptionSourceTest)
+	mux.HandleFunc("POST /api/v1/subscriptions/source/debug", admin.subscriptionSourceDebug)
+	mux.HandleFunc("POST /api/v1/subscriptions/{id}/debug", admin.subscriptionProfileDebug)
+	mux.HandleFunc("GET /api/v1/custom-nodes", admin.customNodesGet)
+	mux.HandleFunc("POST /api/v1/custom-nodes", admin.customNodePost)
+	mux.HandleFunc("PUT /api/v1/custom-nodes/{id}", admin.customNodePut)
+	mux.HandleFunc("DELETE /api/v1/custom-nodes/{id}", admin.customNodeDelete)
 	mux.HandleFunc("GET /api/v1/configs/current", admin.configGet)
-	mux.HandleFunc("PUT /api/v1/configs/current", admin.configPut)
+	mux.HandleFunc("PUT /api/v1/configs/current", admin.configWriteRemoved)
 	mux.HandleFunc("POST /api/v1/configs/validate", admin.configValidate)
-	mux.HandleFunc("PATCH /api/v1/configs/common", admin.configCommon)
+	mux.HandleFunc("PATCH /api/v1/configs/common", admin.configWriteRemoved)
 	mux.HandleFunc("GET /api/v1/web", admin.webGet)
 	mux.HandleFunc("PATCH /api/v1/web", admin.webPatch)
 	mux.HandleFunc("GET /api/v1/ui", admin.uiGet)
@@ -624,18 +644,24 @@ func (admin *adminServer) coreRemove(writer http.ResponseWriter, request *http.R
 }
 
 func (admin *adminServer) subscriptionGet(writer http.ResponseWriter, request *http.Request) {
-	document, err := admin.manager.store.Read()
+	catalog, active, schedule, autoRestart, err := admin.manager.SubscriptionCatalog()
 	if err != nil {
 		admin.internalError(writer, err)
 		return
 	}
-	apiWriteJSON(writer, http.StatusOK, document.Subscription)
+	profile, err := subscriptions.FindProfile(&catalog, active)
+	if err != nil {
+		admin.internalError(writer, err)
+		return
+	}
+	apiWriteJSON(writer, http.StatusOK, map[string]any{"profile": profile, "interval": schedule.Interval, "last_check": schedule.LastCheck, "last_change": schedule.LastChange, "last_result": schedule.LastResult, "auto_restart": autoRestart})
 }
 
 func (admin *adminServer) subscriptionPatch(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
-		URL      *string `json:"url"`
-		Interval *string `json:"interval"`
+		URL         *string `json:"url"`
+		Interval    *string `json:"interval"`
+		AutoRestart *bool   `json:"auto_restart"`
 	}
 	if !admin.decode(writer, request, &input) {
 		return
@@ -657,25 +683,24 @@ func (admin *adminServer) subscriptionPatch(writer http.ResponseWriter, request 
 		}
 		changes = append(changes, change)
 	}
-	for index := range changes {
-		change := &changes[index]
-		if change.NeedsRestart {
-			reloaded, reloadErr := admin.manager.RequestReloadIfRunning()
-			if reloadErr != nil {
-				admin.internalError(writer, reloadErr)
-				return
-			}
-			if !reloaded {
-				change.Message += "; it will take effect the next time the managed core starts"
-			}
+	if input.AutoRestart != nil {
+		change, err := admin.manager.SetSubscriptionAutoRestart(*input.AutoRestart)
+		if err != nil {
+			admin.operationError(writer, err)
+			return
 		}
+		changes = append(changes, change)
 	}
 	apiWriteJSON(writer, http.StatusOK, map[string]any{"changes": changes})
 }
 
 func (admin *adminServer) subscriptionUpdate(writer http.ResponseWriter, request *http.Request) {
 	change, err := admin.manager.UpdateSubscription(request.Context())
-	admin.writeChange(writer, change, err)
+	if err != nil {
+		admin.operationError(writer, err)
+		return
+	}
+	apiWriteJSON(writer, http.StatusOK, change)
 }
 
 func (admin *adminServer) configGet(writer http.ResponseWriter, request *http.Request) {
@@ -687,15 +712,8 @@ func (admin *adminServer) configGet(writer http.ResponseWriter, request *http.Re
 	apiWriteJSON(writer, http.StatusOK, map[string]any{"hash": hash, "content": string(data)})
 }
 
-func (admin *adminServer) configPut(writer http.ResponseWriter, request *http.Request) {
-	var input struct {
-		Content string `json:"content"`
-	}
-	if !admin.decode(writer, request, &input) {
-		return
-	}
-	change, err := admin.manager.SaveConfigContent(request.Context(), []byte(input.Content))
-	admin.writeChange(writer, change, err)
+func (admin *adminServer) configWriteRemoved(writer http.ResponseWriter, _ *http.Request) {
+	apiWriteError(writer, http.StatusGone, "DIRECT_CONFIG_REMOVED", "generated configurations are read-only; edit a subscription profile instead", nil)
 }
 
 func (admin *adminServer) configValidate(writer http.ResponseWriter, request *http.Request) {
@@ -710,42 +728,6 @@ func (admin *adminServer) configValidate(writer http.ResponseWriter, request *ht
 		return
 	}
 	apiWriteJSON(writer, http.StatusOK, map[string]bool{"valid": true})
-}
-
-func (admin *adminServer) configCommon(writer http.ResponseWriter, request *http.Request) {
-	var patch map[string]any
-	if !admin.decode(writer, request, &patch) {
-		return
-	}
-	data, _, err := admin.manager.CurrentConfigContent()
-	if err != nil {
-		admin.operationError(writer, err)
-		return
-	}
-	var document map[string]any
-	if err := json.Unmarshal(data, &document); err != nil {
-		admin.operationError(writer, err)
-		return
-	}
-	allowed := map[string]bool{
-		"log.disabled": true, "log.level": true, "log.timestamp": true,
-		"dns.final": true, "dns.strategy": true, "dns.disable_cache": true,
-		"route.final": true, "route.auto_detect_interface": true,
-	}
-	for path, value := range patch {
-		if !allowed[path] {
-			apiWriteError(writer, http.StatusBadRequest, "UNSUPPORTED_CONFIG_FIELD", "unsupported common configuration field", path)
-			return
-		}
-		setJSONPath(document, path, value)
-	}
-	encoded, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		admin.internalError(writer, err)
-		return
-	}
-	change, err := admin.manager.SaveConfigContent(request.Context(), append(encoded, '\n'))
-	admin.writeChange(writer, change, err)
 }
 
 func (admin *adminServer) webGet(writer http.ResponseWriter, request *http.Request) {
@@ -1423,20 +1405,6 @@ func apiWriteJSON(writer http.ResponseWriter, status int, value any) {
 
 func apiWriteError(writer http.ResponseWriter, status int, code, message string, details any) {
 	apiWriteJSON(writer, status, apiError{Error: apiErrorBody{Code: code, Message: message, Details: details}})
-}
-
-func setJSONPath(document map[string]any, path string, value any) {
-	parts := strings.Split(path, ".")
-	current := document
-	for _, part := range parts[:len(parts)-1] {
-		next, ok := current[part].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			current[part] = next
-		}
-		current = next
-	}
-	current[parts[len(parts)-1]] = value
 }
 
 func valueOrNil[T any](value T, err error) any {

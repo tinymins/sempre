@@ -272,7 +272,7 @@ func TestRuntimeAPIUsesSessionOrLoopbackDaemonToken(t *testing.T) {
 	}
 }
 
-func TestRuntimeAPIConfigChangeDoesNotStartStoppedCore(t *testing.T) {
+func TestRuntimeAPIDirectConfigWriteIsRemoved(t *testing.T) {
 	t.Parallel()
 	manager := readyRuntimeManager(t)
 	if _, err := manager.ManagedRuntimeAction(RuntimeStop); err != nil {
@@ -291,7 +291,7 @@ func TestRuntimeAPIConfigChangeDoesNotStartStoppedCore(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	admin.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "next time the managed core starts") {
+	if recorder.Code != http.StatusGone || !strings.Contains(recorder.Body.String(), "DIRECT_CONFIG_REMOVED") {
 		t.Fatalf("config response = %d, %s", recorder.Code, recorder.Body.String())
 	}
 	select {

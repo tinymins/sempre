@@ -12,6 +12,7 @@ import (
 	"github.com/tinymins/sempre/internal/control"
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	"github.com/tinymins/sempre/internal/supervisor"
 )
 
@@ -88,7 +89,11 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 					return false, err
 				}
 				logf("%s", change.Message)
-				return change.Changed, nil
+				document, readErr := manager.store.Read()
+				if readErr != nil {
+					return false, readErr
+				}
+				return change.Changed && document.AutoRestart, nil
 			},
 			NextUpdate: manager.nextSubscriptionUpdate,
 			AcquireStart: func(plan supervisor.Plan) (func(), bool, error) {
@@ -381,7 +386,15 @@ func (manager *Manager) garbageCollectConfigs() error {
 
 func (manager *Manager) nextSubscriptionUpdate() (time.Duration, bool) {
 	document, err := manager.store.Read()
-	if err != nil || document.Subscription.URL == "" || document.Subscription.Interval == "off" {
+	if err != nil || document.Subscription.Interval == "off" {
+		return 0, false
+	}
+	catalog, err := manager.subscriptions.Read()
+	if err != nil {
+		return 0, false
+	}
+	profile, err := subscriptions.FindProfile(&catalog, document.ActiveProfileID)
+	if err != nil || !subscriptionProfileHasScheduledSources(*profile) {
 		return 0, false
 	}
 	interval, err := time.ParseDuration(document.Subscription.Interval)

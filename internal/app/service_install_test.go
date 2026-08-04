@@ -13,6 +13,7 @@ import (
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
 
 type recordingService struct {
@@ -196,6 +197,15 @@ func TestDataDeploymentCopiesStateAndReferencedConfigsOnly(t *testing.T) {
 	if err := state.WriteAtomic(source.paths.Config("sing-box", testHashB), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := state.WriteAtomic(filepath.Join(source.paths.Subscriptions, "source-marker"), []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(target.Subscriptions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.WriteAtomic(filepath.Join(target.Subscriptions, "stale-marker"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	document, err := source.store.Read()
 	if err != nil {
@@ -226,6 +236,133 @@ func TestDataDeploymentCopiesStateAndReferencedConfigsOnly(t *testing.T) {
 	if _, err := os.Stat(target.Config("sing-box", testHashB)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("unused config was copied: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(target.Subscriptions, "source-marker")); err != nil {
+		t.Fatalf("subscription data was not copied: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target.Subscriptions, "stale-marker")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale subscription data was retained: %v", err)
+	}
+}
+
+func TestSubscriptionInstallationPreservesExistingCatalog(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	if _, err := source.CreateSubscriptionProfile("portable"); err != nil {
+		t.Fatal(err)
+	}
+	target := layout.SystemAt(t.TempDir())
+	targetManager, err := New(target, bytes.NewBuffer(nil), bytes.NewBuffer(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	systemProfile, err := targetManager.CreateSubscriptionProfile("system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := state.NewDocument()
+	existing.Selected = &state.Selection{Core: "sing-box", Ref: "stable"}
+	operation, err := source.stageSubscriptionInstallation(target, existing, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer operation.cleanup()
+	if err := operation.activate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := operation.commit(); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := subscriptions.NewStore(target).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := subscriptions.FindProfile(&catalog, systemProfile.ID); err != nil {
+		t.Fatalf("existing system profile was not preserved: %v", err)
+	}
+	for _, profile := range catalog.Profiles {
+		if profile.Name == "portable" {
+			t.Fatal("portable catalog replaced the existing system catalog")
+		}
+	}
+}
+
+func TestSubscriptionOnlyInstallationPreservesExistingCatalog(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	if _, err := source.CreateSubscriptionProfile("portable"); err != nil {
+		t.Fatal(err)
+	}
+	target := layout.SystemAt(t.TempDir())
+	targetManager, err := New(target, bytes.NewBuffer(nil), bytes.NewBuffer(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, _, _, _, err := targetManager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	systemProfile := catalog.Profiles[0]
+	systemProfile.Name = "system"
+	if err := targetManager.subscriptions.Update(func(candidate *subscriptions.Catalog) error {
+		candidate.Profiles[0] = systemProfile
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	existing := state.NewDocument()
+	meaningful, err := source.meaningfulSubscriptionData(target, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !meaningful {
+		t.Fatal("configured subscription catalog was treated as empty without a selected core")
+	}
+	operation, err := source.stageSubscriptionInstallation(target, existing, meaningful)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer operation.cleanup()
+	if err := operation.activate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := operation.commit(); err != nil {
+		t.Fatal(err)
+	}
+	preserved, err := subscriptions.NewStore(target).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preserved.Profiles) != 1 || preserved.Profiles[0].Name != "system" {
+		t.Fatalf("subscription-only system catalog was not preserved: %#v", preserved.Profiles)
+	}
+}
+
+func TestSubscriptionInstallationMigratesLegacySystemURL(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	existing := state.NewDocument()
+	existing.Selected = &state.Selection{Core: "sing-box", Ref: "stable"}
+	existing.Subscription.URL = "https://system.example/subscription"
+	operation, err := source.stageSubscriptionInstallation(target, existing, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer operation.cleanup()
+	if err := operation.activate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := operation.commit(); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := subscriptions.NewStore(target).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Profiles) != 1 || len(catalog.Profiles[0].Sources) != 1 ||
+		catalog.Profiles[0].Sources[0].URL != existing.Subscription.URL {
+		t.Fatalf("legacy subscription was not migrated: %#v", catalog.Profiles)
+	}
 }
 
 func TestEmptySystemStateDoesNotRequireConfirmation(t *testing.T) {
@@ -254,13 +391,18 @@ func TestInstallMergeCopiesDeploymentIntoEmptySystemState(t *testing.T) {
 		ConfigHash: testHashA,
 	}
 	source.Configs["sing-box"] = testHashA
+	source.ActiveProfileID = "portable-profile"
+	source.AutoRestart = false
 
-	merged := mergeInstallDocument(source, state.NewDocument())
+	merged := mergeInstallDocument(source, state.NewDocument(), false)
 	if merged.Selected == nil || *merged.Selected != *source.Selected {
 		t.Fatalf("selected = %#v", merged.Selected)
 	}
 	if merged.Active == nil || *merged.Active != *source.Active {
 		t.Fatalf("active = %#v", merged.Active)
+	}
+	if merged.ActiveProfileID != source.ActiveProfileID || merged.AutoRestart != source.AutoRestart {
+		t.Fatalf("subscription settings = %q, %t", merged.ActiveProfileID, merged.AutoRestart)
 	}
 }
 
@@ -281,7 +423,7 @@ func TestInstallMergeCopiesDeploymentButPreservesStoppedIntent(t *testing.T) {
 
 	existing := state.NewDocument()
 	existing.DesiredState = state.DesiredStopped
-	merged := mergeInstallDocument(source, existing)
+	merged := mergeInstallDocument(source, existing, false)
 	if merged.Active == nil || *merged.Active != *source.Active {
 		t.Fatalf("active = %#v", merged.Active)
 	}

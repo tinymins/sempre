@@ -148,6 +148,128 @@ export interface Subscription {
   last_change?: string
   last_result?: string
 }
+
+export interface SubscriptionSource {
+  id: string
+  type: 'url' | 'raw'
+  enabled: boolean
+  url?: string
+  content?: string
+  prefix?: string
+  remark?: string
+  user_agent?: string
+  fetch_mode?: 'auto' | 'domestic-direct'
+  cache_ttl_minutes?: number
+  snapshot_hash?: string
+  fetched_at?: string
+  last_status?: string
+  last_error?: string
+}
+
+export interface ProxyGroup {
+  name: string
+  type: string
+  proxies?: string[]
+  include_all?: boolean
+  readonly?: boolean
+  url?: string
+  interval?: number
+  tolerance?: number
+}
+
+export interface RuleProvider { tag: string; url: string; outbound?: string; format?: string; behavior?: string }
+
+export interface SubscriptionDefaults {
+  groups: ProxyGroup[]
+  rule_providers: RuleProvider[]
+  filters: string[]
+  rules: string[]
+  dns: Record<string, unknown>
+}
+
+export interface SubscriptionProfile {
+  id: string
+  name: string
+  sources: SubscriptionSource[]
+  custom_node_ids: string[]
+  groups: ProxyGroup[]
+  rules: string[]
+  rule_providers: RuleProvider[]
+  filters: string[]
+  dns?: Record<string, unknown>
+  private_access?: Record<string, unknown>
+  custom_config?: Record<string, unknown>
+  use_system_groups: boolean
+  use_system_rules: boolean
+  use_system_filters: boolean
+  use_system_dns: boolean
+  use_system_custom_config: boolean
+  last_check?: string
+  last_change?: string
+  last_result?: string
+  last_config_hash?: string
+  last_runtime_validated: boolean
+  last_compiler_target?: string
+  last_compiler_warnings?: string[]
+}
+
+export interface CustomNode {
+  id: string
+  name: string
+  proxy: Record<string, unknown>
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SubscriptionTarget { format: string; version?: string; platform?: string }
+export interface SubscriptionCatalogResponse {
+  profiles: SubscriptionProfile[]
+  active_profile_id: string
+  schedule: Subscription
+  auto_restart: boolean
+  targets: SubscriptionTarget[]
+  defaults: SubscriptionDefaults
+}
+
+export interface SourceResult {
+  source: SubscriptionSource
+  parse: { format: string; nodes: Array<Record<string, unknown>>; discarded_placeholder_nodes: Array<Record<string, unknown>>; diagnostics: string[] }
+  from_cache: boolean
+  content_hash: string
+  bytes: number
+}
+
+export interface FieldOrigin {
+  source_key?: string
+  source_value?: unknown
+  step: string
+  transform: string
+  reason?: string
+  sources?: string[]
+}
+
+export interface FieldDiff {
+  node: string
+  consumed: string[]
+  ignored: string[]
+  dropped: string[]
+  warnings: string[]
+  outbound?: Record<string, unknown>
+  field_origins?: Record<string, FieldOrigin>
+}
+
+export interface RenderResult {
+  format: string
+  version?: string
+  platform?: string
+  content: string
+  node_count: number
+  source_results?: SourceResult[]
+  field_diffs?: FieldDiff[]
+  node_origins?: Record<string, string>
+  warnings?: string[]
+  runtime_validated: boolean
+}
 export interface UIManifest { schema: number; name: string; version: string; entry: string; api: { major: number } }
 export interface UIMetadata {
   manifest: UIManifest

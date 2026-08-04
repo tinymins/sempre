@@ -18,6 +18,7 @@ import (
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	uiassets "github.com/tinymins/sempre/internal/ui"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
@@ -51,19 +52,21 @@ func (manager *Manager) validateConfiguration(
 }
 
 type Manager struct {
-	paths       layout.Layout
-	store       *state.Store
-	registry    *core.Registry
-	output      io.Writer
-	errors      io.Writer
-	service     service.Controller
-	commands    commandRegistrar
-	web         *webconfig.Store
-	ui          *uiassets.Manager
-	reload      chan struct{}
-	lifecycleMu sync.Mutex
-	controlMu   sync.RWMutex
-	control     *control.Client
+	paths         layout.Layout
+	store         *state.Store
+	registry      *core.Registry
+	output        io.Writer
+	errors        io.Writer
+	service       service.Controller
+	commands      commandRegistrar
+	web           *webconfig.Store
+	subscriptions *subscriptions.Store
+	compiler      *subscriptions.Compiler
+	ui            *uiassets.Manager
+	reload        chan struct{}
+	lifecycleMu   sync.Mutex
+	controlMu     sync.RWMutex
+	control       *control.Client
 }
 
 func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
@@ -71,21 +74,44 @@ func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
 	if err := store.Initialize(); err != nil {
 		return nil, err
 	}
+	document, err := store.Read()
+	if err != nil {
+		return nil, err
+	}
+	subscriptionStore := subscriptions.NewStore(paths)
+	if err := subscriptionStore.Initialize(document.Subscription.URL); err != nil {
+		return nil, err
+	}
+	catalog, err := subscriptionStore.Read()
+	if err != nil {
+		return nil, err
+	}
+	if err := store.Update(func(document *state.Document) error {
+		if document.ActiveProfileID == "" {
+			document.ActiveProfileID = catalog.Profiles[0].ID
+		}
+		document.Subscription.URL = ""
+		return nil
+	}); err != nil {
+		return nil, err
+	}
 	webStore := webconfig.New(paths.WebConfig)
 	if err := webStore.Initialize(); err != nil {
 		return nil, err
 	}
 	return &Manager{
-		paths:    paths,
-		store:    store,
-		registry: core.NewRegistry(singbox.New()),
-		output:   output,
-		errors:   errorOutput,
-		service:  service.New(),
-		commands: platformCommandRegistrar{},
-		web:      webStore,
-		ui:       uiassets.New(paths.UI, paths.UICurrent),
-		reload:   make(chan struct{}, 1),
+		paths:         paths,
+		store:         store,
+		registry:      core.NewRegistry(singbox.New()),
+		output:        output,
+		errors:        errorOutput,
+		service:       service.New(),
+		commands:      platformCommandRegistrar{},
+		web:           webStore,
+		subscriptions: subscriptionStore,
+		compiler:      subscriptions.NewCompiler(subscriptionStore),
+		ui:            uiassets.New(paths.UI, paths.UICurrent),
+		reload:        make(chan struct{}, 1),
 	}, nil
 }
 

@@ -144,6 +144,8 @@ func (command *CLI) execute(ctx context.Context, arguments []string, options Opt
 		return command.core(ctx, arguments[1:], options)
 	case "subscription":
 		return command.subscription(ctx, arguments[1:], options)
+	case "custom-node":
+		return command.customNode(ctx, arguments[1:], options)
 	case "config":
 		return command.config(ctx, arguments[1:], options)
 	case "service":
@@ -160,7 +162,11 @@ func (command *CLI) execute(ctx context.Context, arguments []string, options Opt
 			return usageError()
 		}
 		change, err := command.manager.UpdateSubscription(ctx)
-		return command.finishChange(ctx, change, options, err)
+		if err != nil {
+			return err
+		}
+		command.printChange(change)
+		return nil
 	case "status":
 		if len(arguments) != 1 {
 			return usageError()
@@ -261,46 +267,7 @@ func (command *CLI) core(ctx context.Context, arguments []string, options Option
 }
 
 func (command *CLI) subscription(ctx context.Context, arguments []string, options Options) error {
-	if len(arguments) == 0 {
-		return usageError()
-	}
-	switch arguments[0] {
-	case "set":
-		if len(arguments) != 2 {
-			return usageError()
-		}
-		change, err := command.manager.SetSubscription(ctx, arguments[1])
-		return command.finishChange(ctx, change, options, err)
-	case "update":
-		if len(arguments) != 1 {
-			return usageError()
-		}
-		change, err := command.manager.UpdateSubscription(ctx)
-		return command.finishChange(ctx, change, options, err)
-	case "schedule":
-		if len(arguments) != 2 {
-			return usageError()
-		}
-		change, err := command.manager.SetSubscriptionSchedule(arguments[1])
-		return command.finishChange(ctx, change, options, err)
-	case "status":
-		if len(arguments) != 1 {
-			return usageError()
-		}
-		output, err := command.manager.SubscriptionStatus()
-		if err == nil {
-			fmt.Fprintln(command.output, output)
-		}
-		return err
-	case "clear":
-		if len(arguments) != 1 {
-			return usageError()
-		}
-		change, err := command.manager.ClearSubscription()
-		return command.finishChange(ctx, change, options, err)
-	default:
-		return usageError()
-	}
+	return command.subscriptionCommand(ctx, arguments, options)
 }
 
 func (command *CLI) config(ctx context.Context, arguments []string, options Options) error {
@@ -308,7 +275,11 @@ func (command *CLI) config(ctx context.Context, arguments []string, options Opti
 		return usageError()
 	}
 	change, err := command.manager.ImportConfig(ctx, arguments[1])
-	return command.finishChange(ctx, change, options, err)
+	if err != nil {
+		return err
+	}
+	command.printChange(change)
+	return nil
 }
 
 func (command *CLI) service(ctx context.Context, arguments []string, options Options) error {
@@ -647,11 +618,14 @@ Core versions:
   sempre run [--core core[:owner/repository]@stable|core[:owner/repository]@version]
 
 Configuration:
-  sempre subscription set <https-url>
-  sempre subscription update
+  sempre subscription <list|create|show|save|use|remove|update|render|debug>
+  sempre subscription source <add-url|add-raw|remove|test>
+  sempre subscription set <http-or-https-url>
   sempre subscription schedule <duration|off>
+  sempre subscription auto-restart <true|false>
   sempre subscription status
   sempre subscription clear
+  sempre custom-node <list|add|update|remove>
   sempre config import <file>
   sempre update
 
@@ -668,6 +642,7 @@ Modes:
   sempre --portable <command>     Use .sempre beside the executable
   sempre portable enable|disable Manage the .sempre-portable marker
 
-Mutating commands accept --yes to restart a running managed core without
+Core mutation commands accept --yes to restart a running managed core without
 prompting, or --no-restart to save the change without restarting it.
+Subscription profile changes are always staged without an interactive restart.
 `

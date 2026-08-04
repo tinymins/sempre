@@ -1,27 +1,24 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import CodeMirror from '@uiw/react-codemirror'
-import { json } from '@codemirror/lang-json'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { Activity, CheckCircle2, Download, FileJson, KeyRound, Package, Power, RefreshCw, Save, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { Activity, Download, KeyRound, Package, Power, RefreshCw, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import { api, uploadUI } from '../lib/api'
 import { compactHash, formatDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { CoresResponse, ManagedRuntimeStatus, Subscription, SystemStatus, UIMetadata } from '../lib/types'
+import type { CoresResponse, ManagedRuntimeStatus, SystemStatus, UIMetadata } from '../lib/types'
 import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { RuntimeControlPanel } from '../components/RuntimeControlPanel'
 
-type Tab = 'runtime' | 'core' | 'subscription' | 'config' | 'web'
+type Tab = 'runtime' | 'core' | 'web'
 type ChangeResult = { NeedsRestart?: boolean; changes?: ChangeResult[] }
 
 export function Management() {
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('runtime')
   const tabs: Array<{ value: Tab; label: string; icon: typeof Package }> = [
-    { value: 'runtime', label: t('runtimeTab'), icon: Activity }, { value: 'core', label: t('coreTab'), icon: Package }, { value: 'subscription', label: t('subscriptionTab'), icon: Download },
-    { value: 'config', label: t('configTab'), icon: FileJson }, { value: 'web', label: t('webUITab'), icon: ServerCog },
+    { value: 'runtime', label: t('runtimeTab'), icon: Activity }, { value: 'core', label: t('coreTab'), icon: Package }, { value: 'web', label: t('webUITab'), icon: ServerCog },
   ]
-  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'runtime' ? <RuntimeControlPanel /> : tab === 'core' ? <CorePanel /> : tab === 'subscription' ? <SubscriptionPanel /> : tab === 'config' ? <ConfigPanel /> : <WebUIPanel />}</div>
+  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'runtime' ? <RuntimeControlPanel /> : tab === 'core' ? <CorePanel /> : <WebUIPanel />}</div>
 }
 
 function CorePanel() {
@@ -45,56 +42,6 @@ function CorePanel() {
       const selected = cores.data?.selected?.core === item.core && selectedRepository === itemRepository && (cores.data.selected.ref === item.version || item.channels.includes(cores.data.selected.ref))
       return <tr key={item.reference} className="border-t border-[var(--border)]"><td className="px-3 py-3 font-medium">{item.core}</td><td className="px-3 py-3"><div className="flex items-center gap-2"><Badge tone={item.official ? 'success' : 'warning'}>{item.official ? t('official') : t('custom')}</Badge><span className="font-mono text-xs text-[var(--muted)]">{item.repository}</span></div></td><td className="px-3 py-3 font-mono text-xs">{item.version}</td><td className="px-3 py-3">{item.channels.map((channel) => <Badge key={channel}>{channel}</Badge>)}</td><td className="px-3 py-3 text-xs text-[var(--muted)]">{compactHash(item.installation.digest)} · {formatDate(item.installation.installed_at)}</td><td className="px-3 py-2 text-right"><div className="flex justify-end gap-2">{selected ? <Badge tone="success">{t('selected')}</Badge> : <Button size="small" onClick={() => action.mutate({ operation: 'use', value: item.reference })}>{t('use')}</Button>}<Button size="icon" variant="ghost" title={t('remove')} disabled={selected} onClick={() => action.mutate({ operation: 'remove', value: item.reference })}><Trash2 size={15} /></Button></div></td></tr>
     })}</tbody></table></div>
-  </Section>
-}
-
-function SubscriptionPanel() {
-  const { t } = useI18n()
-  const { session } = useSession()
-  const queryClient = useQueryClient()
-  const [urlDraft, setURL] = useState<string | null>(null)
-  const [intervalDraft, setIntervalValue] = useState<string | null>(null)
-  const [notice, setNotice] = useState('')
-  const subscription = useQuery({ queryKey: ['subscription'], queryFn: () => api<Subscription>(session!, '/subscription') })
-  const url = urlDraft ?? subscription.data?.url ?? ''
-  const interval = intervalDraft ?? subscription.data?.interval ?? '24h'
-  const mutate = useMutation({
-    mutationFn: (update: boolean) => api<ChangeResult>(session!, update ? '/subscription/update' : '/subscription', { method: update ? 'POST' : 'PATCH', body: update ? undefined : JSON.stringify({ url, interval }) }),
-    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); setURL(null); setIntervalValue(null); queryClient.invalidateQueries({ queryKey: ['subscription'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) }, onError: (error) => setNotice(error.message),
-  })
-  return <Section title={t('subscriptionTab')} icon={<Download size={18} />} notice={notice}><div className="grid max-w-3xl gap-5"><Field label={t('subscriptionURL')}><Input value={url} onChange={(event) => setURL(event.target.value)} placeholder="https://example.com/config.json" /></Field><Field label={t('schedule')}><Input value={interval} onChange={(event) => setIntervalValue(event.target.value)} placeholder="24h or off" /></Field><div className="flex gap-2"><Button variant="primary" disabled={mutate.isPending} onClick={() => mutate.mutate(false)}><Save size={16} />{t('save')}</Button><Button disabled={mutate.isPending || !subscription.data?.url} onClick={() => mutate.mutate(true)}><RefreshCw size={16} />{t('updateNow')}</Button></div>{subscription.data?.last_result ? <div className="grid grid-cols-2 gap-4 border-t border-[var(--border)] pt-5 text-sm"><Info label={t('lastResult')} value={subscription.data.last_result} /><Info label={t('update')} value={formatDate(subscription.data.last_check)} /></div> : null}</div></Section>
-}
-
-function ConfigPanel() {
-  const { t } = useI18n()
-  const { session } = useSession()
-  const queryClient = useQueryClient()
-  const [mode, setMode] = useState<'common' | 'json'>('common')
-  const [contentDraft, setContent] = useState<string | null>(null)
-  const [notice, setNotice] = useState('')
-  const current = useQuery({ queryKey: ['config'], queryFn: () => api<{ hash: string; content: string }>(session!, '/configs/current'), retry: false })
-  const content = contentDraft ?? current.data?.content ?? '{}\n'
-  const parsed = useMemo(() => { try { return JSON.parse(content) as Record<string, any> } catch { return {} } }, [content])
-  const save = useMutation({
-    mutationFn: (validateOnly: boolean) => api<ChangeResult>(session!, validateOnly ? '/configs/validate' : '/configs/current', { method: validateOnly ? 'POST' : 'PUT', body: JSON.stringify({ content }) }),
-    onSuccess: (result, validateOnly) => { setNotice(validateOnly ? t('validated') : changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); if (!validateOnly) setContent(null); queryClient.invalidateQueries({ queryKey: ['config'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) }, onError: (error) => setNotice(error.message),
-  })
-  const patchCommon = useMutation({
-    mutationFn: (patch: Record<string, unknown>) => api<ChangeResult>(session!, '/configs/common', { method: 'PATCH', body: JSON.stringify(patch) }),
-    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); setContent(null); queryClient.invalidateQueries({ queryKey: ['config'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }); current.refetch() }, onError: (error) => setNotice(error.message),
-  })
-  function commonPatch() {
-    patchCommon.mutate({
-      'log.level': parsed.log?.level || 'info', 'log.disabled': Boolean(parsed.log?.disabled), 'log.timestamp': parsed.log?.timestamp !== false,
-      'dns.final': parsed.dns?.final || '', 'dns.strategy': parsed.dns?.strategy || '', 'dns.disable_cache': Boolean(parsed.dns?.disable_cache),
-      'route.final': parsed.route?.final || '', 'route.auto_detect_interface': Boolean(parsed.route?.auto_detect_interface),
-    })
-  }
-  const updateLocal = (path: string, value: unknown) => { const copy = structuredClone(parsed); setPath(copy, path, value); setContent(`${JSON.stringify(copy, null, 2)}\n`) }
-  return <Section title={t('configTab')} icon={<FileJson size={18} />} notice={notice}>
-    <div className="mb-5 flex h-9 w-fit rounded-md bg-[var(--surface-hover)] p-1"><button className={`rounded px-3 text-sm ${mode === 'common' ? 'bg-[var(--surface)] font-medium shadow-sm' : 'text-[var(--muted)]'}`} onClick={() => setMode('common')}>{t('commonSettings')}</button><button className={`rounded px-3 text-sm ${mode === 'json' ? 'bg-[var(--surface)] font-medium shadow-sm' : 'text-[var(--muted)]'}`} onClick={() => setMode('json')}>{t('jsonEditor')}</button></div>
-    {mode === 'common' ? <div className="grid max-w-4xl gap-5 md:grid-cols-2"><Field label={t('logLevel')}><select className="h-9 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-sm" value={parsed.log?.level || 'info'} onChange={(event) => updateLocal('log.level', event.target.value)}>{['trace','debug','info','warn','error','fatal','panic'].map((value) => <option key={value}>{value}</option>)}</select></Field><Field label={t('routeFinal')}><Input value={parsed.route?.final || ''} onChange={(event) => updateLocal('route.final', event.target.value)} /></Field><Field label={t('dnsFinal')}><Input value={parsed.dns?.final || ''} onChange={(event) => updateLocal('dns.final', event.target.value)} /></Field><Field label="DNS strategy"><select className="h-9 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-sm" value={parsed.dns?.strategy || ''} onChange={(event) => updateLocal('dns.strategy', event.target.value)}><option value="">default</option>{['prefer_ipv4','prefer_ipv6','ipv4_only','ipv6_only'].map((value) => <option key={value}>{value}</option>)}</select></Field><Toggle label={t('autoInterface')} checked={Boolean(parsed.route?.auto_detect_interface)} onChange={(value) => updateLocal('route.auto_detect_interface', value)} /><Toggle label="DNS cache" checked={!parsed.dns?.disable_cache} onChange={(value) => updateLocal('dns.disable_cache', !value)} /><div className="md:col-span-2"><Button variant="primary" disabled={patchCommon.isPending} onClick={commonPatch}><Save size={16} />{t('apply')}</Button></div></div> : <div className="overflow-hidden rounded-lg border border-[var(--border)]"><CodeMirror value={content} height="min(62vh, 720px)" extensions={[json()]} theme="dark" onChange={setContent} basicSetup={{ foldGutter: true, lineNumbers: true, highlightActiveLine: true }} /></div>}
-    <div className="mt-5 flex items-center gap-2"><Button disabled={save.isPending} onClick={() => save.mutate(true)}><CheckCircle2 size={16} />{t('validate')}</Button><Button variant="primary" disabled={save.isPending} onClick={() => save.mutate(false)}>{save.isPending ? <Spinner /> : <Save size={16} />}{t('save')}</Button>{current.data?.hash ? <span className="ml-auto font-mono text-xs text-[var(--muted)]">{compactHash(current.data.hash)}</span> : null}</div>
   </Section>
 }
 
@@ -136,22 +83,9 @@ function Section({ title, icon, notice, children }: { title: string; icon: React
   return <Card className="min-w-0 p-4 md:p-5"><div className="mb-5 flex items-center gap-2"><span className="text-emerald-600">{icon}</span><h2 className="text-sm font-semibold">{title}</h2></div>{notice ? <div className="mb-4 border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}{children}</Card>
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
-  return <label className="flex h-10 items-center justify-between rounded-md border border-[var(--border)] px-3 text-sm font-medium"><span>{label}</span><input className="size-4 accent-emerald-600" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /></label>
-}
-
-function Info({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-[var(--muted)]">{label}</p><p className="mt-1 font-medium">{value}</p></div> }
-
 function changeNotice(result: ChangeResult, queryClient: QueryClient, completed: string, deferred: string) {
   const needsRestart = Boolean(result.NeedsRestart || result.changes?.some((change) => change.NeedsRestart))
   const system = queryClient.getQueryData<SystemStatus>(['system'])
   const runtime = queryClient.getQueryData<ManagedRuntimeStatus>(['runtime', 'status'])
   return needsRestart && (system?.desired_state === 'stopped' || runtime?.desired_state === 'stopped') ? deferred : completed
-}
-
-function setPath(document: Record<string, any>, path: string, value: unknown) {
-  const parts = path.split('.')
-  let current = document
-  for (const part of parts.slice(0, -1)) { if (!current[part] || typeof current[part] !== 'object') current[part] = {}; current = current[part] }
-  current[parts.at(-1)!] = value
 }

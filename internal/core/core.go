@@ -108,6 +108,13 @@ type RuntimeSpec struct {
 	Control ControlSpec
 }
 
+type CompilerTarget struct {
+	Format   string
+	Version  string
+	Platform string
+	Warnings []string
+}
+
 type RuntimePreparer interface {
 	PrepareRuntime(string, string) (RuntimeSpec, error)
 }
@@ -118,6 +125,7 @@ type Adapter interface {
 	Resolve(context.Context, string, string, Target) (Package, error)
 	ExecutableName(Target) string
 	Version(context.Context, string) (string, error)
+	CompilerTarget(string, Target) (CompilerTarget, error)
 	Validate(context.Context, string, string, string, io.Writer, io.Writer) error
 	Run(string, string, string) RunSpec
 }

@@ -121,3 +121,38 @@ export async function streamEvents(
     }
   }
 }
+
+export async function streamRequest(
+  session: Session,
+  path: string,
+  body: unknown,
+  onEvent: (event: string, data: unknown) => void,
+) {
+  const response = await fetch(`${session.baseURL}/api/v1${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.token}`, Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) await parseResponse(response)
+  if (!response.body) throw new Error('Streaming response has no body')
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) return
+    buffer += value
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      const block = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      let event = 'message'
+      const data: string[] = []
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim()
+        if (line.startsWith('data:')) data.push(line.slice(5).trim())
+      }
+      if (data.length) onEvent(event, JSON.parse(data.join('\n')))
+      boundary = buffer.indexOf('\n\n')
+    }
+  }
+}

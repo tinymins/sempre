@@ -6,15 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/tinymins/sempre/internal/buildinfo"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
 
 const MaxConfigSize = int64(32 << 20)
@@ -22,26 +19,7 @@ const MaxConfigSize = int64(32 << 20)
 var errConfigurationValidation = errors.New("configuration validation failed")
 
 func (manager *Manager) ImportConfig(ctx context.Context, source string) (Change, error) {
-	var change Change
-	err := manager.withOperation(func() error {
-		var err error
-		change, err = manager.importConfig(ctx, source)
-		return err
-	})
-	return change, err
-}
-
-func (manager *Manager) SaveConfigContent(ctx context.Context, data []byte) (Change, error) {
-	if int64(len(data)) > MaxConfigSize {
-		return Change{}, fmt.Errorf("configuration exceeds %d bytes", MaxConfigSize)
-	}
-	var change Change
-	err := manager.withOperation(func() error {
-		var err error
-		change, err = manager.activateConfig(ctx, data, nil)
-		return err
-	})
-	return change, err
+	return manager.importSubscriptionSource(ctx, source)
 }
 
 func (manager *Manager) CurrentConfigContent() ([]byte, string, error) {
@@ -98,98 +76,107 @@ func (manager *Manager) ValidateConfigContent(ctx context.Context, data []byte) 
 	)
 }
 
-func (manager *Manager) importConfig(ctx context.Context, source string) (Change, error) {
-	file, err := os.Open(source)
-	if err != nil {
-		return Change{}, fmt.Errorf("open configuration: %w", err)
-	}
-	defer file.Close()
-	data, err := readLimited(file, MaxConfigSize)
-	if err != nil {
-		return Change{}, err
-	}
-	return manager.activateConfig(ctx, data, nil)
-}
-
 func (manager *Manager) SetSubscription(ctx context.Context, value string) (Change, error) {
-	var change Change
-	err := manager.withOperation(func() error {
-		var err error
-		change, err = manager.setSubscription(ctx, value)
-		return err
-	})
-	return change, err
+	return manager.setSubscription(ctx, value)
 }
 
 func (manager *Manager) setSubscription(ctx context.Context, value string) (Change, error) {
 	if strings.TrimSpace(value) == "" {
 		return manager.clearSubscription()
 	}
-	parsed, err := validateSubscriptionURL(value)
+	catalog, profile, _, err := manager.activeProfile()
+	_ = catalog
 	if err != nil {
 		return Change{}, err
 	}
-	normalized := parsed.String()
-	return manager.downloadSubscription(ctx, normalized, true, false)
+	candidate := *profile
+	candidate.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceURL, Enabled: true, URL: strings.TrimSpace(value), UserAgent: subscriptions.DefaultUserAgent, FetchMode: subscriptions.FetchAuto}}
+	change, _, err := manager.SaveSubscriptionProfile(ctx, candidate.ID, candidate)
+	return change, err
 }
 
 func (manager *Manager) ClearSubscription() (Change, error) {
+	return manager.clearSubscription()
+}
+
+func (manager *Manager) clearSubscription() (Change, error) {
 	var change Change
 	err := manager.withOperation(func() error {
-		var err error
-		change, err = manager.clearSubscription()
-		return err
+		var clearErr error
+		change, clearErr = manager.clearSubscriptionUnlocked()
+		return clearErr
 	})
 	return change, err
 }
 
-func (manager *Manager) clearSubscription() (Change, error) {
-	change := Change{}
-	err := manager.store.Update(func(document *state.Document) error {
-		if document.Subscription.URL == "" &&
-			document.Subscription.LastCheck.IsZero() &&
-			document.Subscription.LastChange.IsZero() &&
-			document.Subscription.LastResult == "" {
-			return nil
+func (manager *Manager) clearSubscriptionUnlocked() (Change, error) {
+	_, profile, _, err := manager.activeProfile()
+	if err != nil {
+		return Change{}, err
+	}
+	if len(profile.Sources) == 0 {
+		return Change{Message: "subscription sources are already clear"}, nil
+	}
+	err = manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
+		item, err := subscriptions.FindProfile(catalog, profile.ID)
+		if err != nil {
+			return err
 		}
-		document.Subscription.URL = ""
-		document.Subscription.LastCheck = time.Time{}
-		document.Subscription.LastChange = time.Time{}
-		document.Subscription.LastResult = ""
-		change.Changed = true
-		change.NeedsRestart = true
+		item.Sources = []subscriptions.Source{}
 		return nil
 	})
 	if err != nil {
 		return Change{}, err
 	}
-	if change.Changed {
-		change.Message = "subscription cleared; the active configuration was retained"
-	} else {
-		change.Message = "subscription is already clear"
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Subscription.URL = ""
+		document.Subscription.LastCheck = time.Time{}
+		document.Subscription.LastChange = time.Time{}
+		document.Subscription.LastResult = ""
+		return nil
+	}); err != nil {
+		return Change{}, err
 	}
-	return change, nil
+	return Change{Changed: true, Message: "subscription sources cleared; the active configuration was retained"}, nil
 }
 
 func (manager *Manager) UpdateSubscription(ctx context.Context) (Change, error) {
-	var change Change
-	err := manager.withOperation(func() error {
-		var err error
-		change, err = manager.updateSubscription(ctx)
-		return err
-	})
-	return change, err
+	return manager.updateSubscription(ctx)
 }
 
 func (manager *Manager) updateSubscription(ctx context.Context) (Change, error) {
-	document, err := manager.store.Read()
+	_, profile, _, err := manager.activeProfile()
 	if err != nil {
 		return Change{}, err
 	}
-	if document.Subscription.URL == "" {
-		return Change{}, fmt.Errorf("no subscription URL is configured")
+	if !subscriptionProfileHasInputs(*profile) {
+		return Change{}, fmt.Errorf("the active subscription profile has no enabled sources or custom nodes")
 	}
-	return manager.downloadSubscription(ctx, document.Subscription.URL, false, true)
+	change, _, err := manager.RefreshSubscriptionProfile(ctx, profile.ID)
+	if err == nil {
+		return change, nil
+	}
+	now := time.Now().UTC()
+	recordErr := manager.store.Update(func(document *state.Document) error {
+		document.Subscription.LastCheck = now
+		document.Subscription.LastResult = "update failed"
+		return nil
+	})
+	if recordErr == nil {
+		recordErr = manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
+			stored, findErr := subscriptions.FindProfile(catalog, profile.ID)
+			if findErr != nil {
+				return findErr
+			}
+			stored.LastCheck = now
+			stored.LastResult = err.Error()
+			return nil
+		})
+	}
+	if recordErr != nil {
+		return Change{}, errors.Join(err, fmt.Errorf("record subscription failure: %w", recordErr))
+	}
+	return Change{}, err
 }
 
 func (manager *Manager) SetSubscriptionSchedule(value string) (Change, error) {
@@ -221,7 +208,6 @@ func (manager *Manager) setSubscriptionSchedule(value string) (Change, error) {
 		}
 		document.Subscription.Interval = value
 		change.Changed = true
-		change.NeedsRestart = true
 		return nil
 	})
 	if err != nil {
@@ -236,17 +222,17 @@ func (manager *Manager) setSubscriptionSchedule(value string) (Change, error) {
 }
 
 func (manager *Manager) SubscriptionStatus() (string, error) {
-	document, err := manager.store.Read()
+	catalog, profile, document, err := manager.activeProfile()
+	_ = catalog
 	if err != nil {
 		return "", err
 	}
 	var builder strings.Builder
-	if document.Subscription.URL == "" {
-		fmt.Fprintln(&builder, "URL: not configured")
-	} else {
-		fmt.Fprintln(&builder, "URL:", redactedURL(document.Subscription.URL))
-	}
+	fmt.Fprintln(&builder, "Profile:", profile.Name)
+	fmt.Fprintln(&builder, "Profile ID:", profile.ID)
+	fmt.Fprintln(&builder, "Sources:", len(profile.Sources))
 	fmt.Fprintln(&builder, "Schedule:", document.Subscription.Interval)
+	fmt.Fprintln(&builder, "Automatic restart:", document.AutoRestart)
 	if !document.Subscription.LastCheck.IsZero() {
 		fmt.Fprintln(&builder, "Last check:", document.Subscription.LastCheck.Format(time.RFC3339))
 	}
@@ -256,73 +242,10 @@ func (manager *Manager) SubscriptionStatus() (string, error) {
 	if !document.Subscription.LastChange.IsZero() {
 		fmt.Fprintln(&builder, "Last change:", document.Subscription.LastChange.Format(time.RFC3339))
 	}
-	if next, ok := nextSubscriptionCheck(document.Subscription); ok {
+	if next, ok := nextSubscriptionCheck(document.Subscription, subscriptionProfileHasScheduledSources(*profile)); ok {
 		fmt.Fprintln(&builder, "Next check:", next.Format(time.RFC3339))
 	}
 	return strings.TrimRight(builder.String(), "\n"), nil
-}
-
-func (manager *Manager) downloadSubscription(
-	ctx context.Context,
-	value string,
-	saveURL bool,
-	recordFailures bool,
-) (Change, error) {
-	parsed, err := validateSubscriptionURL(value)
-	if err != nil {
-		return Change{}, err
-	}
-	client := &http.Client{
-		Timeout: 5 * time.Minute,
-		CheckRedirect: func(request *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("too many redirects")
-			}
-			if !strings.EqualFold(request.URL.Scheme, "https") {
-				return fmt.Errorf("refuse non-HTTPS redirect")
-			}
-			return nil
-		},
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
-	if err != nil {
-		return Change{}, err
-	}
-	request.Header.Set("User-Agent", "Sempre/"+buildinfo.Version)
-	response, err := client.Do(request)
-	if err != nil {
-		failure := fmt.Errorf("download subscription from %s failed: %s", redactedURL(value), safeNetworkError(err))
-		return manager.subscriptionFailure(failure, "download failed", recordFailures)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		failure := fmt.Errorf("download subscription from %s: HTTP %s", redactedURL(value), response.Status)
-		return manager.subscriptionFailure(failure, "HTTP "+response.Status, recordFailures)
-	}
-	data, err := readLimited(response.Body, MaxConfigSize)
-	if err != nil {
-		return manager.subscriptionFailure(err, "download rejected", recordFailures)
-	}
-	change, err := manager.activateConfig(ctx, data, func(document *state.Document, changed bool) {
-		if saveURL {
-			document.Subscription.URL = parsed.String()
-		}
-		document.Subscription.LastCheck = time.Now().UTC()
-		if changed {
-			document.Subscription.LastChange = document.Subscription.LastCheck
-			document.Subscription.LastResult = "configuration updated"
-		} else {
-			document.Subscription.LastResult = "no change"
-		}
-	})
-	if err != nil {
-		result := "configuration activation failed"
-		if errors.Is(err, errConfigurationValidation) {
-			result = "configuration validation failed"
-		}
-		return manager.subscriptionFailure(err, result, recordFailures)
-	}
-	return change, nil
 }
 
 func (manager *Manager) activateConfig(
@@ -420,69 +343,6 @@ func (manager *Manager) activateConfig(
 	return change, nil
 }
 
-func (manager *Manager) subscriptionFailure(failure error, result string, record bool) (Change, error) {
-	if !record {
-		return Change{}, failure
-	}
-	if err := manager.recordSubscriptionResult(result); err != nil {
-		return Change{}, errors.Join(failure, fmt.Errorf("record subscription result: %w", err))
-	}
-	return Change{}, failure
-}
-
-func (manager *Manager) recordSubscriptionResult(result string) error {
-	return manager.store.Update(func(document *state.Document) error {
-		document.Subscription.LastCheck = time.Now().UTC()
-		document.Subscription.LastResult = result
-		return nil
-	})
-}
-
-func validateSubscriptionURL(value string) (*url.URL, error) {
-	value = strings.TrimSpace(value)
-	if value == "" || strings.ContainsAny(value, "\r\n") {
-		return nil, fmt.Errorf("subscription URL must be one absolute HTTPS URL")
-	}
-	parsed, err := url.Parse(value)
-	if err != nil ||
-		!strings.EqualFold(parsed.Scheme, "https") ||
-		parsed.Hostname() == "" ||
-		parsed.User != nil {
-		return nil, fmt.Errorf("subscription URL must be one absolute HTTPS URL without user information")
-	}
-	return parsed, nil
-}
-
-func redactedURL(value string) string {
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Hostname() == "" {
-		return "<redacted>"
-	}
-	return parsed.Scheme + "://" + parsed.Host
-}
-
-func safeNetworkError(err error) string {
-	var urlError *url.Error
-	if errors.As(err, &urlError) && urlError.Err != nil {
-		return urlError.Err.Error()
-	}
-	return "network request failed"
-}
-
-func readLimited(reader io.Reader, limit int64) ([]byte, error) {
-	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("configuration exceeds %d bytes", limit)
-	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("configuration is empty")
-	}
-	return data, nil
-}
-
 func shortHash(hash string) string {
 	if len(hash) > 12 {
 		return hash[:12]
@@ -490,8 +350,8 @@ func shortHash(hash string) string {
 	return hash
 }
 
-func nextSubscriptionCheck(subscription state.Subscription) (time.Time, bool) {
-	if subscription.URL == "" || subscription.Interval == "off" {
+func nextSubscriptionCheck(subscription state.Subscription, hasSources bool) (time.Time, bool) {
+	if !hasSources || subscription.Interval == "off" {
 		return time.Time{}, false
 	}
 	interval, err := time.ParseDuration(subscription.Interval)

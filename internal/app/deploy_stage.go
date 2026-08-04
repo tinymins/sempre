@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
 
 func (manager *Manager) stageDeployment(
@@ -59,6 +62,15 @@ func (manager *Manager) stageDeployment(
 			return fail(err)
 		}
 		operations = append(operations, configs)
+		subscriptionData, err := stageDirectoryFromSources(
+			target.Subscriptions,
+			0o600,
+			manager.paths.Subscriptions,
+		)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, subscriptionData)
 		stateFile, err := stageStateFile(target.State, deploymentDocument(document))
 		if err != nil {
 			return fail(err)
@@ -111,7 +123,21 @@ func (manager *Manager) stageInstallation(
 		return fail(err)
 	}
 	operations = append(operations, configs)
-	merged := mergeInstallDocument(source, existing)
+	preserveSubscriptions, err := manager.meaningfulSubscriptionData(target, existing)
+	if err != nil {
+		return fail(err)
+	}
+	existingSubscriptionWins := meaningfulDeploymentState(existing) || preserveSubscriptions
+	subscriptionData, err := manager.stageSubscriptionInstallation(
+		target,
+		existing,
+		existingSubscriptionWins,
+	)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, subscriptionData)
+	merged := mergeInstallDocument(source, existing, existingSubscriptionWins)
 	stateFile, err := stageStateFile(target.State, merged)
 	if err != nil {
 		return fail(err)
@@ -121,16 +147,20 @@ func (manager *Manager) stageInstallation(
 }
 
 func (manager *Manager) stageMergedDirectory(source, target string, mode os.FileMode) (*swapOperation, error) {
+	sources := []string{target}
+	if !sameFile(source, target) {
+		sources = append(sources, source)
+	}
+	return stageDirectoryFromSources(target, mode, sources...)
+}
+
+func stageDirectoryFromSources(target string, mode os.FileMode, sources ...string) (*swapOperation, error) {
 	staging, err := stageDirectory(target)
 	if err != nil {
 		return nil, err
 	}
 	operation := &swapOperation{staged: staging, target: target}
-	if err := copyDirectoryIfExists(target, staging, mode); err != nil {
-		operation.cleanup()
-		return nil, err
-	}
-	if !sameFile(source, target) {
+	for _, source := range sources {
 		if err := copyDirectoryIfExists(source, staging, mode); err != nil {
 			operation.cleanup()
 			return nil, err
@@ -139,7 +169,49 @@ func (manager *Manager) stageMergedDirectory(source, target string, mode os.File
 	return operation, nil
 }
 
-func mergeInstallDocument(source, existing state.Document) state.Document {
+func (manager *Manager) stageSubscriptionInstallation(
+	target layout.Layout,
+	existing state.Document,
+	existingWins bool,
+) (*swapOperation, error) {
+	sources := []string{target.Subscriptions, manager.paths.Subscriptions}
+	if existingWins {
+		sources[0], sources[1] = sources[1], sources[0]
+	}
+	operation, err := stageDirectoryFromSources(target.Subscriptions, 0o600, sources...)
+	if err != nil {
+		return nil, err
+	}
+	if !existingWins {
+		return operation, nil
+	}
+	if _, err := os.Stat(target.SubscriptionStore); err == nil {
+		return operation, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		operation.cleanup()
+		return nil, err
+	}
+
+	// An older installation has no catalog yet. Preserve its legacy URL (or its
+	// empty subscription state) instead of adopting the portable catalog.
+	if err := os.Remove(filepath.Join(operation.staged, filepath.Base(target.SubscriptionStore))); err != nil &&
+		!errors.Is(err, os.ErrNotExist) {
+		operation.cleanup()
+		return nil, err
+	}
+	stagedPaths := target
+	stagedPaths.Subscriptions = operation.staged
+	stagedPaths.SubscriptionStore = filepath.Join(operation.staged, filepath.Base(target.SubscriptionStore))
+	stagedPaths.SubscriptionBlobs = filepath.Join(operation.staged, filepath.Base(target.SubscriptionBlobs))
+	stagedPaths.SubscriptionCache = filepath.Join(operation.staged, filepath.Base(target.SubscriptionCache))
+	if err := subscriptions.NewStore(stagedPaths).Initialize(existing.Subscription.URL); err != nil {
+		operation.cleanup()
+		return nil, err
+	}
+	return operation, nil
+}
+
+func mergeInstallDocument(source, existing state.Document, preserveSubscriptions bool) state.Document {
 	source.Normalize()
 	existing.Normalize()
 	hadExistingState := meaningfulState(existing)
@@ -171,16 +243,42 @@ func mergeInstallDocument(source, existing state.Document) state.Document {
 		result.Previous = source.Previous
 		result.Pending = source.Pending
 		result.LastError = source.LastError
-		result.Subscription = source.Subscription
 		if !hadExistingState {
 			result.DesiredState = source.DesiredState
 		}
-	} else if result.Subscription.URL == "" && source.Subscription.URL != "" {
+	}
+	if !preserveSubscriptions {
 		result.Subscription = source.Subscription
+		result.ActiveProfileID = source.ActiveProfileID
+		result.AutoRestart = source.AutoRestart
 	}
 	result.Runtime = state.Runtime{}
 	result.Normalize()
 	return result
+}
+
+func (manager *Manager) meaningfulSubscriptionData(target layout.Layout, document state.Document) (bool, error) {
+	if document.Subscription.URL != "" || document.Subscription.Interval != "24h" || !document.AutoRestart {
+		return true, nil
+	}
+	if _, err := os.Stat(target.SubscriptionStore); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	catalog, err := subscriptions.NewStore(target).Read()
+	if err != nil {
+		return false, err
+	}
+	if len(catalog.Profiles) != 1 || len(catalog.CustomNodes) != 0 {
+		return true, nil
+	}
+	profile := catalog.Profiles[0]
+	return profile.Name != "" ||
+		len(profile.Sources) != 0 || len(profile.CustomNodeIDs) != 0 ||
+		len(profile.Groups) != 0 || len(profile.Rules) != 0 || len(profile.RuleProviders) != 0 || len(profile.Filters) != 0 ||
+		len(profile.DNS) != 0 || len(profile.PrivateAccess) != 0 || len(profile.CustomConfig) != 0 ||
+		!profile.UseSystemGroups || !profile.UseSystemRules || !profile.UseSystemFilters || !profile.UseSystemDNS || !profile.UseSystemCustomConfig, nil
 }
 
 func (manager *Manager) stageCores(
@@ -314,6 +412,21 @@ func sameDeploymentData(left, right state.Document) bool {
 	return reflect.DeepEqual(left, right)
 }
 
+func (manager *Manager) sameSubscriptionCatalog(target layout.Layout) (bool, error) {
+	left, err := os.ReadFile(manager.paths.SubscriptionStore)
+	if err != nil {
+		return false, fmt.Errorf("read portable subscription catalog: %w", err)
+	}
+	right, err := os.ReadFile(target.SubscriptionStore)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read system subscription catalog: %w", err)
+	}
+	return bytes.Equal(left, right), nil
+}
+
 func deploymentReplacementSummary(document state.Document) string {
 	selected := "none"
 	if document.Selected != nil {
@@ -324,7 +437,7 @@ func deploymentReplacementSummary(document state.Document) string {
 		active = deploymentLabel(*document.Active)
 	}
 	configured := "no"
-	if document.Subscription.URL != "" {
+	if document.ActiveProfileID != "" || document.Subscription.URL != "" {
 		configured = "yes"
 	}
 	versions := 0

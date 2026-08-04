@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
 
 type fakeAdapter struct{}
@@ -32,9 +32,14 @@ var (
 	testHashC = strings.Repeat("c", 64)
 )
 
+const testSubscription = "proxies:\n  - name: edge\n    type: ss\n    server: edge.example.com\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n"
+
 func (fakeAdapter) ID() string { return "sing-box" }
 
 func (fakeAdapter) DefaultRepository() string { return "SagerNet/sing-box" }
+func (fakeAdapter) CompilerTarget(version string, target core.Target) (core.CompilerTarget, error) {
+	return core.CompilerTarget{Format: "sing-box-v13", Version: "13", Platform: "default"}, nil
+}
 
 func (fakeAdapter) Resolve(context.Context, string, string, core.Target) (core.Package, error) {
 	return core.Package{}, nil
@@ -66,6 +71,16 @@ func newTestManager(t *testing.T) *Manager {
 	}
 	manager.registry = core.NewRegistry(fakeAdapter{})
 	manager.commands = testCommandRegistrar{}
+	if err := manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
+		catalog.Profiles[0].UseSystemGroups = false
+		catalog.Profiles[0].UseSystemRules = false
+		catalog.Profiles[0].UseSystemFilters = false
+		catalog.Profiles[0].UseSystemDNS = false
+		catalog.Profiles[0].UseSystemCustomConfig = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(paths.CoreVersionDir("sing-box", "", "1.2.3"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +147,7 @@ func TestImportConfigBootstrapsActiveDeployment(t *testing.T) {
 	t.Parallel()
 	manager := newTestManager(t)
 	source := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(source, []byte(`{"log":{"level":"info"}}`), 0o600); err != nil {
+	if err := os.WriteFile(source, []byte(testSubscription), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	change, err := manager.ImportConfig(context.Background(), source)
@@ -201,7 +216,7 @@ func TestExactVersionCanBeSelectedBeforeConfiguration(t *testing.T) {
 		t.Fatalf("selection change = %#v", change)
 	}
 	source := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(source, []byte(`{"log":{"level":"info"}}`), 0o600); err != nil {
+	if err := os.WriteFile(source, []byte(testSubscription), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := manager.ImportConfig(context.Background(), source); err != nil {
@@ -372,29 +387,6 @@ func TestCollectWeakVersionRemovesOnlyUnreferencedInstall(t *testing.T) {
 	}
 }
 
-func TestSubscriptionURLValidationAndRedaction(t *testing.T) {
-	t.Parallel()
-	if _, err := validateSubscriptionURL("https://example.com/config?token=secret"); err != nil {
-		t.Fatal(err)
-	}
-	for _, value := range []string{"http://example.com/config", "https://user:pass@example.com/config", "https:///missing"} {
-		if _, err := validateSubscriptionURL(value); err == nil {
-			t.Errorf("accepted %q", value)
-		}
-	}
-	if got := redactedURL("https://example.com/config?token=secret"); got != "https://example.com" {
-		t.Fatalf("redacted URL = %q", got)
-	}
-	networkError := &url.Error{
-		Op:  "Get",
-		URL: "https://example.com/config?token=secret",
-		Err: errors.New("connection failed"),
-	}
-	if got := safeNetworkError(networkError); strings.Contains(got, "secret") {
-		t.Fatalf("network error leaked URL: %q", got)
-	}
-}
-
 func TestScheduleRequiresMinimumInterval(t *testing.T) {
 	t.Parallel()
 	manager := newTestManager(t)
@@ -424,11 +416,25 @@ func TestClearSubscriptionRetainsConfiguration(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	catalog, _, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
+		profile, findErr := subscriptions.FindProfile(stored, catalog.Profiles[0].ID)
+		if findErr != nil {
+			return findErr
+		}
+		profile.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceURL, Enabled: true, URL: "https://example.com/config?token=secret"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	change, err := manager.SetSubscription(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !change.Changed || !change.NeedsRestart {
+	if !change.Changed || change.NeedsRestart {
 		t.Fatalf("change = %#v", change)
 	}
 	document, err := manager.store.Read()
@@ -483,6 +489,20 @@ func TestSavedSubscriptionFailureRecordsAttempt(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	_, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
+		profile, findErr := subscriptions.FindProfile(stored, active)
+		if findErr != nil {
+			return findErr
+		}
+		profile.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceURL, Enabled: true, URL: server.URL, UserAgent: subscriptions.DefaultUserAgent, FetchMode: subscriptions.FetchAuto}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := manager.UpdateSubscription(context.Background()); err == nil {
 		t.Fatal("subscription update unexpectedly succeeded")
 	}
@@ -490,7 +510,7 @@ func TestSavedSubscriptionFailureRecordsAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !document.Subscription.LastCheck.After(oldCheck) || document.Subscription.LastResult != "download failed" {
+	if !document.Subscription.LastCheck.After(oldCheck) || document.Subscription.LastResult != "update failed" {
 		t.Fatalf("subscription failure was not recorded: %#v", document.Subscription)
 	}
 }

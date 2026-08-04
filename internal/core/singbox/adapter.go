@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/tinymins/sempre/internal/core"
@@ -100,6 +101,48 @@ func (adapter *Adapter) Version(ctx context.Context, binary string) (string, err
 		return "", fmt.Errorf("sing-box returned an empty version")
 	}
 	return version, nil
+}
+
+func (adapter *Adapter) CompilerTarget(version string, target core.Target) (core.CompilerTarget, error) {
+	parts := strings.Split(strings.TrimPrefix(version, "v"), ".")
+	compilerVersion := "13"
+	warnings := []string{}
+	if len(parts) < 2 {
+		warnings = append(warnings, "unrecognized sing-box version; using the default v13 compiler")
+	} else {
+		major, majorErr := strconv.Atoi(parts[0])
+		minor, minorErr := strconv.Atoi(parts[1])
+		switch {
+		case majorErr != nil || minorErr != nil || major != 1:
+			warnings = append(warnings, "unknown sing-box major version; using the default v13 compiler")
+		case minor < 11:
+			compilerVersion = "11"
+			warnings = append(warnings, "installed sing-box is older than the minimum compiler target; using v11")
+		case minor == 11:
+			compilerVersion = "11"
+		case minor == 12:
+			compilerVersion = "12"
+		default:
+			compilerVersion = "13"
+			if minor > 13 {
+				warnings = append(warnings, "no exact compiler for this sing-box minor version; using the newest compatible v13 compiler")
+			}
+		}
+	}
+	platform := "default"
+	if target.OS == "windows" {
+		platform = "windows"
+	} else if target.OS == "darwin" {
+		platform = "macos"
+	}
+	format := "sing-box-v" + compilerVersion
+	if compilerVersion == "11" {
+		format = "sing-box"
+	}
+	if platform != "default" {
+		format += "-" + platform
+	}
+	return core.CompilerTarget{Format: format, Version: compilerVersion, Platform: platform, Warnings: warnings}, nil
 }
 
 func (adapter *Adapter) Validate(

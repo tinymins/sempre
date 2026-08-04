@@ -107,7 +107,18 @@ func (manager *Manager) deployToSystem(
 		if err != nil {
 			return fmt.Errorf("read system state: %w", err)
 		}
-		if meaningfulState(targetDocument) && !sameDeploymentData(sourceDocument, targetDocument) && !allowReplace {
+		targetSubscriptions, err := manager.meaningfulSubscriptionData(target, targetDocument)
+		if err != nil {
+			return err
+		}
+		sameData := sameDeploymentData(sourceDocument, targetDocument)
+		if sameData {
+			sameData, err = manager.sameSubscriptionCatalog(target)
+			if err != nil {
+				return err
+			}
+		}
+		if (meaningfulState(targetDocument) || targetSubscriptions) && !sameData && !allowReplace {
 			return &ConfirmationRequired{Summary: deploymentReplacementSummary(targetDocument)}
 		}
 	}
