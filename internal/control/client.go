@@ -218,17 +218,13 @@ func (client *Client) Reload(ctx context.Context) error {
 
 func (client *Client) Proxies(ctx context.Context) ([]Proxy, error) {
 	var response struct {
-		Proxies map[string]proxyPayload `json:"proxies"`
+		Proxies proxyList `json:"proxies"`
 	}
+	response.Proxies = make(proxyList, 0)
 	if err := client.get(ctx, "/proxies", &response); err != nil {
 		return nil, err
 	}
-	result := make([]Proxy, 0, len(response.Proxies))
-	for name, item := range response.Proxies {
-		result = append(result, item.normalized(name))
-	}
-	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
-	return result, nil
+	return response.Proxies, nil
 }
 
 func (client *Client) SelectProxy(ctx context.Context, group, proxy string) error {
@@ -451,6 +447,37 @@ type proxyPayload struct {
 	All     []string  `json:"all"`
 	UDP     bool      `json:"udp"`
 	History []Latency `json:"history"`
+}
+
+type proxyList []Proxy
+
+func (proxies *proxyList) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	start, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if start != json.Delim('{') {
+		return fmt.Errorf("proxy collection must be an object")
+	}
+	*proxies = make(proxyList, 0)
+	for decoder.More() {
+		nameToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		name, ok := nameToken.(string)
+		if !ok {
+			return fmt.Errorf("proxy name must be a string")
+		}
+		var payload proxyPayload
+		if err := decoder.Decode(&payload); err != nil {
+			return err
+		}
+		*proxies = append(*proxies, payload.normalized(name))
+	}
+	_, err = decoder.Token()
+	return err
 }
 
 func (payload proxyPayload) normalized(name string) Proxy {

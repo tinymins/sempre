@@ -54,7 +54,7 @@ export function Proxies() {
 
 function ProxyGroup({ group, onSelect, onDelay, busy }: { group: ProxyNode; onSelect: (name: string) => void; onDelay: (name: string) => void; busy: boolean }) {
   const { t } = useI18n()
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   return <Card className="overflow-hidden"><button className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[var(--surface-hover)]" onClick={() => setOpen(!open)}><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold">{group.name}</h2><p className="mt-1 truncate text-xs text-[var(--muted)]">{group.type} · {group.all?.length || 0} nodes</p></div><Badge tone="success">{group.now || '-'}</Badge><ChevronDown className={`transition-transform ${open ? 'rotate-180' : ''}`} size={17} /></button>{open ? <div className="grid border-t border-[var(--border)] sm:grid-cols-2">{group.all?.map((name) => { const active = name === group.now; return <div key={name} className="flex min-w-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2.5 sm:odd:border-r"><span className={`size-2 shrink-0 rounded-full ${active ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'}`} /><span className="min-w-0 flex-1 truncate text-sm">{name}</span><Button size="icon" variant="ghost" title={t('testLatency')} disabled={busy} onClick={() => onDelay(name)}>{busy ? <Spinner /> : <Gauge size={15} />}</Button><Button size="icon" variant={active ? 'primary' : 'ghost'} title={active ? t('selected') : t('select')} disabled={busy || active} onClick={() => onSelect(name)}><Check size={15} /></Button></div> })}</div> : null}</Card>
 }
 
