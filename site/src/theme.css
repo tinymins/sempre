@@ -67,17 +67,17 @@
   box-shadow: 0 18px 60px var(--glass-shadow);
 }
 
-.glass-header .prototype-nav,
-.glass-header .prototype-icon-button {
+.glass-header .site-nav,
+.glass-header .site-icon-button {
   color: var(--glass-muted);
 }
 
-.glass-header .prototype-nav a:hover,
-.glass-header .prototype-icon-button:hover {
+.glass-header .site-nav a:hover,
+.glass-header .site-icon-button:hover {
   color: var(--glass-green);
 }
 
-.glass-header .prototype-icon-button {
+.glass-header .site-icon-button {
   border-color: var(--glass-border);
   background: color-mix(in srgb, var(--glass-panel) 72%, transparent);
 }
@@ -114,7 +114,7 @@
   color: var(--glass-text);
 }
 
-.glass-copy .prototype-lead,
+.glass-copy .hero-lead,
 .release-note,
 .glass-scroll {
   color: var(--glass-muted);
@@ -194,7 +194,7 @@
   background: var(--glass-line);
 }
 
-.glass-story-heading .prototype-eyebrow,
+.glass-story-heading .eyebrow,
 .glass-steps article > svg {
   color: var(--glass-green);
 }

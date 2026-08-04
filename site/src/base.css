@@ -80,7 +80,7 @@ figure {
   outline-offset: 3px;
 }
 
-.prototype-header {
+.site-header {
   position: fixed;
   top: 14px;
   right: 18px;
@@ -94,10 +94,10 @@ figure {
   transition: background-color 240ms ease, border-color 240ms ease, box-shadow 240ms ease, transform 240ms ease;
 }
 
-.prototype-brand,
-.prototype-nav,
-.prototype-actions,
-.prototype-icon-button,
+.site-brand,
+.site-nav,
+.site-actions,
+.site-icon-button,
 .scroll-cue,
 .trust-line,
 .status-pill,
@@ -106,14 +106,14 @@ figure {
   align-items: center;
 }
 
-.prototype-brand {
+.site-brand {
   width: fit-content;
   gap: 10px;
   font-size: 14px;
   font-weight: 720;
 }
 
-.prototype-brand-mark {
+.site-brand-mark {
   display: grid;
   width: 30px;
   height: 30px;
@@ -121,19 +121,19 @@ figure {
   border-radius: 8px;
 }
 
-.prototype-brand-mark svg {
+.site-brand-mark svg {
   width: 15px;
   height: 15px;
 }
 
-.prototype-nav {
+.site-nav {
   justify-content: center;
   gap: 28px;
   font-size: 12px;
   font-weight: 580;
 }
 
-.prototype-actions {
+.site-actions {
   justify-content: flex-end;
   gap: 8px;
 }
@@ -207,7 +207,7 @@ figure {
   opacity: 1;
 }
 
-.prototype-icon-button {
+.site-icon-button {
   min-width: 34px;
   height: 34px;
   justify-content: center;
@@ -217,17 +217,17 @@ figure {
   cursor: pointer;
 }
 
-.prototype-icon-button svg {
+.site-icon-button svg {
   width: 15px;
   height: 15px;
 }
 
-.prototype-icon-button span {
+.site-icon-button span {
   font-size: 11px;
   font-weight: 680;
 }
 
-.prototype-eyebrow {
+.eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -238,7 +238,7 @@ figure {
   text-transform: uppercase;
 }
 
-.prototype-eyebrow::before {
+.eyebrow::before {
   width: 7px;
   height: 7px;
   flex: none;
@@ -248,14 +248,14 @@ figure {
   content: "";
 }
 
-.prototype-hero h1 {
+.site-hero h1 {
   margin-bottom: 18px;
   font-size: clamp(64px, 8vw, 118px);
   font-weight: 620;
   line-height: 0.86;
 }
 
-.prototype-lead {
+.hero-lead {
   max-width: 620px;
   margin-bottom: 0;
   font-size: 16px;
@@ -405,21 +405,21 @@ figure {
 }
 
 @media (max-width: 900px) {
-  .prototype-header {
+  .site-header {
     grid-template-columns: 1fr auto;
   }
 
-  .prototype-nav {
+  .site-nav {
     display: none;
   }
 
-  .prototype-hero h1 {
+  .site-hero h1 {
     font-size: clamp(54px, 16vw, 84px);
   }
 }
 
 @media (max-width: 640px) {
-  .prototype-header {
+  .site-header {
     top: 8px;
     right: 8px;
     left: 8px;
@@ -433,12 +433,12 @@ figure {
     right: 12px;
   }
 
-  .prototype-brand-mark {
+  .site-brand-mark {
     width: 27px;
     height: 27px;
   }
 
-  .prototype-lead {
+  .hero-lead {
     font-size: 13px;
     line-height: 1.58;
   }

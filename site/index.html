@@ -39,19 +39,19 @@
   </head>
   <body class="spatial-glass formal-home">
     <a class="skip-link" href="#main" data-i18n="skip">Skip to content</a>
-    <header class="prototype-header glass-header">
-      <a class="prototype-brand" href="#top" aria-label="Sempre home">
-        <span class="prototype-brand-mark"><i data-lucide="server"></i></span>
+    <header class="site-header glass-header">
+      <a class="site-brand" href="#top" aria-label="Sempre home">
+        <span class="site-brand-mark"><i data-lucide="server"></i></span>
         <span>Sempre</span>
       </a>
-      <nav class="prototype-nav" aria-label="Primary navigation">
+      <nav class="site-nav" aria-label="Primary navigation">
         <a href="#architecture" data-i18n="navArchitecture">Architecture</a>
         <a href="#platforms" data-i18n="navPlatforms">Platforms</a>
         <a href="https://github.com/tinymins/sempre#readme" data-i18n="navDocs">Docs</a>
       </nav>
-      <div class="prototype-actions">
+      <div class="site-actions">
         <div class="theme-control">
-          <button class="prototype-icon-button" type="button" data-theme-trigger aria-haspopup="menu" aria-expanded="false" title="Theme" aria-label="Theme">
+          <button class="site-icon-button" type="button" data-theme-trigger aria-haspopup="menu" aria-expanded="false" title="Theme" aria-label="Theme">
             <span data-theme-icon="system"><i data-lucide="monitor"></i></span>
             <span data-theme-icon="light"><i data-lucide="sun"></i></span>
             <span data-theme-icon="dark"><i data-lucide="moon"></i></span>
@@ -62,27 +62,27 @@
             <button type="button" role="menuitemradio" data-theme-option="dark" aria-checked="false"><i data-lucide="moon"></i><span data-i18n="themeDark">Dark</span><i class="theme-check" data-lucide="check"></i></button>
           </div>
         </div>
-        <button class="prototype-icon-button" type="button" data-language title="切换到中文" aria-label="切换到中文">
+        <button class="site-icon-button" type="button" data-language title="切换到中文" aria-label="切换到中文">
           <i data-lucide="languages"></i><span data-language-label>中文</span>
         </button>
-        <a class="prototype-icon-button" href="https://github.com/tinymins/sempre" title="GitHub" aria-label="GitHub">
+        <a class="site-icon-button" href="https://github.com/tinymins/sempre" title="GitHub" aria-label="GitHub">
           <i data-lucide="git-fork"></i>
         </a>
       </div>
     </header>
 
     <main id="main">
-      <section class="prototype-hero glass-hero" id="top" data-scene>
+      <section class="site-hero glass-hero" id="top" data-scene>
         <div class="glass-backdrop" aria-hidden="true">
           <img src="/assets/control-plane-light.webp" data-theme-image data-light-src="/assets/control-plane-light.webp" data-dark-src="/assets/control-plane-dark.webp" alt="" width="1600" height="860" />
         </div>
         <div class="glass-depth-lines" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="glass-hero-inner">
           <div class="glass-copy">
-            <p class="prototype-eyebrow" data-i18n="eyebrow">Native lifecycle control plane</p>
+            <p class="eyebrow" data-i18n="eyebrow">Native lifecycle control plane</p>
             <h1>Sempre</h1>
             <p class="glass-statement" data-i18n="tagline">Any core. Always current. Always running.</p>
-            <p class="prototype-lead" data-i18n="lead">Install, switch, validate, and supervise proxy cores with one native service and one replaceable Web UI.</p>
+            <p class="hero-lead" data-i18n="lead">Install, switch, validate, and supervise proxy cores with one native service and one replaceable Web UI.</p>
 
             <div class="glass-installer" data-reveal>
               <div class="glass-installer-top">
@@ -123,7 +123,7 @@
 
       <section class="glass-story" id="product" data-scene>
         <div class="glass-story-heading" data-reveal>
-          <p class="prototype-eyebrow">01 / CONTROL</p>
+          <p class="eyebrow">01 / CONTROL</p>
           <h2 data-i18n="controlTitle">The control plane stays online while the core changes underneath it.</h2>
           <p data-i18n="controlLead">Observe runtime state, traffic, connections, rules, logs, and installed versions from the same local interface.</p>
         </div>
@@ -146,7 +146,7 @@
 
       <section class="formal-band architecture-band" id="architecture" data-scene>
         <div class="formal-section-heading" data-reveal>
-          <p class="prototype-eyebrow">02 / ARCHITECTURE</p>
+          <p class="eyebrow">02 / ARCHITECTURE</p>
           <div><h2 data-i18n="architectureTitle">One ownership chain. No wrapper stack.</h2><p data-i18n="architectureLead">A single Go binary owns installation, service registration, validation, deployment, supervision, and rollback.</p></div>
         </div>
         <div class="architecture-flow" aria-label="Sempre architecture">
@@ -166,7 +166,7 @@
 
       <section class="formal-band platforms-band" id="platforms" data-scene>
         <div class="formal-section-heading" data-reveal>
-          <p class="prototype-eyebrow">03 / DELIVERY</p>
+          <p class="eyebrow">03 / DELIVERY</p>
           <div><h2 data-i18n="platformTitle">Same install contract on every supported machine.</h2><p data-i18n="platformLead">The installer detects the machine, locks the latest release tag, verifies the matching bundle, then delegates to Sempre's idempotent installer.</p></div>
         </div>
         <div class="platform-table" data-reveal>
@@ -178,7 +178,7 @@
 
       <section class="formal-band trust-band" data-scene>
         <div class="trust-copy" data-reveal>
-          <p class="prototype-eyebrow">04 / PROVENANCE</p>
+          <p class="eyebrow">04 / PROVENANCE</p>
           <h2 data-i18n="trustTitle">The short command does not shorten the verification chain.</h2>
           <p data-i18n="trustLead">Every target ships with checksums, a CycloneDX SBOM, and GitHub build provenance. Bundle verification happens before the privileged installer starts.</p>
           <a class="text-link" href="https://github.com/tinymins/sempre/releases/latest"><span data-i18n="viewRelease">View the latest release</span><i data-lucide="arrow-up-right"></i></a>

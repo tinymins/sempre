@@ -51,9 +51,6 @@ jobs:
           bun --cwd=site run tsc
           bun --cwd=site run test
           bun --cwd=site run build
-          test -f site/dist/prototypes/spatial-glass.html
-          test -f site/dist/prototypes/future-industrial.html
-          test -f site/dist/prototypes/obsidian-console.html
       - name: Install browser
         working-directory: site
         run: bunx playwright install --with-deps chromium

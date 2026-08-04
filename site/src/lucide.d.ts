@@ -21,11 +21,9 @@ declare module 'lucide' {
   export const Monitor: IconNode
   export const MonitorDot: IconNode
   export const Moon: IconNode
-  export const Network: IconNode
   export const Server: IconNode
   export const ServerCog: IconNode
   export const ShieldCheck: IconNode
   export const Sun: IconNode
   export const Terminal: IconNode
-  export const Zap: IconNode
 }
