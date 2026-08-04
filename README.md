@@ -52,14 +52,14 @@ No proxy core or configuration is required at installation time; the service
 reports `idle` until one is configured.
 
 Running the binary without arguments, including by double-clicking it, shows
-only the current version/status and four actions:
+only the current version/status and up to four actions:
 
 | Action | Result |
 | --- | --- |
 | Install, Repair, or Upgrade | The launcher chooses one label from the service state and installed version, then runs the idempotent system installation from the current bundle |
 | Uninstall | Keeps configuration by default, with an explicit purge choice |
 | Open Web UI | Opens the discovered local control-plane address |
-| Run Portable | Runs the Web control plane and selected core beside the binary |
+| Run Portable | Runs the Web control plane and selected core beside the binary; shown only while the system service is inactive |
 
 The launcher contains no settings. Configure everything through the Web UI or
 the equivalent CLI commands. A complete CLI setup remains available:

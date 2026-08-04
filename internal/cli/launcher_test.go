@@ -58,11 +58,22 @@ func TestParseSempreVersion(t *testing.T) {
 func TestLauncherMenuAndArguments(t *testing.T) {
 	t.Parallel()
 	for _, action := range []string{"Install", "Repair", "Upgrade"} {
-		var output bytes.Buffer
-		writeLauncherMenu(&output, action)
-		want := "\n1. " + action + "\n2. Uninstall\n3. Open Web UI\n4. Run Portable\n0. Exit\n"
-		if output.String() != want {
-			t.Fatalf("menu = %q, want %q", output.String(), want)
+		for _, showPortable := range []bool{false, true} {
+			var output bytes.Buffer
+			maxChoice := writeLauncherMenu(&output, action, showPortable)
+			want := "\n1. " + action + "\n2. Uninstall\n3. Open Web UI\n"
+			wantMaxChoice := 3
+			if showPortable {
+				want += "4. Run Portable\n"
+				wantMaxChoice = 4
+			}
+			want += "0. Exit\n"
+			if output.String() != want {
+				t.Fatalf("menu = %q, want %q", output.String(), want)
+			}
+			if maxChoice != wantMaxChoice {
+				t.Fatalf("max choice = %d, want %d", maxChoice, wantMaxChoice)
+			}
 		}
 	}
 	for choice, want := range map[string][]string{
@@ -70,9 +81,40 @@ func TestLauncherMenuAndArguments(t *testing.T) {
 		"3": {"open"},
 		"4": {"--portable", "portable", "run"},
 	} {
-		if got := launcherArguments(choice); !reflect.DeepEqual(got, want) {
+		if got := launcherArguments(choice, true); !reflect.DeepEqual(got, want) {
 			t.Fatalf("choice %s arguments = %#v, want %#v", choice, got, want)
 		}
+	}
+	if got := launcherArguments("4", false); got != nil {
+		t.Fatalf("hidden portable choice arguments = %#v, want nil", got)
+	}
+}
+
+func TestLauncherPortableAvailable(t *testing.T) {
+	t.Parallel()
+	failure := errors.New("unavailable")
+	for _, test := range []struct {
+		name            string
+		state           service.State
+		serviceErr      error
+		endpointHealthy bool
+		want            bool
+	}{
+		{"not installed", service.NotInstalled, nil, false, true},
+		{"stopped", service.Stopped, nil, false, true},
+		{"running", service.Running, nil, false, false},
+		{"start pending", service.StartPending, nil, false, false},
+		{"stop pending", service.StopPending, nil, false, false},
+		{"unknown", service.Unknown, nil, false, true},
+		{"status unavailable", service.Unknown, failure, false, true},
+		{"healthy endpoint", service.Unknown, failure, true, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := launcherPortableAvailable(test.state, test.serviceErr, test.endpointHealthy); got != test.want {
+				t.Fatalf("available = %t, want %t", got, test.want)
+			}
+		})
 	}
 }
 

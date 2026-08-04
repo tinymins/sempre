@@ -30,8 +30,8 @@ func runLauncher(ctx context.Context, input io.Reader, output, errorOutput io.Wr
 		} else {
 			fmt.Fprintf(output, "status: %s\n", status.service)
 		}
-		writeLauncherMenu(output, status.installAction)
-		fmt.Fprint(output, "\nSelect [0-4]: ")
+		maxChoice := writeLauncherMenu(output, status.installAction, status.showPortable)
+		fmt.Fprintf(output, "\nSelect [0-%d]: ", maxChoice)
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			fmt.Fprintln(errorOutput, "ERROR:", err)
@@ -42,7 +42,12 @@ func runLauncher(ctx context.Context, input io.Reader, output, errorOutput io.Wr
 		case "", "0":
 			return 0
 		case "1", "3", "4":
-			return Run(ctx, launcherArguments(choice), reader, output, errorOutput)
+			arguments := launcherArguments(choice, status.showPortable)
+			if arguments == nil {
+				fmt.Fprintln(errorOutput, "Invalid selection.")
+				continue
+			}
+			return Run(ctx, arguments, reader, output, errorOutput)
 		case "2":
 			fmt.Fprintln(output, "\n1. Uninstall and keep configuration")
 			fmt.Fprintln(output, "2. Full uninstall and remove all data")
@@ -67,19 +72,22 @@ type launcherSnapshot struct {
 	service       string
 	address       string
 	installAction string
+	showPortable  bool
 }
 
 func launcherStatus(ctx context.Context) launcherSnapshot {
 	paths, err := layout.ForMode(layout.System)
 	if err != nil {
-		return launcherSnapshot{service: "unavailable", installAction: "Install"}
+		return launcherSnapshot{service: "unavailable", installAction: "Install", showPortable: true}
 	}
 	endpoint, endpointErr := webconfig.ReadEndpoint(paths.Endpoint)
 	serviceState, serviceErr := service.New().Status(ctx)
+	endpointHealthy := endpointErr == nil && healthy(ctx, endpoint.LocalURL)
 	result := launcherSnapshot{
 		installAction: launcherInstallAction(ctx, paths.ServiceExecutable, serviceState, serviceErr),
+		showPortable:  launcherPortableAvailable(serviceState, serviceErr, endpointHealthy),
 	}
-	if endpointErr == nil && healthy(ctx, endpoint.LocalURL) {
+	if endpointHealthy {
 		result.service = "running"
 		result.address = endpoint.LocalURL
 		return result
@@ -103,24 +111,47 @@ func launcherStatus(ctx context.Context) launcherSnapshot {
 	return result
 }
 
-func writeLauncherMenu(output io.Writer, installAction string) {
+func writeLauncherMenu(output io.Writer, installAction string, showPortable bool) int {
 	fmt.Fprintf(output, "\n1. %s\n", installAction)
 	fmt.Fprintln(output, "2. Uninstall")
 	fmt.Fprintln(output, "3. Open Web UI")
-	fmt.Fprintln(output, "4. Run Portable")
+	maxChoice := 3
+	if showPortable {
+		fmt.Fprintln(output, "4. Run Portable")
+		maxChoice = 4
+	}
 	fmt.Fprintln(output, "0. Exit")
+	return maxChoice
 }
 
-func launcherArguments(choice string) []string {
+func launcherArguments(choice string, showPortable bool) []string {
 	switch choice {
 	case "1":
 		return []string{"install"}
 	case "3":
 		return []string{"open"}
 	case "4":
-		return []string{"--portable", "portable", "run"}
+		if showPortable {
+			return []string{"--portable", "portable", "run"}
+		}
+		return nil
 	default:
 		return nil
+	}
+}
+
+func launcherPortableAvailable(state service.State, serviceErr error, endpointHealthy bool) bool {
+	if endpointHealthy {
+		return false
+	}
+	if serviceErr != nil {
+		return true
+	}
+	switch state {
+	case service.Running, service.StartPending, service.StopPending:
+		return false
+	default:
+		return true
 	}
 }
 
