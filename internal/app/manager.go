@@ -57,6 +57,7 @@ type Manager struct {
 	output      io.Writer
 	errors      io.Writer
 	service     service.Controller
+	commands    commandRegistrar
 	web         *webconfig.Store
 	ui          *uiassets.Manager
 	reload      chan struct{}
@@ -81,6 +82,7 @@ func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
 		output:   output,
 		errors:   errorOutput,
 		service:  service.New(),
+		commands: platformCommandRegistrar{},
 		web:      webStore,
 		ui:       uiassets.New(paths.UI, paths.UICurrent),
 		reload:   make(chan struct{}, 1),

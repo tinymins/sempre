@@ -484,6 +484,52 @@ func TestSystemInstallSucceedsWithoutBundledUI(t *testing.T) {
 	if strings.Join(controller.calls, ",") != "status,install,start" {
 		t.Fatalf("service calls = %v", controller.calls)
 	}
+	if err := source.commands.Check(target); err != nil {
+		t.Fatalf("command registration: %v", err)
+	}
+}
+
+func TestCommandRegistrationFailureRollsBackSystemInstall(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(target.CommandExecutable), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target.CommandExecutable, []byte("other"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	controller := &recordingService{state: service.NotInstalled}
+	source.service = controller
+
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true); err == nil {
+		t.Fatal("install succeeded despite a conflicting command path")
+	}
+	if controller.state != service.NotInstalled {
+		t.Fatalf("service state = %s", controller.state)
+	}
+	if _, err := os.Stat(target.ServiceExecutable); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("service executable was not rolled back: %v", err)
+	}
+	data, err := os.ReadFile(target.CommandExecutable)
+	if err != nil || string(data) != "other" {
+		t.Fatalf("conflicting command changed: %q, %v", data, err)
+	}
+}
+
+func TestServiceStartFailureRollsBackCommandRegistration(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	controller := &recordingService{state: service.NotInstalled, failStarts: 1}
+	source.service = controller
+
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true); err == nil {
+		t.Fatal("install succeeded despite service start failure")
+	}
+	if _, err := os.Lstat(target.CommandExecutable); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("command registration was not rolled back: %v", err)
+	}
 }
 
 func TestInvalidBundledUIDoesNotRollBackSystemInstall(t *testing.T) {

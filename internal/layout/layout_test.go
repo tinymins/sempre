@@ -104,7 +104,7 @@ func TestSystemAtKeepsRootsSeparate(t *testing.T) {
 	if paths.Mode != System {
 		t.Fatalf("mode = %q", paths.Mode)
 	}
-	for _, path := range []string{paths.Home, paths.Logs, paths.Runtime, filepath.Dir(paths.ServiceExecutable)} {
+	for _, path := range []string{paths.Home, paths.Logs, paths.Runtime, filepath.Dir(paths.ServiceExecutable), filepath.Dir(paths.CommandExecutable)} {
 		if filepath.Dir(path) != root {
 			t.Fatalf("%q is outside %q", path, root)
 		}

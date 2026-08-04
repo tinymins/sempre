@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"net/url"
@@ -64,6 +65,7 @@ func newTestManager(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	manager.registry = core.NewRegistry(fakeAdapter{})
+	manager.commands = testCommandRegistrar{}
 	if err := os.MkdirAll(paths.CoreVersionDir("sing-box", "", "1.2.3"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +82,50 @@ func newTestManager(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	return manager
+}
+
+type testCommandRegistrar struct{}
+
+func (testCommandRegistrar) Register(paths layout.Layout) (func() error, error) {
+	if err := os.MkdirAll(filepath.Dir(paths.CommandExecutable), 0o755); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(paths.CommandExecutable)
+	if err == nil {
+		if string(data) == paths.ServiceExecutable {
+			return func() error { return nil }, nil
+		}
+		return nil, fmt.Errorf("command path is not owned by Sempre")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err := os.WriteFile(paths.CommandExecutable, []byte(paths.ServiceExecutable), 0o600); err != nil {
+		return nil, err
+	}
+	return func() error { return os.Remove(paths.CommandExecutable) }, nil
+}
+
+func (testCommandRegistrar) Unregister(paths layout.Layout) error {
+	data, err := os.ReadFile(paths.CommandExecutable)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && string(data) != paths.ServiceExecutable) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return os.Remove(paths.CommandExecutable)
+}
+
+func (testCommandRegistrar) Check(paths layout.Layout) error {
+	data, err := os.ReadFile(paths.CommandExecutable)
+	if err != nil {
+		return err
+	}
+	if string(data) != paths.ServiceExecutable {
+		return fmt.Errorf("command path is not owned by Sempre")
+	}
+	return nil
 }
 
 func TestImportConfigBootstrapsActiveDeployment(t *testing.T) {

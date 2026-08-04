@@ -41,6 +41,7 @@ type Layout struct {
 	ManagerLog        string
 	InstanceLock      string
 	ServiceExecutable string
+	CommandExecutable string
 	instanceLockMode  Mode
 	test              bool
 }
@@ -158,6 +159,7 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		ManagerLog:        filepath.Join(logs, "sempre.log"),
 		InstanceLock:      filepath.Join(run, "instance.lock"),
 		ServiceExecutable: serviceExecutable,
+		CommandExecutable: serviceExecutable,
 		instanceLockMode:  mode,
 	}
 }
@@ -185,6 +187,7 @@ func SystemAt(root string) Layout {
 		filepath.Join(root, "run"),
 		filepath.Join(root, "bin", executableName("sempre")),
 	)
+	paths.CommandExecutable = filepath.Join(root, "command", executableName("sempre"))
 	paths.test = true
 	return paths
 }

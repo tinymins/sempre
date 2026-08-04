@@ -184,6 +184,7 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 			fmt.Fprintln(&builder, "[INFO] system service: not installed")
 		} else {
 			check("service executable", manager.checkServiceExecutable())
+			check("command registration", manager.commands.Check(manager.paths))
 		}
 	}
 	if document.Active == nil {

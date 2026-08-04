@@ -3,6 +3,10 @@
 /.sempre/
 /ui/dist/
 /ui/node_modules/
+/site/dist/
+/site/node_modules/
+/site/test-results/
+/site/playwright-report/
 *.tsbuildinfo
 *.syso
 *.exe

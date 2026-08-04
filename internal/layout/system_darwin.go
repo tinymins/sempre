@@ -3,12 +3,14 @@
 package layout
 
 func systemLayout() (Layout, error) {
-	return newLayout(
+	paths := newLayout(
 		System,
 		"/Library/Application Support/Sempre/bin",
 		"/Library/Application Support/Sempre/data",
 		"/Library/Logs/Sempre",
 		"/var/run/sempre",
 		"/Library/Application Support/Sempre/bin/sempre",
-	), nil
+	)
+	paths.CommandExecutable = "/usr/local/bin/sempre"
+	return paths, nil
 }

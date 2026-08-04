@@ -8,6 +8,8 @@ first supported core is [sing-box](https://github.com/SagerNet/sing-box).
 
 > Any core. Always current. Always running.
 
+Project homepage: [sempre.run](https://sempre.run)
+
 Sempre is an independent community project. It is not affiliated with
 SagerNet, Project X, MetaCubeX, or their respective projects.
 
@@ -38,7 +40,25 @@ Sempre does not download, bundle, or invoke NSSM or PowerShell.
 
 ## Quick Start
 
-Download and extract the bundle for your platform, then run:
+Linux and macOS:
+
+```sh
+curl -fsSL https://sempre.run/install | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://sempre.run/install.ps1 | iex
+```
+
+The installer detects the operating system and architecture, resolves one
+concrete GitHub Release tag, and verifies the matching bundle against that
+release's `SHA256SUMS` before running it. The scripts are available for review
+at [sempre.run/install](https://sempre.run/install) and
+[sempre.run/install.ps1](https://sempre.run/install.ps1).
+
+The verified bundle then runs:
 
 ```text
 sempre install
@@ -50,6 +70,11 @@ registers the native service, starts the Web control plane, and opens it in the
 default browser.
 No proxy core or configuration is required at installation time; the service
 reports `idle` until one is configured.
+Open a new terminal after installation; `sempre status`, `sempre doctor`, and
+the rest of the CLI are available globally.
+
+For an offline or fully manual installation, download and extract a bundle
+from the [Downloads](#downloads) section and run `sempre install` yourself.
 
 Running the binary without arguments, including by double-clicking it, shows
 only the current version/status and up to four actions:

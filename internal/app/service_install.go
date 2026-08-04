@@ -161,23 +161,36 @@ func (manager *Manager) deployToSystem(
 		}
 	}
 	repairRegistration := install || component == DeployAll || component == DeployBin
+	rollbackCommand := func() error { return nil }
 	if repairRegistration {
 		if err := manager.service.Install(ctx, target.ServiceExecutable, target.Home); err != nil {
 			return rollbackDeployment(ctx, manager.service, operations, current, repairRegistration, target, err)
 		}
+		rollbackCommand, err = manager.commands.Register(target)
+		if err != nil {
+			return rollbackDeployment(ctx, manager.service, operations, current, repairRegistration, target, err)
+		}
+	}
+	rollback := func(cause error) error {
+		commandErr := rollbackCommand()
+		deploymentErr := rollbackDeployment(ctx, manager.service, operations, current, repairRegistration, target, cause)
+		if commandErr != nil {
+			return fmt.Errorf("%w (command registration rollback failed: %v)", deploymentErr, commandErr)
+		}
+		return deploymentErr
 	}
 	if install || wasRunning {
 		if err := manager.service.Start(ctx); err != nil {
-			return rollbackDeployment(ctx, manager.service, operations, current, repairRegistration, target, err)
+			return rollback(err)
 		}
 	} else if repairRegistration {
 		afterInstall, statusErr := manager.service.Status(ctx)
 		if statusErr != nil {
-			return rollbackDeployment(ctx, manager.service, operations, current, repairRegistration, target, statusErr)
+			return rollback(statusErr)
 		}
 		if afterInstall != service.Stopped && afterInstall != service.NotInstalled {
 			if err := manager.service.Stop(ctx); err != nil {
-				return rollbackDeployment(ctx, manager.service, operations, current, repairRegistration, target, err)
+				return rollback(err)
 			}
 		}
 	}
