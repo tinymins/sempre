@@ -14,7 +14,10 @@
     "moduleResolution": "Bundler",
     "paths": {
       "@acme/components": ["./src/components/acme/index.ts"],
-      "@acme/components/icons": ["./src/components/acme/icons/index.tsx"]
+      "@acme/components/icons": ["./src/components/acme/icons/index.tsx"],
+      "@acme/types": ["./src/features/subscriptions/toolbox/types/proxy.ts"],
+      "react-i18next": ["./src/features/subscriptions/toolbox/i18n-compat.ts"],
+      "@/*": ["./src/*"]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,

@@ -129,6 +129,12 @@ func (store *Store) readUnlocked() (Catalog, error) {
 	if err := json.Unmarshal(data, &catalog); err != nil {
 		return Catalog{}, fmt.Errorf("decode subscription catalog: %w", err)
 	}
+	if catalog.Schema == 1 {
+		catalog.Schema = CatalogSchema
+		for index := range catalog.Profiles {
+			normalizeProfile(&catalog.Profiles[index])
+		}
+	}
 	if err := validateCatalog(catalog); err != nil {
 		return Catalog{}, fmt.Errorf("validate subscription catalog: %w", err)
 	}
@@ -155,6 +161,9 @@ func (store *Store) writeUnlocked(catalog Catalog) error {
 }
 
 func normalizeProfile(profile *Profile) {
+	if profile.LogLevel == "" {
+		profile.LogLevel = "info"
+	}
 	if profile.Sources == nil {
 		profile.Sources = []Source{}
 	}
@@ -184,6 +193,12 @@ func normalizeProfile(profile *Profile) {
 		if source.FetchMode == "" {
 			source.FetchMode = FetchAuto
 		}
+	}
+	if !editorConfigPresent(profile.Editor) {
+		profile.Editor = editorConfigFromProfile(*profile)
+	}
+	if strings.TrimSpace(profile.Editor.Servers) == "" {
+		profile.Editor.Servers = "[]"
 	}
 }
 

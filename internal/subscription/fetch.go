@@ -79,11 +79,8 @@ func (fetcher *Fetcher) load(
 	}
 	key := strings.Join([]string{source.URL, source.UserAgent, source.FetchMode}, "\x00")
 	cache, cacheErr := fetcher.readCache(key)
-	ttl := DefaultCacheTTL
-	if source.CacheTTLMinutes > 0 {
-		ttl = time.Duration(source.CacheTTLMinutes) * time.Minute
-	}
-	if !force && cacheErr == nil && fetcher.now().Before(cache.FetchedAt.Add(ttl)) {
+	ttl := time.Duration(source.CacheTTLMinutes) * time.Minute
+	if !force && ttl > 0 && cacheErr == nil && fetcher.now().Before(cache.FetchedAt.Add(ttl)) {
 		data, err := fetcher.store.ReadBlob(cache.SnapshotHash)
 		if err == nil && (validate == nil || validate(data) == nil) {
 			source.SnapshotHash, source.FetchedAt, source.LastStatus, source.LastError = cache.SnapshotHash, cache.FetchedAt, "fresh cache", ""

@@ -127,11 +127,13 @@ export async function streamRequest(
   path: string,
   body: unknown,
   onEvent: (event: string, data: unknown) => void,
+  signal?: AbortSignal,
 ) {
   const response = await fetch(`${session.baseURL}/api/v1${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${session.token}`, Accept: 'text/event-stream', 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
   if (!response.ok) await parseResponse(response)
   if (!response.body) throw new Error('Streaming response has no body')

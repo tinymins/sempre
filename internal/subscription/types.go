@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	CatalogSchema       = 1
+	CatalogSchema       = 2
 	DefaultUserAgent    = "clash.meta"
-	DefaultCacheTTL     = 24 * time.Hour
 	MaxSourceSize       = int64(32 << 20)
 	SourceURL           = "url"
 	SourceRaw           = "raw"
@@ -30,6 +29,9 @@ type Catalog struct {
 type Profile struct {
 	ID                    string         `json:"id"`
 	Name                  string         `json:"name"`
+	Remark                string         `json:"remark,omitempty"`
+	LogLevel              string         `json:"log_level"`
+	Editor                EditorConfig   `json:"editor"`
 	Sources               []Source       `json:"sources"`
 	CustomNodeIDs         []string       `json:"custom_node_ids"`
 	Groups                []ProxyGroup   `json:"groups"`
@@ -51,6 +53,16 @@ type Profile struct {
 	LastRuntimeValidated  bool           `json:"last_runtime_validated"`
 	LastCompilerTarget    string         `json:"last_compiler_target,omitempty"`
 	LastCompilerWarnings  []string       `json:"last_compiler_warnings,omitempty"`
+}
+
+type EditorConfig struct {
+	RuleList            string `json:"rule_list"`
+	Group               string `json:"group"`
+	Filter              string `json:"filter"`
+	CustomConfig        string `json:"custom_config"`
+	DNSConfig           string `json:"dns_config"`
+	PrivateAccessConfig string `json:"private_access_config"`
+	Servers             string `json:"servers"`
 }
 
 type Source struct {
@@ -178,7 +190,7 @@ func NewCatalog(legacyURL string) Catalog {
 
 func NewProfile(name string) Profile {
 	return Profile{
-		ID: NewID(), Name: strings.TrimSpace(name), Sources: []Source{}, CustomNodeIDs: []string{},
+		ID: NewID(), Name: strings.TrimSpace(name), LogLevel: "info", Editor: EditorConfig{Servers: "[]"}, Sources: []Source{}, CustomNodeIDs: []string{},
 		Groups: []ProxyGroup{}, Rules: []string{}, RuleProviders: []RuleProvider{}, Filters: []string{},
 		UseSystemGroups: true, UseSystemRules: true, UseSystemFilters: true,
 		UseSystemDNS: true, UseSystemCustomConfig: true,

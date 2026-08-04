@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/tinymins/sempre/internal/controlplane"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
 
@@ -191,6 +193,64 @@ func TestCoresAPIDistinguishesSameVersionRepositories(t *testing.T) {
 	}
 	if !byReference["sing-box@1.2.3"] || !byReference["sing-box:tinymins/sing-box@1.2.3"] {
 		t.Fatalf("references = %#v", byReference)
+	}
+}
+
+func TestSubscriptionPreviewAndTraceHTTPContracts(t *testing.T) {
+	manager := newTestManager(t)
+	var profileID string
+	if err := manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
+		profile := &catalog.Profiles[0]
+		profileID = profile.ID
+		profile.UseSystemFilters = false
+		profile.Filters = []string{"日本"}
+		profile.Editor.Filter = `["日本"]`
+		profile.Sources = []subscriptions.Source{{
+			ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true,
+			Content: "proxies:\n- name: 日本节点\n  type: socks5\n  server: edge.example.com\n  port: 1080\n",
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	admin := newAdminServer(manager)
+
+	previewRequest := httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions/"+profileID+"/preview-nodes", strings.NewReader(`{"format":"clash-meta"}`))
+	previewRequest.SetPathValue("id", profileID)
+	previewRecorder := httptest.NewRecorder()
+	admin.subscriptionProfilePreviewNodes(previewRecorder, previewRequest)
+	if previewRecorder.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, body = %s", previewRecorder.Code, previewRecorder.Body.String())
+	}
+	var preview struct {
+		Nodes []subscriptions.PreviewNode `json:"nodes"`
+	}
+	if err := json.Unmarshal(previewRecorder.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Nodes) != 1 || preview.Nodes[0].Name != "🇯🇵 日本节点" || !preview.Nodes[0].Filtered || preview.Nodes[0].SourceIndex != 1 {
+		t.Fatalf("preview = %#v", preview)
+	}
+
+	traceRequest := httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions/"+profileID+"/trace-node", strings.NewReader(`{"format":"clash-meta","name":"🇯🇵 日本节点"}`))
+	traceRequest.SetPathValue("id", profileID)
+	traceRecorder := httptest.NewRecorder()
+	admin.subscriptionProfileTraceNode(traceRecorder, traceRequest)
+	if traceRecorder.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, body = %s", traceRecorder.Code, traceRecorder.Body.String())
+	}
+	var trace struct {
+		NodeName string `json:"nodeName"`
+		Steps    []struct {
+			Type string         `json:"type"`
+			Data map[string]any `json:"data"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal(traceRecorder.Body.Bytes(), &trace); err != nil {
+		t.Fatal(err)
+	}
+	if trace.NodeName != "🇯🇵 日本节点" || len(trace.Steps) != 4 || trace.Steps[3].Type != "enrich" || trace.Steps[3].Data["originalName"] != "日本节点" {
+		t.Fatalf("trace = %#v", trace)
 	}
 }
 

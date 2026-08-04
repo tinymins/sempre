@@ -187,9 +187,22 @@ export interface SubscriptionDefaults {
   dns: Record<string, unknown>
 }
 
+export interface SubscriptionEditorConfig {
+  rule_list: string
+  group: string
+  filter: string
+  custom_config: string
+  dns_config: string
+  private_access_config: string
+  servers: string
+}
+
 export interface SubscriptionProfile {
   id: string
   name: string
+  remark?: string
+  log_level: 'off' | 'error' | 'warn' | 'info' | 'debug'
+  editor: SubscriptionEditorConfig
   sources: SubscriptionSource[]
   custom_node_ids: string[]
   groups: ProxyGroup[]
@@ -229,6 +242,7 @@ export interface SubscriptionCatalogResponse {
   auto_restart: boolean
   targets: SubscriptionTarget[]
   defaults: SubscriptionDefaults
+  editor_defaults: SubscriptionEditorConfig
 }
 
 export interface SourceResult {

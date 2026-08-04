@@ -205,7 +205,6 @@ export function useForm<T extends FieldValues = FieldValues>(
       _notifyWatchers: _notifyWatchers,
     };
     return inst;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keep errors synced

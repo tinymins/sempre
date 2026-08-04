@@ -154,8 +154,14 @@ func (compiler *Compiler) Render(ctx context.Context, profile Profile, catalog C
 }
 
 func (compiler *Compiler) collectNodes(ctx context.Context, profile Profile, catalog Catalog, force bool) ([]Proxy, []SourceResult, Profile, []string, map[string]string, error) {
-	nodes := []Proxy{}
-	nodeOrigins := []string{}
+	nodes, err := ManualServers(profile)
+	if err != nil {
+		return nil, nil, profile, nil, nil, err
+	}
+	nodeOrigins := make([]string, len(nodes))
+	for index := range nodeOrigins {
+		nodeOrigins[index] = fmt.Sprintf("manual-server:%d", index+1)
+	}
 	results := []SourceResult{}
 	warnings := []string{}
 	updated := profile
@@ -202,16 +208,21 @@ func (compiler *Compiler) collectNodes(ctx context.Context, profile Profile, cat
 	filteredOrigins := nodeOrigins[:0]
 	for index, node := range nodes {
 		excluded := false
-		for _, filter := range profile.Filters {
-			if filter != "" && strings.Contains(node.Name, filter) {
-				excluded = true
-				break
+		if strings.HasPrefix(nodeOrigins[index], "source:") {
+			for _, filter := range profile.Filters {
+				if filter != "" && strings.Contains(node.Name, filter) {
+					excluded = true
+					break
+				}
 			}
 		}
 		if !excluded {
 			filtered = append(filtered, node)
 			filteredOrigins = append(filteredOrigins, nodeOrigins[index])
 		}
+	}
+	for index := range filtered {
+		filtered[index].Name = appendIcon(filtered[index].Name)
 	}
 	nodes, origins := uniqueNodeNames(filtered, filteredOrigins)
 	if len(nodes) == 0 {
@@ -241,7 +252,7 @@ func buildClash(profile Profile, proxies []Proxy, meta bool) (string, error) {
 	rules = append(rules, "DOMAIN-SUFFIX,local,DIRECT", "GEOIP,LAN,DIRECT,no-resolve", "GEOIP,CN,DIRECT,no-resolve", "MATCH,"+clashFinalGroup(profile.Groups))
 	shared := resolveDNSShared(profile.DNS)
 	config := map[string]any{
-		"tproxy-port": shared.TProxyPort, "allow-lan": true, "mode": "Rule", "log-level": "info",
+		"tproxy-port": shared.TProxyPort, "allow-lan": true, "mode": "Rule", "log-level": clashLogLevel(profile.LogLevel),
 		"secret": shared.ClashAPISecret, "proxies": proxyMaps, "proxy-groups": groups,
 		"rule-providers": providers, "rules": rules,
 		"profile": map[string]any{"store-selected": true, "store-fake-ip": true, "tracing": true},
@@ -273,6 +284,27 @@ func buildClash(profile Profile, proxies []Proxy, meta bool) (string, error) {
 	return string(encoded), nil
 }
 
+func clashLogLevel(level string) string {
+	switch level {
+	case "off":
+		return "silent"
+	case "warn":
+		return "warning"
+	case "error", "info", "debug":
+		return level
+	default:
+		return "info"
+	}
+}
+
+func singBoxLog(level string) map[string]any {
+	disabled := level == "off"
+	if disabled || (level != "error" && level != "warn" && level != "info" && level != "debug") {
+		level = "info"
+	}
+	return map[string]any{"disabled": disabled, "level": level, "timestamp": true}
+}
+
 func clashGroups(configured []ProxyGroup, names []string) []map[string]any {
 	if len(configured) == 0 {
 		return []map[string]any{{"name": "proxy", "type": "select", "proxies": append([]string{"DIRECT"}, names...)}}
@@ -280,7 +312,7 @@ func clashGroups(configured []ProxyGroup, names []string) []map[string]any {
 	result := []map[string]any{}
 	for _, group := range configured {
 		proxies := append([]string{}, group.Proxies...)
-		if group.IncludeAll && !group.Readonly {
+		if !group.Readonly {
 			proxies = appendUnique(proxies, names...)
 		}
 		if len(proxies) == 0 {
@@ -377,7 +409,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 			return nil, diffs, warnings, fmt.Errorf("proxy group name is required")
 		}
 		members := append([]string{}, group.Proxies...)
-		if group.IncludeAll || len(members) == 0 {
+		if !group.Readonly || group.IncludeAll || len(members) == 0 {
 			members = appendUnique(members, names...)
 		}
 		members = normalizeOutboundNames(members)
@@ -466,7 +498,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	if target.Platform != "default" {
 		route["auto_detect_interface"] = true
 	}
-	config := map[string]any{"log": map[string]any{"level": "info", "timestamp": true}, "dns": dns, "inbounds": inbounds, "outbounds": outbounds, "route": route, "experimental": map[string]any{"cache_file": map[string]any{"enabled": true, "store_fakeip": shared.FakeIPEnabled && target.Platform == "default", "store_rdrc": false}, "clash_api": map[string]any{"external_controller": fmt.Sprintf("127.0.0.1:%d", shared.ClashAPIPort), "external_ui": shared.ClashAPIUIPath, "secret": shared.ClashAPISecret, "default_mode": "rule"}}}
+	config := map[string]any{"log": singBoxLog(profile.LogLevel), "dns": dns, "inbounds": inbounds, "outbounds": outbounds, "route": route, "experimental": map[string]any{"cache_file": map[string]any{"enabled": true, "store_fakeip": shared.FakeIPEnabled && target.Platform == "default", "store_rdrc": false}, "clash_api": map[string]any{"external_controller": fmt.Sprintf("127.0.0.1:%d", shared.ClashAPIPort), "external_ui": shared.ClashAPIUIPath, "secret": shared.ClashAPISecret, "default_mode": "rule"}}}
 	if len(private.Endpoints) > 0 {
 		config["endpoints"] = private.Endpoints
 	}

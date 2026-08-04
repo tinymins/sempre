@@ -14,6 +14,23 @@ class MemoryStorage implements Storage {
 Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: new MemoryStorage() })
 Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: new MemoryStorage() })
 
+class TestIntersectionObserver implements IntersectionObserver {
+  readonly root = null
+  readonly rootMargin = '0px'
+  readonly scrollMargin = '0px'
+  readonly thresholds = [0]
+
+  disconnect() {}
+  observe() {}
+  takeRecords() { return [] }
+  unobserve() {}
+}
+
+Object.defineProperty(globalThis, 'IntersectionObserver', {
+  configurable: true,
+  value: TestIntersectionObserver,
+})
+
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: (query: string): MediaQueryList => ({

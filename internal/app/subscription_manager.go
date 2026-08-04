@@ -51,6 +51,9 @@ func (manager *Manager) SaveSubscriptionProfile(ctx context.Context, id string, 
 		}
 		previousConfigHash := current.LastConfigHash
 		candidate.ID = id
+		if err := subscriptions.ApplyEditorConfig(&candidate); err != nil {
+			return err
+		}
 		candidate.LastCheck = current.LastCheck
 		candidate.LastChange = current.LastChange
 		candidate.LastResult = current.LastResult
@@ -293,6 +296,14 @@ func (manager *Manager) RenderSubscriptionProfile(ctx context.Context, id, forma
 }
 
 func (manager *Manager) TestSubscriptionSource(ctx context.Context, source subscriptions.Source) (subscriptions.SourceResult, error) {
+	return manager.testSubscriptionSource(ctx, source, true)
+}
+
+func (manager *Manager) TestSubscriptionSourceWithCache(ctx context.Context, source subscriptions.Source) (subscriptions.SourceResult, error) {
+	return manager.testSubscriptionSource(ctx, source, false)
+}
+
+func (manager *Manager) testSubscriptionSource(ctx context.Context, source subscriptions.Source, force bool) (subscriptions.SourceResult, error) {
 	if source.ID == "" {
 		source.ID = subscriptions.NewID()
 	}
@@ -302,7 +313,7 @@ func (manager *Manager) TestSubscriptionSource(ctx context.Context, source subsc
 	var result subscriptions.RenderResult
 	err := manager.withOperation(func() error {
 		var renderErr error
-		result, _, renderErr = manager.compiler.Render(ctx, profile, catalog, subscriptions.Target{Format: "clash-meta"}, true)
+		result, _, renderErr = manager.compiler.Render(ctx, profile, catalog, subscriptions.Target{Format: "clash-meta"}, force)
 		return renderErr
 	})
 	if err != nil {
@@ -322,6 +333,30 @@ func (manager *Manager) TraceSubscriptionNode(ctx context.Context, id, name, for
 		}
 	}
 	return subscriptions.FieldDiff{}, fmt.Errorf("node %q was not found in conversion diagnostics", name)
+}
+
+func (manager *Manager) PreviewSubscriptionNodes(ctx context.Context, id string, force bool) ([]subscriptions.PreviewNode, error) {
+	catalog, err := manager.subscriptions.Read()
+	if err != nil {
+		return nil, err
+	}
+	profile, err := subscriptions.FindProfile(&catalog, id)
+	if err != nil {
+		return nil, err
+	}
+	return manager.compiler.PreviewNodes(ctx, *profile, catalog, force)
+}
+
+func (manager *Manager) TraceSubscriptionNodeSteps(ctx context.Context, id, name, format string) (map[string]any, error) {
+	catalog, err := manager.subscriptions.Read()
+	if err != nil {
+		return nil, err
+	}
+	profile, err := subscriptions.FindProfile(&catalog, id)
+	if err != nil {
+		return nil, err
+	}
+	return manager.compiler.TraceNode(ctx, *profile, catalog, name, format)
 }
 
 func (manager *Manager) ClearSubscriptionCache() (Change, error) {
@@ -458,6 +493,9 @@ func (manager *Manager) activeProfile() (subscriptions.Catalog, *subscriptions.P
 func stringValue(value any) string { result, _ := value.(string); return result }
 
 func subscriptionProfileHasInputs(profile subscriptions.Profile) bool {
+	if strings.TrimSpace(profile.Editor.Servers) != "" && strings.TrimSpace(profile.Editor.Servers) != "[]" {
+		return true
+	}
 	if len(profile.CustomNodeIDs) > 0 {
 		return true
 	}
