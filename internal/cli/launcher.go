@@ -41,14 +41,14 @@ func runLauncher(ctx context.Context, input io.Reader, output, errorOutput io.Wr
 		switch choice {
 		case "", "0":
 			return 0
-		case "1", "3", "4":
+		case "1", "2", "4":
 			arguments := launcherArguments(choice, status.showPortable)
 			if arguments == nil {
 				fmt.Fprintln(errorOutput, "Invalid selection.")
 				continue
 			}
 			return Run(ctx, arguments, reader, output, errorOutput)
-		case "2":
+		case "3":
 			fmt.Fprintln(output, "\n1. Uninstall and keep configuration")
 			fmt.Fprintln(output, "2. Full uninstall and remove all data")
 			fmt.Fprintln(output, "0. Cancel")
@@ -113,8 +113,8 @@ func launcherStatus(ctx context.Context) launcherSnapshot {
 
 func writeLauncherMenu(output io.Writer, installAction string, showPortable bool) int {
 	fmt.Fprintln(output, "\n1. Open Web UI")
-	fmt.Fprintln(output, "2. Uninstall")
-	fmt.Fprintf(output, "3. %s\n", installAction)
+	fmt.Fprintf(output, "2. %s\n", installAction)
+	fmt.Fprintln(output, "3. Uninstall")
 	maxChoice := 3
 	if showPortable {
 		fmt.Fprintln(output, "4. Run Portable")
@@ -128,7 +128,7 @@ func launcherArguments(choice string, showPortable bool) []string {
 	switch choice {
 	case "1":
 		return []string{"open"}
-	case "3":
+	case "2":
 		return []string{"install"}
 	case "4":
 		if showPortable {
