@@ -23,12 +23,13 @@ func (manager *Manager) UninstallApplication(ctx context.Context, purge bool) er
 		release()
 		return err
 	}
+	cleanupErr := manager.transparent.Cleanup(ctx)
 	commandErr := manager.commands.Unregister(target)
 	if !purge {
 		store := state.New(target)
 		if err := store.Initialize(); err != nil {
 			release()
-			return errors.Join(err, commandErr)
+			return errors.Join(err, commandErr, cleanupErr)
 		}
 		if err := store.Update(func(document *state.Document) error {
 			document.Selected = nil
@@ -41,12 +42,12 @@ func (manager *Manager) UninstallApplication(ctx context.Context, purge bool) er
 			return nil
 		}); err != nil {
 			release()
-			return errors.Join(err, commandErr)
+			return errors.Join(err, commandErr, cleanupErr)
 		}
 	}
 	release()
 
-	result := commandErr
+	result := errors.Join(commandErr, cleanupErr)
 	for _, path := range []string{target.Cores, target.UI, target.Logs, target.Runtime} {
 		if err := os.RemoveAll(path); err != nil {
 			result = errors.Join(result, fmt.Errorf("remove %s: %w", path, err))

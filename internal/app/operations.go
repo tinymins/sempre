@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,7 +73,12 @@ func (manager *Manager) DeployService(
 }
 
 func (manager *Manager) UninstallService(ctx context.Context) error {
-	return manager.withSystemOperation(func() error { return manager.service.Uninstall(ctx) })
+	return manager.withSystemOperation(func() error {
+		if err := manager.service.Uninstall(ctx); err != nil {
+			return err
+		}
+		return manager.transparent.Cleanup(ctx)
+	})
 }
 
 func (manager *Manager) StartService(ctx context.Context) error {
@@ -170,10 +177,19 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 	}
 	var builder strings.Builder
 	failures := 0
+	warnings := 0
 	check := func(name string, err error) {
 		if err != nil {
 			failures++
 			fmt.Fprintf(&builder, "[FAIL] %s: %v\n", name, err)
+		} else {
+			fmt.Fprintf(&builder, "[ OK ] %s\n", name)
+		}
+	}
+	warn := func(name string, err error) {
+		if err != nil {
+			warnings++
+			fmt.Fprintf(&builder, "[WARN] %s: %v\n", name, err)
 		} else {
 			fmt.Fprintf(&builder, "[ OK ] %s\n", name)
 		}
@@ -189,6 +205,12 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 			check("service executable", manager.checkServiceExecutable())
 			check("command registration", manager.commands.Check(manager.paths))
 		}
+	}
+	catalog, catalogErr := manager.subscriptions.Read()
+	var profile *subscriptions.Profile
+	profileErr := catalogErr
+	if profileErr == nil {
+		profile, profileErr = subscriptions.FindProfile(&catalog, document.ActiveProfileID)
 	}
 	if document.Active == nil {
 		check("active core", fmt.Errorf("not selected"))
@@ -216,14 +238,161 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 	} else {
 		fmt.Fprintf(&builder, "[ OK ] runtime state: %s\n", runtimeStatus)
 	}
+	if document.Active != nil && profileErr == nil && document.Runtime.State == "running" {
+		check("active source configuration hash", verifyConfigurationHash(
+			manager.paths.Config(document.Active.Core, document.Active.ConfigHash),
+			document.Active.ConfigHash,
+		))
+		check("runtime source configuration hash", equalValue(
+			document.Runtime.ConfigHash,
+			document.Active.ConfigHash,
+			"runtime source hash does not match the active deployment",
+		))
+		if document.Runtime.RuntimeConfig == "" || document.Runtime.RuntimeHash == "" {
+			check("prepared runtime configuration hash", fmt.Errorf("runtime configuration metadata is missing; restart Sempre once after upgrading"))
+		} else {
+			check("prepared runtime configuration hash", verifyConfigurationHash(
+				document.Runtime.RuntimeConfig,
+				document.Runtime.RuntimeHash,
+			))
+		}
+		adapter, adapterErr := manager.registry.Get(document.Active.Core)
+		if adapterErr == nil {
+			expected, expectedErr := expectedConfigBuild(*profile, adapter, document.Active.Version)
+			if expectedErr == nil && document.ConfigBuilds[document.Active.Core] != expected {
+				expectedErr = fmt.Errorf("active configuration was not built from profile revision %d", profile.Revision)
+			}
+			check("profile settings survive recompilation", expectedErr)
+		} else {
+			check("profile settings survive recompilation", adapterErr)
+		}
+		for _, diagnostic := range manager.transparent.Diagnostics(
+			ctx,
+			document.Active.Core,
+			*profile,
+			document.Runtime.RuntimeConfig,
+		) {
+			check(diagnostic.Name, diagnostic.Err)
+		}
+		if profile.ClashAPI.Enabled {
+			check("external Clash API", probeExternalClashAPI(ctx, profile.ClashAPI))
+		}
+		if profile.TransparentProxy.Mode == subscriptions.TransparentProxyTUN ||
+			(profile.TransparentProxy.Mode == subscriptions.TransparentProxyTProxy && profile.TransparentProxy.TProxy.CaptureHost) {
+			for _, result := range transparentNetworkProbes(ctx) {
+				warn(result.name, result.err)
+			}
+		} else if profile.TransparentProxy.Mode == subscriptions.TransparentProxyTProxy {
+			warn("LAN transparent traffic probe", fmt.Errorf("a live LAN client is required because capture_host is disabled"))
+		}
+	}
 	if failures == 0 {
-		fmt.Fprintln(&builder, "All checks passed.")
+		if warnings == 0 {
+			fmt.Fprintln(&builder, "All checks passed.")
+		} else {
+			fmt.Fprintf(&builder, "All required checks passed with %d warning(s).\n", warnings)
+		}
 	}
 	report := strings.TrimRight(builder.String(), "\n")
 	if failures > 0 {
 		return report, fmt.Errorf("%w: %d check(s) failed", ErrDoctorFailed, failures)
 	}
 	return report, nil
+}
+
+func verifyConfigurationHash(path, expected string) error {
+	actual, err := configurationFileHash(path)
+	if err != nil {
+		return err
+	}
+	return equalValue(actual, expected, "configuration content hash does not match recorded state")
+}
+
+func equalValue(actual, expected, message string) error {
+	if actual != expected {
+		return fmt.Errorf("%s: got %q, expected %q", message, actual, expected)
+	}
+	return nil
+}
+
+func probeExternalClashAPI(ctx context.Context, config subscriptions.ClashAPIConfig) error {
+	host, port, err := net.SplitHostPort(config.ExternalController)
+	if err != nil {
+		return err
+	}
+	address := net.ParseIP(host)
+	if host == "" || address != nil && address.IsUnspecified() {
+		host = "127.0.0.1"
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, "http://"+net.JoinHostPort(host, port)+"/version", nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+config.Secret)
+	response, err := (&http.Client{Transport: &http.Transport{Proxy: nil}}).Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("external controller returned HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
+type networkProbeResult struct {
+	name string
+	err  error
+}
+
+func transparentNetworkProbes(ctx context.Context) []networkProbeResult {
+	probes := []struct {
+		name string
+		url  string
+	}{
+		{name: "domestic reachability through direct rules", url: "https://www.baidu.com/"},
+		{name: "foreign reachability through proxy rules", url: "https://www.google.com/generate_204"},
+	}
+	results := make(chan networkProbeResult, len(probes)+1)
+	for _, probe := range probes {
+		go func() {
+			probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			defer cancel()
+			request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, probe.url, nil)
+			if err == nil {
+				response, requestErr := (&http.Client{Transport: &http.Transport{Proxy: nil}}).Do(request)
+				err = requestErr
+				if response != nil {
+					_ = response.Body.Close()
+					if err == nil && (response.StatusCode < 200 || response.StatusCode >= 400) {
+						err = fmt.Errorf("HTTP %d", response.StatusCode)
+					}
+				}
+			}
+			results <- networkProbeResult{name: probe.name, err: err}
+		}()
+	}
+	go func() {
+		probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		addresses, err := net.DefaultResolver.LookupIPAddr(probeCtx, "www.google.com")
+		if err == nil {
+			for _, value := range addresses {
+				if value.IP.IsPrivate() || value.IP.IsLoopback() || value.IP.IsUnspecified() || value.IP.IsMulticast() {
+					err = fmt.Errorf("resolver returned non-public address %s", value.IP)
+					break
+				}
+			}
+		}
+		results <- networkProbeResult{name: "foreign DNS response sanity", err: err}
+	}()
+	output := make([]networkProbeResult, 0, cap(results))
+	for range cap(results) {
+		output = append(output, <-results)
+	}
+	return output
 }
 
 func (manager *Manager) runtimeStatus(document state.Document) (string, error) {

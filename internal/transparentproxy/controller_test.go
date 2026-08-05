@@ -45,6 +45,8 @@ func (backend *fakeBackend) VerifyTProxy(context.Context, Plan) error {
 
 func (backend *fakeBackend) VerifyTUN(context.Context, Plan) error { return backend.verifyTUNErr }
 
+func (backend *fakeBackend) Diagnostics(context.Context, Plan) []Diagnostic { return nil }
+
 func (backend *fakeBackend) Cleanup(context.Context) error {
 	backend.cleanupCalls++
 	return nil
@@ -178,6 +180,45 @@ func TestApplyTProxyRollsBackFailedVerification(t *testing.T) {
 	}
 	if backend.applyCalls != 1 || backend.cleanupCalls != 1 {
 		t.Fatalf("apply calls = %d, cleanup calls = %d", backend.applyCalls, backend.cleanupCalls)
+	}
+}
+
+func TestDiagnosticsValidateLinuxRoutingAndDNSStructure(t *testing.T) {
+	backend := &fakeBackend{}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("gateway")
+	path := writeRuntimeConfig(t, map[string]any{
+		"inbounds": []any{map[string]any{
+			"type": "tun", "tag": "tun-in", "interface_name": "sing-box",
+			"address": []string{"172.19.0.1/30"}, "auto_route": true,
+			"auto_redirect": true, "strict_route": true, "stack": "system",
+		}},
+		"dns": map[string]any{
+			"final":   "remote",
+			"servers": []any{map[string]any{"tag": "remote", "detour": "foreign"}},
+			"rules":   []any{map[string]any{"rule_set": []string{"geosite-cn"}, "server": "local"}},
+		},
+		"route": map[string]any{
+			"auto_detect_interface": true,
+			"final":                 "foreign",
+			"rules":                 []any{map[string]any{"rule_set": []string{"geosite-cn"}, "outbound": "direct"}},
+		},
+	})
+	diagnostics := controller.Diagnostics(context.Background(), "sing-box", profile, path)
+	if len(diagnostics) != 3 {
+		t.Fatalf("diagnostics = %#v", diagnostics)
+	}
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Err != nil {
+			t.Fatalf("%s: %v", diagnostic.Name, diagnostic.Err)
+		}
+	}
+	document := readRuntimeConfig(t, path)
+	document["dns"].(map[string]any)["final"] = "local"
+	path = writeRuntimeConfig(t, document)
+	diagnostics = controller.Diagnostics(context.Background(), "sing-box", profile, path)
+	if diagnostics[1].Err == nil {
+		t.Fatal("expected invalid DNS final to fail diagnostics")
 	}
 }
 

@@ -151,6 +151,7 @@ func newAdminServer(manager *Manager, daemonToken ...string) *adminServer {
 	mux.HandleFunc("GET /api/v1/health", admin.health)
 	mux.HandleFunc("POST /api/v1/auth/login", admin.login)
 	mux.HandleFunc("GET /api/v1/system", admin.system)
+	mux.HandleFunc("GET /api/v1/system/network", admin.systemNetwork)
 	mux.HandleFunc("POST /api/v1/service/action", admin.serviceAction)
 	mux.HandleFunc("GET /api/v1/cores", admin.cores)
 	mux.HandleFunc("POST /api/v1/cores/install", admin.coreInstall)

@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -32,6 +34,8 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 	}
 	dataPlanePlan := transparentproxy.Plan{}
 	externalClashPlan := clashproxy.Config{}
+	runtimeConfig := ""
+	runtimeConfigHash := ""
 	runner := supervisor.Runner{
 		Stdout: stdout,
 		Stderr: stderr,
@@ -95,6 +99,11 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err := manager.validateConfiguration(runCtx, adapter, binary, runtimeSpec.Config, logger, logger); err != nil {
 					return supervisor.Plan{}, err
 				}
+				runtimeConfig = runtimeSpec.Config
+				runtimeConfigHash, err = configurationFileHash(runtimeConfig)
+				if err != nil {
+					return supervisor.Plan{}, err
+				}
 				return supervisor.Plan{
 					Deployment: deployment,
 					Spec:       adapter.Run(binary, runtimeSpec.Config, dataDir),
@@ -151,6 +160,8 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 					document.Runtime.Ref = plan.Deployment.Ref
 					document.Runtime.Version = plan.Deployment.Version
 					document.Runtime.ConfigHash = plan.Deployment.ConfigHash
+					document.Runtime.RuntimeConfig = runtimeConfig
+					document.Runtime.RuntimeHash = runtimeConfigHash
 					document.Runtime.StartedAt = time.Time{}
 					document.Runtime.LastTransition = time.Now().UTC()
 					return nil
@@ -185,6 +196,8 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 					document.Runtime.Ref = plan.Deployment.Ref
 					document.Runtime.Version = plan.Deployment.Version
 					document.Runtime.ConfigHash = plan.Deployment.ConfigHash
+					document.Runtime.RuntimeConfig = runtimeConfig
+					document.Runtime.RuntimeHash = runtimeConfigHash
 					document.Runtime.StartedAt = time.Now().UTC()
 					return nil
 				})
@@ -366,6 +379,15 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 	return manager.service.Run(ctx, func(serviceContext context.Context) error {
 		return manager.runControlPlane(serviceContext, runner.Run)
 	})
+}
+
+func configurationFileHash(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read prepared runtime configuration: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (bool, error) {

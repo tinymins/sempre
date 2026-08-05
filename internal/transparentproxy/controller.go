@@ -32,12 +32,18 @@ type Interface struct {
 }
 
 type Inventory struct {
+	Supported                bool        `json:"supported"`
 	Interfaces               []Interface `json:"interfaces"`
 	DefaultInterface         string      `json:"default_interface,omitempty"`
 	RecommendedLANInterfaces []string    `json:"recommended_lan_interfaces"`
 	LocalPrefixes            []string    `json:"local_prefixes"`
 	VPNPrefixes              []string    `json:"vpn_prefixes"`
 	OccupiedPrefixes         []string    `json:"occupied_prefixes"`
+}
+
+type Diagnostic struct {
+	Name string
+	Err  error
 }
 
 type Plan struct {
@@ -65,6 +71,7 @@ type systemBackend interface {
 	ApplyTProxy(context.Context, Plan) error
 	VerifyTProxy(context.Context, Plan) error
 	VerifyTUN(context.Context, Plan) error
+	Diagnostics(context.Context, Plan) []Diagnostic
 	Cleanup(context.Context) error
 }
 
@@ -78,9 +85,17 @@ func New() *Controller {
 
 func (controller *Controller) Inventory(ctx context.Context) (Inventory, error) {
 	if !controller.backend.Supported() {
-		return Inventory{}, nil
+		return Inventory{
+			Interfaces:               []Interface{},
+			RecommendedLANInterfaces: []string{},
+			LocalPrefixes:            []string{},
+			VPNPrefixes:              []string{},
+			OccupiedPrefixes:         []string{},
+		}, nil
 	}
-	return controller.backend.Inventory(ctx)
+	inventory, err := controller.backend.Inventory(ctx)
+	inventory.Supported = true
+	return inventory, err
 }
 
 func (controller *Controller) Prepare(
@@ -199,6 +214,140 @@ func (controller *Controller) Cleanup(ctx context.Context) error {
 		return nil
 	}
 	return controller.backend.Cleanup(ctx)
+}
+
+func (controller *Controller) Diagnostics(
+	ctx context.Context,
+	coreID string,
+	profile subscriptions.Profile,
+	configPath string,
+) []Diagnostic {
+	if coreID != "sing-box" || !controller.backend.Supported() || profile.TransparentProxy.Mode == subscriptions.TransparentProxyDisabled {
+		return nil
+	}
+	plan, document, err := controller.runtimePlan(ctx, profile, configPath)
+	if err != nil {
+		return []Diagnostic{{Name: "Linux transparent runtime configuration", Err: err}}
+	}
+	diagnostics := []Diagnostic{
+		{Name: "Linux transparent runtime configuration", Err: validateRuntimePlan(plan, document)},
+		{Name: "Linux split DNS configuration", Err: validateSplitDNS(document)},
+		{Name: "Linux domestic and foreign routing", Err: validateSplitRouting(document)},
+	}
+	return append(diagnostics, controller.backend.Diagnostics(ctx, plan)...)
+}
+
+func (controller *Controller) runtimePlan(
+	ctx context.Context,
+	profile subscriptions.Profile,
+	configPath string,
+) (Plan, map[string]any, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return Plan{}, nil, fmt.Errorf("read runtime configuration: %w", err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(data, &document); err != nil {
+		return Plan{}, nil, fmt.Errorf("decode runtime configuration: %w", err)
+	}
+	plan := Plan{Mode: profile.TransparentProxy.Mode, Config: configPath}
+	inventory, err := controller.backend.Inventory(ctx)
+	if err != nil {
+		return Plan{}, nil, fmt.Errorf("inspect Linux routes: %w", err)
+	}
+	if plan.Mode == subscriptions.TransparentProxyTUN {
+		inbound, findErr := findInbound(document, "tun-in", "tun")
+		if findErr != nil {
+			return Plan{}, nil, findErr
+		}
+		plan.TUNInterface, _ = inbound["interface_name"].(string)
+		plan.TUNAddress = firstString(inbound["address"])
+		plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
+	} else {
+		config := profile.TransparentProxy.TProxy
+		plan.TProxyPort = config.ListenPort
+		plan.DNSPort = config.DNSListenPort
+		plan.CaptureHost = config.CaptureHost
+		plan.LANInterfaces = uniqueStrings(config.LANInterfaces)
+		if len(plan.LANInterfaces) == 0 {
+			plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
+		}
+	}
+	return plan, document, nil
+}
+
+func validateRuntimePlan(plan Plan, document map[string]any) error {
+	route := object(document["route"])
+	if route["auto_detect_interface"] != true {
+		return fmt.Errorf("route.auto_detect_interface is not enabled")
+	}
+	if plan.Mode == subscriptions.TransparentProxyTUN {
+		inbound, err := findInbound(document, "tun-in", "tun")
+		if err != nil {
+			return err
+		}
+		for _, field := range []string{"auto_route", "auto_redirect", "strict_route"} {
+			if inbound[field] != true {
+				return fmt.Errorf("TUN inbound %s is not enabled", field)
+			}
+		}
+		if plan.TUNInterface == "" || plan.TUNAddress == "" || inbound["stack"] != "system" {
+			return fmt.Errorf("TUN interface, address, or system stack is missing")
+		}
+		return nil
+	}
+	if _, err := findInbound(document, "tproxy-in", "tproxy"); err != nil {
+		return err
+	}
+	if _, err := findInbound(document, "dns-in", "direct"); err != nil {
+		return err
+	}
+	if number, ok := numberAsUint32(route["default_mark"]); !ok || number != BypassMark {
+		return fmt.Errorf("route.default_mark does not bypass the Sempre TProxy capture mark")
+	}
+	return nil
+}
+
+func validateSplitDNS(document map[string]any) error {
+	dns := object(document["dns"])
+	if dns["final"] != "remote" {
+		return fmt.Errorf("dns.final is not remote")
+	}
+	servers, _ := dns["servers"].([]any)
+	remoteDetour := ""
+	for _, value := range servers {
+		server, _ := value.(map[string]any)
+		if server["tag"] == "remote" {
+			remoteDetour, _ = server["detour"].(string)
+		}
+	}
+	if remoteDetour == "" || remoteDetour == "direct" {
+		return fmt.Errorf("remote DNS is not attached to a foreign selector")
+	}
+	rules, _ := dns["rules"].([]any)
+	for _, value := range rules {
+		rule, _ := value.(map[string]any)
+		if rule["server"] == "local" && stringListContains(rule["rule_set"], "geosite-cn") {
+			return nil
+		}
+	}
+	return fmt.Errorf("geosite-cn does not use local DNS")
+}
+
+func validateSplitRouting(document map[string]any) error {
+	route := object(document["route"])
+	final, _ := route["final"].(string)
+	if final == "" || final == "direct" {
+		return fmt.Errorf("foreign route final is not a proxy selector")
+	}
+	rules, _ := route["rules"].([]any)
+	for _, value := range rules {
+		rule, _ := value.(map[string]any)
+		if rule["outbound"] == "direct" && stringListContains(rule["rule_set"], "geosite-cn") {
+			return nil
+		}
+	}
+	return fmt.Errorf("geosite-cn does not route direct")
 }
 
 func prepareTUN(
@@ -429,4 +578,55 @@ func object(value any) map[string]any {
 		return result
 	}
 	return map[string]any{}
+}
+
+func firstString(value any) string {
+	switch values := value.(type) {
+	case []any:
+		if len(values) > 0 {
+			result, _ := values[0].(string)
+			return result
+		}
+	case []string:
+		if len(values) > 0 {
+			return values[0]
+		}
+	case string:
+		return values
+	}
+	return ""
+}
+
+func numberAsUint32(value any) (uint32, bool) {
+	switch number := value.(type) {
+	case float64:
+		if number >= 0 && number <= float64(^uint32(0)) && number == float64(uint32(number)) {
+			return uint32(number), true
+		}
+	case uint32:
+		return number, true
+	case int:
+		if number >= 0 && uint64(number) <= uint64(^uint32(0)) {
+			return uint32(number), true
+		}
+	}
+	return 0, false
+}
+
+func stringListContains(value any, expected string) bool {
+	switch values := value.(type) {
+	case []any:
+		for _, item := range values {
+			if item == expected {
+				return true
+			}
+		}
+	case []string:
+		for _, item := range values {
+			if item == expected {
+				return true
+			}
+		}
+	}
+	return false
 }

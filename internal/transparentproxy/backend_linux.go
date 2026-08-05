@@ -205,6 +205,34 @@ func (backend linuxBackend) ApplyTProxy(ctx context.Context, plan Plan) (result 
 }
 
 func (linuxBackend) VerifyTProxy(_ context.Context, plan Plan) error {
+	return errors.Join(
+		verifySempreNFTables(plan),
+		listenersReady(plan),
+		verifyLANInterfaces(plan),
+		verifyPolicyRoutes(),
+		verifyTrafficSources(plan),
+	)
+}
+
+func (backend linuxBackend) Diagnostics(ctx context.Context, plan Plan) []Diagnostic {
+	if plan.Mode == "tun-router" {
+		return []Diagnostic{
+			{Name: "Linux TUN interface and address", Err: backend.VerifyTUN(ctx, plan)},
+			{Name: "sing-box TUN auto-redirect nftables rules", Err: verifySingBoxNFTables()},
+			{Name: "Linux IPv4 forwarding", Err: verifyIPv4Forwarding(plan)},
+		}
+	}
+	return []Diagnostic{
+		{Name: "Sempre TProxy nftables rules", Err: verifySempreNFTables(plan)},
+		{Name: "Sempre TProxy policy routing", Err: verifyPolicyRoutes()},
+		{Name: "Sempre TProxy TCP listeners", Err: listenersReady(plan)},
+		{Name: "Linux LAN interfaces", Err: verifyLANInterfaces(plan)},
+		{Name: "Linux IPv4 forwarding", Err: verifyIPv4Forwarding(plan)},
+		{Name: "Linux transparent traffic sources", Err: verifyTrafficSources(plan)},
+	}
+}
+
+func verifySempreNFTables(plan Plan) error {
 	var failures []error
 	for _, family := range []nftables.TableFamily{nftables.TableFamilyIPv4, nftables.TableFamilyIPv6} {
 		connection := &nftables.Conn{}
@@ -257,21 +285,77 @@ func (linuxBackend) VerifyTProxy(_ context.Context, plan Plan) error {
 			}
 		}
 	}
-	if err := listenersReady(plan); err != nil {
-		failures = append(failures, err)
+	return errors.Join(failures...)
+}
+
+func verifySingBoxNFTables() error {
+	connection := &nftables.Conn{}
+	tables, err := connection.ListTables()
+	if err != nil {
+		return err
 	}
+	var table *nftables.Table
+	for _, current := range tables {
+		if current.Family == nftables.TableFamilyINet && current.Name == "sing-box" {
+			table = current
+			break
+		}
+	}
+	if table == nil {
+		return fmt.Errorf("nftables inet table sing-box is missing")
+	}
+	chains, err := connection.ListChains()
+	if err != nil {
+		return err
+	}
+	foundRules := false
+	for _, chain := range chains {
+		if chain.Table == nil || chain.Table.Family != table.Family || chain.Table.Name != table.Name {
+			continue
+		}
+		rules, ruleErr := connection.GetRules(table, chain)
+		if ruleErr != nil {
+			return ruleErr
+		}
+		if len(rules) > 0 {
+			foundRules = true
+		}
+	}
+	if !foundRules {
+		return fmt.Errorf("nftables inet table sing-box has no rules")
+	}
+	return nil
+}
+
+func verifyLANInterfaces(plan Plan) error {
+	var failures []error
 	for _, name := range plan.LANInterfaces {
 		if _, err := netlink.LinkByName(name); err != nil {
 			failures = append(failures, fmt.Errorf("LAN interface %s is unavailable: %w", name, err))
 		}
 	}
-	if err := verifyPolicyRoutes(); err != nil {
-		failures = append(failures, err)
-	}
-	if len(plan.LANInterfaces) == 0 && !plan.CaptureHost {
-		failures = append(failures, fmt.Errorf("no traffic source is configured"))
-	}
 	return errors.Join(failures...)
+}
+
+func verifyIPv4Forwarding(plan Plan) error {
+	if len(plan.LANInterfaces) == 0 {
+		return nil
+	}
+	enabled, err := (linuxBackend{}).IPv4Forwarding()
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return fmt.Errorf("net.ipv4.ip_forward is disabled")
+	}
+	return nil
+}
+
+func verifyTrafficSources(plan Plan) error {
+	if len(plan.LANInterfaces) == 0 && !plan.CaptureHost {
+		return fmt.Errorf("no traffic source is configured")
+	}
+	return nil
 }
 
 func (linuxBackend) Cleanup(_ context.Context) error {

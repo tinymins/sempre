@@ -101,6 +101,8 @@ type Runtime struct {
 	Ref            string    `json:"ref,omitempty"`
 	Version        string    `json:"version,omitempty"`
 	ConfigHash     string    `json:"config_hash,omitempty"`
+	RuntimeConfig  string    `json:"runtime_config,omitempty"`
+	RuntimeHash    string    `json:"runtime_config_hash,omitempty"`
 	StartedAt      time.Time `json:"started_at,omitempty"`
 	RestartCount   int       `json:"restart_count,omitempty"`
 	LastExit       string    `json:"last_exit,omitempty"`
@@ -270,6 +272,9 @@ func (document Document) Validate() error {
 	}
 	if document.Runtime.ConfigHash != "" && !hashPattern.MatchString(document.Runtime.ConfigHash) {
 		return fmt.Errorf("invalid runtime configuration hash %q", document.Runtime.ConfigHash)
+	}
+	if document.Runtime.RuntimeHash != "" && !hashPattern.MatchString(document.Runtime.RuntimeHash) {
+		return fmt.Errorf("invalid prepared runtime configuration hash %q", document.Runtime.RuntimeHash)
 	}
 	switch document.Runtime.State {
 	case "", "idle", "starting", "running", "stopping", "restarting", "stopped", "failed":

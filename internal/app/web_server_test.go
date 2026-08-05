@@ -56,6 +56,17 @@ func TestAdminServerAuthenticationBoundary(t *testing.T) {
 		t.Fatalf("authenticated system status = %d", response.StatusCode)
 	}
 	response.Body.Close()
+	response = testJSONRequest(t, http.MethodGet, server.URL+"/api/v1/system/network", server.URL, login.Token, nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("network inventory status = %d", response.StatusCode)
+	}
+	var inventory struct {
+		Supported bool `json:"supported"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&inventory); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
 	if err := manager.store.Update(func(document *state.Document) error {
 		document.Cores = map[string]*state.CoreState{}
 		document.Selected = nil

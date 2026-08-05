@@ -29,4 +29,6 @@ func (unsupportedBackend) VerifyTProxy(context.Context, Plan) error { return nil
 
 func (unsupportedBackend) VerifyTUN(context.Context, Plan) error { return nil }
 
+func (unsupportedBackend) Diagnostics(context.Context, Plan) []Diagnostic { return nil }
+
 func (unsupportedBackend) Cleanup(context.Context) error { return nil }
