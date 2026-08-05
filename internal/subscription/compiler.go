@@ -428,6 +428,9 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 			if defaultMember == "" {
 				defaultMember = members[0]
 			}
+			if !configuredMember(members, defaultMember) {
+				return nil, diffs, warnings, fmt.Errorf("proxy group %q default %q is not an available member", group.Name, group.Default)
+			}
 			outbound["default"] = defaultMember
 			outbound["interrupt_exist_connections"] = true
 		} else {
@@ -486,9 +489,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	if rules, ok := dns["rules"].([]any); ok {
 		privateRules := append([]any{}, private.DNSRules...)
 		if len(private.DirectDomains) > 0 {
-			resolver := "local"
-			resolver = "bootstrap"
-			privateRules = append([]any{map[string]any{"domain": private.DirectDomains, "action": "route", "server": resolver}}, privateRules...)
+			privateRules = append([]any{map[string]any{"domain": private.DirectDomains, "action": "route", "server": "local"}}, privateRules...)
 		}
 		dns["rules"] = append(privateRules, rules...)
 	}

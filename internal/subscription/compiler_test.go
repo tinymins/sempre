@@ -234,6 +234,24 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 	}
 }
 
+func TestSingBoxSelectorDefaultMustResolveToFinalMember(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.Groups = []ProxyGroup{{Name: "foreign", Type: "select", IncludeAll: true, Default: "missing"}}
+	_, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err == nil {
+		t.Fatal("expected unavailable selector default to fail compilation")
+	}
+}
+
+func TestCatalogAllowsDynamicSelectorDefault(t *testing.T) {
+	catalog := NewCatalog("")
+	profile := &catalog.Profiles[0]
+	profile.Groups = []ProxyGroup{{Name: "foreign", Type: "select", IncludeAll: true, Default: "subscription-node"}}
+	if err := ValidateCatalog(catalog); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLinuxSingBoxTProxyAndDisabledModes(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
 	profile.TransparentProxy.Mode = TransparentProxyTProxy

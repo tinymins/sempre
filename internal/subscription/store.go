@@ -300,7 +300,7 @@ func validateCatalog(catalog Catalog) error {
 			default:
 				return fmt.Errorf("profile %q group %q has unsupported type %q", profile.Name, name, group.Type)
 			}
-			if group.Default != "" && !configuredMember(group.Proxies, group.Default) {
+			if group.Default != "" && group.Readonly && !group.IncludeAll && len(group.Proxies) > 0 && !configuredMember(group.Proxies, group.Default) {
 				return fmt.Errorf("profile %q group %q default %q is not a configured member", profile.Name, name, group.Default)
 			}
 		}
