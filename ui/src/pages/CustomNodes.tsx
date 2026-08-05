@@ -2,8 +2,10 @@ import { useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Braces, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Modal } from '@acme/components'
 import { api } from '../lib/api'
+import { useIsMobile } from '../hooks'
 import { useI18n } from '../lib/i18n'
 import { parseJSONC } from '../lib/jsonc'
 import { useSession } from '../lib/session'
@@ -45,6 +47,7 @@ export function CustomNodes() {
 function NodeEditor({ node, onClose, onSaved }: { node?: CustomNode; onClose: () => void; onSaved: () => void }) {
   const { t } = useI18n()
   const { session } = useSession()
+  const isMobile = useIsMobile()
   const [name, setName] = useState(node?.name || '')
   const [content, setContent] = useState(() => `${JSON.stringify(node?.proxy || exampleNode, null, 2)}\n`)
   const [error, setError] = useState('')
@@ -58,11 +61,41 @@ function NodeEditor({ node, onClose, onSaved }: { node?: CustomNode; onClose: ()
     onSuccess: onSaved,
     onError: (cause) => setError(cause.message),
   })
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !save.isPending) onClose() }}>
-    <div role="dialog" aria-modal="true" className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
-      <div className="flex h-14 shrink-0 items-center border-b border-[var(--border)] px-4"><Braces size={18} className="mr-2 text-emerald-600" /><h2 className="text-sm font-semibold">{node ? t('editNode') : t('addNode')}</h2><Button className="ml-auto" size="icon" variant="ghost" title={t('close')} onClick={onClose}><X size={17} /></Button></div>
-      <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4"><Field label={t('profileName')}><Input value={name} onChange={(event) => setName(event.target.value)} /></Field><Field label={t('nodeJSON')}><div className="overflow-hidden rounded-md border border-[var(--border)]"><CodeMirror value={content} height="min(58vh, 560px)" extensions={[json()]} theme="dark" onChange={setContent} /></div></Field>{error ? <p className="text-sm text-red-600">{error}</p> : null}</div>
-      <div className="flex shrink-0 justify-end gap-2 border-t border-[var(--border)] p-4"><Button onClick={onClose}>{t('cancel')}</Button><Button variant="primary" disabled={save.isPending} onClick={() => { setError(''); try { parseJSONC(content); save.mutate() } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } }}>{save.isPending ? <Spinner /> : null}{t('save')}</Button></div>
-    </div>
-  </div>
+  const handleSave = () => {
+    setError('')
+    try {
+      parseJSONC(content)
+      save.mutate()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  return (
+    <Modal
+      open
+      title={<span className="flex items-center gap-2"><Braces size={18} className="text-emerald-600" />{node ? t('editNode') : t('addNode')}</span>}
+      size={isMobile ? 'full' : 'default'}
+      width={isMobile ? undefined : 900}
+      okText={t('save')}
+      cancelText={t('cancel')}
+      onOk={() => {
+        handleSave()
+        return undefined
+      }}
+      onCancel={onClose}
+      confirmLoading={save.isPending}
+      cancelButtonProps={{ disabled: save.isPending }}
+      maskClosable={!save.isPending}
+      keyboard={!save.isPending}
+      closable={!save.isPending}
+      destroyOnClose
+      centered={!isMobile}
+    >
+      <div className="grid gap-4">
+        <Field label={t('profileName')}><Input value={name} onChange={(event) => setName(event.target.value)} /></Field>
+        <Field label={t('nodeJSON')}><div className="overflow-hidden rounded-md border border-[var(--border)]"><CodeMirror value={content} height="min(58vh, 560px)" extensions={[json()]} theme="dark" onChange={setContent} /></div></Field>
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      </div>
+    </Modal>
+  )
 }

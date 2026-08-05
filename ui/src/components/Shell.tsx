@@ -7,6 +7,7 @@ import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import type { SystemStatus } from '../lib/types'
 import { cn } from '../lib/cn'
+import { AcmeContentBoundary } from './AcmeContentBoundary'
 import { Badge, Button } from './ui'
 
 type Theme = 'system' | 'light' | 'dark'
@@ -88,7 +89,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
         {system.data?.web.password_warning || session?.warning === 'PASSWORD_EMPTY' ? <div className="border-b border-amber-400/40 bg-amber-400/12 px-4 py-2 text-center text-xs font-medium text-amber-800 dark:text-amber-300">{t('emptyPassword')}</div> : null}
-        <main className="mx-auto w-full max-w-[1600px] p-4 md:p-6">{children}</main>
+        <main className="mx-auto w-full max-w-[1600px] p-4 md:p-6"><AcmeContentBoundary>{children}</AcmeContentBoundary></main>
       </div>
     </div>
   )

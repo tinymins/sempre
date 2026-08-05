@@ -64,7 +64,6 @@ import {
   useToast,
   type TableColumnsType,
 } from '@acme/components'
-import { AcmeContentBoundary } from '../components/AcmeContentBoundary'
 
 interface DemoRow {
   id: string
@@ -390,5 +389,5 @@ function ShowcaseContent() {
 }
 
 export function AcmeShowcase() {
-  return <AcmeContentBoundary><ShowcaseContent /></AcmeContentBoundary>
+  return <ShowcaseContent />
 }

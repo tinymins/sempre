@@ -133,8 +133,9 @@ describe('Subscriptions subscription sets', () => {
     let dialog = screen.getByRole('dialog', { name: 'New subscription set' })
     const createButton = within(dialog).getByRole('button', { name: 'Create' })
     expect(createButton).toBeDisabled()
-    fireEvent.change(within(dialog).getByLabelText('Subscription set name'), { target: { value: 'Work' } })
-    fireEvent.click(createButton)
+    const createNameInput = within(dialog).getByLabelText('Subscription set name')
+    fireEvent.change(createNameInput, { target: { value: 'Work' } })
+    fireEvent.submit(createNameInput.closest('form')!)
 
     expect(await screen.findByRole('tab', { name: 'Work' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getAllByRole('tab')).toHaveLength(2)

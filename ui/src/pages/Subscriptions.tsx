@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Trash2, X } from 'lucide-react'
-import { Dropdown } from '@acme/components'
+import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Trash2 } from 'lucide-react'
+import { Dropdown, Modal } from '@acme/components'
 import type { ProxyDebugFormat } from '@acme/types'
-import { AcmeContentBoundary } from '../components/AcmeContentBoundary'
 import { Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -217,7 +216,7 @@ export function Subscriptions() {
       {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`border-l-2 px-3 py-2 text-sm break-words ${notice.tone === 'error' ? 'border-red-500 bg-red-500/8 text-red-700 dark:text-red-300' : 'border-emerald-500 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}
 
       {currentProfile ? (
-        <AcmeContentBoundary>
+        <>
           <MessageBridge />
           <ProxyPreviewModal ref={previewRef} />
           <ProxyDebugModal ref={debugRef} />
@@ -254,7 +253,7 @@ export function Subscriptions() {
               </div>
             )}
           />
-        </AcmeContentBoundary>
+        </>
       ) : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
 
       <SubscriptionSetNameDialog
@@ -350,14 +349,6 @@ function SubscriptionSetMenuLabel({ label, reason = '' }: { label: string; reaso
 
 function SubscriptionSetNameDialog({ state, value, error, pending, onChange, onCancel, onSubmit }: { state: NameDialogState | null; value: string; error: string; pending: boolean; onChange: (value: string) => void; onCancel: () => void; onSubmit: () => void }) {
   const { t } = useI18n()
-  useEffect(() => {
-    if (!state || pending) return
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel()
-    }
-    document.addEventListener('keydown', closeOnEscape)
-    return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [state, pending, onCancel])
   if (!state) return null
   const creating = state.mode === 'create'
   const title = creating ? t('newSubscriptionSet') : t('renameSubscriptionSet')
@@ -366,24 +357,34 @@ function SubscriptionSetNameDialog({ state, value, error, pending, onChange, onC
     if (!pending) onSubmit()
   }
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onCancel() }}>
-      <form role="dialog" aria-modal="true" aria-labelledby="subscription-set-dialog-title" className="w-full max-w-sm rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl" onSubmit={submit}>
-        <div className="flex items-center gap-3">
-          <h2 id="subscription-set-dialog-title" className="text-base font-semibold">{title}</h2>
-          <Button className="ml-auto" type="button" size="icon" variant="ghost" title={t('close')} disabled={pending} onClick={onCancel}><X size={17} /></Button>
-        </div>
-        <div className="mt-4">
+    <Modal
+      open
+      title={title}
+      okText={creating ? t('createSubscriptionSet') : t('renameSubscriptionSet')}
+      cancelText={t('cancel')}
+      onOk={() => {
+        onSubmit()
+        return undefined
+      }}
+      onCancel={onCancel}
+      okButtonProps={{ disabled: !value.trim() }}
+      cancelButtonProps={{ disabled: pending }}
+      confirmLoading={pending}
+      maskClosable={!pending}
+      keyboard={!pending}
+      closable={!pending}
+      destroyOnClose
+      centered
+    >
+      <form onSubmit={submit}>
+        <div>
           <Field label={t('subscriptionSetName')}>
             <Input autoFocus aria-invalid={Boolean(error)} aria-describedby={error ? 'subscription-set-name-error' : undefined} value={value} onChange={(event) => onChange(event.target.value)} />
           </Field>
           {error ? <p id="subscription-set-name-error" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" disabled={pending} onClick={onCancel}>{t('cancel')}</Button>
-          <Button type="submit" variant="primary" disabled={pending || !value.trim()}>{pending ? <Spinner /> : null}{creating ? t('createSubscriptionSet') : t('renameSubscriptionSet')}</Button>
-        </div>
       </form>
-    </div>
+    </Modal>
   )
 }
 

@@ -7,6 +7,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -245,6 +246,7 @@ export function Modal({
 }: ModalProps) {
   const destroyOnClose = destroyOnCloseProp ?? destroyOnHidden ?? false;
   const contentRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   const ctxContainer = useContext(ModalContainerContext);
   const resolvedContainer = container ?? ctxContainer;
 
@@ -331,7 +333,7 @@ export function Modal({
   const isLoading = confirmLoading || okButtonProps?.loading;
 
   const defaultFooter = (
-    <div className="flex justify-end gap-2 pt-4">
+    <div className="flex justify-end gap-2">
       <Button onClick={onCancel} disabled={cancelButtonProps?.disabled}>
         {cancelText}
       </Button>
@@ -416,25 +418,31 @@ export function Modal({
           ...resolvedDialogStyle,
           ...style,
         }}
-        role="presentation"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
       >
         {/* Header */}
         {(title || closable) && (
-          <div className="flex items-center justify-between px-6 py-3 border-b border-black/[0.06] dark:border-white/[0.08] shrink-0">
+          <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-black/[0.06] dark:border-white/[0.08] shrink-0">
             {title ? (
-              <h3 className="text-base font-semibold text-[var(--text-primary)] m-0">
+              <h3
+                id={titleId}
+                className="min-w-0 flex-1 text-base font-semibold text-[var(--text-primary)] m-0"
+              >
                 {title}
               </h3>
             ) : (
               <span />
             )}
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               {extra}
               {closable ? (
                 <button
                   type="button"
-                  className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+                  className="inline-flex size-8 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-black/[0.04] hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] dark:hover:bg-white/[0.06] cursor-pointer"
                   onClick={onCancel}
+                  aria-label="Close"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -456,7 +464,9 @@ export function Modal({
         </div>
         {/* Footer */}
         {renderedFooter ? (
-          <div className="px-6 pb-4 shrink-0">{renderedFooter}</div>
+          <div className="shrink-0 border-t border-black/[0.06] px-6 py-4 dark:border-white/[0.08]">
+            {renderedFooter}
+          </div>
         ) : null}
       </div>
     </div>,

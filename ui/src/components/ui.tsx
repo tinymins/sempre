@@ -1,5 +1,6 @@
 import { useState, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
+import { Checkbox, Modal } from '@acme/components'
 import { cn } from '../lib/cn'
 
 const buttonVariants = cva(
@@ -130,12 +131,37 @@ function ConfirmDialogContent({
   onConfirm: () => void
 }) {
   const [acknowledged, setAcknowledged] = useState(false)
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onCancel() }}>
-    <div role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl">
-      <h2 id="confirm-dialog-title" className="text-base font-semibold">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{detail}</p>
-      {acknowledgement ? <label className="mt-4 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/8 p-3 text-sm leading-5"><input className="mt-0.5 size-4 shrink-0 accent-red-600" type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>{acknowledgement}</span></label> : null}
-      <div className="mt-5 flex justify-end gap-2"><Button disabled={pending} onClick={onCancel}>{cancelLabel}</Button><Button variant="danger" disabled={pending || Boolean(acknowledgement && !acknowledged)} onClick={onConfirm}>{pending ? <Spinner /> : null}{confirmLabel}</Button></div>
-    </div>
-  </div>
+  return (
+    <Modal
+      open
+      title={title}
+      okText={confirmLabel}
+      cancelText={cancelLabel}
+      onOk={() => {
+        onConfirm()
+        return undefined
+      }}
+      onCancel={onCancel}
+      okButtonProps={{ danger: true, disabled: Boolean(acknowledgement && !acknowledged) }}
+      cancelButtonProps={{ disabled: pending }}
+      confirmLoading={pending}
+      maskClosable={!pending}
+      keyboard={!pending}
+      closable={false}
+      destroyOnClose
+      centered
+    >
+      <p className="text-sm leading-6 text-[var(--muted)]">{detail}</p>
+      {acknowledgement ? (
+        <Checkbox
+          className="mt-4 w-full items-start rounded-md border border-amber-500/40 bg-amber-500/8 p-3 leading-5"
+          checked={acknowledged}
+          disabled={pending}
+          onChange={(event) => setAcknowledged(event.target.checked)}
+        >
+          {acknowledgement}
+        </Checkbox>
+      ) : null}
+    </Modal>
+  )
 }

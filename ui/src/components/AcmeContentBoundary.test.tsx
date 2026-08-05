@@ -33,7 +33,7 @@ describe('AcmeContentBoundary', () => {
 
     const portal = rendered.container.querySelector('[data-acme-portal-root]')
     expect(portal).not.toBeNull()
-    expect(portal).toContainElement(await screen.findByText('Contained modal'))
+    expect(portal).toContainElement(await screen.findByRole('dialog', { name: 'Contained modal' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }))
     expect(portal).toContainElement(await screen.findByText('Edit source'))

@@ -485,13 +485,6 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
       onCancel={handleClose}
       footer={null}
       size={isMobile ? "full" : "almost-full"}
-      styles={{
-        body: {
-          padding: isMobile ? "12px 8px" : "16px 0",
-          overflowY: "auto",
-          overflowX: "hidden",
-        },
-      }}
     >
       <Spin spinning={isLoading}>
         {!isLoading && nodes.length === 0 ? (
