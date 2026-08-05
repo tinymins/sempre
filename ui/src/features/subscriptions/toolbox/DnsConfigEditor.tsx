@@ -184,7 +184,10 @@ const DnsConfigEditor = ({
             { key: "clashMeta", label: "Clash Meta" },
             { key: "singbox", label: "Sing-box v1.11" },
             { key: "singboxV12", label: "Sing-box v1.12+" },
-          ]}
+          ].map((item) => ({
+            ...item,
+            label: <span className={tab === item.key ? "font-medium" : "font-normal"}>{item.label}</span>,
+          }))}
         />
       )}
 

@@ -386,7 +386,11 @@ const ProxySubscribeEditor = ({
     // 获取 tabs 的本地化标签
     const localizedTabs = TABS.map((tab) => ({
       ...tab,
-      label: t(`proxy.tabs.${tab.label}`),
+      label: (
+        <span className={`text-sm ${tab.value === activeTab ? "font-medium" : "font-normal"}`}>
+          {t(`proxy.tabs.${tab.label}`)}
+        </span>
+      ),
     }));
 
     const buildCandidate = async (): Promise<SubscriptionProfile> => {

@@ -97,11 +97,19 @@ body {
   background: var(--background);
 }
 
+@layer base {
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
 button,
 input,
 select,
 textarea {
-  font: inherit;
   letter-spacing: 0;
 }
 

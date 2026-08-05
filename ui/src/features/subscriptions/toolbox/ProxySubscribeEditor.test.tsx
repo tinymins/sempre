@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AcmeContentBoundary } from '@/components/AcmeContentBoundary'
 import { I18nProvider } from '@/lib/i18n'
@@ -87,6 +87,8 @@ describe('ProxySubscribeEditor', () => {
       expect(await screen.findByRole('button', { name: label })).toBeInTheDocument()
     }
     expect(labels.map((label) => screen.getByRole('button', { name: label }).textContent)).toEqual(labels)
+    expect(within(screen.getByRole('button', { name: 'Basic' })).getByText('Basic')).toHaveClass('text-sm', 'font-medium')
+    expect(within(screen.getByRole('button', { name: 'Subscribe URL' })).getByText('Subscribe URL')).toHaveClass('text-sm', 'font-normal')
     expect(screen.queryByText('Authorized Users')).not.toBeInTheDocument()
     expect(screen.getByText('Update schedule')).toBeInTheDocument()
     expect(screen.getByText('Restart after scheduled updates')).toBeInTheDocument()
@@ -94,7 +96,10 @@ describe('ProxySubscribeEditor', () => {
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Subscribe URL' }))
-    expect(screen.getByText('Add Raw Source')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: 'Basic' })).getByText('Basic')).toHaveClass('text-sm', 'font-normal')
+    expect(within(screen.getByRole('button', { name: 'Subscribe URL' })).getByText('Subscribe URL')).toHaveClass('text-sm', 'font-medium')
+    expect(screen.getByRole('button', { name: 'Add Subscribe Source' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Raw Source' })).toBeInTheDocument()
     expect(screen.getByText('Node Filter')).toBeInTheDocument()
     expect(rendered.container.querySelector('svg.lucide-circle-play')).toBeInTheDocument()
 
