@@ -68,6 +68,18 @@ describe('ProxySubscribeEditor', () => {
             profile={profile}
             defaults={defaults}
             customNodes={[{ id: 'custom-1', name: 'Local node', proxy: { name: 'Local node', type: 'socks5', server: '127.0.0.1', port: 1080 } }]}
+			networkInventory={{
+				supported: true,
+				default_interface: 'vmbr0',
+				recommended_lan_interfaces: ['vmbr1'],
+				local_prefixes: ['10.10.10.0/24'],
+				vpn_prefixes: [],
+				occupied_prefixes: ['10.10.10.0/24'],
+				interfaces: [
+					{ name: 'vmbr0', index: 2, kind: 'bridge', up: true, default_route: true, addresses: ['10.23.0.200/21'] },
+					{ name: 'vmbr1', index: 3, kind: 'bridge', up: true, default_route: false, addresses: ['10.10.10.1/24'] },
+				],
+			}}
             schedule={{ interval: '24h', autoRestart: true }}
             onScheduleSave={onScheduleSave}
             onSave={onSave}
@@ -83,7 +95,7 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     const rendered = renderEditor()
 
-    const labels = ['Basic', 'Subscribe URL', 'Rule List', 'Proxy Groups', 'Custom Rules', 'Advanced Config', 'DNS Config', 'Private Access', 'Manual Servers', 'Diagnostics']
+    const labels = ['Basic', 'Subscribe URL', 'Rule List', 'Proxy Groups', 'Custom Rules', 'Advanced Config', 'DNS Config', 'Private Access', 'Runtime', 'Manual Servers', 'Diagnostics']
     for (const label of labels) {
       expect(await screen.findByRole('button', { name: label })).toBeInTheDocument()
     }
@@ -138,6 +150,31 @@ describe('ProxySubscribeEditor', () => {
     await act(async () => Promise.resolve())
     expect(onScheduleSave).toHaveBeenCalledWith({ auto_restart: false })
   })
+
+	it('persists Linux TProxy and authenticated external Clash API settings', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('sempre.locale', 'en')
+		const { onSave } = renderEditor()
+		fireEvent.click(screen.getByRole('button', { name: 'Runtime' }))
+		fireEvent.click(screen.getByText('TUN Router'))
+		fireEvent.click(screen.getByText('TProxy'))
+		expect(screen.getByText('vmbr1')).toBeInTheDocument()
+
+		const switches = screen.getAllByRole('switch')
+		fireEvent.click(switches[switches.length - 1])
+		expect(screen.getByText(/Use a strong Secret/)).toBeInTheDocument()
+		fireEvent.change(screen.getByLabelText('Fixed Secret'), { target: { value: 'fixed-secret' } })
+		await act(async () => vi.advanceTimersByTime(800))
+
+		expect(onSave).toHaveBeenCalledTimes(1)
+		expect(onSave.mock.calls[0][0]).toMatchObject({
+			transparent_proxy: {
+				mode: 'tproxy',
+				tproxy: { listen_port: 7893, dns_listen_port: 1053, capture_host: false, lan_interfaces: ['vmbr1'] },
+			},
+			clash_api: { enabled: true, external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
+		})
+	})
 
   it('serializes saves and submits only the newest queued profile', async () => {
     vi.useFakeTimers()

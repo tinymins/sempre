@@ -1,11 +1,15 @@
 import {
+	Alert,
   Button,
   Checkbox,
   type FormFieldValues,
   Form,
   Input,
+	InputNumber,
   Modal,
+	Password,
   Select,
+	Switch,
   Tabs,
   Tag,
   TextArea,
@@ -22,7 +26,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import "@/lib/monaco";
-import type { CustomNode, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionSource } from "@/lib/types";
+import type { CustomNode, LinuxNetworkInventory, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionSource } from "@/lib/types";
 import DnsConfigEditor from "./DnsConfigEditor";
 import PrivateAccessEditor from "./PrivateAccessEditor";
 import SubscribeItemsEditor from "./SubscribeItemsEditor";
@@ -244,6 +248,7 @@ interface Props {
   profile: SubscriptionProfile;
   defaults: SubscriptionEditorConfig;
   customNodes: CustomNode[];
+	networkInventory?: LinuxNetworkInventory;
   onSave: (profile: SubscriptionProfile) => Promise<void> | void;
   schedule: { interval: string; autoRestart: boolean };
   onScheduleSave: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void;
@@ -259,6 +264,7 @@ const TABS = [
   { label: "advancedConfig", value: "advancedConfig" },
   { label: "dnsConfig", value: "dnsConfig" },
   { label: "privateAccessConfig", value: "privateAccessConfig" },
+	{ label: "runtime", value: "runtime" },
   { label: "servers", value: "servers" },
   { label: "diagnostics", value: "diagnostics" },
 ];
@@ -271,6 +277,17 @@ type SaveFeedback = {
 };
 
 function profileFormValues(profile: SubscriptionProfile): FormFieldValues {
+	const transparent = profile.transparent_proxy ?? {
+		mode: "tun-router" as const,
+		tun: {
+			interface_name: "sing-box",
+			route_exclude_address: [],
+			auto_exclude_local_routes: true,
+			auto_exclude_vpn_routes: true,
+		},
+		tproxy: { listen_port: 7893, dns_listen_port: 1053, capture_host: false, lan_interfaces: [] },
+	};
+	const clashAPI = profile.clash_api ?? { enabled: false, allow_origins: [], allow_private_network: false };
   const items: SubscribeItem[] = profile.sources
     .filter((source) => source.type === "url")
     .map((source) => ({
@@ -312,6 +329,22 @@ function profileFormValues(profile: SubscriptionProfile): FormFieldValues {
     servers: profile.editor.servers || "[]",
     advancedConfig: JSON.stringify(profile.custom_config ?? {}, null, 2),
     selectedCustomNodeIds: profile.custom_node_ids ?? [],
+		transparentMode: transparent.mode,
+		tunInterfaceName: transparent.tun.interface_name,
+		tunAddress: transparent.tun.address ?? "",
+		tunRouteExclusions: transparent.tun.route_exclude_address.join("\n"),
+		tunAutoExcludeLocal: transparent.tun.auto_exclude_local_routes,
+		tunAutoExcludeVPN: transparent.tun.auto_exclude_vpn_routes,
+		tproxyPort: transparent.tproxy.listen_port,
+		tproxyDNSPort: transparent.tproxy.dns_listen_port,
+		tproxyCaptureHost: transparent.tproxy.capture_host,
+		tproxyLANInterfaces: transparent.tproxy.lan_interfaces,
+		clashAPIEnabled: clashAPI.enabled,
+		clashAPIController: clashAPI.external_controller ?? "0.0.0.0:9090",
+		clashAPISecret: clashAPI.secret ?? "",
+		clashAPIUI: clashAPI.external_ui ?? "",
+		clashAPIOrigins: clashAPI.allow_origins,
+		clashAPIPrivateNetwork: clashAPI.allow_private_network,
   };
 }
 
@@ -325,6 +358,7 @@ const ProxySubscribeEditor = ({
   profile,
   defaults,
   customNodes,
+	networkInventory,
   onSave,
   schedule,
   onScheduleSave,
@@ -345,6 +379,8 @@ const ProxySubscribeEditor = ({
     const [scheduleFeedback, setScheduleFeedback] = useState<SaveFeedback>({ state: "idle" });
     const [form] = Form.useForm(profileFormValues(profile));
     const manualServers = Form.useWatch("servers", form) as string | undefined;
+		const transparentMode = Form.useWatch("transparentMode", form) as string | undefined;
+		const clashAPIEnabled = Form.useWatch("clashAPIEnabled", form) as boolean | undefined;
 
     const mountedRef = useRef(true);
     const profileRef = useRef(profile);
@@ -426,6 +462,30 @@ const ProxySubscribeEditor = ({
         sources: [...sources, ...rawSourcesRef.current],
         custom_node_ids: values.selectedCustomNodeIds ?? [],
         custom_config: advancedConfig as Record<string, unknown>,
+			transparent_proxy: {
+				mode: values.transparentMode ?? "tun-router",
+				tun: {
+					interface_name: values.tunInterfaceName || "sing-box",
+					address: values.tunAddress?.trim() || undefined,
+					route_exclude_address: String(values.tunRouteExclusions || "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
+					auto_exclude_local_routes: values.tunAutoExcludeLocal ?? true,
+					auto_exclude_vpn_routes: values.tunAutoExcludeVPN ?? true,
+				},
+				tproxy: {
+					listen_port: values.tproxyPort ?? 7893,
+					dns_listen_port: values.tproxyDNSPort ?? 1053,
+					capture_host: values.tproxyCaptureHost ?? false,
+					lan_interfaces: values.tproxyLANInterfaces ?? [],
+				},
+			},
+			clash_api: {
+				enabled: values.clashAPIEnabled ?? false,
+				external_controller: values.clashAPIController?.trim() || undefined,
+				secret: values.clashAPISecret || undefined,
+				external_ui: values.clashAPIUI?.trim() || undefined,
+				allow_origins: values.clashAPIOrigins ?? [],
+				allow_private_network: values.clashAPIPrivateNetwork ?? false,
+			},
         use_system_rules: values.useSystemRuleList ?? true,
         use_system_groups: values.useSystemGroup ?? true,
         use_system_filters: values.useSystemFilter ?? true,
@@ -818,6 +878,102 @@ const ProxySubscribeEditor = ({
                 <PrivateAccessEditor />
               </Form.Item>
             </div>
+
+			<div className={activeTab === "runtime" ? "space-y-5" : "hidden"}>
+				<section className="space-y-4">
+					<Form.Item label={t("proxy.form.transparentMode")} name="transparentMode">
+						<Select
+							options={[
+								{ value: "tun-router", label: t("proxy.form.transparentModeTun") },
+								{ value: "tproxy", label: t("proxy.form.transparentModeTProxy") },
+								{ value: "disabled", label: t("proxy.form.transparentModeDisabled") },
+							]}
+							onChange={(value) => {
+								if (value === "tproxy" && (form.getFieldValue("tproxyLANInterfaces") as string[] | undefined)?.length === 0 && networkInventory?.recommended_lan_interfaces.length) {
+									form.setFieldValue("tproxyLANInterfaces", networkInventory.recommended_lan_interfaces);
+								}
+							}}
+						/>
+					</Form.Item>
+					{transparentMode === "tun-router" ? (
+						<>
+							<div className="grid gap-4 md:grid-cols-2">
+								<Form.Item label={t("proxy.form.tunInterface")} name="tunInterfaceName">
+									<Input />
+								</Form.Item>
+								<Form.Item label={t("proxy.form.tunAddress")} name="tunAddress">
+									<Input placeholder={t("proxy.form.tunAddressAuto")} />
+								</Form.Item>
+							</div>
+							<Form.Item label={t("proxy.form.tunRouteExclusions")} name="tunRouteExclusions">
+								<TextArea rows={3} />
+							</Form.Item>
+							<div className="grid gap-4 md:grid-cols-2">
+								<Form.Item label={t("proxy.form.tunAutoExcludeLocal")} name="tunAutoExcludeLocal" valuePropName="checked">
+									<Switch />
+								</Form.Item>
+								<Form.Item label={t("proxy.form.tunAutoExcludeVPN")} name="tunAutoExcludeVPN" valuePropName="checked">
+									<Switch />
+								</Form.Item>
+							</div>
+						</>
+					) : null}
+					{transparentMode === "tproxy" ? (
+						<>
+							<div className="grid gap-4 md:grid-cols-2">
+								<Form.Item label={t("proxy.form.tproxyPort")} name="tproxyPort">
+									<InputNumber min={1} max={65535} className="w-full" />
+								</Form.Item>
+								<Form.Item label={t("proxy.form.tproxyDNSPort")} name="tproxyDNSPort">
+									<InputNumber min={1} max={65535} className="w-full" />
+								</Form.Item>
+							</div>
+							<Form.Item label={t("proxy.form.tproxyLANInterfaces")} name="tproxyLANInterfaces">
+								<Select
+									mode="tags"
+									showSearch
+									options={(networkInventory?.interfaces ?? []).filter((item) => item.up).map((item) => ({
+										value: item.name,
+										label: `${item.name} · ${item.kind}${item.default_route ? ` · ${t("proxy.form.defaultRoute")}` : ""}`,
+										tagLabel: item.name,
+									}))}
+								/>
+							</Form.Item>
+							<Form.Item label={t("proxy.form.tproxyCaptureHost")} name="tproxyCaptureHost" valuePropName="checked">
+								<Switch />
+							</Form.Item>
+						</>
+					) : null}
+				</section>
+
+				<section className="space-y-4 border-t border-[var(--border)] pt-5">
+					<Form.Item label={t("proxy.form.clashAPIEnabled")} name="clashAPIEnabled" valuePropName="checked">
+						<Switch />
+					</Form.Item>
+					{clashAPIEnabled ? (
+						<>
+							<Alert type="warning" showIcon message={t("proxy.form.clashAPISecurityWarning")} />
+							<div className="grid gap-4 md:grid-cols-2">
+								<Form.Item label={t("proxy.form.clashAPIController")} name="clashAPIController">
+									<Input />
+								</Form.Item>
+								<Form.Item label={t("proxy.form.clashAPISecret")} name="clashAPISecret">
+									<Password autoComplete="new-password" />
+								</Form.Item>
+							</div>
+							<Form.Item label={t("proxy.form.clashAPIUI")} name="clashAPIUI">
+								<Input />
+							</Form.Item>
+							<Form.Item label={t("proxy.form.clashAPIOrigins")} name="clashAPIOrigins">
+								<Select mode="tags" />
+							</Form.Item>
+							<Form.Item label={t("proxy.form.clashAPIPrivateNetwork")} name="clashAPIPrivateNetwork" valuePropName="checked">
+								<Switch />
+							</Form.Item>
+						</>
+					) : null}
+				</section>
+			</div>
 
             {/* 额外服务器 */}
             <div className={activeTab === "servers" ? "" : "hidden"}>

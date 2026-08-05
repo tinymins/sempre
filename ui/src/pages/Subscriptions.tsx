@@ -7,7 +7,7 @@ import { Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '.
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { CustomNode, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
+import type { CustomNode, LinuxNetworkInventory, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
 import { MessageBridge } from '../features/subscriptions/toolbox/MessageBridge'
 import ProxyDebugModal, { type ProxyDebugModalRef } from '../features/subscriptions/toolbox/ProxyDebugModal'
 import ProxyPreviewModal, { type ProxyPreviewModalRef } from '../features/subscriptions/toolbox/ProxyPreviewModal'
@@ -36,6 +36,7 @@ export function Subscriptions() {
 
   const catalog = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<SubscriptionCatalogResponse>(session!, '/subscriptions') })
   const customNodes = useQuery({ queryKey: ['custom-nodes'], queryFn: () => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes') })
+	const networkInventory = useQuery({ queryKey: ['system', 'network'], queryFn: () => api<LinuxNetworkInventory>(session!, '/system/network') })
   const profiles = useMemo(() => catalog.data?.profiles ?? [], [catalog.data?.profiles])
   const effectiveSelectedID = selectedID || catalog.data?.active_profile_id || profiles[0]?.id || ''
   const storedProfile = profiles.find((item) => item.id === effectiveSelectedID) ?? null
@@ -235,6 +236,7 @@ export function Subscriptions() {
             profile={currentProfile}
             defaults={catalog.data?.editor_defaults ?? { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' }}
             customNodes={customNodes.data?.nodes ?? []}
+			networkInventory={networkInventory.data}
             schedule={{ interval: catalog.data?.schedule.interval || '24h', autoRestart: Boolean(catalog.data?.auto_restart) }}
             onScheduleSave={async (change) => { await schedule.mutateAsync(change) }}
             onSave={async (candidate) => {

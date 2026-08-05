@@ -175,6 +175,50 @@ export interface ProxyGroup {
   url?: string
   interval?: number
   tolerance?: number
+	default?: string
+}
+
+export interface TransparentProxyConfig {
+	mode: 'tun-router' | 'tproxy' | 'disabled'
+	tun: {
+		interface_name: string
+		address?: string
+		route_exclude_address: string[]
+		auto_exclude_local_routes: boolean
+		auto_exclude_vpn_routes: boolean
+	}
+	tproxy: {
+		listen_port: number
+		dns_listen_port: number
+		capture_host: boolean
+		lan_interfaces: string[]
+	}
+}
+
+export interface ClashAPIConfig {
+	enabled: boolean
+	external_controller?: string
+	secret?: string
+	external_ui?: string
+	allow_origins: string[]
+	allow_private_network: boolean
+}
+
+export interface LinuxNetworkInventory {
+	supported: boolean
+	default_interface?: string
+	recommended_lan_interfaces: string[]
+	local_prefixes: string[]
+	vpn_prefixes: string[]
+	occupied_prefixes: string[]
+	interfaces: Array<{
+		name: string
+		index: number
+		kind: string
+		up: boolean
+		default_route: boolean
+		addresses: string[]
+	}>
 }
 
 export interface RuleProvider { tag: string; url: string; outbound?: string; format?: string; behavior?: string }
@@ -213,6 +257,8 @@ export interface SubscriptionProfile {
   dns?: Record<string, unknown>
   private_access?: Record<string, unknown>
   custom_config?: Record<string, unknown>
+	transparent_proxy?: TransparentProxyConfig
+	clash_api?: ClashAPIConfig
   use_system_groups: boolean
   use_system_rules: boolean
   use_system_filters: boolean
