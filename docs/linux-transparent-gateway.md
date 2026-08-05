@@ -59,6 +59,7 @@ Sempre owns only these names and identifiers:
 | sing-box bypass mark | `0x53500002` |
 | policy route table | `20240` |
 | policy rule priority | `20240` |
+| policy object protocol | `253` |
 
 TCP and UDP from selected LAN interfaces are captured in prerouting. TCP and
 UDP port 53 are sent to the configured DNS inbound. With `capture_host` enabled,
@@ -68,7 +69,8 @@ sockets use the separate bypass mark to prevent loops.
 Apply is transactional: policy routes are installed before nftables begins
 capturing traffic, and any failure removes all Sempre-owned state. Stop,
 restart, mode changes, core exits, and idle startup all run the same idempotent
-cleanup. Sempre never flushes a ruleset or deletes another table.
+cleanup. Sempre marks its table and policy objects, rejects ownership
+collisions, and never flushes a ruleset or deletes another table.
 
 ## DNS Routing
 
@@ -114,8 +116,10 @@ sempre doctor
 Required checks cover the prepared runtime hash, profile build revision, TUN
 interface, sing-box auto-redirect rules, Sempre TProxy rules, policy routing,
 listeners, LAN interfaces, IPv4 forwarding, split DNS, and domestic/foreign
-route structure. External DNS and HTTP probes are reported as warnings because
-Internet reachability is not a safe reason to rewrite host routing.
+route structure. TProxy capture counters report whether host, LAN, and DNS
+packets have actually reached the data plane since startup. Missing traffic and
+external DNS or HTTP probe failures are warnings because they may simply mean
+the relevant traffic source is idle or the Internet is unavailable.
 
 To recover, stop the service from the host console. Normal stop removes the
 external controller and all Sempre-owned TProxy state. If the daemon was killed

@@ -186,6 +186,57 @@ func TestActiveProfileCanBeSavedBeforeCoreSelection(t *testing.T) {
 	}
 }
 
+func TestScheduledSubscriptionUpdatePreservesLinuxRuntimeSettings(t *testing.T) {
+	manager := newTestManager(t)
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := subscriptions.FindProfile(&catalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := *profile
+	candidate.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true, Content: testSubscription}}
+	candidate.TransparentProxy = subscriptions.TransparentProxyConfig{
+		Mode: subscriptions.TransparentProxyTUN,
+		TUN: subscriptions.TUNConfig{
+			InterfaceName: "sing-box", Address: "172.30.0.1/30",
+			RouteExcludeAddress:    []string{"10.10.10.0/24", "10.23.0.0/21"},
+			AutoExcludeLocalRoutes: true, AutoExcludeVPNRoutes: true,
+		},
+		TProxy: subscriptions.TProxyConfig{
+			ListenPort: 17893, DNSListenPort: 11053, CaptureHost: true,
+			LANInterfaces: []string{"vmbr1"},
+		},
+	}
+	candidate.ClashAPI = subscriptions.ClashAPIConfig{
+		Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "fixed-secret",
+		ExternalUI: "/srv/metacubex", AllowOrigins: []string{"https://dashboard.example"}, AllowPrivateNetwork: true,
+	}
+	if _, _, err := manager.SaveSubscriptionProfile(context.Background(), active, candidate); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.UpdateSubscription(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	updatedCatalog, _, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := subscriptions.FindProfile(&updatedCatalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(updated.TransparentProxy, candidate.TransparentProxy) {
+		t.Fatalf("transparent proxy settings changed during update: got %#v, want %#v", updated.TransparentProxy, candidate.TransparentProxy)
+	}
+	if !reflect.DeepEqual(updated.ClashAPI, candidate.ClashAPI) {
+		t.Fatalf("external Clash API settings changed during update: got %#v, want %#v", updated.ClashAPI, candidate.ClashAPI)
+	}
+}
+
 func TestEmptyActiveProfileSaveRetainsCompiledConfiguration(t *testing.T) {
 	manager := newTestManager(t)
 	catalog, active, _, _, err := manager.SubscriptionCatalog()

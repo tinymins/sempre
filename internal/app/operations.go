@@ -95,7 +95,11 @@ func (manager *Manager) startService(ctx context.Context) error {
 }
 
 func (manager *Manager) StopService(ctx context.Context) error {
-	return manager.withSystemOperation(func() error { return manager.service.Stop(ctx) })
+	return manager.withSystemOperation(func() error {
+		stopErr := manager.service.Stop(ctx)
+		cleanupErr := manager.transparent.Cleanup(ctx)
+		return errors.Join(stopErr, cleanupErr)
+	})
 }
 
 func (manager *Manager) RestartService(ctx context.Context) error {
@@ -272,7 +276,11 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 			*profile,
 			document.Runtime.RuntimeConfig,
 		) {
-			check(diagnostic.Name, diagnostic.Err)
+			if diagnostic.Warning {
+				warn(diagnostic.Name, diagnostic.Err)
+			} else {
+				check(diagnostic.Name, diagnostic.Err)
+			}
 		}
 		if profile.ClashAPI.Enabled {
 			check("external Clash API", probeExternalClashAPI(ctx, profile.ClashAPI))

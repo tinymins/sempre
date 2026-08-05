@@ -232,6 +232,16 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 	if route["auto_detect_interface"] != true {
 		t.Fatalf("route = %#v", route)
 	}
+	foundDefault := false
+	for _, value := range config["outbounds"].([]any) {
+		outbound := value.(map[string]any)
+		if outbound["tag"] == "foreign" && outbound["default"] == "edge" {
+			foundDefault = true
+		}
+	}
+	if !foundDefault {
+		t.Fatalf("foreign selector does not persist edge as its default: %#v", config["outbounds"])
+	}
 }
 
 func TestSingBoxSelectorDefaultMustResolveToFinalMember(t *testing.T) {

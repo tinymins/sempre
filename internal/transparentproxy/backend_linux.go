@@ -17,11 +17,16 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
+	"github.com/google/nftables/userdata"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
 
-const nftTableName = "sempre_tproxy"
+const (
+	nftTableName  = "sempre_tproxy"
+	nftOwnerChain = "sempre_owner"
+	nftOwnerLabel = "sempre:tproxy:owner:v1"
+)
 
 type linuxBackend struct{}
 
@@ -187,6 +192,9 @@ func (backend linuxBackend) ApplyTProxy(ctx context.Context, plan Plan) (result 
 	if err := checkPolicyRouteCollisions(); err != nil {
 		return err
 	}
+	if err := checkNFTablesCollisions(); err != nil {
+		return err
+	}
 	if err := backend.Cleanup(ctx); err != nil {
 		return fmt.Errorf("clean stale Sempre TProxy state: %w", err)
 	}
@@ -222,7 +230,7 @@ func (backend linuxBackend) Diagnostics(ctx context.Context, plan Plan) []Diagno
 			{Name: "Linux IPv4 forwarding", Err: verifyIPv4Forwarding(plan)},
 		}
 	}
-	return []Diagnostic{
+	diagnostics := []Diagnostic{
 		{Name: "Sempre TProxy nftables rules", Err: verifySempreNFTables(plan)},
 		{Name: "Sempre TProxy policy routing", Err: verifyPolicyRoutes()},
 		{Name: "Sempre TProxy TCP listeners", Err: listenersReady(plan)},
@@ -230,6 +238,7 @@ func (backend linuxBackend) Diagnostics(ctx context.Context, plan Plan) []Diagno
 		{Name: "Linux IPv4 forwarding", Err: verifyIPv4Forwarding(plan)},
 		{Name: "Linux transparent traffic sources", Err: verifyTrafficSources(plan)},
 	}
+	return append(diagnostics, observedTrafficDiagnostics(plan)...)
 }
 
 func verifySempreNFTables(plan Plan) error {
@@ -250,6 +259,15 @@ func verifySempreNFTables(plan Plan) error {
 		}
 		if found == nil {
 			failures = append(failures, fmt.Errorf("nftables %s table is missing", nftTableName))
+			continue
+		}
+		owned, ownerErr := isOwnedNFTablesTable(connection, found)
+		if ownerErr != nil {
+			failures = append(failures, ownerErr)
+			continue
+		}
+		if !owned {
+			failures = append(failures, fmt.Errorf("nftables %s table is not owned by Sempre", nftTableName))
 			continue
 		}
 		chains, err := connection.ListChains()
@@ -368,6 +386,10 @@ func addNFTables(plan Plan) error {
 	connection := &nftables.Conn{}
 	for _, family := range []nftables.TableFamily{nftables.TableFamilyIPv4, nftables.TableFamilyIPv6} {
 		table := connection.AddTable(&nftables.Table{Family: family, Name: nftTableName})
+		owner := connection.AddChain(&nftables.Chain{Name: nftOwnerChain, Table: table})
+		connection.AddRule(&nftables.Rule{
+			Table: table, Chain: owner, Exprs: []expr.Any{&expr.Counter{}}, UserData: encodeRuleLabel(nftOwnerLabel),
+		})
 		prerouting := connection.AddChain(&nftables.Chain{
 			Name:     "prerouting",
 			Table:    table,
@@ -377,11 +399,27 @@ func addNFTables(plan Plan) error {
 		})
 		addExclusionRules(connection, table, prerouting, family, plan.ExcludedPrefixes)
 		for _, protocol := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
-			connection.AddRule(&nftables.Rule{Table: table, Chain: prerouting, Exprs: markedCaptureExpressions(family, protocol, 53, plan.DNSPort)})
-			connection.AddRule(&nftables.Rule{Table: table, Chain: prerouting, Exprs: markedCaptureExpressions(family, protocol, 0, plan.TProxyPort)})
+			connection.AddRule(&nftables.Rule{
+				Table: table, Chain: prerouting,
+				Exprs:    markedCaptureExpressions(family, protocol, 53, plan.DNSPort),
+				UserData: captureRuleLabel("dns", "host", protocol, ""),
+			})
+			connection.AddRule(&nftables.Rule{
+				Table: table, Chain: prerouting,
+				Exprs:    markedCaptureExpressions(family, protocol, 0, plan.TProxyPort),
+				UserData: captureRuleLabel("proxy", "host", protocol, ""),
+			})
 			for _, interfaceName := range plan.LANInterfaces {
-				connection.AddRule(&nftables.Rule{Table: table, Chain: prerouting, Exprs: lanCaptureExpressions(family, interfaceName, protocol, 53, plan.DNSPort)})
-				connection.AddRule(&nftables.Rule{Table: table, Chain: prerouting, Exprs: lanCaptureExpressions(family, interfaceName, protocol, 0, plan.TProxyPort)})
+				connection.AddRule(&nftables.Rule{
+					Table: table, Chain: prerouting,
+					Exprs:    lanCaptureExpressions(family, interfaceName, protocol, 53, plan.DNSPort),
+					UserData: captureRuleLabel("dns", "lan", protocol, interfaceName),
+				})
+				connection.AddRule(&nftables.Rule{
+					Table: table, Chain: prerouting,
+					Exprs:    lanCaptureExpressions(family, interfaceName, protocol, 0, plan.TProxyPort),
+					UserData: captureRuleLabel("proxy", "lan", protocol, interfaceName),
+				})
 			}
 		}
 		if plan.CaptureHost {
@@ -395,7 +433,10 @@ func addNFTables(plan Plan) error {
 			connection.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: markReturnExpressions(BypassMark)})
 			addExclusionRules(connection, table, output, family, plan.ExcludedPrefixes)
 			for _, protocol := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
-				connection.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: outputMarkExpressions(protocol)})
+				connection.AddRule(&nftables.Rule{
+					Table: table, Chain: output, Exprs: outputMarkExpressions(protocol),
+					UserData: captureRuleLabel("output", "host", protocol, ""),
+				})
 			}
 		}
 	}
@@ -409,16 +450,67 @@ func deleteNFTables() error {
 		return err
 	}
 	deleted := false
+	var failures []error
 	for _, table := range tables {
 		if table.Name == nftTableName && (table.Family == nftables.TableFamilyIPv4 || table.Family == nftables.TableFamilyIPv6) {
-			connection.DelTable(table)
-			deleted = true
+			owned, ownerErr := isOwnedNFTablesTable(connection, table)
+			if ownerErr != nil {
+				failures = append(failures, ownerErr)
+				continue
+			}
+			if owned {
+				connection.DelTable(table)
+				deleted = true
+			}
 		}
 	}
 	if !deleted {
-		return nil
+		return errors.Join(failures...)
 	}
-	return connection.Flush()
+	return errors.Join(errors.Join(failures...), connection.Flush())
+}
+
+func checkNFTablesCollisions() error {
+	connection := &nftables.Conn{}
+	tables, err := connection.ListTables()
+	if err != nil {
+		return err
+	}
+	for _, table := range tables {
+		if table.Name != nftTableName || (table.Family != nftables.TableFamilyIPv4 && table.Family != nftables.TableFamilyIPv6) {
+			continue
+		}
+		owned, err := isOwnedNFTablesTable(connection, table)
+		if err != nil {
+			return err
+		}
+		if !owned {
+			return fmt.Errorf("nftables table %s already exists and is not owned by Sempre", nftTableName)
+		}
+	}
+	return nil
+}
+
+func isOwnedNFTablesTable(connection *nftables.Conn, table *nftables.Table) (bool, error) {
+	chains, err := connection.ListChains()
+	if err != nil {
+		return false, err
+	}
+	for _, chain := range chains {
+		if chain.Table == nil || chain.Table.Name != table.Name || chain.Table.Family != table.Family || chain.Name != nftOwnerChain {
+			continue
+		}
+		rules, err := connection.GetRules(table, chain)
+		if err != nil {
+			return false, err
+		}
+		for _, rule := range rules {
+			if ruleLabel(rule.UserData) == nftOwnerLabel {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func addExclusionRules(
@@ -479,6 +571,7 @@ func outputMarkExpressions(protocol byte) []expr.Any {
 	result = append(result,
 		&expr.Immediate{Register: 1, Data: uint32Bytes(RouteMark)},
 		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+		&expr.Counter{},
 		&expr.Verdict{Kind: expr.VerdictAccept},
 	)
 	return result
@@ -489,9 +582,108 @@ func tproxyExpressions(family nftables.TableFamily, port int) []expr.Any {
 		&expr.Immediate{Register: 1, Data: uint32Bytes(RouteMark)},
 		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
 		&expr.Immediate{Register: 1, Data: uint16Bytes(uint16(port))},
+		&expr.Counter{},
 		&expr.TProxy{Family: byte(family), TableFamily: byte(family), RegPort: 1},
 		&expr.Verdict{Kind: expr.VerdictAccept},
 	}
+}
+
+type trafficObservation struct {
+	host uint64
+	lan  uint64
+	dns  uint64
+}
+
+func observedTrafficDiagnostics(plan Plan) []Diagnostic {
+	observation, err := readTrafficObservation()
+	if err != nil {
+		return []Diagnostic{{Name: "Sempre TProxy traffic counters", Err: err, Warning: true}}
+	}
+	diagnostics := []Diagnostic{}
+	if plan.CaptureHost {
+		diagnostics = append(diagnostics, Diagnostic{
+			Name: "Sempre TProxy observed host traffic", Err: packetsObserved(observation.host), Warning: true,
+		})
+	}
+	if len(plan.LANInterfaces) > 0 {
+		diagnostics = append(diagnostics, Diagnostic{
+			Name: "Sempre TProxy observed LAN traffic", Err: packetsObserved(observation.lan), Warning: true,
+		})
+	}
+	diagnostics = append(diagnostics, Diagnostic{
+		Name: "Sempre TProxy observed DNS traffic", Err: packetsObserved(observation.dns), Warning: true,
+	})
+	return diagnostics
+}
+
+func readTrafficObservation() (trafficObservation, error) {
+	connection := &nftables.Conn{}
+	chains, err := connection.ListChains()
+	if err != nil {
+		return trafficObservation{}, err
+	}
+	observation := trafficObservation{}
+	for _, chain := range chains {
+		if chain.Table == nil || chain.Table.Name != nftTableName || chain.Name != "prerouting" {
+			continue
+		}
+		rules, err := connection.GetRules(chain.Table, chain)
+		if err != nil {
+			return trafficObservation{}, err
+		}
+		for _, rule := range rules {
+			label := ruleLabel(rule.UserData)
+			packets := uint64(0)
+			for _, expression := range rule.Exprs {
+				if counter, ok := expression.(*expr.Counter); ok {
+					packets += counter.Packets
+				}
+			}
+			if strings.HasPrefix(label, "sempre:dns:") {
+				observation.dns += packets
+			}
+			if strings.Contains(label, ":host:") {
+				observation.host += packets
+			}
+			if strings.Contains(label, ":lan:") {
+				observation.lan += packets
+			}
+		}
+	}
+	return observation, nil
+}
+
+func packetsObserved(packets uint64) error {
+	if packets == 0 {
+		return fmt.Errorf("no packets have reached this capture path since it was installed")
+	}
+	return nil
+}
+
+func captureRuleLabel(kind, source string, protocol byte, interfaceName string) []byte {
+	protocolName := "udp"
+	if protocol == unix.IPPROTO_TCP {
+		protocolName = "tcp"
+	}
+	return encodeRuleLabel(strings.Join([]string{"sempre", kind, source, protocolName, interfaceName}, ":"))
+}
+
+func encodeRuleLabel(label string) []byte {
+	return userdata.AppendString(nil, userdata.TypeComment, label)
+}
+
+func ruleLabel(value []byte) string {
+	for len(value) >= 2 {
+		length := int(value[1])
+		if length > len(value)-2 {
+			return ""
+		}
+		if userdata.Type(value[0]) == userdata.TypeComment {
+			return strings.TrimSuffix(string(value[2:2+length]), "\x00")
+		}
+		value = value[2+length:]
+	}
+	return ""
 }
 
 func markReturnExpressions(mark uint32) []expr.Any {
@@ -535,7 +727,7 @@ func addPolicyRoutes() error {
 			Family:    family,
 			Table:     RouteTable,
 			Type:      unix.RTN_LOCAL,
-			Protocol:  unix.RTPROT_STATIC,
+			Protocol:  netlink.RouteProtocol(PolicyProtocol),
 		}
 		if err := netlink.RouteAdd(&route); err != nil {
 			return err
@@ -546,6 +738,7 @@ func addPolicyRoutes() error {
 		rule.Table = RouteTable
 		rule.Mark = RouteMark
 		rule.Mask = &mask
+		rule.Protocol = PolicyProtocol
 		if err := netlink.RuleAdd(rule); err != nil {
 			return err
 		}
@@ -562,7 +755,7 @@ func deletePolicyRoutes() error {
 			failures = append(failures, err)
 		} else {
 			for _, rule := range rules {
-				if rule.Priority == RulePriority && rule.Table == RouteTable && rule.Mark == RouteMark && masksEqual(rule.Mask, &mask) {
+				if ownedPolicyRule(rule, &mask) {
 					current := rule
 					if deleteErr := netlink.RuleDel(&current); deleteErr != nil && !isMissingKernelObject(deleteErr) {
 						failures = append(failures, deleteErr)
@@ -575,7 +768,7 @@ func deletePolicyRoutes() error {
 			failures = append(failures, err)
 		} else {
 			for _, route := range routes {
-				if route.Type == unix.RTN_LOCAL && route.Dst != nil && route.Dst.String() == defaultNetwork(family).String() {
+				if ownedPolicyRoute(route, family) {
 					current := route
 					if deleteErr := netlink.RouteDel(&current); deleteErr != nil && !isMissingKernelObject(deleteErr) {
 						failures = append(failures, deleteErr)
@@ -596,7 +789,7 @@ func verifyPolicyRoutes() error {
 		}
 		foundRule := false
 		for _, rule := range rules {
-			if rule.Priority == RulePriority && rule.Table == RouteTable && rule.Mark == RouteMark && masksEqual(rule.Mask, &mask) {
+			if ownedPolicyRule(rule, &mask) {
 				foundRule = true
 			}
 		}
@@ -609,7 +802,7 @@ func verifyPolicyRoutes() error {
 		}
 		foundRoute := false
 		for _, route := range routes {
-			if route.Type == unix.RTN_LOCAL && route.Dst != nil && route.Dst.String() == defaultNetwork(family).String() {
+			if ownedPolicyRoute(route, family) {
 				foundRoute = true
 			}
 		}
@@ -628,10 +821,10 @@ func checkPolicyRouteCollisions() error {
 			return err
 		}
 		for _, rule := range rules {
-			if rule.Priority == RulePriority && !(rule.Table == RouteTable && rule.Mark == RouteMark && masksEqual(rule.Mask, &mask)) {
+			if rule.Priority == RulePriority && !ownedPolicyRule(rule, &mask) {
 				return fmt.Errorf("ip rule priority %d is already used by another rule", RulePriority)
 			}
-			if rule.Table == RouteTable && !(rule.Priority == RulePriority && rule.Mark == RouteMark && masksEqual(rule.Mask, &mask)) {
+			if rule.Table == RouteTable && !ownedPolicyRule(rule, &mask) {
 				return fmt.Errorf("route table %d is already used by another policy rule", RouteTable)
 			}
 		}
@@ -640,12 +833,22 @@ func checkPolicyRouteCollisions() error {
 			return err
 		}
 		for _, route := range routes {
-			if route.Type != unix.RTN_LOCAL || route.Dst == nil || route.Dst.String() != defaultNetwork(family).String() {
+			if !ownedPolicyRoute(route, family) {
 				return fmt.Errorf("route table %d contains routes not owned by Sempre", RouteTable)
 			}
 		}
 	}
 	return nil
+}
+
+func ownedPolicyRule(rule netlink.Rule, mask *uint32) bool {
+	return rule.Priority == RulePriority && rule.Table == RouteTable && rule.Mark == RouteMark &&
+		masksEqual(rule.Mask, mask) && rule.Protocol == PolicyProtocol
+}
+
+func ownedPolicyRoute(route netlink.Route, family int) bool {
+	return route.Type == unix.RTN_LOCAL && route.Dst != nil && route.Dst.String() == defaultNetwork(family).String() &&
+		route.Protocol == netlink.RouteProtocol(PolicyProtocol)
 }
 
 func defaultNetwork(family int) *net.IPNet {
@@ -660,14 +863,14 @@ func defaultNetwork(family int) *net.IPNet {
 func classifyLink(link netlink.Link) string {
 	name := strings.ToLower(link.Attrs().Name)
 	kind := strings.ToLower(link.Type())
-	if kind == "bridge" || strings.HasPrefix(name, "vmbr") || strings.HasPrefix(name, "br-") {
+	if kind == "veth" || hasAnyPrefix(name, "docker", "podman", "cni", "lxc", "veth", "virbr", "br-") {
+		return "container"
+	}
+	if kind == "bridge" || strings.HasPrefix(name, "vmbr") {
 		return "bridge"
 	}
 	if kind == "tun" || kind == "wireguard" || hasAnyPrefix(name, "tun", "tap", "wg", "tailscale", "zt", "vpn") {
 		return "vpn"
-	}
-	if kind == "veth" || hasAnyPrefix(name, "docker", "podman", "cni", "lxc", "veth", "virbr") {
-		return "container"
 	}
 	if link.Attrs().Flags&net.FlagLoopback != 0 {
 		return "loopback"
@@ -731,6 +934,6 @@ func uint16Bytes(value uint16) []byte {
 
 func uint32Bytes(value uint32) []byte {
 	result := make([]byte, 4)
-	binary.BigEndian.PutUint32(result, value)
+	binary.NativeEndian.PutUint32(result, value)
 	return result
 }

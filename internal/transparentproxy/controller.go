@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	RouteMark    uint32 = 0x53500001
-	BypassMark   uint32 = 0x53500002
-	RouteTable          = 20240
-	RulePriority        = 20240
+	RouteMark      uint32 = 0x53500001
+	BypassMark     uint32 = 0x53500002
+	RouteTable            = 20240
+	RulePriority          = 20240
+	PolicyProtocol uint8  = 0xfd
 )
 
 type Interface struct {
@@ -42,8 +43,9 @@ type Inventory struct {
 }
 
 type Diagnostic struct {
-	Name string
-	Err  error
+	Name    string
+	Err     error
+	Warning bool
 }
 
 type Plan struct {
