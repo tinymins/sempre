@@ -47,6 +47,19 @@ describe('Modal', () => {
     expect(almostFull.parentElement).toHaveClass('items-center', 'overflow-hidden')
   })
 
+  it('reports closing only after a visible modal completes its exit transition', async () => {
+    const afterOpenChange = vi.fn()
+    const rendered = render(<Modal open title="Animated" afterOpenChange={afterOpenChange}>Animated body</Modal>)
+    const dialog = await screen.findByRole('dialog', { name: 'Animated' })
+
+    expect(afterOpenChange).not.toHaveBeenCalledWith(false)
+    rendered.rerender(<Modal open={false} title="Animated" afterOpenChange={afterOpenChange}>Animated body</Modal>)
+    await waitFor(() => expect(dialog).toHaveClass('opacity-0'))
+    expect(dialog).toBeInTheDocument()
+    await waitFor(() => expect(afterOpenChange).toHaveBeenCalledWith(false))
+    expect(screen.queryByRole('dialog', { name: 'Animated' })).not.toBeInTheDocument()
+  })
+
   it('dispatches Escape only to the topmost modal', async () => {
     const closeParent = vi.fn()
     const closeChild = vi.fn()

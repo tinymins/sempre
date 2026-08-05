@@ -24,9 +24,11 @@ export function Subscriptions() {
   const [selectedID, setSelectedID] = useState('')
   const [drafts, setDrafts] = useState<Record<string, SubscriptionProfile>>({})
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null)
+  const [nameDialogOpen, setNameDialogOpen] = useState(false)
   const [nameValue, setNameValue] = useState('')
   const [nameError, setNameError] = useState('')
   const [deleteProfile, setDeleteProfile] = useState<SubscriptionProfile | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [format, setFormat] = useState<ProxyDebugFormat>('sing-box-v13')
   const previewRef = useRef<ProxyPreviewModalRef>(null)
@@ -66,9 +68,7 @@ export function Subscriptions() {
     onSuccess: async (profile) => {
       await invalidate()
       setSelectedID(profile.id)
-      setNameDialog(null)
-      setNameValue('')
-      setNameError('')
+      setNameDialogOpen(false)
     },
     onError: (error) => setNameError(error.message),
   })
@@ -81,9 +81,7 @@ export function Subscriptions() {
         profiles: value.profiles.map((item) => item.id === profile.id ? profile : item),
       } : value)
       setDrafts((current) => current[profile.id] ? { ...current, [profile.id]: { ...current[profile.id], name: profile.name } } : current)
-      setNameDialog(null)
-      setNameValue('')
-      setNameError('')
+      setNameDialogOpen(false)
       await invalidate()
     },
     onError: (error) => setNameError(error.message),
@@ -92,7 +90,7 @@ export function Subscriptions() {
   const remove = useMutation({
     mutationFn: (profile: SubscriptionProfile) => api(session!, `/subscriptions/${profile.id}`, { method: 'DELETE' }),
     onSuccess: async (_result, profile) => {
-      setDeleteProfile(null)
+      setDeleteDialogOpen(false)
       setSelectedID(catalog.data?.active_profile_id || '')
       setDrafts((current) => {
         const next = { ...current }
@@ -134,12 +132,24 @@ export function Subscriptions() {
     setNameDialog(state)
     setNameValue(state.mode === 'rename' ? state.profile.name : '')
     setNameError('')
+    setNameDialogOpen(true)
   }
   const closeNameDialog = () => {
     if (create.isPending || rename.isPending) return
+    setNameDialogOpen(false)
+  }
+  const finishNameDialogClose = (open: boolean) => {
+    if (open) return
     setNameDialog(null)
     setNameValue('')
     setNameError('')
+  }
+  const openDeleteDialog = (profile: SubscriptionProfile) => {
+    setDeleteProfile(profile)
+    setDeleteDialogOpen(true)
+  }
+  const finishDeleteDialogClose = (open: boolean) => {
+    if (!open) setDeleteProfile(null)
   }
   const submitName = () => {
     if (!nameDialog) return
@@ -196,7 +206,7 @@ export function Subscriptions() {
                   pending={action.isPending || remove.isPending}
                   onRename={() => openNameDialog({ mode: 'rename', profile })}
                   onActivate={() => action.mutate({ id: profile.id, operation: 'activate' })}
-                  onDelete={() => setDeleteProfile(profile)}
+                  onDelete={() => openDeleteDialog(profile)}
                 />
               ) : null}
             </div>
@@ -256,25 +266,32 @@ export function Subscriptions() {
         </>
       ) : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
 
-      <SubscriptionSetNameDialog
-        state={nameDialog}
-        value={nameValue}
-        error={nameError}
-        pending={create.isPending || rename.isPending}
-        onChange={(value) => { setNameValue(value); setNameError('') }}
-        onCancel={closeNameDialog}
-        onSubmit={submitName}
-      />
-      <ConfirmDialog
-        open={deleteProfile !== null}
-        title={t('deleteSubscriptionSet')}
-        detail={`${t('deleteSubscriptionSetDetail')} ${deleteProfile?.name || t('defaultSubscriptionSet')}`}
-        confirmLabel={t('deleteSubscriptionSet')}
-        cancelLabel={t('cancel')}
-        pending={remove.isPending}
-        onCancel={() => { if (!remove.isPending) setDeleteProfile(null) }}
-        onConfirm={() => { if (deleteProfile) remove.mutate(deleteProfile) }}
-      />
+      {nameDialog ? (
+        <SubscriptionSetNameDialog
+          open={nameDialogOpen}
+          state={nameDialog}
+          value={nameValue}
+          error={nameError}
+          pending={create.isPending || rename.isPending}
+          onChange={(value) => { setNameValue(value); setNameError('') }}
+          onCancel={closeNameDialog}
+          onSubmit={submitName}
+          afterOpenChange={finishNameDialogClose}
+        />
+      ) : null}
+      {deleteProfile ? (
+        <ConfirmDialog
+          open={deleteDialogOpen}
+          title={t('deleteSubscriptionSet')}
+          detail={`${t('deleteSubscriptionSetDetail')} ${deleteProfile.name || t('defaultSubscriptionSet')}`}
+          confirmLabel={t('deleteSubscriptionSet')}
+          cancelLabel={t('cancel')}
+          pending={remove.isPending}
+          onCancel={() => { if (!remove.isPending) setDeleteDialogOpen(false) }}
+          onConfirm={() => remove.mutate(deleteProfile)}
+          afterOpenChange={finishDeleteDialogClose}
+        />
+      ) : null}
     </div>
   )
 }
@@ -347,9 +364,8 @@ function SubscriptionSetMenuLabel({ label, reason = '' }: { label: string; reaso
   )
 }
 
-function SubscriptionSetNameDialog({ state, value, error, pending, onChange, onCancel, onSubmit }: { state: NameDialogState | null; value: string; error: string; pending: boolean; onChange: (value: string) => void; onCancel: () => void; onSubmit: () => void }) {
+function SubscriptionSetNameDialog({ open, state, value, error, pending, onChange, onCancel, onSubmit, afterOpenChange }: { open: boolean; state: NameDialogState; value: string; error: string; pending: boolean; onChange: (value: string) => void; onCancel: () => void; onSubmit: () => void; afterOpenChange: (open: boolean) => void }) {
   const { t } = useI18n()
-  if (!state) return null
   const creating = state.mode === 'create'
   const title = creating ? t('newSubscriptionSet') : t('renameSubscriptionSet')
   const submit = (event: FormEvent) => {
@@ -358,7 +374,7 @@ function SubscriptionSetNameDialog({ state, value, error, pending, onChange, onC
   }
   return (
     <Modal
-      open
+      open={open}
       title={title}
       okText={creating ? t('createSubscriptionSet') : t('renameSubscriptionSet')}
       cancelText={t('cancel')}
@@ -367,6 +383,7 @@ function SubscriptionSetNameDialog({ state, value, error, pending, onChange, onC
         return undefined
       }}
       onCancel={onCancel}
+      afterOpenChange={afterOpenChange}
       okButtonProps={{ disabled: !value.trim() }}
       cancelButtonProps={{ disabled: pending }}
       confirmLoading={pending}

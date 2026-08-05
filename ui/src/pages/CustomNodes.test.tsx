@@ -53,5 +53,12 @@ describe('CustomNodes', () => {
     fireEvent.change(editor, { target: { value: '{ "name": "edge", "type": "socks5", "server": "127.0.0.1", "port": 1080 }' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1))
+    await waitFor(() => expect(dialog).toHaveClass('opacity-0'))
+    expect(editor).toHaveValue('{ "name": "edge", "type": "socks5", "server": "127.0.0.1", "port": 1080 }')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add node' })).not.toBeInTheDocument())
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Add node' }))[0])
+    const reopened = await screen.findByRole('dialog', { name: 'Add node' })
+    expect((within(reopened).getByRole('textbox', { name: 'Node JSON' }) as HTMLTextAreaElement).value).toContain('"type": "vless"')
   })
 })

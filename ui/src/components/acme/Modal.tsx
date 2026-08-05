@@ -287,16 +287,22 @@ export function Modal({
 
   // afterOpenChange
   const afterOpenChangeRef = useRef(afterOpenChange);
+  const wasVisibleRef = useRef(false);
   afterOpenChangeRef.current = afterOpenChange;
   useEffect(() => {
-    if (visible && animClass) {
-      const t = setTimeout(
-        () => afterOpenChangeRef.current?.(true),
-        ANIM_DURATION,
-      );
-      return () => clearTimeout(t);
+    if (visible) {
+      wasVisibleRef.current = true;
+      if (animClass) {
+        const t = setTimeout(
+          () => afterOpenChangeRef.current?.(true),
+          ANIM_DURATION,
+        );
+        return () => clearTimeout(t);
+      }
+      return;
     }
-    if (!visible) {
+    if (wasVisibleRef.current) {
+      wasVisibleRef.current = false;
       afterOpenChangeRef.current?.(false);
     }
   }, [visible, animClass]);

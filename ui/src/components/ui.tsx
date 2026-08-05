@@ -96,6 +96,7 @@ export function ConfirmDialog({
   pending = false,
   onCancel,
   onConfirm,
+  afterOpenChange,
 }: {
   open: boolean
   title: string
@@ -106,12 +107,13 @@ export function ConfirmDialog({
   pending?: boolean
   onCancel: () => void
   onConfirm: () => void
+  afterOpenChange?: (open: boolean) => void
 }) {
-  if (!open) return null
-  return <ConfirmDialogContent title={title} detail={detail} confirmLabel={confirmLabel} cancelLabel={cancelLabel} acknowledgement={acknowledgement} pending={pending} onCancel={onCancel} onConfirm={onConfirm} />
+  return <ConfirmDialogContent open={open} title={title} detail={detail} confirmLabel={confirmLabel} cancelLabel={cancelLabel} acknowledgement={acknowledgement} pending={pending} onCancel={onCancel} onConfirm={onConfirm} afterOpenChange={afterOpenChange} />
 }
 
 function ConfirmDialogContent({
+  open,
   title,
   detail,
   confirmLabel,
@@ -120,7 +122,9 @@ function ConfirmDialogContent({
   pending = false,
   onCancel,
   onConfirm,
+  afterOpenChange,
 }: {
+  open: boolean
   title: string
   detail: string
   confirmLabel: string
@@ -129,11 +133,12 @@ function ConfirmDialogContent({
   pending?: boolean
   onCancel: () => void
   onConfirm: () => void
+  afterOpenChange?: (open: boolean) => void
 }) {
   const [acknowledged, setAcknowledged] = useState(false)
   return (
     <Modal
-      open
+      open={open}
       title={title}
       okText={confirmLabel}
       cancelText={cancelLabel}
@@ -142,6 +147,10 @@ function ConfirmDialogContent({
         return undefined
       }}
       onCancel={onCancel}
+      afterOpenChange={(nextOpen) => {
+        if (!nextOpen) setAcknowledged(false)
+        afterOpenChange?.(nextOpen)
+      }}
       okButtonProps={{ danger: true, disabled: Boolean(acknowledgement && !acknowledged) }}
       cancelButtonProps={{ disabled: pending }}
       confirmLoading={pending}

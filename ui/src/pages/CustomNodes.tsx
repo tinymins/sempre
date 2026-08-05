@@ -26,7 +26,9 @@ export function CustomNodes() {
   const { t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
-  const [editing, setEditing] = useState<CustomNode | 'new' | null>(null)
+  const [editorTarget, setEditorTarget] = useState<CustomNode | 'new' | null>(null)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorGeneration, setEditorGeneration] = useState(0)
   const [notice, setNotice] = useState('')
   const nodes = useQuery({ queryKey: ['custom-nodes'], queryFn: () => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes') })
   const remove = useMutation({
@@ -34,17 +36,25 @@ export function CustomNodes() {
     onSuccess: () => { setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['custom-nodes'] }) },
     onError: (error) => setNotice(error.message),
   })
+  const openEditor = (target: CustomNode | 'new') => {
+    setEditorTarget(target)
+    setEditorGeneration((current) => current + 1)
+    setEditorOpen(true)
+  }
+  const finishEditorClose = (open: boolean) => {
+    if (!open) setEditorTarget(null)
+  }
   return <div className="space-y-5">
-    <PageTitle title={t('customNodes')}><Button variant="primary" onClick={() => setEditing('new')}><Plus size={16} />{t('addNode')}</Button></PageTitle>
+    <PageTitle title={t('customNodes')}><Button variant="primary" onClick={() => openEditor('new')}><Plus size={16} />{t('addNode')}</Button></PageTitle>
     {notice ? <div className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     <Card className="overflow-hidden">
-      {nodes.isLoading ? <div className="grid min-h-48 place-items-center"><Spinner /></div> : nodes.data?.nodes.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-[var(--surface-hover)] text-xs text-[var(--muted)]"><tr><th className="px-4 py-3 font-medium">{t('profileName')}</th><th className="px-4 py-3 font-medium">{t('type')}</th><th className="px-4 py-3 font-medium">{t('host')}</th><th className="px-4 py-3 font-medium">ID</th><th className="w-28" /></tr></thead><tbody>{nodes.data.nodes.map((node) => <tr key={node.id} className="border-t border-[var(--border)]"><td className="px-4 py-3 font-medium">{node.name}</td><td className="px-4 py-3"><Badge>{String(node.proxy.type || '')}</Badge></td><td className="px-4 py-3 font-mono text-xs">{String(node.proxy.server || '')}:{String(node.proxy.port || '')}</td><td className="px-4 py-3 font-mono text-xs text-[var(--muted)]">{node.id}</td><td className="px-4 py-2"><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title={t('editNode')} onClick={() => setEditing(node)}><Pencil size={15} /></Button><Button size="icon" variant="ghost" title={t('remove')} onClick={() => remove.mutate(node.id)}><Trash2 size={15} /></Button></div></td></tr>)}</tbody></table></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} action={<Button onClick={() => setEditing('new')}><Plus size={16} />{t('addNode')}</Button>} />}
+      {nodes.isLoading ? <div className="grid min-h-48 place-items-center"><Spinner /></div> : nodes.data?.nodes.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-[var(--surface-hover)] text-xs text-[var(--muted)]"><tr><th className="px-4 py-3 font-medium">{t('profileName')}</th><th className="px-4 py-3 font-medium">{t('type')}</th><th className="px-4 py-3 font-medium">{t('host')}</th><th className="px-4 py-3 font-medium">ID</th><th className="w-28" /></tr></thead><tbody>{nodes.data.nodes.map((node) => <tr key={node.id} className="border-t border-[var(--border)]"><td className="px-4 py-3 font-medium">{node.name}</td><td className="px-4 py-3"><Badge>{String(node.proxy.type || '')}</Badge></td><td className="px-4 py-3 font-mono text-xs">{String(node.proxy.server || '')}:{String(node.proxy.port || '')}</td><td className="px-4 py-3 font-mono text-xs text-[var(--muted)]">{node.id}</td><td className="px-4 py-2"><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title={t('editNode')} onClick={() => openEditor(node)}><Pencil size={15} /></Button><Button size="icon" variant="ghost" title={t('remove')} onClick={() => remove.mutate(node.id)}><Trash2 size={15} /></Button></div></td></tr>)}</tbody></table></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} action={<Button onClick={() => openEditor('new')}><Plus size={16} />{t('addNode')}</Button>} />}
     </Card>
-    {editing ? <NodeEditor node={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['custom-nodes'] }) }} /> : null}
+    {editorTarget ? <NodeEditor key={editorGeneration} open={editorOpen} node={editorTarget === 'new' ? undefined : editorTarget} onClose={() => setEditorOpen(false)} afterOpenChange={finishEditorClose} onSaved={() => { setEditorOpen(false); setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['custom-nodes'] }) }} /> : null}
   </div>
 }
 
-function NodeEditor({ node, onClose, onSaved }: { node?: CustomNode; onClose: () => void; onSaved: () => void }) {
+function NodeEditor({ open, node, onClose, onSaved, afterOpenChange }: { open: boolean; node?: CustomNode; onClose: () => void; onSaved: () => void; afterOpenChange: (open: boolean) => void }) {
   const { t } = useI18n()
   const { session } = useSession()
   const isMobile = useIsMobile()
@@ -72,7 +82,7 @@ function NodeEditor({ node, onClose, onSaved }: { node?: CustomNode; onClose: ()
   }
   return (
     <Modal
-      open
+      open={open}
       title={<span className="flex items-center gap-2"><Braces size={18} className="text-emerald-600" />{node ? t('editNode') : t('addNode')}</span>}
       size={isMobile ? 'full' : 'default'}
       width={isMobile ? undefined : 900}
@@ -83,6 +93,7 @@ function NodeEditor({ node, onClose, onSaved }: { node?: CustomNode; onClose: ()
         return undefined
       }}
       onCancel={onClose}
+      afterOpenChange={afterOpenChange}
       confirmLoading={save.isPending}
       cancelButtonProps={{ disabled: save.isPending }}
       maskClosable={!save.isPending}

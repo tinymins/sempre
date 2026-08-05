@@ -118,9 +118,9 @@ describe('RuntimeControlPanel', () => {
 })
 
 describe('ConfirmDialog', () => {
-  it('requires the recovery acknowledgement before a dangerous stop', () => {
+  it('animates closed with stable content and resets acknowledgement before reopening', async () => {
     const confirm = vi.fn()
-    render(<ConfirmDialog open title="Stop Sempre Service?" detail="The page will disconnect." acknowledgement="I must start it on the host." confirmLabel="Stop service" cancelLabel="Cancel" onCancel={() => undefined} onConfirm={confirm} />)
+    const rendered = render(<ConfirmDialog open title="Stop Sempre Service?" detail="The page will disconnect." acknowledgement="I must start it on the host." confirmLabel="Stop service" cancelLabel="Cancel" onCancel={() => undefined} onConfirm={confirm} />)
     const dialog = screen.getByRole('dialog')
     const button = within(dialog).getByRole('button', { name: 'Stop service' })
     expect(button).toBeDisabled()
@@ -128,6 +128,16 @@ describe('ConfirmDialog', () => {
     expect(button).toBeEnabled()
     fireEvent.click(button)
     expect(confirm).toHaveBeenCalledOnce()
+
+    rendered.rerender(<ConfirmDialog open={false} title="Stop Sempre Service?" detail="The page will disconnect." acknowledgement="I must start it on the host." confirmLabel="Stop service" cancelLabel="Cancel" onCancel={() => undefined} onConfirm={confirm} />)
+    expect(screen.getByRole('dialog', { name: 'Stop Sempre Service?' })).toBeInTheDocument()
+    await waitFor(() => expect(dialog).toHaveClass('opacity-0'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    rendered.rerender(<ConfirmDialog open title="Stop Sempre Service?" detail="The page will disconnect." acknowledgement="I must start it on the host." confirmLabel="Stop service" cancelLabel="Cancel" onCancel={() => undefined} onConfirm={confirm} />)
+    const reopened = await screen.findByRole('dialog', { name: 'Stop Sempre Service?' })
+    expect(within(reopened).getByRole('checkbox')).not.toBeChecked()
+    expect(within(reopened).getByRole('button', { name: 'Stop service' })).toBeDisabled()
   })
 })
 

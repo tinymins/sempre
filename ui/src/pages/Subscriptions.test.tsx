@@ -131,6 +131,13 @@ describe('Subscriptions subscription sets', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New subscription set' }))
     let dialog = screen.getByRole('dialog', { name: 'New subscription set' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(dialog).toBeInTheDocument()
+    await waitFor(() => expect(dialog).toHaveClass('opacity-0'))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New subscription set' })).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'New subscription set' }))
+    dialog = screen.getByRole('dialog', { name: 'New subscription set' })
     const createButton = within(dialog).getByRole('button', { name: 'Create' })
     expect(createButton).toBeDisabled()
     const createNameInput = within(dialog).getByLabelText('Subscription set name')
