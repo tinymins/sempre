@@ -1,6 +1,7 @@
 import type { ApiErrorBody, RuntimeEvent, Session } from './types'
 
 const SESSION_KEY = 'sempre.session.v1'
+const sessionInvalidationListeners = new Set<() => void>()
 
 export class ApiError extends Error {
   status: number
@@ -42,11 +43,32 @@ export function saveSession(session: Session | null) {
   else sessionStorage.removeItem(SESSION_KEY)
 }
 
-async function parseResponse<T>(response: Response): Promise<T> {
+export function subscribeToSessionInvalidation(listener: () => void) {
+  sessionInvalidationListeners.add(listener)
+  return () => {
+    sessionInvalidationListeners.delete(listener)
+  }
+}
+
+function invalidateSession(session: Session) {
+  const stored = sessionStorage.getItem(SESSION_KEY)
+  if (!stored) return
+  try {
+    const current = JSON.parse(stored) as Session
+    if (current.baseURL !== session.baseURL || current.token !== session.token) return
+  } catch {
+    return
+  }
+  saveSession(null)
+  sessionInvalidationListeners.forEach((listener) => listener())
+}
+
+async function parseResponse<T>(response: Response, session?: Session): Promise<T> {
   if (response.ok) {
     if (response.status === 204) return undefined as T
     return (await response.json()) as T
   }
+  if (response.status === 401 && session) invalidateSession(session)
   let body: ApiErrorBody
   try {
     body = (await response.json()) as ApiErrorBody
@@ -73,7 +95,7 @@ export async function api<T>(session: Session, path: string, init: RequestInit =
   headers.set('Authorization', `Bearer ${session.token}`)
   if (init.body && !(init.body instanceof Blob) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   const response = await fetch(`${session.baseURL}/api/v1${path}`, { ...init, headers })
-  return parseResponse<T>(response)
+  return parseResponse<T>(response, session)
 }
 
 export async function uploadUI(session: Session, file: File, sha256 = '') {
@@ -86,7 +108,7 @@ export async function uploadUI(session: Session, file: File, sha256 = '') {
     },
     body: file,
   })
-  return parseResponse(response)
+  return parseResponse(response, session)
 }
 
 export async function streamEvents(
@@ -99,7 +121,7 @@ export async function streamEvents(
     `${session.baseURL}/api/v1/runtime/events?topics=${encodeURIComponent(topics.join(','))}`,
     { headers: { Authorization: `Bearer ${session.token}`, Accept: 'text/event-stream' }, signal },
   )
-  if (!response.ok) await parseResponse(response)
+  if (!response.ok) await parseResponse(response, session)
   if (!response.body) throw new Error('Streaming response has no body')
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''
@@ -135,7 +157,7 @@ export async function streamRequest(
     body: JSON.stringify(body),
     signal,
   })
-  if (!response.ok) await parseResponse(response)
+  if (!response.ok) await parseResponse(response, session)
   if (!response.body) throw new Error('Streaming response has no body')
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''

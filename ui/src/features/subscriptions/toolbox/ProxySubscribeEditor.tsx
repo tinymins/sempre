@@ -11,9 +11,8 @@ import {
   TextArea,
 } from "@acme/components";
 import type { SubscribeItem } from "@acme/types";
-import Editor, { loader, type Monaco } from "@monaco-editor/react";
+import Editor, { type Monaco } from "@monaco-editor/react";
 import { parse as parseJsonc, type ParseError } from "jsonc-parser";
-import * as monacoRuntime from "monaco-editor";
 import {
   type ReactNode,
   useCallback,
@@ -22,14 +21,12 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import "@/lib/monaco";
 import type { CustomNode, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionSource } from "@/lib/types";
 import DnsConfigEditor from "./DnsConfigEditor";
 import PrivateAccessEditor from "./PrivateAccessEditor";
 import SubscribeItemsEditor from "./SubscribeItemsEditor";
 import TagListEditor from "./TagListEditor";
-
-// Use the bundled Monaco runtime so the local editor does not depend on a CDN.
-loader.config({ monaco: monacoRuntime });
 
 // JSONC 编辑器组件，支持 // 和 /* */ 注释
 interface JsoncEditorProps {

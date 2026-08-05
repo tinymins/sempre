@@ -1,13 +1,11 @@
 import { Input, InputNumber, Switch, Tabs } from "@acme/components";
 import type { DnsConfig, DnsSharedConfig } from "@acme/types";
-import Editor, { loader, type Monaco } from "@monaco-editor/react";
+import Editor, { type Monaco } from "@monaco-editor/react";
 import { parse as parseJsonc } from "jsonc-parser";
 import type React from "react";
-import * as monacoRuntime from "monaco-editor";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-
-loader.config({ monaco: monacoRuntime });
+import "@/lib/monaco";
 
 type TopTab = "shared" | "singbox" | "singboxV12" | "clash" | "clashMeta";
 

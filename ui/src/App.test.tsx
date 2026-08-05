@@ -80,4 +80,18 @@ describe('App', () => {
     expect(await screen.findByText('Managed core runtime')).toBeInTheDocument()
     expect(screen.getByText('exit status 1')).toBeInTheDocument()
   })
+
+  it('returns to login when the stored session is rejected', async () => {
+    sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'stale-session', expiresAt: '2099-01-01T00:00:00Z' }))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'UNAUTHORIZED', message: 'a valid administrator session is required' } }, { status: 401 })))
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <I18nProvider><SessionProvider><App /></SessionProvider></I18nProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByLabelText('Sempre address')).toBeInTheDocument()
+    expect(sessionStorage.getItem('sempre.session.v1')).toBeNull()
+  })
 })

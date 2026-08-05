@@ -1,0 +1,12 @@
+import { loader } from '@monaco-editor/react'
+import * as monaco from 'monaco-editor'
+import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker'
+import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker.js?worker'
+
+self.MonacoEnvironment = {
+  getWorker(_workerId, label) {
+    return label === 'json' ? new JsonWorker() : new EditorWorker()
+  },
+}
+
+loader.config({ monaco })

@@ -112,13 +112,17 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
   // 收集所有节点名称（有效节点 + 被过滤节点）
   const allNodeNames = useMemo(() => {
     if (!done) return [];
-    const names: { name: string; filtered: boolean }[] = [];
+    const names = new Map<string, { name: string; filtered: boolean }>();
+    const addName = (name: string, filtered: boolean) => {
+      const current = names.get(name);
+      if (!current || (current.filtered && !filtered)) names.set(name, { name, filtered });
+    };
 
     // 从手动服务器步骤获取
     for (const step of steps) {
       if (step.type === "manual-servers") {
         for (const node of step.data.nodes) {
-          names.push({ name: node.name, filtered: false });
+          addName(node.name, false);
         }
       }
     }
@@ -127,15 +131,15 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
     for (const step of steps) {
       if (step.type === "source-result") {
         for (const node of step.data.nodesAfterFilter) {
-          names.push({ name: node.name, filtered: false });
+          addName(node.name, false);
         }
         for (const fn of step.data.filteredNodes) {
-          names.push({ name: fn.node.name, filtered: true });
+          addName(fn.node.name, true);
         }
       }
     }
 
-    return names;
+    return [...names.values()];
   }, [steps, done]);
 
   /** 从 merge 步骤提取节点状态集合 */

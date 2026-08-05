@@ -603,11 +603,7 @@ const NodeTraceModal = forwardRef<NodeTraceModalRef, NodeTraceModalProps>(
     const { data, isLoading, error } = proxyApi.traceNode.useQuery(
       tracingNodeName
         ? { id: subscribeId, format, nodeName: tracingNodeName }
-        : (undefined as unknown as {
-            id: string;
-            format: string;
-            nodeName: string;
-          }),
+        : undefined,
       { enabled: !!tracingNodeName },
     );
 

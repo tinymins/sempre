@@ -50,12 +50,15 @@ export const proxyApi = {
     },
   },
   traceNode: {
-    useQuery(input: { id: string; format: string; nodeName: string }, options?: { enabled?: boolean }) {
+    useQuery(input: { id: string; format: string; nodeName: string } | undefined, options?: { enabled?: boolean }) {
       const session = useApiSession()
       return useQuery({
-        queryKey: ['subscriptions', input.id, 'trace-node', input.format, input.nodeName],
-        queryFn: async () => ProxyNodeTraceOutputSchema.parse(await api<unknown>(session, `/subscriptions/${input.id}/trace-node`, { method: 'POST', body: JSON.stringify({ format: input.format, name: input.nodeName }) })),
-        enabled: options?.enabled ?? true,
+        queryKey: ['subscriptions', input?.id, 'trace-node', input?.format, input?.nodeName],
+        queryFn: async () => {
+          if (!input) throw new Error('Trace node input is required')
+          return ProxyNodeTraceOutputSchema.parse(await api<unknown>(session, `/subscriptions/${input.id}/trace-node`, { method: 'POST', body: JSON.stringify({ format: input.format, name: input.nodeName }) }))
+        },
+        enabled: Boolean(input) && (options?.enabled ?? true),
       })
     },
   },

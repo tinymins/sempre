@@ -32,8 +32,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
-    alias: {
-      'monaco-editor': fileURLToPath(new URL('./src/test/monaco-runtime.ts', import.meta.url)),
-    },
+    alias: [
+      { find: /^monaco-editor$/, replacement: fileURLToPath(new URL('./src/test/monaco-runtime.ts', import.meta.url)) },
+    ],
   },
 })
