@@ -299,8 +299,12 @@ const SourceDebugModal = ({ open, item, onClose }: Props) => {
   }, [item, mode, t]);
 
   const handleClose = () => {
-    reset();
+    controllerRef.current?.abort();
     onClose();
+  };
+
+  const handleAfterOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) reset();
   };
 
   const restart = () => reset(true);
@@ -792,6 +796,7 @@ const SourceDebugModal = ({ open, item, onClose }: Props) => {
       }
       open={open}
       onCancel={handleClose}
+      afterOpenChange={handleAfterOpenChange}
       size="full"
       destroyOnClose
       footer={
