@@ -150,6 +150,30 @@ func TestPreviewReturnsFilteredNodesWithToolboxNameEnrichment(t *testing.T) {
 	}
 }
 
+func TestPreviewLocalNodesIncludesManualAndSelectedCustomNodes(t *testing.T) {
+	profile := NewProfile("local")
+	profile.Editor.Servers = `[{"name":"日本手动","type":"socks5","server":"127.0.0.1","port":1080}]`
+	profile.CustomNodeIDs = []string{"custom-selected"}
+	catalog := Catalog{CustomNodes: []CustomNode{
+		{ID: "custom-unselected", Name: "unused", Proxy: map[string]any{"name": "未选择", "type": "http", "server": "127.0.0.2", "port": 8080}},
+		{ID: "custom-selected", Name: "selected", Proxy: map[string]any{"name": "美国自定义", "type": "http", "server": "127.0.0.3", "port": 8081}},
+	}}
+
+	nodes, err := PreviewLocalNodes(profile, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("local nodes = %#v", nodes)
+	}
+	if nodes[0].Name != "🇯🇵 日本手动" || nodes[0].SourceIndex != 0 || nodes[0].SourceURL != "manual" {
+		t.Fatalf("manual node = %#v", nodes[0])
+	}
+	if nodes[1].Name != "🇺🇸 美国自定义" || nodes[1].SourceIndex != 0 || nodes[1].SourceURL != "custom-node:custom-selected" {
+		t.Fatalf("custom node = %#v", nodes[1])
+	}
+}
+
 func TestFiltersDoNotRemoveManualServers(t *testing.T) {
 	profile := NewProfile("manual")
 	profile.UseSystemFilters = false

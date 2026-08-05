@@ -22,27 +22,9 @@ type PreviewNode struct {
 
 func (compiler *Compiler) PreviewNodes(ctx context.Context, profile Profile, catalog Catalog, force bool) ([]PreviewNode, error) {
 	effective := EffectiveProfile(profile)
-	nodes := []PreviewNode{}
-	manual, err := ManualServers(effective)
+	nodes, err := PreviewLocalNodes(effective, catalog)
 	if err != nil {
 		return nil, err
-	}
-	for _, proxy := range manual {
-		nodes = append(nodes, previewNode(proxy, proxy.Name, 0, "manual", nil))
-	}
-	selected := map[string]bool{}
-	for _, id := range profile.CustomNodeIDs {
-		selected[id] = true
-	}
-	for _, node := range catalog.CustomNodes {
-		if !selected[node.ID] {
-			continue
-		}
-		proxy, parseErr := ProxyFromMap(node.Proxy)
-		if parseErr != nil {
-			return nil, fmt.Errorf("custom node %q: %w", node.Name, parseErr)
-		}
-		nodes = append(nodes, previewNode(proxy, proxy.Name, 0, "custom-node:"+node.ID, nil))
 	}
 	for index, source := range effective.Sources {
 		if !source.Enabled {
@@ -62,6 +44,32 @@ func (compiler *Compiler) PreviewNodes(ctx context.Context, profile Profile, cat
 			proxy.Name = originalName
 			nodes = append(nodes, previewNode(proxy, originalName, index+1, fetched.URL, effective.Filters))
 		}
+	}
+	return nodes, nil
+}
+
+func PreviewLocalNodes(profile Profile, catalog Catalog) ([]PreviewNode, error) {
+	manual, err := ManualServers(profile)
+	if err != nil {
+		return nil, err
+	}
+	nodes := make([]PreviewNode, 0, len(manual)+len(profile.CustomNodeIDs))
+	for _, proxy := range manual {
+		nodes = append(nodes, previewNode(proxy, proxy.Name, 0, "manual", nil))
+	}
+	selected := map[string]bool{}
+	for _, id := range profile.CustomNodeIDs {
+		selected[id] = true
+	}
+	for _, node := range catalog.CustomNodes {
+		if !selected[node.ID] {
+			continue
+		}
+		proxy, parseErr := ProxyFromMap(node.Proxy)
+		if parseErr != nil {
+			return nil, fmt.Errorf("custom node %q: %w", node.Name, parseErr)
+		}
+		nodes = append(nodes, previewNode(proxy, proxy.Name, 0, "custom-node:"+node.ID, nil))
 	}
 	return nodes, nil
 }

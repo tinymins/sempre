@@ -178,7 +178,7 @@ export const ConfigStepContent = ({
   );
 };
 
-/** 手动服务器步骤 */
+/** 本地服务器步骤 */
 export const ManualServersStepContent = ({
   step,
   onTraceNode,
@@ -191,7 +191,7 @@ export const ManualServersStepContent = ({
 
   if (data.count === 0) {
     return (
-      <span className="text-slate-500">{t("proxy.debug.noManualServers")}</span>
+      <span className="text-slate-500">{t("proxy.debug.noLocalServers")}</span>
     );
   }
 
@@ -237,6 +237,20 @@ export const ManualServersStepContent = ({
               title: t("proxy.preview.port"),
               dataIndex: "port",
               width: 70,
+            },
+            {
+              title: t("proxy.debug.dataSource"),
+              dataIndex: "sourceUrl",
+              width: 120,
+              render: (sourceUrl: string) => (
+                <Tag color={sourceUrl.startsWith("custom-node:") ? "cyan" : "default"}>
+                  {t(
+                    sourceUrl.startsWith("custom-node:")
+                      ? "proxy.debug.customServerSource"
+                      : "proxy.debug.manualConfigSource",
+                  )}
+                </Tag>
+              ),
             },
             ...(onTraceNode
               ? [

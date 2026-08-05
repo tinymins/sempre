@@ -294,6 +294,70 @@ func TestSubscriptionPreviewAndTraceHTTPContracts(t *testing.T) {
 	}
 }
 
+func TestSubscriptionProfileDebugIncludesSelectedCustomNodes(t *testing.T) {
+	manager := newTestManager(t)
+	var profileID string
+	if err := manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
+		profile := &catalog.Profiles[0]
+		profileID = profile.ID
+		profile.CustomNodeIDs = []string{"custom-local"}
+		catalog.CustomNodes = []subscriptions.CustomNode{{
+			ID: "custom-local", Name: "Local node",
+			Proxy: map[string]any{"name": "Local node", "type": "socks5", "server": "127.0.0.1", "port": 1080},
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	admin := newAdminServer(manager)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions/"+profileID+"/debug", strings.NewReader(`{"format":"clash-meta"}`))
+	request.SetPathValue("id", profileID)
+	recorder := httptest.NewRecorder()
+
+	admin.subscriptionProfileDebug(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("debug status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var localStep struct {
+		Type string `json:"type"`
+		Data struct {
+			Count int                         `json:"count"`
+			Nodes []subscriptions.PreviewNode `json:"nodes"`
+		} `json:"data"`
+	}
+	found := false
+	for _, line := range strings.Split(recorder.Body.String(), "\n") {
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var step struct {
+			Type string `json:"type"`
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		if err := json.Unmarshal([]byte(payload), &step); err != nil {
+			t.Fatal(err)
+		}
+		if step.Type != "manual-servers" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(payload), &localStep); err != nil {
+			t.Fatal(err)
+		}
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("manual-servers event missing: %s", recorder.Body.String())
+	}
+	if localStep.Data.Count != 1 || len(localStep.Data.Nodes) != 1 {
+		t.Fatalf("local server data = %#v", localStep.Data)
+	}
+	if localStep.Data.Nodes[0].Name != "Local node" || localStep.Data.Nodes[0].SourceURL != "custom-node:custom-local" {
+		t.Fatalf("custom node = %#v", localStep.Data.Nodes[0])
+	}
+}
+
 func TestSubscriptionProfilePatchRenamesProfile(t *testing.T) {
 	manager := newTestManager(t)
 	catalog, activeProfileID, _, _, err := manager.SubscriptionCatalog()

@@ -272,16 +272,12 @@ func (admin *adminServer) subscriptionProfileDebug(writer http.ResponseWriter, r
 	effective := subscriptions.EffectiveProfile(*profile)
 	admin.beginSSE(writer)
 	admin.sse(writer, "message", map[string]any{"type": "config", "data": profileDebugConfig(*profile, effective)})
-	manual, manualErr := subscriptions.ManualServers(*profile)
-	if manualErr != nil {
-		admin.sse(writer, "error", map[string]string{"message": manualErr.Error()})
+	localNodes, localErr := subscriptions.PreviewLocalNodes(*profile, catalog)
+	if localErr != nil {
+		admin.sse(writer, "error", map[string]string{"message": localErr.Error()})
 		return
 	}
-	manualNodes := make([]subscriptions.PreviewNode, 0, len(manual))
-	for _, proxy := range manual {
-		manualNodes = append(manualNodes, previewFromProxy(proxy, 0, "manual", nil))
-	}
-	admin.sse(writer, "message", map[string]any{"type": "manual-servers", "data": map[string]any{"count": len(manualNodes), "nodes": manualNodes}})
+	admin.sse(writer, "message", map[string]any{"type": "manual-servers", "data": map[string]any{"count": len(localNodes), "nodes": localNodes}})
 	for index, source := range profile.Sources {
 		if source.Enabled {
 			admin.sse(writer, "message", map[string]any{"type": "source-start", "data": map[string]any{"sourceIndex": index + 1, "url": source.URL}})
