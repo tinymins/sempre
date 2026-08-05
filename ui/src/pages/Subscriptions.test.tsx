@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
 import { SessionProvider } from '../lib/session'
@@ -9,13 +10,21 @@ import { Subscriptions } from './Subscriptions'
 vi.mock('../features/subscriptions/toolbox/MessageBridge', () => ({ MessageBridge: () => null }))
 vi.mock('../features/subscriptions/toolbox/ProxyDebugModal', () => ({ default: () => null }))
 vi.mock('../features/subscriptions/toolbox/ProxyPreviewModal', () => ({ default: () => null }))
-vi.mock('../features/subscriptions/toolbox/ProxySubscribeEditor', () => ({ default: () => <div data-testid="subscription-editor" /> }))
+vi.mock('../features/subscriptions/toolbox/ProxySubscribeEditor', async () => {
+  const { useState } = await import('react')
+  function MockSubscriptionEditor({ diagnostics }: { diagnostics: ReactNode }) {
+    const [showDiagnostics, setShowDiagnostics] = useState(false)
+    return <div data-testid="subscription-editor"><button type="button" onClick={() => setShowDiagnostics(true)}>Open diagnostics</button>{showDiagnostics ? diagnostics : null}</div>
+  }
+  return { default: MockSubscriptionEditor }
+})
 
 type RecordedRequest = { url: string; method: string; body: unknown }
 
 let profiles: SubscriptionProfile[]
 let activeProfileID: string
 let requests: RecordedRequest[]
+let restartResponse: Promise<Response> | undefined
 
 function profile(id: string, name: string): SubscriptionProfile {
   return {
@@ -70,6 +79,7 @@ describe('Subscriptions subscription sets', () => {
     profiles = [profile('primary', 'Primary')]
     activeProfileID = 'primary'
     requests = []
+    restartResponse = undefined
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
       const method = init.method || 'GET'
@@ -78,6 +88,7 @@ describe('Subscriptions subscription sets', () => {
 
       if (url.endsWith('/api/v1/custom-nodes')) return jsonResponse({ nodes: [] })
       if (url.endsWith('/api/v1/subscriptions') && method === 'GET') return jsonResponse(catalog())
+      if (url.endsWith('/api/v1/runtime/restart') && method === 'POST') return restartResponse ?? jsonResponse({ action: 'restart', status: {} }, 202)
       if (url.endsWith('/api/v1/subscriptions') && method === 'POST') {
         const created = profile(`set-${profiles.length + 1}`, body?.name || '')
         profiles = [...profiles, created]
@@ -95,6 +106,9 @@ describe('Subscriptions subscription sets', () => {
         if (method === 'POST' && match[2] === 'activate') {
           activeProfileID = id
           return jsonResponse({ change: { changed: true, message: 'Subscription set activated.' } })
+        }
+        if (method === 'POST' && match[2] === 'refresh') {
+          return jsonResponse({ change: { changed: true, message: 'Subscription set refreshed.' } })
         }
         if (method === 'DELETE') {
           profiles = profiles.filter((item) => item.id !== id)
@@ -142,7 +156,9 @@ describe('Subscriptions subscription sets', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Manage subscription set: Personal' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Activate subscription set' }))
     await waitFor(() => expect(activeProfileID).toBe('set-2'))
-    expect(await screen.findByText('Active subscription set')).toBeInTheDocument()
+    const activeTab = await screen.findByRole('tab', { name: 'Personal' })
+    expect(activeTab.querySelector('[aria-hidden="true"]')).toBeInTheDocument()
+    expect(screen.queryByText('Active subscription set')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Primary' }))
     fireEvent.click(screen.getByRole('button', { name: 'Manage subscription set: Primary' }))
@@ -178,5 +194,51 @@ describe('Subscriptions subscription sets', () => {
     expect(screen.getByText('Already the active subscription set')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Delete subscription set/ })).toBeDisabled()
     expect(screen.getByText('The active subscription set cannot be deleted')).toBeInTheDocument()
+  })
+
+  it('shows the editor directly and runs update and restart from the page header', async () => {
+    profiles = [
+      { ...profile('primary', 'Primary'), last_compiler_target: 'sing-box-v13', last_result: 'source response contains no proxy nodes' },
+      profile('secondary', 'Secondary'),
+    ]
+    let resolveRestart: ((response: Response) => void) | undefined
+    restartResponse = new Promise<Response>((resolve) => { resolveRestart = resolve })
+    renderPage()
+
+    await screen.findByRole('tab', { name: 'Primary' })
+    expect(screen.getByTestId('subscription-editor')).toBeInTheDocument()
+    expect(screen.queryByText('Active subscription set')).not.toBeInTheDocument()
+    expect(screen.queryByText(/sing-box-v13.*source response contains no proxy nodes/)).not.toBeInTheDocument()
+    expect(screen.queryByText('source response contains no proxy nodes')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open diagnostics' }))
+    expect(screen.getByText('source response contains no proxy nodes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Secondary' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Update now' }))
+    await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
+      method: 'POST',
+      url: 'http://sempre.test/api/v1/subscriptions/secondary/refresh',
+    })))
+
+    const restart = screen.getByRole('button', { name: 'Restart core now' })
+    fireEvent.click(restart)
+    await waitFor(() => expect(restart).toBeDisabled())
+    await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
+      method: 'POST',
+      url: 'http://sempre.test/api/v1/runtime/restart',
+    })))
+
+    resolveRestart?.(jsonResponse({ action: 'restart', status: {} }, 202))
+    expect(await screen.findByRole('status')).toHaveTextContent('Operation accepted')
+    await waitFor(() => expect(restart).toBeEnabled())
+  })
+
+  it('shows restart failures as an error notice', async () => {
+    restartResponse = Promise.resolve(jsonResponse({ error: { code: 'RUNTIME_ERROR', message: 'Managed core is unavailable' } }, 503))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart core now' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Managed core is unavailable')
   })
 })
