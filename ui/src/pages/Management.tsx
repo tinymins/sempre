@@ -30,7 +30,7 @@ function CorePanel() {
   const cores = useQuery({ queryKey: ['cores'], queryFn: () => api<CoresResponse>(session!, '/cores') })
   const action = useMutation({
     mutationFn: ({ operation, value }: { operation: string; value?: string }) => api<ChangeResult>(session!, `/cores/${operation}`, { method: 'POST', body: JSON.stringify({ reference: value || '' }) }),
-    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); queryClient.invalidateQueries({ queryKey: ['cores'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) },
+    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); queryClient.invalidateQueries({ queryKey: ['cores'] }); queryClient.invalidateQueries({ queryKey: ['subscriptions'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) },
     onError: (error) => setNotice(error.message),
   })
   return <Section title={t('core')} icon={<Package size={18} />} notice={notice}>

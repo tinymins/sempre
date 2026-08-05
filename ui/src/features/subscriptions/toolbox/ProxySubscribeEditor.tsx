@@ -19,14 +19,15 @@ import Editor, { type Monaco } from "@monaco-editor/react";
 import { parse as parseJsonc, type ParseError } from "jsonc-parser";
 import {
   type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
+	  useCallback,
+	  useEffect,
+	  useMemo,
+	  useRef,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
 import "@/lib/monaco";
-import type { CustomNode, LinuxNetworkInventory, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionSource } from "@/lib/types";
+import type { CustomNode, LinuxNetworkInventory, SubscriptionConfigurationContext, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionSource } from "@/lib/types";
 import DnsConfigEditor from "./DnsConfigEditor";
 import PrivateAccessEditor from "./PrivateAccessEditor";
 import SubscribeItemsEditor from "./SubscribeItemsEditor";
@@ -146,6 +147,7 @@ interface DnsConfigEditorFieldProps {
   onChange?: (value: string) => void;
   form: ReturnType<typeof Form.useForm>[0];
   defaultValue: string;
+	configurationContext: SubscriptionConfigurationContext;
 }
 
 const DnsConfigEditorField = ({
@@ -153,17 +155,24 @@ const DnsConfigEditorField = ({
   onChange,
   form,
   defaultValue,
+	configurationContext,
 }: DnsConfigEditorFieldProps) => {
   const useSystem = Form.useWatch("useSystemDnsConfig", form);
 
   if (useSystem) {
     return (
-      <DnsConfigEditor key="system-default" value={defaultValue} readOnly />
+		<DnsConfigEditor key="system-default" value={defaultValue} readOnly features={configurationContext.capabilities.features} />
     );
   }
 
   return (
-    <DnsConfigEditor key="user-custom" value={value} onChange={onChange} />
+    <DnsConfigEditor
+		key="user-custom"
+		value={value}
+		onChange={onChange}
+		features={configurationContext.capabilities.features}
+		nativeTarget={dnsNativeTarget(configurationContext)}
+	/>
   );
 };
 
@@ -249,24 +258,16 @@ interface Props {
   defaults: SubscriptionEditorConfig;
   customNodes: CustomNode[];
 	networkInventory?: LinuxNetworkInventory;
+	configurationContext: SubscriptionConfigurationContext;
   onSave: (profile: SubscriptionProfile) => Promise<void> | void;
   schedule: { interval: string; autoRestart: boolean };
   onScheduleSave: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void;
   diagnostics: ReactNode;
 }
 
-const TABS = [
+const BASE_TABS = [
   { label: "basic", value: "basic" },
   { label: "subscribeUrl", value: "subscribeUrl" },
-  { label: "ruleList", value: "ruleList" },
-  { label: "group", value: "group" },
-  { label: "customRules", value: "customConfig" },
-  { label: "advancedConfig", value: "advancedConfig" },
-  { label: "dnsConfig", value: "dnsConfig" },
-  { label: "privateAccessConfig", value: "privateAccessConfig" },
-	{ label: "runtime", value: "runtime" },
-  { label: "servers", value: "servers" },
-  { label: "diagnostics", value: "diagnostics" },
 ];
 
 const AUTOSAVE_DELAY = 800;
@@ -276,18 +277,31 @@ type SaveFeedback = {
   message?: string;
 };
 
-function profileFormValues(profile: SubscriptionProfile): FormFieldValues {
+function dnsNativeTarget(context: SubscriptionConfigurationContext) {
+	if (!context.target || !context.capabilities.features.includes("dns.native")) return undefined;
+	if (context.target.core === "mihomo") return { key: "mihomo", label: "Mihomo" };
+	if (context.target.core === "sing-box") {
+		const key = context.target.compiler_target.version === "11" ? "sing_box_v11" : "sing_box_v12";
+		return { key, label: context.target.compiler_target.version === "11" ? "sing-box 1.11" : "sing-box 1.12+" };
+	}
+	return { key: context.target.core, label: context.target.core };
+}
+
+function profileFormValues(profile: SubscriptionProfile, configurationContext: SubscriptionConfigurationContext): FormFieldValues {
 	const transparent = profile.transparent_proxy ?? {
 		mode: "tun-router" as const,
 		tun: {
-			interface_name: "sing-box",
+			interface_name: "sempre-tun",
 			route_exclude_address: [],
+			interface_mode: "all" as const,
+			interfaces: [],
 			auto_exclude_local_routes: true,
 			auto_exclude_vpn_routes: true,
 		},
 		tproxy: { listen_port: 7893, dns_listen_port: 1053, capture_host: false, lan_interfaces: [] },
 	};
-	const clashAPI = profile.clash_api ?? { enabled: false, allow_origins: [], allow_private_network: false };
+	const managementAPI = profile.management_api ?? { enabled: false, allow_origins: [], allow_private_network: false };
+	const targetCore = configurationContext.target?.core;
   const items: SubscribeItem[] = profile.sources
     .filter((source) => source.type === "url")
     .map((source) => ({
@@ -327,24 +341,26 @@ function profileFormValues(profile: SubscriptionProfile): FormFieldValues {
     useSystemDnsConfig: profile.use_system_dns,
     privateAccessConfig: profile.editor.private_access_config ?? "",
     servers: profile.editor.servers || "[]",
-    advancedConfig: JSON.stringify(profile.custom_config ?? {}, null, 2),
+		advancedConfig: JSON.stringify(targetCore ? profile.core_overrides?.[targetCore] ?? {} : {}, null, 2),
     selectedCustomNodeIds: profile.custom_node_ids ?? [],
 		transparentMode: transparent.mode,
 		tunInterfaceName: transparent.tun.interface_name,
 		tunAddress: transparent.tun.address ?? "",
 		tunRouteExclusions: transparent.tun.route_exclude_address.join("\n"),
+		tunInterfaceMode: transparent.tun.interface_mode ?? "all",
+		tunInterfaces: transparent.tun.interfaces ?? [],
 		tunAutoExcludeLocal: transparent.tun.auto_exclude_local_routes,
 		tunAutoExcludeVPN: transparent.tun.auto_exclude_vpn_routes,
 		tproxyPort: transparent.tproxy.listen_port,
 		tproxyDNSPort: transparent.tproxy.dns_listen_port,
 		tproxyCaptureHost: transparent.tproxy.capture_host,
 		tproxyLANInterfaces: transparent.tproxy.lan_interfaces,
-		clashAPIEnabled: clashAPI.enabled,
-		clashAPIController: clashAPI.external_controller ?? "0.0.0.0:9090",
-		clashAPISecret: clashAPI.secret ?? "",
-		clashAPIUI: clashAPI.external_ui ?? "",
-		clashAPIOrigins: clashAPI.allow_origins,
-		clashAPIPrivateNetwork: clashAPI.allow_private_network,
+		managementAPIEnabled: managementAPI.enabled,
+		managementAPIController: managementAPI.external_controller ?? "0.0.0.0:9090",
+		managementAPISecret: managementAPI.secret ?? "",
+		managementAPIUI: managementAPI.external_ui ?? "",
+		managementAPIOrigins: managementAPI.allow_origins,
+		managementAPIPrivateNetwork: managementAPI.allow_private_network,
   };
 }
 
@@ -359,6 +375,7 @@ const ProxySubscribeEditor = ({
   defaults,
   customNodes,
 	networkInventory,
+	configurationContext,
   onSave,
   schedule,
   onScheduleSave,
@@ -377,10 +394,28 @@ const ProxySubscribeEditor = ({
     const [autoRestart, setAutoRestart] = useState(schedule.autoRestart);
     const [profileFeedback, setProfileFeedback] = useState<SaveFeedback>({ state: "idle" });
     const [scheduleFeedback, setScheduleFeedback] = useState<SaveFeedback>({ state: "idle" });
-    const [form] = Form.useForm(profileFormValues(profile));
+		const features = useMemo(() => new Set(configurationContext.capabilities.features), [configurationContext.capabilities.features]);
+		const supportsTransparent = features.has("transparent.tun") || features.has("transparent.tproxy");
+		const supportsManagement = features.has("management.external_api");
+		const supportsDNS = configurationContext.capabilities.features.some((feature) => feature.startsWith("dns."));
+		const runtimeVisible = supportsTransparent || supportsManagement;
+		const availableTabs = useMemo(() => [
+				...BASE_TABS,
+				...(features.has("routing.rule_providers") ? [{ label: "ruleList", value: "ruleList" }] : []),
+				...(features.has("routing.selector") || features.has("routing.url_test") ? [{ label: "group", value: "group" }] : []),
+				...(features.has("routing.rules") ? [{ label: "customRules", value: "customConfig" }] : []),
+				...(configurationContext.target && features.has("native_override") ? [{ label: "advancedConfig", value: "advancedConfig" }] : []),
+				...(supportsDNS ? [{ label: "dnsConfig", value: "dnsConfig" }] : []),
+				...(features.has("private_access") ? [{ label: "privateAccessConfig", value: "privateAccessConfig" }] : []),
+				...(runtimeVisible ? [{ label: "runtime", value: "runtime" }] : []),
+				...(configurationContext.capabilities.protocols.length > 0 ? [{ label: "servers", value: "servers" }] : []),
+				{ label: "diagnostics", value: "diagnostics" },
+			], [configurationContext.capabilities.protocols.length, configurationContext.target, features, runtimeVisible, supportsDNS]);
+		const [form] = Form.useForm(profileFormValues(profile, configurationContext));
     const manualServers = Form.useWatch("servers", form) as string | undefined;
 		const transparentMode = Form.useWatch("transparentMode", form) as string | undefined;
-		const clashAPIEnabled = Form.useWatch("clashAPIEnabled", form) as boolean | undefined;
+		const managementAPIEnabled = Form.useWatch("managementAPIEnabled", form) as boolean | undefined;
+		const tunInterfaceMode = Form.useWatch("tunInterfaceMode", form) as string | undefined;
 
     const mountedRef = useRef(true);
     const profileRef = useRef(profile);
@@ -417,10 +452,12 @@ const ProxySubscribeEditor = ({
     }, [profile.id]);
 
     // 获取 tabs 的本地化标签
-    const localizedTabs = TABS.map((tab) => ({
+		const visibleActiveTab = availableTabs.some((tab) => tab.value === activeTab) ? activeTab : "basic";
+
+    const localizedTabs = availableTabs.map((tab) => ({
       ...tab,
       label: (
-        <span className={`text-sm ${tab.value === activeTab ? "font-medium" : "font-normal"}`}>
+        <span className={`text-sm ${tab.value === visibleActiveTab ? "font-medium" : "font-normal"}`}>
           {t(`proxy.tabs.${tab.label}`)}
         </span>
       ),
@@ -428,18 +465,18 @@ const ProxySubscribeEditor = ({
 
     const buildCandidate = async (): Promise<SubscriptionProfile> => {
       const values = await form.validateFields();
-      const fields = ["ruleList", "group", "customConfig", "dnsConfig", "privateAccessConfig", "servers", "advancedConfig"];
+			const fields = ["ruleList", "group", "customConfig", "dnsConfig", "privateAccessConfig", "servers", ...(configurationContext.target ? ["advancedConfig"] : [])];
       for (const field of fields) {
         if (values[field] && !isValidJsonc(values[field])) {
           throw new Error(`${t(`proxy.tabs.${field === "customConfig" ? "customRules" : field}`)}: ${t("proxy.form.jsonFormatError")}`);
         }
       }
-      const advancedConfig = parseJsonc(values.advancedConfig || "{}") as unknown;
+			const advancedConfig = parseJsonc(values.advancedConfig || "{}") as unknown;
       const customRules = parseJsonc(values.customConfig || "[]") as unknown;
       if (!Array.isArray(customRules) || customRules.some((rule) => typeof rule !== "string")) {
         throw new Error(t("proxy.form.customRulesArrayError"));
       }
-      if (!advancedConfig || Array.isArray(advancedConfig) || typeof advancedConfig !== "object") {
+			if (configurationContext.target && (!advancedConfig || Array.isArray(advancedConfig) || typeof advancedConfig !== "object")) {
         throw new Error(t("proxy.form.advancedConfigObjectError"));
       }
       const cleanedItems = ((values.subscribeItems as SubscribeItem[]) || [])
@@ -455,19 +492,25 @@ const ProxySubscribeEditor = ({
         fetch_mode: item.fetchMode ?? "auto",
         cache_ttl_minutes: item.cacheTtlMinutes,
       }));
-      return {
+			const currentOverrides = { ...(profileRef.current.core_overrides ?? {}) };
+			if (configurationContext.target) {
+				currentOverrides[configurationContext.target.core] = advancedConfig as Record<string, unknown>;
+			}
+			return {
         ...profileRef.current,
         remark: values.remark || "",
         log_level: values.logLevel ?? "info",
         sources: [...sources, ...rawSourcesRef.current],
         custom_node_ids: values.selectedCustomNodeIds ?? [],
-        custom_config: advancedConfig as Record<string, unknown>,
+			core_overrides: currentOverrides,
 			transparent_proxy: {
 				mode: values.transparentMode ?? "tun-router",
 				tun: {
-					interface_name: values.tunInterfaceName || "sing-box",
+					interface_name: values.tunInterfaceName || "sempre-tun",
 					address: values.tunAddress?.trim() || undefined,
 					route_exclude_address: String(values.tunRouteExclusions || "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
+					interface_mode: values.tunInterfaceMode ?? "all",
+					interfaces: values.tunInterfaces ?? [],
 					auto_exclude_local_routes: values.tunAutoExcludeLocal ?? true,
 					auto_exclude_vpn_routes: values.tunAutoExcludeVPN ?? true,
 				},
@@ -478,13 +521,13 @@ const ProxySubscribeEditor = ({
 					lan_interfaces: values.tproxyLANInterfaces ?? [],
 				},
 			},
-			clash_api: {
-				enabled: values.clashAPIEnabled ?? false,
-				external_controller: values.clashAPIController?.trim() || undefined,
-				secret: values.clashAPISecret || undefined,
-				external_ui: values.clashAPIUI?.trim() || undefined,
-				allow_origins: values.clashAPIOrigins ?? [],
-				allow_private_network: values.clashAPIPrivateNetwork ?? false,
+			management_api: {
+				enabled: values.managementAPIEnabled ?? false,
+				external_controller: values.managementAPIController?.trim() || undefined,
+				secret: values.managementAPISecret || undefined,
+				external_ui: values.managementAPIUI?.trim() || undefined,
+				allow_origins: values.managementAPIOrigins ?? [],
+				allow_private_network: values.managementAPIPrivateNetwork ?? false,
 			},
         use_system_rules: values.useSystemRuleList ?? true,
         use_system_groups: values.useSystemGroup ?? true,
@@ -644,7 +687,7 @@ const ProxySubscribeEditor = ({
             <Tabs
               className="min-w-[920px]"
               type="segment"
-              activeKey={activeTab}
+              activeKey={visibleActiveTab}
               onChange={(key) => setActiveTab(key)}
               items={localizedTabs.map((tab) => ({
                 key: tab.value,
@@ -653,17 +696,24 @@ const ProxySubscribeEditor = ({
             />
           </div>
           <SaveStatus profile={profileFeedback} schedule={scheduleFeedback} />
+					{configurationContext.target && configurationContext.running && configurationContext.target.core !== configurationContext.running.core ? (
+						<Alert
+							type="warning"
+							showIcon
+							message={t("proxy.form.coreTransition", { target: configurationContext.target.core, running: configurationContext.running.core })}
+						/>
+					) : null}
 
           <Form form={form} layout="vertical" onValuesChange={queueAutosave}>
             {/* 基础信息 */}
-            <div style={{ display: activeTab === "basic" ? "block" : "none" }}>
+            <div style={{ display: visibleActiveTab === "basic" ? "block" : "none" }}>
               <Form.Item label={t("proxy.form.remark")} name="remark">
                 <TextArea
                   rows={3}
                   placeholder={t("proxy.form.remarkPlaceholder")}
                 />
               </Form.Item>
-              <Form.Item
+              {features.has("logging.level") ? <Form.Item
                 label={t("proxy.form.logLevel")}
                 name="logLevel"
                 tooltip={t("proxy.form.logLevelTip")}
@@ -692,7 +742,7 @@ const ProxySubscribeEditor = ({
                     },
                   ]}
                 />
-              </Form.Item>
+              </Form.Item> : null}
               <div className="grid gap-4 border-t border-gray-200 pt-4 dark:border-gray-700 md:grid-cols-2">
                 <label className="grid gap-1.5 text-sm font-medium">
                   <span>{t("proxy.form.updateSchedule")}</span>
@@ -722,7 +772,7 @@ const ProxySubscribeEditor = ({
             {/* 订阅源 */}
             <div
               style={{
-                display: activeTab === "subscribeUrl" ? "block" : "none",
+                display: visibleActiveTab === "subscribeUrl" ? "block" : "none",
               }}
             >
               <Form.Item
@@ -807,7 +857,7 @@ const ProxySubscribeEditor = ({
             {/* 规则列表 / 分组 / 过滤器 / 自定义配置 */}
             {CONFIG_FIELDS.map(
               ({ field, useSystemField, tab, labelKey, placeholderKey }) => (
-                <div key={tab} className={activeTab === tab ? "" : "hidden"}>
+                <div key={tab} className={visibleActiveTab === tab ? "" : "hidden"}>
                   <div className="flex items-center justify-between mb-2">
                     <span>{t(labelKey)}</span>
                     <Form.Item
@@ -834,7 +884,7 @@ const ProxySubscribeEditor = ({
               ),
             )}
 
-            <div className={activeTab === "advancedConfig" ? "" : "hidden"}>
+            <div className={visibleActiveTab === "advancedConfig" ? "" : "hidden"}>
               <Form.Item
                 label={t("proxy.form.advancedConfigLabel")}
                 name="advancedConfig"
@@ -844,7 +894,7 @@ const ProxySubscribeEditor = ({
             </div>
 
             {/* DNS 配置 */}
-            <div className={activeTab === "dnsConfig" ? "" : "hidden"}>
+            <div className={visibleActiveTab === "dnsConfig" ? "" : "hidden"}>
               <div className="flex items-center justify-between mb-2">
                 <span>{t("proxy.form.dnsConfigLabel")}</span>
                 <Form.Item
@@ -863,13 +913,14 @@ const ProxySubscribeEditor = ({
                 <DnsConfigEditorField
                   form={form}
                   defaultValue={defaults.dns_config}
+								configurationContext={configurationContext}
                 />
               </Form.Item>
             </div>
 
             {/* 内网访问配置 */}
             <div
-              className={activeTab === "privateAccessConfig" ? "" : "hidden"}
+              className={visibleActiveTab === "privateAccessConfig" ? "" : "hidden"}
             >
               <Form.Item
                 label={t("proxy.form.privateAccessConfigLabel")}
@@ -879,13 +930,13 @@ const ProxySubscribeEditor = ({
               </Form.Item>
             </div>
 
-			<div className={activeTab === "runtime" ? "space-y-5" : "hidden"}>
-				<section className="space-y-4">
+			<div className={visibleActiveTab === "runtime" ? "space-y-5" : "hidden"}>
+				{supportsTransparent ? <section className="space-y-4">
 					<Form.Item label={t("proxy.form.transparentMode")} name="transparentMode">
 						<Select
 							options={[
-								{ value: "tun-router", label: t("proxy.form.transparentModeTun") },
-								{ value: "tproxy", label: t("proxy.form.transparentModeTProxy") },
+								...(features.has("transparent.tun") ? [{ value: "tun-router", label: t("proxy.form.transparentModeTun") }] : []),
+								...(features.has("transparent.tproxy") ? [{ value: "tproxy", label: t("proxy.form.transparentModeTProxy") }] : []),
 								{ value: "disabled", label: t("proxy.form.transparentModeDisabled") },
 							]}
 							onChange={(value) => {
@@ -895,16 +946,30 @@ const ProxySubscribeEditor = ({
 							}}
 						/>
 					</Form.Item>
-					{transparentMode === "tun-router" ? (
+					{transparentMode === "tun-router" && features.has("transparent.tun") ? (
 						<>
 							<div className="grid gap-4 md:grid-cols-2">
 								<Form.Item label={t("proxy.form.tunInterface")} name="tunInterfaceName">
 									<Input />
 								</Form.Item>
-								<Form.Item label={t("proxy.form.tunAddress")} name="tunAddress">
+								{features.has("transparent.tun.address") ? <Form.Item label={t("proxy.form.tunAddress")} name="tunAddress">
 									<Input placeholder={t("proxy.form.tunAddressAuto")} />
-								</Form.Item>
+								</Form.Item> : null}
 							</div>
+							{features.has("transparent.interface_policy") ? (
+								<div className="grid gap-4 md:grid-cols-2">
+									<Form.Item label={t("proxy.form.tunInterfacePolicy")} name="tunInterfaceMode">
+										<Select options={[
+											{ value: "all", label: t("proxy.form.tunInterfaceAll") },
+											{ value: "include", label: t("proxy.form.tunInterfaceInclude") },
+											{ value: "exclude", label: t("proxy.form.tunInterfaceExclude") },
+										]} />
+									</Form.Item>
+									{tunInterfaceMode !== "all" ? <Form.Item label={t("proxy.form.tunInterfaces")} name="tunInterfaces">
+										<Select mode="tags" options={(networkInventory?.interfaces ?? []).map((item) => ({ value: item.name, label: item.name }))} />
+									</Form.Item> : null}
+								</div>
+							) : null}
 							<Form.Item label={t("proxy.form.tunRouteExclusions")} name="tunRouteExclusions">
 								<TextArea rows={3} />
 							</Form.Item>
@@ -918,7 +983,7 @@ const ProxySubscribeEditor = ({
 							</div>
 						</>
 					) : null}
-					{transparentMode === "tproxy" ? (
+					{transparentMode === "tproxy" && features.has("transparent.tproxy") ? (
 						<>
 							<div className="grid gap-4 md:grid-cols-2">
 								<Form.Item label={t("proxy.form.tproxyPort")} name="tproxyPort">
@@ -944,39 +1009,39 @@ const ProxySubscribeEditor = ({
 							</Form.Item>
 						</>
 					) : null}
-				</section>
+				</section> : null}
 
-				<section className="space-y-4 border-t border-[var(--border)] pt-5">
-					<Form.Item label={t("proxy.form.clashAPIEnabled")} name="clashAPIEnabled" valuePropName="checked">
+				{supportsManagement ? <section className="space-y-4 border-t border-[var(--border)] pt-5">
+					<Form.Item label={t("proxy.form.managementAPIEnabled")} name="managementAPIEnabled" valuePropName="checked">
 						<Switch />
 					</Form.Item>
-					{clashAPIEnabled ? (
+					{managementAPIEnabled ? (
 						<>
-							<Alert type="warning" showIcon message={t("proxy.form.clashAPISecurityWarning")} />
+							<Alert type="warning" showIcon message={t("proxy.form.managementAPISecurityWarning")} />
 							<div className="grid gap-4 md:grid-cols-2">
-								<Form.Item label={t("proxy.form.clashAPIController")} name="clashAPIController">
+								<Form.Item label={t("proxy.form.managementAPIController")} name="managementAPIController">
 									<Input />
 								</Form.Item>
-								<Form.Item label={t("proxy.form.clashAPISecret")} name="clashAPISecret">
+								<Form.Item label={t("proxy.form.managementAPISecret")} name="managementAPISecret">
 									<Password autoComplete="new-password" />
 								</Form.Item>
 							</div>
-							<Form.Item label={t("proxy.form.clashAPIUI")} name="clashAPIUI">
+							<Form.Item label={t("proxy.form.managementAPIUI")} name="managementAPIUI">
 								<Input />
 							</Form.Item>
-							<Form.Item label={t("proxy.form.clashAPIOrigins")} name="clashAPIOrigins">
+							<Form.Item label={t("proxy.form.managementAPIOrigins")} name="managementAPIOrigins">
 								<Select mode="tags" />
 							</Form.Item>
-							<Form.Item label={t("proxy.form.clashAPIPrivateNetwork")} name="clashAPIPrivateNetwork" valuePropName="checked">
+							<Form.Item label={t("proxy.form.managementAPIPrivateNetwork")} name="managementAPIPrivateNetwork" valuePropName="checked">
 								<Switch />
 							</Form.Item>
 						</>
 					) : null}
-				</section>
+				</section> : null}
 			</div>
 
             {/* 额外服务器 */}
-            <div className={activeTab === "servers" ? "" : "hidden"}>
+            <div className={visibleActiveTab === "servers" ? "" : "hidden"}>
               <Form.Item
                 label={t("proxy.form.assignedCustomNodes")}
                 name="selectedCustomNodeIds"
@@ -1013,7 +1078,7 @@ const ProxySubscribeEditor = ({
               </div>
             </div>
           </Form>
-          {activeTab === "diagnostics" ? <div>{diagnostics}</div> : null}
+          {visibleActiveTab === "diagnostics" ? <div>{diagnostics}</div> : null}
         <Modal
           title={t("proxy.form.serversLabel")}
           open={manualServersEditorOpen}

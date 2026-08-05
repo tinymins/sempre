@@ -184,6 +184,8 @@ export interface TransparentProxyConfig {
 		interface_name: string
 		address?: string
 		route_exclude_address: string[]
+		interface_mode: 'all' | 'include' | 'exclude'
+		interfaces: string[]
 		auto_exclude_local_routes: boolean
 		auto_exclude_vpn_routes: boolean
 	}
@@ -195,13 +197,34 @@ export interface TransparentProxyConfig {
 	}
 }
 
-export interface ClashAPIConfig {
+export interface ManagementAPIConfig {
 	enabled: boolean
 	external_controller?: string
 	secret?: string
 	external_ui?: string
 	allow_origins: string[]
 	allow_private_network: boolean
+}
+
+export interface CoreProtocolCapability {
+	protocol: string
+	transports: string[]
+	security: string[]
+	minimum_version?: string
+}
+
+export interface CoreCapabilities {
+	features: string[]
+	enum_values: Record<string, string[]>
+	protocols: CoreProtocolCapability[]
+}
+
+export interface SubscriptionConfigurationContext {
+	key: string
+	target?: { core: string; version: string; compiler_target: SubscriptionTarget; key: string }
+	running?: { core: string; version: string }
+	platform: string
+	capabilities: CoreCapabilities
 }
 
 export interface LinuxNetworkInventory {
@@ -256,9 +279,9 @@ export interface SubscriptionProfile {
   filters: string[]
   dns?: Record<string, unknown>
   private_access?: Record<string, unknown>
-  custom_config?: Record<string, unknown>
+	core_overrides: Record<string, Record<string, unknown>>
 	transparent_proxy?: TransparentProxyConfig
-	clash_api?: ClashAPIConfig
+	management_api?: ManagementAPIConfig
   use_system_groups: boolean
   use_system_rules: boolean
   use_system_filters: boolean
@@ -281,7 +304,7 @@ export interface CustomNode {
   updated_at?: string
 }
 
-export interface SubscriptionTarget { format: string; version?: string; platform?: string }
+export interface SubscriptionTarget { core?: string; format: string; version?: string; platform?: string }
 export interface SubscriptionCatalogResponse {
   profiles: SubscriptionProfile[]
   active_profile_id: string
@@ -290,6 +313,7 @@ export interface SubscriptionCatalogResponse {
   targets: SubscriptionTarget[]
   defaults: SubscriptionDefaults
   editor_defaults: SubscriptionEditorConfig
+	configuration_context: SubscriptionConfigurationContext
 }
 
 export interface SourceResult {

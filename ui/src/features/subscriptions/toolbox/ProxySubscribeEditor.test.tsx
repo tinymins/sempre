@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AcmeContentBoundary } from '@/components/AcmeContentBoundary'
 import { I18nProvider } from '@/lib/i18n'
-import type { SubscriptionProfile } from '@/lib/types'
+import type { SubscriptionConfigurationContext, SubscriptionProfile } from '@/lib/types'
 import ProxySubscribeEditor from './ProxySubscribeEditor'
 
 vi.mock('@monaco-editor/react', () => ({
@@ -34,12 +34,32 @@ const profile: SubscriptionProfile = {
   rules: [],
   rule_providers: [],
   filters: [],
+	core_overrides: {},
   use_system_groups: true,
   use_system_rules: true,
   use_system_filters: true,
   use_system_dns: true,
   use_system_custom_config: true,
   last_runtime_validated: false,
+}
+
+const singBoxContext: SubscriptionConfigurationContext = {
+	key: 'sing-box-context',
+	target: { core: 'sing-box', version: '1.13.16', compiler_target: { core: 'sing-box', format: 'sing-box-v13', version: '13', platform: 'default' }, key: 'sing-box-context' },
+	running: { core: 'sing-box', version: '1.13.16' },
+	platform: 'linux',
+	capabilities: {
+		features: [
+			'logging.level',
+			'dns.local_upstream', 'dns.remote_upstream', 'dns.bootstrap_upstream', 'dns.bootstrap_port',
+			'dns.bootstrap_server_name', 'dns.fake_ip', 'dns.split', 'dns.native', 'dns.prefer_ipv4',
+			'dns.remote_server_name', 'dns.remote_detour', 'dns.reject_https',
+			'routing.rules', 'routing.rule_providers', 'routing.selector', 'routing.url_test',
+			'native_override', 'private_access', 'transparent.tun', 'transparent.tun.address',
+			'transparent.tproxy', 'transparent.interface_policy', 'management.external_api',
+		],
+		enum_values: {}, protocols: [{ protocol: 'trojan', transports: ['tcp'], security: ['tls'] }],
+	},
 }
 
 const defaults = {
@@ -58,7 +78,7 @@ describe('ProxySubscribeEditor', () => {
     vi.useRealTimers()
   })
 
-  function renderEditor(overrides: { onSave?: (candidate: SubscriptionProfile) => Promise<void> | void; onScheduleSave?: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void } = {}) {
+  function renderEditor(overrides: { onSave?: (candidate: SubscriptionProfile) => Promise<void> | void; onScheduleSave?: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void; configurationContext?: SubscriptionConfigurationContext } = {}) {
     const onSave = vi.fn(overrides.onSave ?? (() => undefined))
     const onScheduleSave = vi.fn(overrides.onScheduleSave ?? (() => undefined))
     const rendered = render(
@@ -80,6 +100,7 @@ describe('ProxySubscribeEditor', () => {
 					{ name: 'vmbr1', index: 3, kind: 'bridge', up: true, default_route: false, addresses: ['10.10.10.1/24'] },
 				],
 			}}
+			configurationContext={overrides.configurationContext ?? singBoxContext}
             schedule={{ interval: '24h', autoRestart: true }}
             onScheduleSave={onScheduleSave}
             onSave={onSave}
@@ -151,7 +172,7 @@ describe('ProxySubscribeEditor', () => {
     expect(onScheduleSave).toHaveBeenCalledWith({ auto_restart: false })
   })
 
-	it('persists Linux TProxy and authenticated external Clash API settings', async () => {
+	it('persists Linux TProxy and authenticated external management API settings', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('sempre.locale', 'en')
 		const { onSave } = renderEditor()
@@ -162,8 +183,8 @@ describe('ProxySubscribeEditor', () => {
 
 		const switches = screen.getAllByRole('switch')
 		fireEvent.click(switches[switches.length - 1])
-		expect(screen.getByText(/Use a strong Secret/)).toBeInTheDocument()
-		fireEvent.change(screen.getByLabelText('Fixed Secret'), { target: { value: 'fixed-secret' } })
+		expect(screen.getByText(/Use a strong secret/i)).toBeInTheDocument()
+		fireEvent.change(screen.getByLabelText(/Fixed secret/i), { target: { value: 'fixed-secret' } })
 		await act(async () => vi.advanceTimersByTime(800))
 
 		expect(onSave).toHaveBeenCalledTimes(1)
@@ -172,7 +193,7 @@ describe('ProxySubscribeEditor', () => {
 				mode: 'tproxy',
 				tproxy: { listen_port: 7893, dns_listen_port: 1053, capture_host: false, lan_interfaces: ['vmbr1'] },
 			},
-			clash_api: { enabled: true, external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
+			management_api: { enabled: true, external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
 		})
 	})
 
@@ -210,7 +231,7 @@ describe('ProxySubscribeEditor', () => {
     fireEvent.change(advanced, { target: { value: '{"route":{"final":"proxy"}}' } })
     await act(async () => vi.advanceTimersByTime(800))
     expect(onSave).toHaveBeenCalledTimes(1)
-    expect(onSave.mock.calls[0][0]).toMatchObject({ custom_config: { route: { final: 'proxy' } } })
+		expect(onSave.mock.calls[0][0]).toMatchObject({ core_overrides: { 'sing-box': { route: { final: 'proxy' } } } })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -230,11 +251,52 @@ describe('ProxySubscribeEditor', () => {
     fireEvent.change(customRules, { target: { value: '["domain_suffix:example.com"]' } })
     await act(async () => vi.advanceTimersByTime(800))
     expect(onSave).toHaveBeenCalledTimes(1)
-    expect(onSave.mock.calls[0][0]).toMatchObject({
-      editor: { custom_config: '["domain_suffix:example.com"]' },
-      custom_config: {},
-    })
-  })
+		expect(onSave.mock.calls[0][0]).toMatchObject({
+		  editor: { custom_config: '["domain_suffix:example.com"]' },
+		  core_overrides: { 'sing-box': {} },
+		})
+	  })
+
+	it('shows only common settings when no core is selected', async () => {
+		localStorage.setItem('sempre.locale', 'en')
+		renderEditor({
+			configurationContext: {
+				key: 'common', platform: 'linux',
+				capabilities: {
+					features: [
+						'logging.level',
+						'dns.local_upstream', 'dns.remote_upstream', 'routing.rules', 'routing.rule_providers',
+						'routing.selector', 'transparent.tun', 'management.external_api',
+					],
+					enum_values: {},
+					protocols: [{ protocol: 'trojan', transports: ['tcp'], security: ['tls'] }],
+				},
+			},
+		})
+		expect(await screen.findByRole('button', { name: 'DNS Config' })).toBeInTheDocument()
+		expect(screen.getByRole('button', { name: 'Runtime' })).toBeInTheDocument()
+		expect(screen.getByRole('button', { name: 'Rule List' })).toBeInTheDocument()
+		expect(screen.getByRole('button', { name: 'Proxy Groups' })).toBeInTheDocument()
+		expect(screen.getByRole('button', { name: 'Manual Servers' })).toBeInTheDocument()
+		expect(screen.queryByRole('button', { name: 'Advanced Config' })).not.toBeInTheDocument()
+		expect(screen.queryByRole('button', { name: 'Private Access' })).not.toBeInTheDocument()
+	})
+
+	it('hides settings that are absent from the selected core capability contract', async () => {
+		localStorage.setItem('sempre.locale', 'en')
+		renderEditor({
+			configurationContext: {
+				key: 'limited', platform: 'linux',
+				target: { core: 'limited', version: '1.0.0', compiler_target: { core: 'limited', format: 'limited' }, key: 'limited' },
+				capabilities: { features: ['transparent.tun'], enum_values: {}, protocols: [] },
+			},
+		})
+		expect(await screen.findByRole('button', { name: 'Runtime' })).toBeInTheDocument()
+		for (const label of ['Rule List', 'Proxy Groups', 'Custom Rules', 'Advanced Config', 'DNS Config', 'Private Access', 'Manual Servers']) {
+			expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+		}
+		expect(screen.queryByLabelText('Log Level')).not.toBeInTheDocument()
+	})
 
   it('shows save failures inline without discarding the edited value', async () => {
     vi.useFakeTimers()

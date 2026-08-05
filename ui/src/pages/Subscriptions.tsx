@@ -51,8 +51,12 @@ export function Subscriptions() {
   }
 
   const save = useMutation({
-    mutationFn: (candidate: SubscriptionProfile) => api<SaveResponse>(session!, `/subscriptions/${candidate.id}`, { method: 'PUT', body: JSON.stringify(candidate) }),
-    onSuccess: async (_result, candidate) => {
+	mutationFn: ({ candidate, contextKey }: { candidate: SubscriptionProfile; contextKey: string }) => api<SaveResponse>(session!, `/subscriptions/${candidate.id}`, {
+		method: 'PUT',
+		headers: { 'X-Sempre-Configuration-Context': contextKey },
+		body: JSON.stringify(candidate),
+	}),
+	onSuccess: async (_result, { candidate }) => {
       await invalidate()
       setDrafts((current) => {
         const draft = current[candidate.id]
@@ -232,16 +236,19 @@ export function Subscriptions() {
           <ProxyPreviewModal ref={previewRef} />
           <ProxyDebugModal ref={debugRef} />
           <ProxySubscribeEditor
-            key={currentProfile.id}
+			key={`${currentProfile.id}:${catalog.data?.configuration_context.key ?? 'common'}`}
             profile={currentProfile}
             defaults={catalog.data?.editor_defaults ?? { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' }}
             customNodes={customNodes.data?.nodes ?? []}
 			networkInventory={networkInventory.data}
+			configurationContext={catalog.data?.configuration_context ?? {
+				key: 'common', platform: 'unknown', capabilities: { features: [], enum_values: {}, protocols: [] },
+			}}
             schedule={{ interval: catalog.data?.schedule.interval || '24h', autoRestart: Boolean(catalog.data?.auto_restart) }}
             onScheduleSave={async (change) => { await schedule.mutateAsync(change) }}
             onSave={async (candidate) => {
               setDrafts((current) => ({ ...current, [candidate.id]: candidate }))
-              await save.mutateAsync(candidate)
+				await save.mutateAsync({ candidate, contextKey: catalog.data?.configuration_context.key ?? 'common' })
             }}
             diagnostics={(
               <div className="space-y-5">
@@ -420,7 +427,11 @@ function editorRevision(profile: SubscriptionProfile) {
     remark: profile.remark,
     logLevel: profile.log_level,
     editor: profile.editor,
-    advancedConfig: profile.custom_config,
+		coreOverrides: profile.core_overrides,
+		transparentProxy: profile.transparent_proxy,
+		managementAPI: profile.management_api,
+		dns: profile.dns,
+		privateAccess: profile.private_access,
     sources: profile.sources,
     customNodeIDs: profile.custom_node_ids,
     useSystemGroups: profile.use_system_groups,

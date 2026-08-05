@@ -39,6 +39,7 @@ function profile(id: string, name: string): SubscriptionProfile {
     rules: [],
     rule_providers: [],
     filters: [],
+		core_overrides: {},
     use_system_groups: true,
     use_system_rules: true,
     use_system_filters: true,
@@ -57,6 +58,7 @@ function catalog(): SubscriptionCatalogResponse {
     targets: [],
     defaults: { groups: [], rule_providers: [], filters: [], rules: [], dns: {} },
     editor_defaults: { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' },
+		configuration_context: { key: 'common', platform: 'linux', capabilities: { features: [], enum_values: {}, protocols: [] } },
   }
 }
 

@@ -18,20 +18,18 @@ export const DnsSharedConfigSchema = z.object({
   fakeipEnabled: z.boolean().optional(),
   /** FakeIP rewrite TTL（秒），默认 300 */
   fakeipTtl: z.number().int().min(0).optional(),
-  /** DNS 入站监听端口，默认 1053 */
-  dnsListenPort: z.number().int().min(1).max(65535).optional(),
-  /** tproxy 入站监听端口，默认 7893 */
-  tproxyPort: z.number().int().min(1).max(65535).optional(),
+  bootstrapDns: z.string().optional(),
+  bootstrapDnsPort: z.number().int().min(1).max(65535).optional(),
+  bootstrapServerName: z.string().optional(),
+  remoteDns: z.string().optional(),
+  remoteDnsPort: z.number().int().min(1).max(65535).optional(),
+  remoteServerName: z.string().optional(),
+  remoteDetour: z.string().optional(),
+  preferIpv4: z.boolean().optional(),
   /** 是否拦截 HTTPS DNS 查询，默认 true */
   rejectHttps: z.boolean().optional(),
   /** CN 域名走本地 DNS，默认 true */
   cnDomainLocalDns: z.boolean().optional(),
-  /** Clash API 端口，默认 9999 */
-  clashApiPort: z.number().int().min(1).max(65535).optional(),
-  /** Clash API 密钥，默认 "123456" */
-  clashApiSecret: z.string().optional(),
-  /** Clash API UI 路径，默认 "/etc/sb/ui" */
-  clashApiUiPath: z.string().optional(),
 });
 
 export type DnsSharedConfig = z.infer<typeof DnsSharedConfigSchema>;
@@ -45,18 +43,8 @@ export type DnsSharedConfig = z.infer<typeof DnsSharedConfigSchema>;
  */
 export const DnsConfigSchema = z.object({
   shared: DnsSharedConfigSchema.optional(),
-  overrides: z
-    .object({
-      /** Sing-box v1.11 原生 dns 段 */
-      singbox: z.record(z.string(), z.unknown()).optional(),
-      /** Sing-box v1.12 原生 dns 段（未设置时 fallback 到 singbox） */
-      singboxV12: z.record(z.string(), z.unknown()).optional(),
-      /** Clash 原生 dns 段 */
-      clash: z.record(z.string(), z.unknown()).optional(),
-      /** Clash Meta 原生 dns 段（未设置时 fallback 到 clash） */
-      clashMeta: z.record(z.string(), z.unknown()).optional(),
-    })
-    .optional(),
+	modes: z.record(z.string(), z.enum(["managed", "native"])).optional(),
+	overrides: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
 });
 
 export type DnsConfig = z.infer<typeof DnsConfigSchema>;
