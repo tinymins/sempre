@@ -7,7 +7,7 @@ import (
 	"net"
 )
 
-func NewPrivateControl(coreID string) (ControlSpec, error) {
+func NewPrivateControl(coreID, protocol string) (ControlSpec, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return ControlSpec{}, fmt.Errorf("reserve internal core API address: %w", err)
@@ -21,8 +21,9 @@ func NewPrivateControl(coreID string) (ControlSpec, error) {
 		return ControlSpec{}, fmt.Errorf("generate internal core API secret: %w", err)
 	}
 	return ControlSpec{
-		Core:    coreID,
-		BaseURL: "http://" + address,
-		Secret:  hex.EncodeToString(secretBytes),
+		Core:     coreID,
+		Protocol: protocol,
+		BaseURL:  "http://" + address,
+		Secret:   hex.EncodeToString(secretBytes),
 	}, nil
 }

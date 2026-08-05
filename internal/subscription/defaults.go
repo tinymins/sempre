@@ -67,10 +67,11 @@ func SystemDefaults() Defaults {
 		Rules:   []string{},
 		DNS: map[string]any{"shared": map[string]any{
 			"localDns": "127.0.0.1", "localDnsPort": 53,
+			"bootstrapDns": "223.5.5.5", "bootstrapDnsPort": 853, "bootstrapServerName": "dns.alidns.com",
+			"remoteDns": "8.8.8.8", "remoteDnsPort": 853, "remoteServerName": "dns.google",
 			"fakeipIpv4Range": "198.18.0.0/15", "fakeipIpv6Range": "fc00::/18",
 			"fakeipEnabled": true, "fakeipTtl": 300,
-			"dnsListenPort": 1053, "tproxyPort": 7893,
-			"rejectHttps": true, "cnDomainLocalDns": true,
+			"rejectHttps": true, "cnDomainLocalDns": true, "preferIpv4": true,
 		}},
 	}
 }

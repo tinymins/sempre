@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -18,7 +19,12 @@ func (admin *adminServer) subscriptionsGet(writer http.ResponseWriter, _ *http.R
 		admin.internalError(writer, err)
 		return
 	}
-	apiWriteJSON(writer, http.StatusOK, map[string]any{"profiles": catalog.Profiles, "active_profile_id": active, "schedule": schedule, "auto_restart": autoRestart, "targets": subscriptions.AvailableTargets(), "defaults": subscriptions.SystemDefaults(), "editor_defaults": subscriptions.SystemEditorDefaults()})
+	configurationContext, err := admin.manager.SubscriptionConfigurationContext()
+	if err != nil {
+		admin.internalError(writer, err)
+		return
+	}
+	apiWriteJSON(writer, http.StatusOK, map[string]any{"profiles": catalog.Profiles, "active_profile_id": active, "schedule": schedule, "auto_restart": autoRestart, "targets": subscriptions.AvailableTargets(), "defaults": subscriptions.SystemDefaults(), "editor_defaults": subscriptions.SystemEditorDefaults(), "configuration_context": configurationContext})
 }
 
 func (admin *adminServer) subscriptionsCreate(writer http.ResponseWriter, request *http.Request) {
@@ -70,8 +76,15 @@ func (admin *adminServer) subscriptionProfilePut(writer http.ResponseWriter, req
 	if !admin.decode(writer, request, &profile) {
 		return
 	}
-	change, result, err := admin.manager.SaveSubscriptionProfile(request.Context(), request.PathValue("id"), profile)
+	change, result, err := admin.manager.SaveSubscriptionProfileForContext(
+		request.Context(), request.PathValue("id"), profile,
+		request.Header.Get("X-Sempre-Configuration-Context"),
+	)
 	if err != nil {
+		if errors.Is(err, errSubscriptionConfigurationContextChanged) {
+			apiWriteError(writer, http.StatusConflict, "CONFIGURATION_CONTEXT_CHANGED", err.Error(), nil)
+			return
+		}
 		admin.operationError(writer, err)
 		return
 	}

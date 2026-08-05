@@ -7,6 +7,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/google/nftables/expr"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -75,5 +76,32 @@ func TestNFTablesRuleLabelsRoundTrip(t *testing.T) {
 	}
 	if got := ruleLabel([]byte{byte(0), 10, 'x'}); got != "" {
 		t.Fatalf("malformed label decoded as %q", got)
+	}
+}
+
+func TestOutputDNSMarkMatchesDestinationPort(t *testing.T) {
+	expressions := outputMarkExpressions(unix.IPPROTO_UDP, 53)
+	foundPort := false
+	for index, expression := range expressions {
+		payload, ok := expression.(*expr.Payload)
+		if !ok || payload.Base != expr.PayloadBaseTransportHeader || payload.Offset != 2 || payload.Len != 2 {
+			continue
+		}
+		if index+1 >= len(expressions) {
+			t.Fatal("destination port payload has no comparison")
+		}
+		comparison, ok := expressions[index+1].(*expr.Cmp)
+		if ok && binary.BigEndian.Uint16(comparison.Data) == 53 {
+			foundPort = true
+		}
+	}
+	if !foundPort {
+		t.Fatal("OUTPUT DNS mark does not match destination port 53")
+	}
+
+	for _, expression := range outputMarkExpressions(unix.IPPROTO_UDP, 0) {
+		if _, ok := expression.(*expr.Payload); ok {
+			t.Fatal("ordinary OUTPUT mark unexpectedly restricts the destination port")
+		}
 	}
 }

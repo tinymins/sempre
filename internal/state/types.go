@@ -50,6 +50,7 @@ type ConfigBuild struct {
 	ProfileID       string `json:"profile_id"`
 	ProfileRevision uint64 `json:"profile_revision"`
 	TargetKey       string `json:"target_key"`
+	RuntimeKey      string `json:"runtime_key,omitempty"`
 }
 
 type Deployment struct {

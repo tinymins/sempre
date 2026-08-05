@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -50,6 +51,73 @@ func TestRenameSubscriptionProfileOnlyChangesName(t *testing.T) {
 	}
 	if profile.Name != "Primary" {
 		t.Fatalf("stored profile name = %q", profile.Name)
+	}
+}
+
+func TestProfileRuntimeKeyTracksOnlyRuntimePlan(t *testing.T) {
+	profile := subscriptions.NewProfile("runtime")
+	original := profileRuntimeKey(profile)
+	profile.Remark = "does not affect runtime"
+	if profileRuntimeKey(profile) != original {
+		t.Fatal("remark changed the runtime key")
+	}
+	profile.TransparentProxy.TProxy.CaptureHost = true
+	if profileRuntimeKey(profile) == original {
+		t.Fatal("transparent proxy change did not change the runtime key")
+	}
+	transparentKey := profileRuntimeKey(profile)
+	profile.ManagementAPI = subscriptions.ManagementAPIConfig{Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "secret", AllowOrigins: []string{}}
+	if profileRuntimeKey(profile) == transparentKey {
+		t.Fatal("management API change did not change the runtime key")
+	}
+}
+
+func TestManagementAPIChangeStagesRuntimeWithoutChangingCoreConfig(t *testing.T) {
+	manager := newTestManager(t)
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := subscriptions.FindProfile(&catalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true, Content: testSubscription}}
+	if _, _, err := manager.SaveSubscriptionProfile(context.Background(), active, *profile); err != nil {
+		t.Fatal(err)
+	}
+	before, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	catalog, _, _, _, err = manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err = subscriptions.FindProfile(&catalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.ManagementAPI = subscriptions.ManagementAPIConfig{
+		Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "fixed-secret", AllowOrigins: []string{},
+	}
+	change, _, err := manager.SaveSubscriptionProfile(context.Background(), active, *profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !change.Changed || !change.NeedsRestart {
+		t.Fatalf("management API change was not staged: %#v", change)
+	}
+	if before.Configs["sing-box"] != after.Configs["sing-box"] {
+		t.Fatalf("management API changed core config hash: before=%q after=%q", before.Configs["sing-box"], after.Configs["sing-box"])
+	}
+	if before.ConfigBuilds["sing-box"].RuntimeKey == after.ConfigBuilds["sing-box"].RuntimeKey {
+		t.Fatal("management API did not change the runtime key")
 	}
 }
 
@@ -177,12 +245,49 @@ func TestActiveProfileCanBeSavedBeforeCoreSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compiled, err := manager.subscriptions.ReadBlob(saved.LastConfigHash)
+	if saved.LastConfigHash != "" || result.Content != "" {
+		t.Fatalf("profile was compiled without a selected core: profile = %#v, render = %#v", saved, result)
+	}
+	if len(saved.Sources) != 1 || saved.LastResult != "profile saved; select a core to compile a runtime configuration" {
+		t.Fatalf("profile was not persisted before core selection: %#v", saved)
+	}
+}
+
+func TestSubscriptionSaveRejectsStaleConfigurationContext(t *testing.T) {
+	manager := newTestManager(t)
+	configurationContext, err := manager.SubscriptionConfigurationContext()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(compiled) != result.Content {
-		t.Fatal("persisted compiled configuration does not match the render result")
+	if configurationContext.Target == nil || configurationContext.Key == "" {
+		t.Fatalf("configuration context = %#v", configurationContext)
+	}
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.Selected = nil
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := subscriptions.FindProfile(&catalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.Remark = "stale edit"
+	_, _, err = manager.SaveSubscriptionProfileForContext(context.Background(), active, *profile, configurationContext.Key)
+	if !errors.Is(err, errSubscriptionConfigurationContextChanged) {
+		t.Fatalf("save error = %v", err)
+	}
+	stored, _, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchanged, _ := subscriptions.FindProfile(&stored, active)
+	if unchanged.Remark == "stale edit" {
+		t.Fatal("stale configuration context changed the profile")
 	}
 }
 
@@ -201,7 +306,7 @@ func TestScheduledSubscriptionUpdatePreservesLinuxRuntimeSettings(t *testing.T) 
 	candidate.TransparentProxy = subscriptions.TransparentProxyConfig{
 		Mode: subscriptions.TransparentProxyTUN,
 		TUN: subscriptions.TUNConfig{
-			InterfaceName: "sing-box", Address: "172.30.0.1/30",
+			InterfaceName: "sempre-tun", Address: "172.30.0.1/30", InterfaceMode: "all", Interfaces: []string{},
 			RouteExcludeAddress:    []string{"10.10.10.0/24", "10.23.0.0/21"},
 			AutoExcludeLocalRoutes: true, AutoExcludeVPNRoutes: true,
 		},
@@ -210,7 +315,7 @@ func TestScheduledSubscriptionUpdatePreservesLinuxRuntimeSettings(t *testing.T) 
 			LANInterfaces: []string{"vmbr1"},
 		},
 	}
-	candidate.ClashAPI = subscriptions.ClashAPIConfig{
+	candidate.ManagementAPI = subscriptions.ManagementAPIConfig{
 		Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "fixed-secret",
 		ExternalUI: "/srv/metacubex", AllowOrigins: []string{"https://dashboard.example"}, AllowPrivateNetwork: true,
 	}
@@ -232,8 +337,8 @@ func TestScheduledSubscriptionUpdatePreservesLinuxRuntimeSettings(t *testing.T) 
 	if !reflect.DeepEqual(updated.TransparentProxy, candidate.TransparentProxy) {
 		t.Fatalf("transparent proxy settings changed during update: got %#v, want %#v", updated.TransparentProxy, candidate.TransparentProxy)
 	}
-	if !reflect.DeepEqual(updated.ClashAPI, candidate.ClashAPI) {
-		t.Fatalf("external Clash API settings changed during update: got %#v, want %#v", updated.ClashAPI, candidate.ClashAPI)
+	if !reflect.DeepEqual(updated.ManagementAPI, candidate.ManagementAPI) {
+		t.Fatalf("external management API settings changed during update: got %#v, want %#v", updated.ManagementAPI, candidate.ManagementAPI)
 	}
 }
 

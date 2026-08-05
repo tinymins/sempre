@@ -55,7 +55,7 @@ func TestCompilerRendersRawSourceWithoutNetwork(t *testing.T) {
 
 func TestSystemDefaultsDriveClashCompilation(t *testing.T) {
 	profile := EffectiveProfile(NewProfile(""))
-	content, err := buildClash(profile, []Proxy{{Name: "edge", Type: "socks5", Server: "edge.example.com", Port: 1080, Extra: map[string]any{}}}, true)
+	content, err := buildClash(profile, []Proxy{{Name: "edge", Type: "socks5", Server: "edge.example.com", Port: 1080, Extra: map[string]any{}}}, true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 	}
 	inbounds := config["inbounds"].([]any)
 	tun := inbounds[0].(map[string]any)
-	if tun["type"] != "tun" || tun["interface_name"] != "sing-box" || tun["auto_route"] != true || tun["auto_redirect"] != true || tun["strict_route"] != true || tun["stack"] != "system" {
+	if tun["type"] != "tun" || tun["interface_name"] != "sempre-tun" || tun["auto_route"] != true || tun["auto_redirect"] != true || tun["strict_route"] != true || tun["stack"] != "system" {
 		t.Fatalf("TUN inbound = %#v", tun)
 	}
 	if tun["address"].([]any)[0] != "172.30.0.1/30" || tun["route_exclude_address"].([]any)[0] != "10.10.10.0/24" {
@@ -281,7 +281,7 @@ func TestLinuxSingBoxTProxyAndDisabledModes(t *testing.T) {
 	}
 
 	profile.TransparentProxy.Mode = TransparentProxyDisabled
-	profile.CustomConfig = map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "tag": "manual", "listen": "127.0.0.1", "listen_port": 1080}}}
+	profile.CoreOverrides["sing-box"] = map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "tag": "manual", "listen": "127.0.0.1", "listen_port": 1080}}}
 	result, _, err = compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -296,10 +296,116 @@ func TestLinuxSingBoxTProxyAndDisabledModes(t *testing.T) {
 
 func TestLinuxManagedInboundOverrideIsRejected(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
-	profile.CustomConfig = map[string]any{"inbounds": []any{}}
+	profile.CoreOverrides["sing-box"] = map[string]any{"inbounds": []any{}}
 	_, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
 	if err == nil {
 		t.Fatal("managed inbound override was accepted")
+	}
+}
+
+func TestNativeManagementControllerOverridesAreRejected(t *testing.T) {
+	tests := []struct {
+		name     string
+		coreID   string
+		target   Target
+		override map[string]any
+	}{
+		{
+			name: "sing-box", coreID: "sing-box", target: Target{Format: "sing-box-v13"},
+			override: map[string]any{"experimental": map[string]any{"clash_api": map[string]any{"external_controller": "0.0.0.0:9090"}}},
+		},
+		{
+			name: "mihomo", coreID: "mihomo", target: Target{Core: "mihomo", Format: "clash-meta"},
+			override: map[string]any{"external-controller": "0.0.0.0:9090"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			profile, catalog, compiler := compilerFixture(t)
+			profile.ManagementAPI.Enabled = false
+			profile.CoreOverrides[test.coreID] = test.override
+			if _, _, err := compiler.Render(context.Background(), profile, catalog, test.target, false); err == nil {
+				t.Fatal("native controller override was silently accepted")
+			}
+		})
+	}
+}
+
+func TestMihomoManagedDNSAndTransparentModes(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false, "localDns": "127.0.0.1", "remoteDns": "8.8.4.4", "remoteServerName": "ignored.example", "remoteDetour": "proxy",
+	}}
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Core: "mihomo", Format: "clash-meta"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := yaml.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	tun := config["tun"].(map[string]any)
+	if tun["enable"] != true || tun["auto-route"] != true || tun["auto-redirect"] != true || tun["strict-route"] != true || tun["device"] != "sempre-tun" {
+		t.Fatalf("Mihomo TUN = %#v", tun)
+	}
+	dns := config["dns"].(map[string]any)
+	if dns["respect-rules"] != true || dns["enhanced-mode"] != "redir-host" {
+		t.Fatalf("Mihomo DNS = %#v", dns)
+	}
+	nameservers := dns["nameserver"].([]any)
+	if len(nameservers) != 1 || nameservers[0] != "tls://8.8.4.4:853#proxy&disable-qtype-65=true" {
+		t.Fatalf("Mihomo remote DNS = %#v", nameservers)
+	}
+	if _, exists := dns["tproxyPort"]; exists {
+		t.Fatalf("deprecated runtime field leaked into DNS: %#v", dns)
+	}
+
+	profile.TransparentProxy.Mode = TransparentProxyTProxy
+	profile.TransparentProxy.TProxy.ListenPort = 17893
+	profile.TransparentProxy.TProxy.DNSListenPort = 11053
+	result, _, err = compiler.Render(context.Background(), profile, catalog, Target{Core: "mihomo", Format: "clash-meta"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	if config["tproxy-port"] != 17893 {
+		t.Fatalf("Mihomo TProxy port = %#v", config["tproxy-port"])
+	}
+	listeners := config["listeners"].([]any)
+	listener := listeners[0].(map[string]any)
+	if listener["type"] != "tproxy" || listener["port"] != 11053 {
+		t.Fatalf("Mihomo DNS listener = %#v", listeners)
+	}
+	rules := config["rules"].([]any)
+	if rules[0] != "DST-PORT,53,sempre-dns-out" {
+		t.Fatalf("Mihomo DNS capture rule = %#v", rules)
+	}
+}
+
+func TestMihomoNativeDNSAndOpenOverrides(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{
+		"modes":     map[string]any{"mihomo": "native"},
+		"overrides": map[string]any{"mihomo": map[string]any{"enable": false}},
+	}
+	profile.TransparentProxy.Mode = TransparentProxyDisabled
+	profile.CoreOverrides["mihomo"] = map[string]any{"ipv6": false}
+	profile.CoreOverrides["future-core"] = map[string]any{"preserved": true}
+	result, updated, err := compiler.Render(context.Background(), profile, catalog, Target{Core: "mihomo", Format: "clash-meta"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := yaml.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	if config["dns"].(map[string]any)["enable"] != false || config["ipv6"] != false {
+		t.Fatalf("Mihomo native overrides = %#v", config)
+	}
+	if updated.CoreOverrides["future-core"]["preserved"] != true {
+		t.Fatalf("unknown core override was not preserved: %#v", updated.CoreOverrides)
 	}
 }
 

@@ -397,17 +397,11 @@ func addNFTables(plan Plan) error {
 			Hooknum:  nftables.ChainHookPrerouting,
 			Priority: nftables.ChainPriorityMangle,
 		})
-		addExclusionRules(connection, table, prerouting, family, plan.ExcludedPrefixes)
 		for _, protocol := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
 			connection.AddRule(&nftables.Rule{
 				Table: table, Chain: prerouting,
 				Exprs:    markedCaptureExpressions(family, protocol, 53, plan.DNSPort),
 				UserData: captureRuleLabel("dns", "host", protocol, ""),
-			})
-			connection.AddRule(&nftables.Rule{
-				Table: table, Chain: prerouting,
-				Exprs:    markedCaptureExpressions(family, protocol, 0, plan.TProxyPort),
-				UserData: captureRuleLabel("proxy", "host", protocol, ""),
 			})
 			for _, interfaceName := range plan.LANInterfaces {
 				connection.AddRule(&nftables.Rule{
@@ -415,6 +409,16 @@ func addNFTables(plan Plan) error {
 					Exprs:    lanCaptureExpressions(family, interfaceName, protocol, 53, plan.DNSPort),
 					UserData: captureRuleLabel("dns", "lan", protocol, interfaceName),
 				})
+			}
+		}
+		addExclusionRules(connection, table, prerouting, family, plan.ExcludedPrefixes)
+		for _, protocol := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
+			connection.AddRule(&nftables.Rule{
+				Table: table, Chain: prerouting,
+				Exprs:    markedCaptureExpressions(family, protocol, 0, plan.TProxyPort),
+				UserData: captureRuleLabel("proxy", "host", protocol, ""),
+			})
+			for _, interfaceName := range plan.LANInterfaces {
 				connection.AddRule(&nftables.Rule{
 					Table: table, Chain: prerouting,
 					Exprs:    lanCaptureExpressions(family, interfaceName, protocol, 0, plan.TProxyPort),
@@ -431,10 +435,16 @@ func addNFTables(plan Plan) error {
 				Priority: nftables.ChainPriorityMangle,
 			})
 			connection.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: markReturnExpressions(BypassMark)})
+			for _, protocol := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
+				connection.AddRule(&nftables.Rule{
+					Table: table, Chain: output, Exprs: outputMarkExpressions(protocol, 53),
+					UserData: captureRuleLabel("output-dns", "host", protocol, ""),
+				})
+			}
 			addExclusionRules(connection, table, output, family, plan.ExcludedPrefixes)
 			for _, protocol := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
 				connection.AddRule(&nftables.Rule{
-					Table: table, Chain: output, Exprs: outputMarkExpressions(protocol),
+					Table: table, Chain: output, Exprs: outputMarkExpressions(protocol, 0),
 					UserData: captureRuleLabel("output", "host", protocol, ""),
 				})
 			}
@@ -566,8 +576,11 @@ func lanCaptureExpressions(family nftables.TableFamily, interfaceName string, pr
 	return append(result, tproxyExpressions(family, proxyPort)...)
 }
 
-func outputMarkExpressions(protocol byte) []expr.Any {
+func outputMarkExpressions(protocol byte, destinationPort int) []expr.Any {
 	result := protocolMatchExpressions(protocol)
+	if destinationPort > 0 {
+		result = append(result, portMatchExpressions(destinationPort)...)
+	}
 	result = append(result,
 		&expr.Immediate{Register: 1, Data: uint32Bytes(RouteMark)},
 		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},

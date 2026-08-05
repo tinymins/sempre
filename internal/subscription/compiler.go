@@ -19,6 +19,7 @@ type Compiler struct {
 }
 
 type Target struct {
+	Core     string `json:"core,omitempty"`
 	Format   string `json:"format"`
 	Version  string `json:"version,omitempty"`
 	Platform string `json:"platform,omitempty"`
@@ -67,7 +68,7 @@ func ResolveSingBoxTarget(coreVersion, platform string) (Target, []string) {
 	if platform == "macos" {
 		format += "-macos"
 	}
-	return Target{Format: format, Version: version, Platform: platform}, warnings
+	return Target{Core: "sing-box", Format: format, Version: version, Platform: platform}, warnings
 }
 
 func ParseTarget(format string) (Target, error) {
@@ -113,6 +114,7 @@ func (compiler *Compiler) Render(ctx context.Context, profile Profile, catalog C
 	if err != nil {
 		return RenderResult{}, profile, err
 	}
+	parsedTarget.Core = target.Core
 	effective := EffectiveProfile(profile)
 	nodes, sources, updatedEffective, warnings, origins, err := compiler.collectNodes(ctx, effective, catalog, force)
 	if err != nil {
@@ -123,7 +125,7 @@ func (compiler *Compiler) Render(ctx context.Context, profile Profile, catalog C
 	}
 	result := RenderResult{Format: parsedTarget.Format, Version: parsedTarget.Version, Platform: parsedTarget.Platform, NodeCount: len(nodes), SourceResults: sources, FieldDiffs: []FieldDiff{}, NodeOrigins: origins, Warnings: warnings}
 	if parsedTarget.Format == "clash" || parsedTarget.Format == "clash-meta" {
-		content, err := buildClash(effective, nodes, parsedTarget.Format == "clash-meta")
+		content, err := buildClash(effective, nodes, parsedTarget.Format == "clash-meta", parsedTarget.Core)
 		if err != nil {
 			return RenderResult{}, profile, err
 		}
@@ -231,7 +233,7 @@ func (compiler *Compiler) collectNodes(ctx context.Context, profile Profile, cat
 	return nodes, results, updated, warnings, origins, nil
 }
 
-func buildClash(profile Profile, proxies []Proxy, meta bool) (string, error) {
+func buildClash(profile Profile, proxies []Proxy, meta bool, coreID string) (string, error) {
 	proxyMaps := make([]map[string]any, 0, len(proxies))
 	names := make([]string, 0, len(proxies))
 	for _, proxy := range proxies {
@@ -243,17 +245,24 @@ func buildClash(profile Profile, proxies []Proxy, meta bool) (string, error) {
 	providers := map[string]any{}
 	for _, provider := range profile.RuleProviders {
 		behavior := valueOr(provider.Behavior, "classical")
-		providers[provider.Tag] = map[string]any{
+		item := map[string]any{
 			"type": "http", "behavior": behavior, "url": provider.URL,
 			"path": "./rules/" + provider.Tag, "interval": 86400,
 		}
+		if provider.Format != "" {
+			item["format"] = provider.Format
+		}
+		providers[provider.Tag] = item
 		rules = append(rules, "RULE-SET,"+provider.Tag+","+valueOr(provider.Outbound, groups[0]["name"].(string)))
 	}
 	rules = append(rules, "DOMAIN-SUFFIX,local,DIRECT", "GEOIP,LAN,DIRECT,no-resolve", "GEOIP,CN,DIRECT,no-resolve", "MATCH,"+clashFinalGroup(profile.Groups))
-	shared := resolveDNSShared(profile.DNS)
+	if coreID == "mihomo" && profile.TransparentProxy.Mode == TransparentProxyTProxy {
+		proxyMaps = append(proxyMaps, map[string]any{"name": "sempre-dns-out", "type": "dns"})
+		rules = append([]string{"DST-PORT,53,sempre-dns-out"}, rules...)
+	}
 	config := map[string]any{
-		"tproxy-port": shared.TProxyPort, "allow-lan": true, "mode": "Rule", "log-level": clashLogLevel(profile.LogLevel),
-		"secret": shared.ClashAPISecret, "proxies": proxyMaps, "proxy-groups": groups,
+		"allow-lan": true, "mode": "Rule", "log-level": clashLogLevel(profile.LogLevel),
+		"proxies": proxyMaps, "proxy-groups": groups,
 		"rule-providers": providers, "rules": rules,
 		"profile": map[string]any{"store-selected": true, "store-fake-ip": true, "tracing": true},
 	}
@@ -273,7 +282,18 @@ func buildClash(profile Profile, proxies []Proxy, meta bool) (string, error) {
 			},
 		}
 	}
-	if override := clashDNSOverride(profile.DNS, meta); override != nil {
+	if coreID == "mihomo" {
+		if err := validateMihomoOverrides(profile); err != nil {
+			return "", err
+		}
+		configureMihomoRuntime(config, profile)
+		if override := coreDNSOverride(profile.DNS, "mihomo"); override != nil {
+			config["dns"] = override
+		} else {
+			config["dns"] = mihomoDNS(profile)
+		}
+		deepMerge(config, profile.CoreOverrides["mihomo"])
+	} else if override := legacyClashDNSOverride(profile.DNS, meta); override != nil {
 		config["dns"] = override
 	}
 	encoded, err := yaml.Marshal(config)
@@ -317,6 +337,15 @@ func clashGroups(configured []ProxyGroup, names []string) []map[string]any {
 		if len(proxies) == 0 {
 			proxies = append(proxies, names...)
 		}
+		if group.Default != "" && configuredMember(proxies, group.Default) {
+			ordered := []string{group.Default}
+			for _, proxy := range proxies {
+				if proxy != group.Default {
+					ordered = append(ordered, proxy)
+				}
+			}
+			proxies = ordered
+		}
 		item := map[string]any{"name": group.Name, "type": group.Type, "proxies": proxies}
 		if group.URL != "" {
 			item["url"] = group.URL
@@ -344,7 +373,7 @@ func clashFinalGroup(groups []ProxyGroup) string {
 	return "proxy"
 }
 
-func clashDNSOverride(config map[string]any, meta bool) map[string]any {
+func legacyClashDNSOverride(config map[string]any, meta bool) map[string]any {
 	key := "clash"
 	if meta {
 		key = "clashMeta"
@@ -362,6 +391,70 @@ func clashDNSOverride(config map[string]any, meta bool) map[string]any {
 		return result
 	}
 	return nil
+}
+
+func configureMihomoRuntime(config map[string]any, profile Profile) {
+	transparent := profile.TransparentProxy
+	switch transparent.Mode {
+	case TransparentProxyTUN:
+		tun := map[string]any{
+			"enable": true, "stack": "system", "device": transparent.TUN.InterfaceName,
+			"auto-route": true, "auto-redirect": true, "strict-route": true, "auto-detect-interface": true,
+			"dns-hijack": []string{"any:53", "tcp://any:53"},
+		}
+		if len(transparent.TUN.RouteExcludeAddress) > 0 {
+			tun["route-exclude-address"] = transparent.TUN.RouteExcludeAddress
+		}
+		if transparent.TUN.InterfaceMode == "include" {
+			tun["include-interface"] = transparent.TUN.Interfaces
+		} else if transparent.TUN.InterfaceMode == "exclude" {
+			tun["exclude-interface"] = transparent.TUN.Interfaces
+		}
+		config["tun"] = tun
+	case TransparentProxyTProxy:
+		config["tproxy-port"] = transparent.TProxy.ListenPort
+		config["listeners"] = []map[string]any{{
+			"name": "sempre-dns-in", "type": "tproxy", "listen": "0.0.0.0",
+			"port": transparent.TProxy.DNSListenPort, "udp": true,
+		}}
+	}
+}
+
+func mihomoDNS(profile Profile) map[string]any {
+	shared := resolveDNSShared(profile.DNS)
+	remote := "tls://" + net.JoinHostPort(shared.RemoteDNS, strconv.Itoa(shared.RemoteDNSPort))
+	remoteDetour := valueOr(shared.RemoteDetour, clashFinalGroup(profile.Groups))
+	if remoteDetour != "" {
+		remote += "#" + remoteDetour
+	}
+	if shared.RejectHTTPS {
+		if strings.Contains(remote, "#") {
+			remote += "&disable-qtype-65=true"
+		} else {
+			remote += "#disable-qtype-65=true"
+		}
+	}
+	local := net.JoinHostPort(shared.LocalDNS, strconv.Itoa(shared.LocalDNSPort))
+	if shared.RejectHTTPS {
+		local += "#disable-qtype-65=true"
+	}
+	result := map[string]any{
+		"enable": true, "ipv6": true, "respect-rules": true,
+		"enhanced-mode":           map[bool]string{true: "fake-ip", false: "redir-host"}[shared.FakeIPEnabled],
+		"default-nameserver":      []string{shared.BootstrapDNS},
+		"proxy-server-nameserver": []string{shared.BootstrapDNS},
+		"direct-nameserver":       []string{local},
+		"nameserver":              []string{remote},
+	}
+	if shared.CNDomainLocalDNS {
+		result["nameserver-policy"] = map[string]any{"geosite:cn": []string{local}}
+	}
+	if shared.FakeIPEnabled {
+		result["fake-ip-range"] = shared.FakeIPIPv4Range
+		result["fake-ip-range6"] = shared.FakeIPIPv6Range
+		result["fake-ip-ttl"] = shared.FakeIPTTL
+	}
+	return result
 }
 
 func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, proxies []Proxy, target Target, force bool) (map[string]any, []FieldDiff, []string, error) {
@@ -504,17 +597,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	if len(private.Endpoints) > 0 {
 		config["endpoints"] = private.Endpoints
 	}
-	deepMerge(config, profile.CustomConfig)
-	if profile.ClashAPI.Enabled {
-		experimental := config["experimental"].(map[string]any)
-		clashAPI, _ := objectValue(experimental["clash_api"])
-		clashAPI["external_controller"] = profile.ClashAPI.ExternalController
-		clashAPI["secret"] = profile.ClashAPI.Secret
-		clashAPI["external_ui"] = profile.ClashAPI.ExternalUI
-		clashAPI["access_control_allow_origin"] = profile.ClashAPI.AllowOrigins
-		clashAPI["access_control_allow_private_network"] = profile.ClashAPI.AllowPrivateNetwork
-		experimental["clash_api"] = clashAPI
-	}
+	deepMerge(config, profile.CoreOverrides["sing-box"])
 	return config, diffs, warnings, nil
 }
 
@@ -659,15 +742,15 @@ func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutb
 }
 
 type dnsShared struct {
-	LocalDNS, FakeIPIPv4Range, FakeIPIPv6Range, ClashAPISecret, ClashAPIUIPath   string
+	LocalDNS, FakeIPIPv4Range, FakeIPIPv6Range                                   string
 	BootstrapDNS, BootstrapServerName, RemoteDNS, RemoteServerName, RemoteDetour string
-	LocalDNSPort, FakeIPTTL, DNSListenPort, TProxyPort, ClashAPIPort             int
+	LocalDNSPort, FakeIPTTL                                                      int
 	BootstrapDNSPort, RemoteDNSPort                                              int
 	FakeIPEnabled, RejectHTTPS, CNDomainLocalDNS, PreferIPv4                     bool
 }
 
 func resolveDNSShared(config map[string]any) dnsShared {
-	result := dnsShared{LocalDNS: "127.0.0.1", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, DNSListenPort: 1053, TProxyPort: 7893, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true}
+	result := dnsShared{LocalDNS: "127.0.0.1", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true}
 	shared := config
 	if nested, ok := objectValue(config["shared"]); ok {
 		shared = nested
@@ -678,13 +761,8 @@ func resolveDNSShared(config map[string]any) dnsShared {
 	result.FakeIPIPv6Range = valueOr(stringValue(shared["fakeipIpv6Range"]), result.FakeIPIPv6Range)
 	result.FakeIPEnabled = boolDefault(shared["fakeipEnabled"], result.FakeIPEnabled)
 	result.FakeIPTTL = integerDefault(shared["fakeipTtl"], result.FakeIPTTL)
-	result.DNSListenPort = integerDefault(shared["dnsListenPort"], result.DNSListenPort)
-	result.TProxyPort = integerDefault(shared["tproxyPort"], result.TProxyPort)
 	result.RejectHTTPS = boolDefault(shared["rejectHttps"], result.RejectHTTPS)
 	result.CNDomainLocalDNS = boolDefault(shared["cnDomainLocalDns"], result.CNDomainLocalDNS)
-	result.ClashAPIPort = integerDefault(shared["clashApiPort"], result.ClashAPIPort)
-	result.ClashAPISecret = valueOr(stringValue(shared["clashApiSecret"]), result.ClashAPISecret)
-	result.ClashAPIUIPath = valueOr(stringValue(shared["clashApiUiPath"]), result.ClashAPIUIPath)
 	result.BootstrapDNS = valueOr(stringValue(shared["bootstrapDns"]), result.BootstrapDNS)
 	result.BootstrapDNSPort = integerDefault(shared["bootstrapDnsPort"], result.BootstrapDNSPort)
 	result.BootstrapServerName = valueOr(stringValue(shared["bootstrapServerName"]), result.BootstrapServerName)
@@ -697,24 +775,23 @@ func resolveDNSShared(config map[string]any) dnsShared {
 }
 
 func validateManagedOverrides(profile Profile, target Target) error {
+	override := profile.CoreOverrides["sing-box"]
 	if target.Platform != "default" || profile.TransparentProxy.Mode == TransparentProxyDisabled {
 		return nil
 	}
-	if _, exists := profile.CustomConfig["inbounds"]; exists {
+	if _, exists := override["inbounds"]; exists {
 		return fmt.Errorf("top-level inbound overrides require transparent_proxy.mode=disabled on Linux")
 	}
-	if route, ok := objectValue(profile.CustomConfig["route"]); ok {
+	if route, ok := objectValue(override["route"]); ok {
 		if value, exists := route["auto_detect_interface"]; exists && value != true && profile.TransparentProxy.Mode == TransparentProxyTUN {
 			return fmt.Errorf("route.auto_detect_interface cannot be disabled in Linux tun-router mode")
 		}
 	}
-	if profile.ClashAPI.Enabled {
-		if experimental, ok := objectValue(profile.CustomConfig["experimental"]); ok {
-			if clashAPI, ok := objectValue(experimental["clash_api"]); ok {
-				for _, key := range []string{"external_controller", "secret", "external_ui"} {
-					if _, exists := clashAPI[key]; exists {
-						return fmt.Errorf("experimental.clash_api.%s is managed by the structured Clash API settings", key)
-					}
+	if experimental, ok := objectValue(override["experimental"]); ok {
+		if clashAPI, ok := objectValue(experimental["clash_api"]); ok {
+			for _, key := range []string{"external_controller", "secret", "external_ui"} {
+				if _, exists := clashAPI[key]; exists {
+					return fmt.Errorf("experimental.clash_api.%s is managed by the structured management API settings", key)
 				}
 			}
 		}
@@ -722,24 +799,44 @@ func validateManagedOverrides(profile Profile, target Target) error {
 	return nil
 }
 
-func singBoxDNSOverride(config map[string]any, modern bool) map[string]any {
-	key := "singbox"
-	if modern {
-		key = "singboxV12"
-	}
-	overrides, _ := objectValue(config["overrides"])
-	if result, ok := objectValue(overrides[key]); ok {
-		return result
-	}
-	if modern {
-		if result, ok := objectValue(overrides["singbox"]); ok {
-			return result
+func validateMihomoOverrides(profile Profile) error {
+	override := profile.CoreOverrides["mihomo"]
+	if profile.TransparentProxy.Mode == TransparentProxyTUN {
+		if _, exists := override["tun"]; exists {
+			return fmt.Errorf("top-level tun overrides require transparent_proxy.mode=disabled")
 		}
 	}
-	if result, ok := objectValue(config[key]); ok {
-		return result
+	if profile.TransparentProxy.Mode == TransparentProxyTProxy {
+		for _, key := range []string{"tproxy-port", "listeners", "routing-mark"} {
+			if _, exists := override[key]; exists {
+				return fmt.Errorf("top-level %s is managed by Linux TProxy mode", key)
+			}
+		}
+	}
+	for _, key := range []string{"external-controller", "external-controller-tls", "external-controller-unix", "external-controller-pipe", "secret", "external-ui"} {
+		if _, exists := override[key]; exists {
+			return fmt.Errorf("top-level %s is managed by the structured management API settings", key)
+		}
 	}
 	return nil
+}
+
+func singBoxDNSOverride(config map[string]any, modern bool) map[string]any {
+	key := "sing_box_v11"
+	if modern {
+		key = "sing_box_v12"
+	}
+	return coreDNSOverride(config, key)
+}
+
+func coreDNSOverride(config map[string]any, key string) map[string]any {
+	modes, _ := objectValue(config["modes"])
+	if stringValue(modes[key]) != "native" {
+		return nil
+	}
+	overrides, _ := objectValue(config["overrides"])
+	result, _ := objectValue(overrides[key])
+	return result
 }
 
 func singBoxDNSRules(shared dnsShared, modern, fakeIP bool) []any {

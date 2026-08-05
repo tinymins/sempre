@@ -2,6 +2,10 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -14,6 +18,8 @@ import (
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
 
+var errSubscriptionConfigurationContextChanged = errors.New("subscription configuration target changed; reload the profile before saving")
+
 func (manager *Manager) SubscriptionCatalog() (subscriptions.Catalog, string, state.Subscription, bool, error) {
 	catalog, err := manager.subscriptions.Read()
 	if err != nil {
@@ -24,6 +30,42 @@ func (manager *Manager) SubscriptionCatalog() (subscriptions.Catalog, string, st
 		return subscriptions.Catalog{}, "", state.Subscription{}, false, err
 	}
 	return catalog, document.ActiveProfileID, document.Subscription, document.AutoRestart, nil
+}
+
+func (manager *Manager) SubscriptionConfigurationContext() (subscriptions.ConfigurationContext, error) {
+	document, err := manager.store.Read()
+	if err != nil {
+		return subscriptions.ConfigurationContext{}, err
+	}
+	context := subscriptions.ConfigurationContext{
+		Key:          "common",
+		Platform:     runtime.GOOS,
+		Capabilities: manager.registry.StableCapabilities(core.CurrentTarget()),
+	}
+	if document.Active != nil {
+		context.Running = &subscriptions.RunningCore{Core: document.Active.Core, Version: document.Active.Version}
+	}
+	if document.Selected == nil {
+		return context, nil
+	}
+	deployment, adapter, err := manager.configurationTarget(document)
+	if err != nil {
+		return subscriptions.ConfigurationContext{}, err
+	}
+	compilerTarget, err := adapter.CompilerTarget(deployment.Version, core.CurrentTarget())
+	if err != nil {
+		return subscriptions.ConfigurationContext{}, err
+	}
+	target, err := subscriptions.ParseTarget(compilerTarget.Format)
+	if err != nil {
+		return subscriptions.ConfigurationContext{}, err
+	}
+	target.Core = adapter.ID()
+	configurationTarget := subscriptions.NewConfigurationTarget(adapter.ID(), deployment.Version, target)
+	context.Target = &configurationTarget
+	context.Key = configurationTarget.Key
+	context.Capabilities = manager.registry.Capabilities(adapter, deployment.Version, core.CurrentTarget())
+	return context, nil
 }
 
 func (manager *Manager) CreateSubscriptionProfile(name string) (subscriptions.Profile, error) {
@@ -58,6 +100,14 @@ func (manager *Manager) RenameSubscriptionProfile(id, name string) (subscription
 }
 
 func (manager *Manager) SaveSubscriptionProfile(ctx context.Context, id string, candidate subscriptions.Profile) (Change, subscriptions.RenderResult, error) {
+	return manager.saveSubscriptionProfile(ctx, id, candidate, "")
+}
+
+func (manager *Manager) SaveSubscriptionProfileForContext(ctx context.Context, id string, candidate subscriptions.Profile, expectedContext string) (Change, subscriptions.RenderResult, error) {
+	return manager.saveSubscriptionProfile(ctx, id, candidate, expectedContext)
+}
+
+func (manager *Manager) saveSubscriptionProfile(ctx context.Context, id string, candidate subscriptions.Profile, expectedContext string) (Change, subscriptions.RenderResult, error) {
 	var change Change
 	var rendered subscriptions.RenderResult
 	err := manager.withOperation(func() error {
@@ -90,6 +140,15 @@ func (manager *Manager) SaveSubscriptionProfile(ctx context.Context, id string, 
 		if err != nil {
 			return err
 		}
+		if expectedContext != "" {
+			actualContext, contextErr := manager.subscriptionConfigurationContextKey(document)
+			if contextErr != nil {
+				return contextErr
+			}
+			if actualContext != expectedContext {
+				return errSubscriptionConfigurationContextChanged
+			}
+		}
 		if !subscriptionProfileHasInputs(candidate) {
 			candidate.LastResult = "profile saved without enabled nodes; active configuration retained"
 			change = Change{Changed: true, Message: candidate.LastResult}
@@ -104,6 +163,18 @@ func (manager *Manager) SaveSubscriptionProfile(ctx context.Context, id string, 
 		}
 		candidate.Revision++
 		*current = candidate
+		if document.Selected == nil {
+			candidate.LastResult = "profile saved; select a core to compile a runtime configuration"
+			change = Change{Changed: true, Message: candidate.LastResult}
+			return manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
+				profile, err := subscriptions.FindProfile(stored, id)
+				if err != nil {
+					return err
+				}
+				*profile = candidate
+				return nil
+			})
+		}
 		target, runtimeValidation, targetWarnings, err := manager.subscriptionTarget(document)
 		if err != nil {
 			return err
@@ -487,8 +558,7 @@ func (manager *Manager) SetSubscriptionAutoRestart(enabled bool) (Change, error)
 
 func (manager *Manager) subscriptionTarget(document state.Document) (subscriptions.Target, bool, []string, error) {
 	if document.Selected == nil {
-		target, warnings := subscriptions.ResolveSingBoxTarget("1.13.0", runtime.GOOS)
-		return target, false, warnings, nil
+		return subscriptions.Target{}, false, nil, fmt.Errorf("select and install a core before compiling a subscription profile")
 	}
 	deployment, adapter, err := manager.configurationTarget(document)
 	if err != nil {
@@ -499,7 +569,28 @@ func (manager *Manager) subscriptionTarget(document state.Document) (subscriptio
 		return subscriptions.Target{}, false, nil, err
 	}
 	target, err := subscriptions.ParseTarget(compilerTarget.Format)
+	target.Core = adapter.ID()
 	return target, true, compilerTarget.Warnings, err
+}
+
+func (manager *Manager) subscriptionConfigurationContextKey(document state.Document) (string, error) {
+	if document.Selected == nil {
+		return "common", nil
+	}
+	deployment, adapter, err := manager.configurationTarget(document)
+	if err != nil {
+		return "", err
+	}
+	compilerTarget, err := adapter.CompilerTarget(deployment.Version, core.CurrentTarget())
+	if err != nil {
+		return "", err
+	}
+	target, err := subscriptions.ParseTarget(compilerTarget.Format)
+	if err != nil {
+		return "", err
+	}
+	target.Core = adapter.ID()
+	return subscriptions.NewConfigurationTarget(adapter.ID(), deployment.Version, target).Key, nil
 }
 
 func configBuild(profile subscriptions.Profile, target subscriptions.Target) state.ConfigBuild {
@@ -507,7 +598,17 @@ func configBuild(profile subscriptions.Profile, target subscriptions.Target) sta
 		ProfileID:       profile.ID,
 		ProfileRevision: profile.Revision,
 		TargetKey:       compilerTargetKey(target.Format, target.Version, target.Platform),
+		RuntimeKey:      profileRuntimeKey(profile),
 	}
+}
+
+func profileRuntimeKey(profile subscriptions.Profile) string {
+	data, _ := json.Marshal(struct {
+		Transparent subscriptions.TransparentProxyConfig `json:"transparent_proxy"`
+		Management  subscriptions.ManagementAPIConfig    `json:"management_api"`
+	}{Transparent: profile.TransparentProxy, Management: profile.ManagementAPI})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func compilerTargetKey(format, version, platform string) string {
@@ -523,6 +624,7 @@ func expectedConfigBuild(profile subscriptions.Profile, adapter core.Adapter, ve
 		ProfileID:       profile.ID,
 		ProfileRevision: profile.Revision,
 		TargetKey:       compilerTargetKey(target.Format, target.Version, target.Platform),
+		RuntimeKey:      profileRuntimeKey(profile),
 	}, nil
 }
 

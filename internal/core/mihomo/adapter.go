@@ -39,6 +39,50 @@ func (adapter *Adapter) ID() string {
 	return "mihomo"
 }
 
+func (adapter *Adapter) Stability() string {
+	return core.StabilityStable
+}
+
+func (adapter *Adapter) Capabilities(_ string, target core.Target) core.Capabilities {
+	features := []string{
+		core.CapabilityLoggingLevel,
+		core.CapabilityDNSLocalUpstream, core.CapabilityDNSRemoteUpstream,
+		core.CapabilityDNSBootstrapUpstream, core.CapabilityDNSFakeIP,
+		core.CapabilityDNSRemoteDetour, core.CapabilityDNSRejectHTTPS,
+		core.CapabilityDNSSplit, core.CapabilityDNSNative,
+		core.CapabilityRoutingRules, core.CapabilityRoutingRuleProviders,
+		core.CapabilityRoutingSelector, core.CapabilityRoutingURLTest,
+		core.CapabilityTransparentTUN,
+		core.CapabilityManagementConnections, core.CapabilityManagementSelectors,
+		core.CapabilityManagementDelay, core.CapabilityManagementTraffic,
+		core.CapabilityManagementExternalAPI, core.CapabilityNativeOverride,
+	}
+	if target.OS == "linux" || target.OS == "" {
+		features = append(features, core.CapabilityTransparentTProxy, core.CapabilityTransparentInterfaces)
+	}
+	return core.Capabilities{
+		Features: features,
+		EnumValues: map[string][]string{
+			"proxy_group.type":             {"select", "url-test"},
+			"rule_provider.format":         {"yaml", "text", "mrs"},
+			"transparent.interface_policy": {"all", "include", "exclude"},
+		},
+		Protocols: []core.ProtocolCapability{
+			{Protocol: "http", Transports: []string{"tcp"}, Security: []string{"none", "tls"}},
+			{Protocol: "socks5", Transports: []string{"tcp", "udp"}, Security: []string{"none"}},
+			{Protocol: "vmess", Transports: []string{"tcp", "ws", "http", "grpc"}, Security: []string{"none", "tls"}},
+			{Protocol: "vless", Transports: []string{"tcp", "ws", "http", "grpc"}, Security: []string{"none", "tls", "reality"}},
+			{Protocol: "shadowsocks", Transports: []string{"tcp", "udp"}, Security: []string{"cipher"}},
+			{Protocol: "shadowtls", Transports: []string{"tcp"}, Security: []string{"tls"}},
+			{Protocol: "trojan", Transports: []string{"tcp", "ws", "grpc"}, Security: []string{"tls", "reality"}},
+			{Protocol: "hysteria", Transports: []string{"udp"}, Security: []string{"tls"}},
+			{Protocol: "hysteria2", Transports: []string{"udp"}, Security: []string{"tls"}},
+			{Protocol: "tuic", Transports: []string{"udp"}, Security: []string{"tls"}},
+			{Protocol: "anytls", Transports: []string{"tcp"}, Security: []string{"tls"}},
+		},
+	}
+}
+
 func (adapter *Adapter) DefaultRepository() string {
 	return repository
 }
@@ -194,7 +238,7 @@ func (adapter *Adapter) PrepareRuntime(config, runtimeDirectory string) (core.Ru
 	if err := yaml.Unmarshal(data, &document); err != nil {
 		return core.RuntimeSpec{}, fmt.Errorf("decode mihomo configuration: %w", err)
 	}
-	control, err := core.NewPrivateControl(adapter.ID())
+	control, err := core.NewPrivateControl(adapter.ID(), core.ControlProtocolClashREST)
 	if err != nil {
 		return core.RuntimeSpec{}, err
 	}

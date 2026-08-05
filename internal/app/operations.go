@@ -282,8 +282,8 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 				check(diagnostic.Name, diagnostic.Err)
 			}
 		}
-		if profile.ClashAPI.Enabled {
-			check("external Clash API", probeExternalClashAPI(ctx, profile.ClashAPI))
+		if profile.ManagementAPI.Enabled {
+			check("external management API", probeExternalManagementAPI(ctx, profile.ManagementAPI))
 		}
 		if profile.TransparentProxy.Mode == subscriptions.TransparentProxyTUN ||
 			(profile.TransparentProxy.Mode == subscriptions.TransparentProxyTProxy && profile.TransparentProxy.TProxy.CaptureHost) {
@@ -323,7 +323,7 @@ func equalValue(actual, expected, message string) error {
 	return nil
 }
 
-func probeExternalClashAPI(ctx context.Context, config subscriptions.ClashAPIConfig) error {
+func probeExternalManagementAPI(ctx context.Context, config subscriptions.ManagementAPIConfig) error {
 	host, port, err := net.SplitHostPort(config.ExternalController)
 	if err != nil {
 		return err

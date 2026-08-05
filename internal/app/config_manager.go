@@ -315,13 +315,14 @@ func (manager *Manager) activateConfig(
 		}
 		oldHash := document.Configs[target.Core]
 		configChanged := oldHash != hash
+		runtimeChanged := document.ConfigBuilds[target.Core].RuntimeKey != build.RuntimeKey
 		if updateSubscription != nil {
 			updateSubscription(document, configChanged)
 		}
 		document.Configs[target.Core] = hash
 		document.ConfigBuilds[target.Core] = build
 		target.ConfigHash = hash
-		deploymentChanged := !state.SameDeployment(document.Active, &target)
+		deploymentChanged := !state.SameDeployment(document.Active, &target) || runtimeChanged
 		if deploymentChanged {
 			document.Stage(target)
 			change.NeedsRestart = true

@@ -86,7 +86,10 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err != nil {
 					return supervisor.Plan{}, err
 				}
-				externalClashPlan = clashproxy.Config{External: profile.ClashAPI, Upstream: runtimeSpec.Control}
+				externalClashPlan = clashproxy.Config{}
+				if runtimeSpec.Control.Protocol == core.ControlProtocolClashREST {
+					externalClashPlan = clashproxy.Config{External: profile.ManagementAPI, Upstream: runtimeSpec.Control}
+				}
 				dataPlanePlan, err = manager.transparent.Prepare(
 					runCtx,
 					deployment.Core,

@@ -280,7 +280,7 @@ func (manager *Manager) meaningfulSubscriptionData(target layout.Layout, documen
 	return profile.Name != "" ||
 		len(profile.Sources) != 0 || len(profile.CustomNodeIDs) != 0 ||
 		len(profile.Groups) != 0 || len(profile.Rules) != 0 || len(profile.RuleProviders) != 0 || len(profile.Filters) != 0 ||
-		len(profile.DNS) != 0 || len(profile.PrivateAccess) != 0 || len(profile.CustomConfig) != 0 ||
+		len(profile.DNS) != 0 || len(profile.PrivateAccess) != 0 || len(profile.CoreOverrides) != 0 ||
 		!profile.UseSystemGroups || !profile.UseSystemRules || !profile.UseSystemFilters || !profile.UseSystemDNS || !profile.UseSystemCustomConfig, nil
 }
 

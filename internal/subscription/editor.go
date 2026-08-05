@@ -9,20 +9,22 @@ import (
 )
 
 type editorRuleProvider struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-	Type string `json:"type,omitempty"`
+	Name   string `json:"name"`
+	URL    string `json:"url"`
+	Type   string `json:"type,omitempty"`
+	Format string `json:"format,omitempty"`
 }
 
 type editorProxyGroup struct {
-	Name      string   `json:"name"`
-	Type      string   `json:"type"`
-	Proxies   []string `json:"proxies"`
-	Readonly  bool     `json:"readonly,omitempty"`
-	URL       string   `json:"url,omitempty"`
-	Interval  int      `json:"interval,omitempty"`
-	Tolerance int      `json:"tolerance,omitempty"`
-	Default   string   `json:"default,omitempty"`
+	Name       string   `json:"name"`
+	Type       string   `json:"type"`
+	Proxies    []string `json:"proxies"`
+	Readonly   bool     `json:"readonly,omitempty"`
+	URL        string   `json:"url,omitempty"`
+	Interval   int      `json:"interval,omitempty"`
+	Tolerance  int      `json:"tolerance,omitempty"`
+	Default    string   `json:"default,omitempty"`
+	IncludeAll bool     `json:"include_all,omitempty"`
 }
 
 func editorConfigPresent(config EditorConfig) bool {
@@ -36,11 +38,11 @@ func editorConfigFromProfile(profile Profile) EditorConfig {
 	providers := map[string][]editorRuleProvider{}
 	for _, provider := range profile.RuleProviders {
 		group := provider.Outbound
-		providers[group] = append(providers[group], editorRuleProvider{Name: provider.Tag, URL: provider.URL, Type: provider.Behavior})
+		providers[group] = append(providers[group], editorRuleProvider{Name: provider.Tag, URL: provider.URL, Type: provider.Behavior, Format: provider.Format})
 	}
 	groups := make([]editorProxyGroup, 0, len(profile.Groups))
 	for _, group := range profile.Groups {
-		groups = append(groups, editorProxyGroup{Name: group.Name, Type: group.Type, Proxies: group.Proxies, Readonly: group.Readonly, URL: group.URL, Interval: group.Interval, Tolerance: group.Tolerance, Default: group.Default})
+		groups = append(groups, editorProxyGroup{Name: group.Name, Type: group.Type, Proxies: group.Proxies, Readonly: group.Readonly, URL: group.URL, Interval: group.Interval, Tolerance: group.Tolerance, Default: group.Default, IncludeAll: group.IncludeAll})
 	}
 	return EditorConfig{
 		RuleList:            marshalEditorJSON(providers, "{}"),
@@ -83,7 +85,7 @@ func ApplyEditorConfig(profile *Profile) error {
 	}
 	profile.Groups = make([]ProxyGroup, 0, len(groups))
 	for _, group := range groups {
-		profile.Groups = append(profile.Groups, ProxyGroup{Name: group.Name, Type: group.Type, Proxies: group.Proxies, Readonly: group.Readonly, URL: group.URL, Interval: group.Interval, Tolerance: group.Tolerance, Default: group.Default})
+		profile.Groups = append(profile.Groups, ProxyGroup{Name: group.Name, Type: group.Type, Proxies: group.Proxies, Readonly: group.Readonly, URL: group.URL, Interval: group.Interval, Tolerance: group.Tolerance, Default: group.Default, IncludeAll: group.IncludeAll})
 	}
 
 	providers := map[string][]editorRuleProvider{}
@@ -93,7 +95,7 @@ func ApplyEditorConfig(profile *Profile) error {
 	profile.RuleProviders = []RuleProvider{}
 	for group, items := range providers {
 		for _, provider := range items {
-			profile.RuleProviders = append(profile.RuleProviders, RuleProvider{Tag: provider.Name, URL: provider.URL, Outbound: group, Behavior: provider.Type})
+			profile.RuleProviders = append(profile.RuleProviders, RuleProvider{Tag: provider.Name, URL: provider.URL, Outbound: group, Behavior: provider.Type, Format: provider.Format})
 		}
 	}
 

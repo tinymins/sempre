@@ -21,7 +21,7 @@ import (
 )
 
 type Config struct {
-	External subscriptions.ClashAPIConfig
+	External subscriptions.ManagementAPIConfig
 	Upstream core.ControlSpec
 }
 
@@ -171,7 +171,7 @@ func newHandler(config Config) (http.Handler, error) {
 	}), nil
 }
 
-func applyCORS(writer http.ResponseWriter, request *http.Request, config subscriptions.ClashAPIConfig) bool {
+func applyCORS(writer http.ResponseWriter, request *http.Request, config subscriptions.ManagementAPIConfig) bool {
 	origin := request.Header.Get("Origin")
 	if origin == "" {
 		return true

@@ -24,6 +24,15 @@ type Store struct {
 	mu    sync.Mutex
 }
 
+type legacyCatalogConfiguration struct {
+	Profiles []legacyProfileConfiguration `json:"profiles"`
+}
+
+type legacyProfileConfiguration struct {
+	CustomConfig map[string]any       `json:"custom_config"`
+	ClashAPI     *ManagementAPIConfig `json:"clash_api"`
+}
+
 func NewStore(paths layout.Layout) *Store {
 	return &Store{paths: paths}
 }
@@ -133,10 +142,23 @@ func (store *Store) readUnlocked() (Catalog, error) {
 	}
 	if catalog.Schema > 0 && catalog.Schema < CatalogSchema {
 		previousSchema := catalog.Schema
+		legacy := legacyCatalogConfiguration{}
+		if previousSchema < 5 {
+			if err := json.Unmarshal(data, &legacy); err != nil {
+				return Catalog{}, fmt.Errorf("decode legacy subscription configuration: %w", err)
+			}
+		}
 		catalog.Schema = CatalogSchema
 		for index := range catalog.Profiles {
 			if previousSchema < 4 {
 				migrateLinuxRuntimeConfig(&catalog.Profiles[index])
+			}
+			if previousSchema < 5 {
+				configuration := legacyProfileConfiguration{}
+				if index < len(legacy.Profiles) {
+					configuration = legacy.Profiles[index]
+				}
+				migrateCoreConfiguration(&catalog.Profiles[index], configuration)
 			}
 			normalizeProfile(&catalog.Profiles[index])
 		}
@@ -167,6 +189,7 @@ func (store *Store) writeUnlocked(catalog Catalog) error {
 }
 
 func normalizeProfile(profile *Profile) {
+	migrateLegacyDNSFields(profile)
 	if profile.Revision == 0 {
 		profile.Revision = 1
 	}
@@ -198,10 +221,16 @@ func normalizeProfile(profile *Profile) {
 		profile.TransparentProxy = defaultTransparentProxyConfig()
 	}
 	if profile.TransparentProxy.TUN.InterfaceName == "" {
-		profile.TransparentProxy.TUN.InterfaceName = "sing-box"
+		profile.TransparentProxy.TUN.InterfaceName = "sempre-tun"
 	}
 	if profile.TransparentProxy.TUN.RouteExcludeAddress == nil {
 		profile.TransparentProxy.TUN.RouteExcludeAddress = []string{}
+	}
+	if profile.TransparentProxy.TUN.InterfaceMode == "" {
+		profile.TransparentProxy.TUN.InterfaceMode = "all"
+	}
+	if profile.TransparentProxy.TUN.Interfaces == nil {
+		profile.TransparentProxy.TUN.Interfaces = []string{}
 	}
 	if profile.TransparentProxy.TProxy.ListenPort == 0 {
 		profile.TransparentProxy.TProxy.ListenPort = 7893
@@ -212,8 +241,11 @@ func normalizeProfile(profile *Profile) {
 	if profile.TransparentProxy.TProxy.LANInterfaces == nil {
 		profile.TransparentProxy.TProxy.LANInterfaces = []string{}
 	}
-	if profile.ClashAPI.AllowOrigins == nil {
-		profile.ClashAPI.AllowOrigins = []string{}
+	if profile.CoreOverrides == nil {
+		profile.CoreOverrides = map[string]map[string]any{}
+	}
+	if profile.ManagementAPI.AllowOrigins == nil {
+		profile.ManagementAPI.AllowOrigins = []string{}
 	}
 	for index := range profile.Sources {
 		source := &profile.Sources[index]
@@ -307,7 +339,7 @@ func validateCatalog(catalog Catalog) error {
 		if err := validateTransparentProxy(profile.TransparentProxy); err != nil {
 			return fmt.Errorf("profile %q: %w", profile.Name, err)
 		}
-		if err := validateClashAPI(profile.ClashAPI); err != nil {
+		if err := validateManagementAPI(profile.ManagementAPI); err != nil {
 			return fmt.Errorf("profile %q: %w", profile.Name, err)
 		}
 		providerTags := map[string]bool{}
@@ -341,6 +373,95 @@ func migrateLinuxRuntimeConfig(profile *Profile) {
 	}
 }
 
+func migrateCoreConfiguration(profile *Profile, legacy legacyProfileConfiguration) {
+	if profile.TransparentProxy.TUN.InterfaceName == "sing-box" {
+		profile.TransparentProxy.TUN.InterfaceName = "sempre-tun"
+	}
+	if profile.CoreOverrides == nil {
+		profile.CoreOverrides = map[string]map[string]any{}
+	}
+	if len(legacy.CustomConfig) > 0 && len(profile.CoreOverrides["sing-box"]) == 0 {
+		profile.CoreOverrides["sing-box"] = cloneMap(legacy.CustomConfig)
+	}
+	if legacy.ClashAPI != nil && !profile.ManagementAPI.Enabled && profile.ManagementAPI.ExternalController == "" && profile.ManagementAPI.Secret == "" && profile.ManagementAPI.ExternalUI == "" {
+		profile.ManagementAPI = *legacy.ClashAPI
+	}
+	migrateLegacyDNSFields(profile)
+}
+
+func migrateLegacyDNSFields(profile *Profile) {
+	if profile.DNS == nil {
+		return
+	}
+	shared := profile.DNS
+	if nested, ok := objectValue(profile.DNS["shared"]); ok {
+		shared = nested
+	}
+	if value, ok := numberValue(shared["tproxyPort"]); ok && value > 0 && profile.TransparentProxy.TProxy.ListenPort == 7893 {
+		profile.TransparentProxy.TProxy.ListenPort = value
+	}
+	if value, ok := numberValue(shared["dnsListenPort"]); ok && value > 0 && profile.TransparentProxy.TProxy.DNSListenPort == 1053 {
+		profile.TransparentProxy.TProxy.DNSListenPort = value
+	}
+	if secret := stringValue(shared["clashApiSecret"]); secret != "" && profile.ManagementAPI.Secret == "" {
+		profile.ManagementAPI.Secret = secret
+	}
+	if ui := stringValue(shared["clashApiUiPath"]); ui != "" && profile.ManagementAPI.ExternalUI == "" {
+		profile.ManagementAPI.ExternalUI = ui
+	}
+	if port, ok := numberValue(shared["clashApiPort"]); ok && port > 0 && profile.ManagementAPI.Enabled && profile.ManagementAPI.ExternalController == "" {
+		profile.ManagementAPI.ExternalController = net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
+	}
+	for _, key := range []string{"tproxyPort", "dnsListenPort", "clashApiPort", "clashApiSecret", "clashApiUiPath"} {
+		delete(shared, key)
+	}
+	if overrides, ok := objectValue(profile.DNS["overrides"]); ok {
+		migrated := cloneMap(overrides)
+		modes, _ := objectValue(profile.DNS["modes"])
+		modes = cloneMap(modes)
+		if modes == nil {
+			modes = map[string]any{}
+		}
+		if value, exists := overrides["sing_box_v11"]; exists {
+			migrated["sing_box_v11"] = value
+		} else if value, exists := overrides["singbox"]; exists {
+			migrated["sing_box_v11"] = value
+		}
+		delete(migrated, "singbox")
+		if value, exists := overrides["sing_box_v12"]; exists {
+			migrated["sing_box_v12"] = value
+		} else if value, exists := overrides["singboxV12"]; exists {
+			migrated["sing_box_v12"] = value
+		}
+		delete(migrated, "singboxV12")
+		if value, exists := overrides["mihomo"]; exists {
+			migrated["mihomo"] = value
+		} else if value, exists := overrides["clashMeta"]; exists {
+			migrated["mihomo"] = value
+		} else if value, exists := overrides["clash"]; exists {
+			migrated["mihomo"] = value
+		}
+		delete(migrated, "clashMeta")
+		delete(migrated, "clash")
+		for _, key := range []string{"sing_box_v11", "sing_box_v12", "mihomo"} {
+			if _, exists := migrated[key]; exists {
+				if _, configured := modes[key]; !configured {
+					modes[key] = "native"
+				}
+			}
+		}
+		if len(migrated) > 0 {
+			profile.DNS["overrides"] = migrated
+			profile.DNS["modes"] = modes
+		} else {
+			delete(profile.DNS, "overrides")
+		}
+	}
+	if strings.TrimSpace(profile.Editor.DNSConfig) != "" {
+		profile.Editor.DNSConfig = marshalEditorJSON(profile.DNS, "")
+	}
+}
+
 func validateTransparentProxy(config TransparentProxyConfig) error {
 	switch config.Mode {
 	case TransparentProxyTUN, TransparentProxyTProxy, TransparentProxyDisabled:
@@ -361,6 +482,22 @@ func validateTransparentProxy(config TransparentProxyConfig) error {
 			return fmt.Errorf("invalid TUN route exclusion %q", value)
 		}
 	}
+	switch config.TUN.InterfaceMode {
+	case "all", "include", "exclude":
+	default:
+		return fmt.Errorf("TUN interface mode must be all, include, or exclude")
+	}
+	interfaceNames := map[string]bool{}
+	for _, name := range config.TUN.Interfaces {
+		name = strings.TrimSpace(name)
+		if name == "" || len(name) > 15 || interfaceNames[name] {
+			return fmt.Errorf("TUN interfaces must be unique valid interface names")
+		}
+		interfaceNames[name] = true
+	}
+	if config.TUN.InterfaceMode != "all" && len(config.TUN.Interfaces) == 0 {
+		return fmt.Errorf("TUN interface mode %s requires at least one interface", config.TUN.InterfaceMode)
+	}
 	if config.TProxy.ListenPort < 1 || config.TProxy.ListenPort > 65535 || config.TProxy.DNSListenPort < 1 || config.TProxy.DNSListenPort > 65535 {
 		return fmt.Errorf("transparent proxy ports must be between 1 and 65535")
 	}
@@ -375,19 +512,19 @@ func validateTransparentProxy(config TransparentProxyConfig) error {
 	return nil
 }
 
-func validateClashAPI(config ClashAPIConfig) error {
+func validateManagementAPI(config ManagementAPIConfig) error {
 	if !config.Enabled {
 		return nil
 	}
 	if strings.TrimSpace(config.ExternalController) == "" {
-		return fmt.Errorf("external Clash API controller is required when enabled")
+		return fmt.Errorf("external management API controller is required when enabled")
 	}
 	host, port, err := net.SplitHostPort(config.ExternalController)
 	if err != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" {
-		return fmt.Errorf("external Clash API controller must use host:port syntax")
+		return fmt.Errorf("external management API controller must use host:port syntax")
 	}
 	if strings.TrimSpace(config.Secret) == "" {
-		return fmt.Errorf("external Clash API secret is required when enabled")
+		return fmt.Errorf("external management API secret is required when enabled")
 	}
 	return nil
 }

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	CatalogSchema       = 4
+	CatalogSchema       = 5
 	DefaultUserAgent    = "clash.meta"
 	MaxSourceSize       = int64(32 << 20)
 	SourceURL           = "url"
@@ -27,35 +27,35 @@ type Catalog struct {
 }
 
 type Profile struct {
-	ID                    string                 `json:"id"`
-	Revision              uint64                 `json:"revision"`
-	Name                  string                 `json:"name"`
-	Remark                string                 `json:"remark,omitempty"`
-	LogLevel              string                 `json:"log_level"`
-	Editor                EditorConfig           `json:"editor"`
-	Sources               []Source               `json:"sources"`
-	CustomNodeIDs         []string               `json:"custom_node_ids"`
-	Groups                []ProxyGroup           `json:"groups"`
-	Rules                 []string               `json:"rules"`
-	RuleProviders         []RuleProvider         `json:"rule_providers"`
-	Filters               []string               `json:"filters"`
-	DNS                   map[string]any         `json:"dns,omitempty"`
-	PrivateAccess         map[string]any         `json:"private_access,omitempty"`
-	CustomConfig          map[string]any         `json:"custom_config,omitempty"`
-	TransparentProxy      TransparentProxyConfig `json:"transparent_proxy"`
-	ClashAPI              ClashAPIConfig         `json:"clash_api"`
-	UseSystemGroups       bool                   `json:"use_system_groups"`
-	UseSystemRules        bool                   `json:"use_system_rules"`
-	UseSystemFilters      bool                   `json:"use_system_filters"`
-	UseSystemDNS          bool                   `json:"use_system_dns"`
-	UseSystemCustomConfig bool                   `json:"use_system_custom_config"`
-	LastCheck             time.Time              `json:"last_check,omitempty"`
-	LastChange            time.Time              `json:"last_change,omitempty"`
-	LastResult            string                 `json:"last_result,omitempty"`
-	LastConfigHash        string                 `json:"last_config_hash,omitempty"`
-	LastRuntimeValidated  bool                   `json:"last_runtime_validated"`
-	LastCompilerTarget    string                 `json:"last_compiler_target,omitempty"`
-	LastCompilerWarnings  []string               `json:"last_compiler_warnings,omitempty"`
+	ID                    string                    `json:"id"`
+	Revision              uint64                    `json:"revision"`
+	Name                  string                    `json:"name"`
+	Remark                string                    `json:"remark,omitempty"`
+	LogLevel              string                    `json:"log_level"`
+	Editor                EditorConfig              `json:"editor"`
+	Sources               []Source                  `json:"sources"`
+	CustomNodeIDs         []string                  `json:"custom_node_ids"`
+	Groups                []ProxyGroup              `json:"groups"`
+	Rules                 []string                  `json:"rules"`
+	RuleProviders         []RuleProvider            `json:"rule_providers"`
+	Filters               []string                  `json:"filters"`
+	DNS                   map[string]any            `json:"dns,omitempty"`
+	PrivateAccess         map[string]any            `json:"private_access,omitempty"`
+	CoreOverrides         map[string]map[string]any `json:"core_overrides"`
+	TransparentProxy      TransparentProxyConfig    `json:"transparent_proxy"`
+	ManagementAPI         ManagementAPIConfig       `json:"management_api"`
+	UseSystemGroups       bool                      `json:"use_system_groups"`
+	UseSystemRules        bool                      `json:"use_system_rules"`
+	UseSystemFilters      bool                      `json:"use_system_filters"`
+	UseSystemDNS          bool                      `json:"use_system_dns"`
+	UseSystemCustomConfig bool                      `json:"use_system_custom_config"`
+	LastCheck             time.Time                 `json:"last_check,omitempty"`
+	LastChange            time.Time                 `json:"last_change,omitempty"`
+	LastResult            string                    `json:"last_result,omitempty"`
+	LastConfigHash        string                    `json:"last_config_hash,omitempty"`
+	LastRuntimeValidated  bool                      `json:"last_runtime_validated"`
+	LastCompilerTarget    string                    `json:"last_compiler_target,omitempty"`
+	LastCompilerWarnings  []string                  `json:"last_compiler_warnings,omitempty"`
 }
 
 type EditorConfig struct {
@@ -121,6 +121,8 @@ type TUNConfig struct {
 	InterfaceName          string   `json:"interface_name"`
 	Address                string   `json:"address,omitempty"`
 	RouteExcludeAddress    []string `json:"route_exclude_address"`
+	InterfaceMode          string   `json:"interface_mode"`
+	Interfaces             []string `json:"interfaces"`
 	AutoExcludeLocalRoutes bool     `json:"auto_exclude_local_routes"`
 	AutoExcludeVPNRoutes   bool     `json:"auto_exclude_vpn_routes"`
 }
@@ -132,7 +134,7 @@ type TProxyConfig struct {
 	LANInterfaces []string `json:"lan_interfaces"`
 }
 
-type ClashAPIConfig struct {
+type ManagementAPIConfig struct {
 	Enabled             bool     `json:"enabled"`
 	ExternalController  string   `json:"external_controller,omitempty"`
 	Secret              string   `json:"secret,omitempty"`
@@ -235,7 +237,8 @@ func NewProfile(name string) Profile {
 		UseSystemGroups: true, UseSystemRules: true, UseSystemFilters: true,
 		UseSystemDNS: true, UseSystemCustomConfig: true,
 		TransparentProxy: defaultTransparentProxyConfig(),
-		ClashAPI:         ClashAPIConfig{AllowOrigins: []string{}},
+		CoreOverrides:    map[string]map[string]any{},
+		ManagementAPI:    ManagementAPIConfig{AllowOrigins: []string{}},
 	}
 }
 
@@ -243,8 +246,10 @@ func defaultTransparentProxyConfig() TransparentProxyConfig {
 	return TransparentProxyConfig{
 		Mode: TransparentProxyTUN,
 		TUN: TUNConfig{
-			InterfaceName:          "sing-box",
+			InterfaceName:          "sempre-tun",
 			RouteExcludeAddress:    []string{},
+			InterfaceMode:          "all",
+			Interfaces:             []string{},
 			AutoExcludeLocalRoutes: true,
 			AutoExcludeVPNRoutes:   true,
 		},

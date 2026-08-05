@@ -99,6 +99,12 @@ func TestNetNSTProxyDataPlane(t *testing.T) {
 	waitForTCPDestination(t, dnsTCP, "8.8.4.4:53")
 	runNetNSClient(t, "udp", "8.8.4.4:53", "lan-dns")
 	waitForUDPPayload(t, dnsUDP, "lan-dns")
+	// The gateway address belongs to an excluded LAN prefix, but DNS capture
+	// must take precedence so clients can use their default gateway as DNS.
+	runNetNSClient(t, "tcp", "10.10.10.1:53", "")
+	waitForTCPDestination(t, dnsTCP, "10.10.10.1:53")
+	runNetNSClient(t, "udp", "10.10.10.1:53", "lan-gateway-dns")
+	waitForUDPPayload(t, dnsUDP, "lan-gateway-dns")
 	observation, err := readTrafficObservation()
 	if err != nil {
 		t.Fatal(err)

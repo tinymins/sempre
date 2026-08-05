@@ -116,10 +116,16 @@ type RunSpec struct {
 }
 
 type ControlSpec struct {
-	Core    string
-	BaseURL string
-	Secret  string
+	Core     string
+	Protocol string
+	BaseURL  string
+	Secret   string
 }
+
+const (
+	ControlProtocolClashREST = "clash-rest"
+	ControlProtocolGRPC      = "grpc"
+)
 
 type RuntimeSpec struct {
 	Config  string
@@ -174,4 +180,24 @@ func (registry *Registry) IDs() []string {
 		result = append(result, name)
 	}
 	return result
+}
+
+func (registry *Registry) Capabilities(adapter Adapter, version string, target Target) Capabilities {
+	provider, ok := adapter.(CapabilityProvider)
+	if !ok {
+		return NormalizeCapabilities(Capabilities{})
+	}
+	return NormalizeCapabilities(provider.Capabilities(version, target))
+}
+
+func (registry *Registry) StableCapabilities(target Target) Capabilities {
+	values := []Capabilities{}
+	for _, adapter := range registry.adapters {
+		provider, ok := adapter.(CapabilityProvider)
+		if !ok || provider.Stability() != StabilityStable {
+			continue
+		}
+		values = append(values, provider.Capabilities("", target))
+	}
+	return IntersectCapabilities(values)
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
+	"gopkg.in/yaml.v3"
 )
 
 type fakeBackend struct {
@@ -65,6 +66,8 @@ func TestPrepareTUNResolvesAddressAndRouteExclusions(t *testing.T) {
 	}
 	controller := &Controller{backend: backend}
 	profile := subscriptions.NewProfile("gateway")
+	profile.TransparentProxy.TUN.InterfaceMode = "include"
+	profile.TransparentProxy.TUN.Interfaces = []string{"vmbr1"}
 	path := writeRuntimeConfig(t, map[string]any{
 		"inbounds": []any{map[string]any{"type": "tun", "tag": "tun-in"}},
 		"route":    map[string]any{},
@@ -87,6 +90,12 @@ func TestPrepareTUNResolvesAddressAndRouteExclusions(t *testing.T) {
 	}
 	if got := inbound["address"].([]any)[0]; got != "172.19.0.5/30" {
 		t.Fatalf("runtime TUN address = %#v", got)
+	}
+	if got := inbound["include_interface"].([]any)[0]; got != "vmbr1" {
+		t.Fatalf("runtime TUN include_interface = %#v", got)
+	}
+	if _, exists := inbound["route_include_interface"]; exists {
+		t.Fatalf("runtime TUN contains unsupported route_include_interface: %#v", inbound)
 	}
 	if document["route"].(map[string]any)["auto_detect_interface"] != true {
 		t.Fatalf("runtime route = %#v", document["route"])
@@ -158,6 +167,58 @@ func TestPrepareGatewayRequiresIPForwarding(t *testing.T) {
 	_, err := controller.Prepare(context.Background(), "sing-box", profile, path)
 	if err == nil {
 		t.Fatal("expected forwarding error")
+	}
+}
+
+func TestPrepareMihomoTUNAndTProxyRuntime(t *testing.T) {
+	backend := &fakeBackend{
+		forwarding: true,
+		inventory: Inventory{
+			Interfaces:               []Interface{{Name: "vmbr1"}},
+			RecommendedLANInterfaces: []string{"vmbr1"},
+			LocalPrefixes:            []string{"10.10.10.0/24"},
+		},
+	}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("mihomo")
+	profile.TransparentProxy.TUN.InterfaceMode = "exclude"
+	profile.TransparentProxy.TUN.Interfaces = []string{"vmbr1"}
+	path := writeYAMLRuntimeConfig(t, map[string]any{
+		"tun":   map[string]any{},
+		"dns":   map[string]any{"respect-rules": true, "nameserver": []string{"tls://dns.google:853#proxy"}, "nameserver-policy": map[string]any{"geosite:cn": []string{"127.0.0.1:53"}}},
+		"rules": []string{"GEOIP,CN,DIRECT,no-resolve", "MATCH,proxy"},
+	})
+	plan, err := controller.Prepare(context.Background(), "mihomo", profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Core != "mihomo" || plan.TUNInterface != "sempre-tun" {
+		t.Fatalf("Mihomo TUN plan = %#v", plan)
+	}
+	document := readYAMLRuntimeConfig(t, path)
+	tun := document["tun"].(map[string]any)
+	if tun["auto-redirect"] != true || tun["exclude-interface"].([]any)[0] != "vmbr1" {
+		t.Fatalf("Mihomo TUN runtime = %#v", tun)
+	}
+
+	profile.TransparentProxy.Mode = subscriptions.TransparentProxyTProxy
+	profile.TransparentProxy.TProxy.CaptureHost = true
+	profile.TransparentProxy.TProxy.LANInterfaces = []string{"vmbr1"}
+	path = writeYAMLRuntimeConfig(t, map[string]any{
+		"tproxy-port": 7893,
+		"listeners":   []any{map[string]any{"name": "sempre-dns-in", "type": "tproxy", "port": 1053}},
+		"proxies":     []any{map[string]any{"name": "edge", "type": "trojan", "server": "203.0.113.9"}},
+	})
+	plan, err = controller.Prepare(context.Background(), "mihomo", profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(plan.ExcludedPrefixes, "203.0.113.9/32") {
+		t.Fatalf("Mihomo exclusions = %#v", plan.ExcludedPrefixes)
+	}
+	document = readYAMLRuntimeConfig(t, path)
+	if mark, ok := numberAsUint32(document["routing-mark"]); !ok || mark != BypassMark {
+		t.Fatalf("Mihomo routing mark = %#v", document["routing-mark"])
 	}
 }
 
@@ -243,6 +304,32 @@ func readRuntimeConfig(t *testing.T, path string) map[string]any {
 	}
 	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func writeYAMLRuntimeConfig(t *testing.T, value map[string]any) string {
+	t.Helper()
+	data, err := yaml.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func readYAMLRuntimeConfig(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := map[string]any{}
+	if err := yaml.Unmarshal(data, &result); err != nil {
 		t.Fatal(err)
 	}
 	return result

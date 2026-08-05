@@ -55,3 +55,27 @@ func TestNormalizeAMD64Level(t *testing.T) {
 		}
 	}
 }
+
+func TestIntersectCapabilitiesUsesSempreSemantics(t *testing.T) {
+	result := IntersectCapabilities([]Capabilities{
+		{
+			Features:   []string{CapabilityDNSNative, CapabilityTransparentTUN, CapabilityPrivateAccess},
+			EnumValues: map[string][]string{"rule_provider.format": {"yaml", "text"}},
+			Protocols:  []ProtocolCapability{{Protocol: "anytls", Transports: []string{"tcp"}, Security: []string{"tls"}, MinimumVersion: "1.12.0"}},
+		},
+		{
+			Features:   []string{CapabilityDNSNative, CapabilityTransparentTUN},
+			EnumValues: map[string][]string{"rule_provider.format": {"yaml", "mrs"}},
+			Protocols:  []ProtocolCapability{{Protocol: "anytls", Transports: []string{"tcp"}, Security: []string{"tls"}}},
+		},
+	})
+	if len(result.Features) != 2 || result.Features[0] != CapabilityDNSNative || result.Features[1] != CapabilityTransparentTUN {
+		t.Fatalf("features = %#v", result.Features)
+	}
+	if len(result.EnumValues["rule_provider.format"]) != 1 || result.EnumValues["rule_provider.format"][0] != "yaml" {
+		t.Fatalf("enum intersection = %#v", result.EnumValues)
+	}
+	if len(result.Protocols) != 1 || result.Protocols[0].Protocol != "anytls" || result.Protocols[0].MinimumVersion != "1.12.0" {
+		t.Fatalf("protocol intersection = %#v", result.Protocols)
+	}
+}

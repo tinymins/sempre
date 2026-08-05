@@ -109,6 +109,75 @@ func TestStoreReadsSchemaOneProfilesWithEditorConfig(t *testing.T) {
 	}
 }
 
+func TestStoreMigratesOpenCoreOverridesAndRemovesDuplicateDNSFields(t *testing.T) {
+	paths := layout.At(filepath.Join(t.TempDir(), "root"))
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	profile := NewProfile("legacy")
+	profile.CoreOverrides["future-core"] = map[string]any{"future": true}
+	profile.DNS = map[string]any{
+		"shared":    map[string]any{"tproxyPort": 17893, "dnsListenPort": 11053, "clashApiSecret": "dns-secret"},
+		"overrides": map[string]any{"singboxV12": map[string]any{"final": "remote"}, "future-core": map[string]any{"native": true}},
+	}
+	profileDocument := map[string]any{}
+	profileData, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(profileData, &profileDocument); err != nil {
+		t.Fatal(err)
+	}
+	profileDocument["custom_config"] = map[string]any{"route": map[string]any{"final": "proxy"}}
+	profileDocument["clash_api"] = ManagementAPIConfig{Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "legacy-secret", AllowOrigins: []string{}}
+	legacyCatalog := map[string]any{"schema": 4, "profiles": []any{profileDocument}, "custom_nodes": []any{}}
+	data, err := json.Marshal(legacyCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.SubscriptionStore, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := NewStore(paths).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrated := loaded.Profiles[0]
+	if migrated.CoreOverrides["sing-box"]["route"] == nil || migrated.CoreOverrides["future-core"]["future"] != true {
+		t.Fatalf("core overrides = %#v", migrated.CoreOverrides)
+	}
+	if migrated.ManagementAPI.Secret != "legacy-secret" {
+		t.Fatalf("management migration = %#v", migrated)
+	}
+	encoded, err := json.Marshal(migrated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileKeys := map[string]any{}
+	if err := json.Unmarshal(encoded, &profileKeys); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := profileKeys["custom_config"]; exists {
+		t.Fatalf("removed custom_config remains in migrated profile: %s", encoded)
+	}
+	if _, exists := profileKeys["clash_api"]; exists {
+		t.Fatalf("removed fields remain in migrated profile: %s", encoded)
+	}
+	if migrated.TransparentProxy.TProxy.ListenPort != 17893 || migrated.TransparentProxy.TProxy.DNSListenPort != 11053 {
+		t.Fatalf("transparent proxy migration = %#v", migrated.TransparentProxy)
+	}
+	shared := migrated.DNS["shared"].(map[string]any)
+	for _, key := range []string{"tproxyPort", "dnsListenPort", "clashApiSecret"} {
+		if _, exists := shared[key]; exists {
+			t.Fatalf("deprecated DNS field %q survived: %#v", key, shared)
+		}
+	}
+	overrides := migrated.DNS["overrides"].(map[string]any)
+	if overrides["sing_box_v12"] == nil || overrides["future-core"] == nil {
+		t.Fatalf("DNS overrides = %#v", overrides)
+	}
+}
+
 func TestPreviewReturnsFilteredNodesWithToolboxNameEnrichment(t *testing.T) {
 	paths := layout.At(filepath.Join(t.TempDir(), "root"))
 	if err := paths.Ensure(); err != nil {
