@@ -71,7 +71,6 @@ func SystemDefaults() Defaults {
 			"fakeipEnabled": true, "fakeipTtl": 300,
 			"dnsListenPort": 1053, "tproxyPort": 7893,
 			"rejectHttps": true, "cnDomainLocalDns": true,
-			"clashApiPort": 9999, "clashApiSecret": "123456", "clashApiUiPath": "/etc/sb/ui",
 		}},
 	}
 }

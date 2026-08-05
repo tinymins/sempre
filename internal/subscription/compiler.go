@@ -387,7 +387,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 			warnings = append(warnings, proxy.Name+": unsupported proxy type "+proxy.Type)
 			continue
 		}
-		if target.Platform != "default" && modern && net.ParseIP(proxy.Server) == nil {
+		if modern && net.ParseIP(proxy.Server) == nil {
 			outbound["domain_resolver"] = map[string]any{"server": "bootstrap", "strategy": "ipv4_only"}
 		}
 		diff.Outbound = outbound
@@ -424,7 +424,11 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 		}
 		outbound := map[string]any{"type": kind, "tag": group.Name, "outbounds": members}
 		if kind == "selector" {
-			outbound["default"] = members[0]
+			defaultMember := normalizeOutboundName(group.Default)
+			if defaultMember == "" {
+				defaultMember = members[0]
+			}
+			outbound["default"] = defaultMember
 			outbound["interrupt_exist_connections"] = true
 		} else {
 			outbound["url"] = valueOr(group.URL, "https://www.gstatic.com/generate_204")
@@ -470,8 +474,12 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	ruleSets = append(ruleSets, providerSets...)
 	routeRules = append(routeRules, providerRoutes...)
 	warnings = append(warnings, providerWarnings...)
-	inbounds := singBoxInbounds(target, modern, shared)
-	dns := singBoxDNS(profile.DNS, modern, target.Platform != "default", shared, foreignOutbound(groups, final))
+	if err := validateManagedOverrides(profile, target); err != nil {
+		return nil, diffs, warnings, err
+	}
+	inbounds := singBoxInbounds(target, modern, profile.TransparentProxy, shared)
+	remoteOutbound := valueOr(shared.RemoteDetour, foreignOutbound(groups, final))
+	dns := singBoxDNS(profile.DNS, modern, shared, remoteOutbound)
 	if servers, ok := dns["servers"].([]any); ok {
 		dns["servers"] = append(servers, private.DNSServers...)
 	}
@@ -479,29 +487,33 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 		privateRules := append([]any{}, private.DNSRules...)
 		if len(private.DirectDomains) > 0 {
 			resolver := "local"
-			if target.Platform != "default" {
-				resolver = "bootstrap"
-			}
+			resolver = "bootstrap"
 			privateRules = append([]any{map[string]any{"domain": private.DirectDomains, "action": "route", "server": resolver}}, privateRules...)
 		}
 		dns["rules"] = append(privateRules, rules...)
 	}
 	route := map[string]any{"rules": routeRules, "rule_set": ruleSets, "final": final}
 	if modern {
-		if target.Platform == "default" {
-			route["default_domain_resolver"] = "local"
-		} else {
-			route["default_domain_resolver"] = "bootstrap"
-		}
+		route["default_domain_resolver"] = map[string]any{"server": "bootstrap", "strategy": "ipv4_only"}
 	}
-	if target.Platform != "default" {
+	if target.Platform != "default" || profile.TransparentProxy.Mode == TransparentProxyTUN {
 		route["auto_detect_interface"] = true
 	}
-	config := map[string]any{"log": singBoxLog(profile.LogLevel), "dns": dns, "inbounds": inbounds, "outbounds": outbounds, "route": route, "experimental": map[string]any{"cache_file": map[string]any{"enabled": true, "store_fakeip": shared.FakeIPEnabled && target.Platform == "default", "store_rdrc": false}, "clash_api": map[string]any{"external_controller": fmt.Sprintf("127.0.0.1:%d", shared.ClashAPIPort), "external_ui": shared.ClashAPIUIPath, "secret": shared.ClashAPISecret, "default_mode": "rule"}}}
+	config := map[string]any{"log": singBoxLog(profile.LogLevel), "dns": dns, "inbounds": inbounds, "outbounds": outbounds, "route": route, "experimental": map[string]any{"cache_file": map[string]any{"enabled": true, "store_fakeip": shared.FakeIPEnabled && target.Platform == "default", "store_rdrc": false}, "clash_api": map[string]any{"external_controller": "", "external_ui": "", "secret": "", "default_mode": "rule"}}}
 	if len(private.Endpoints) > 0 {
 		config["endpoints"] = private.Endpoints
 	}
 	deepMerge(config, profile.CustomConfig)
+	if profile.ClashAPI.Enabled {
+		experimental := config["experimental"].(map[string]any)
+		clashAPI, _ := objectValue(experimental["clash_api"])
+		clashAPI["external_controller"] = profile.ClashAPI.ExternalController
+		clashAPI["secret"] = profile.ClashAPI.Secret
+		clashAPI["external_ui"] = profile.ClashAPI.ExternalUI
+		clashAPI["access_control_allow_origin"] = profile.ClashAPI.AllowOrigins
+		clashAPI["access_control_allow_private_network"] = profile.ClashAPI.AllowPrivateNetwork
+		experimental["clash_api"] = clashAPI
+	}
 	return config, diffs, warnings, nil
 }
 
@@ -572,7 +584,7 @@ func (compiler *Compiler) loadRuleProviders(
 	return ruleSets, routes, warnings, nil
 }
 
-func singBoxInbounds(target Target, modern bool, dns dnsShared) []any {
+func singBoxInbounds(target Target, modern bool, transparent TransparentProxyConfig, dns dnsShared) []any {
 	if target.Platform != "default" {
 		inbound := map[string]any{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "stack": "mixed"}
 		if target.Platform == "windows" {
@@ -580,8 +592,23 @@ func singBoxInbounds(target Target, modern bool, dns dnsShared) []any {
 		}
 		return []any{inbound}
 	}
-	dnsInbound := map[string]any{"type": "direct", "tag": "dns-in", "listen": "::", "listen_port": dns.DNSListenPort}
-	tproxy := map[string]any{"type": "tproxy", "tag": "tproxy-in", "listen": "::", "listen_port": dns.TProxyPort, "tcp_multi_path": false, "tcp_fast_open": true, "udp_fragment": true}
+	switch transparent.Mode {
+	case TransparentProxyDisabled:
+		return []any{}
+	case TransparentProxyTUN:
+		address := valueOr(transparent.TUN.Address, "172.19.0.1/30")
+		inbound := map[string]any{
+			"type": "tun", "tag": "tun-in", "interface_name": transparent.TUN.InterfaceName,
+			"address": []string{address}, "auto_route": true, "auto_redirect": true,
+			"strict_route": true, "stack": "system",
+		}
+		if len(transparent.TUN.RouteExcludeAddress) > 0 {
+			inbound["route_exclude_address"] = transparent.TUN.RouteExcludeAddress
+		}
+		return []any{inbound}
+	}
+	dnsInbound := map[string]any{"type": "direct", "tag": "dns-in", "listen": "::", "listen_port": transparent.TProxy.DNSListenPort}
+	tproxy := map[string]any{"type": "tproxy", "tag": "tproxy-in", "listen": "::", "listen_port": transparent.TProxy.ListenPort, "tcp_multi_path": false, "tcp_fast_open": true, "udp_fragment": true}
 	if !modern {
 		dnsInbound["sniff"] = true
 		tproxy["sniff"] = true
@@ -590,50 +617,56 @@ func singBoxInbounds(target Target, modern bool, dns dnsShared) []any {
 	return []any{dnsInbound, tproxy}
 }
 
-func singBoxDNS(custom map[string]any, modern, desktop bool, shared dnsShared, remoteOutbound string) map[string]any {
+func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutbound string) map[string]any {
 	if override := singBoxDNSOverride(custom, modern); override != nil {
 		return override
 	}
 	if modern {
 		servers := []any{map[string]any{"type": "local", "tag": "local"}}
-		if shared.FakeIPEnabled && !desktop {
+		if shared.FakeIPEnabled {
 			servers = append(servers, map[string]any{"type": "fakeip", "tag": "fakeip", "inet4_range": shared.FakeIPIPv4Range, "inet6_range": shared.FakeIPIPv6Range})
 		}
 		servers = append(servers, map[string]any{"type": "udp", "tag": "local_v4", "server": shared.LocalDNS, "server_port": shared.LocalDNSPort})
-		if desktop {
-			servers = append(servers,
-				map[string]any{"type": "tls", "tag": "bootstrap", "server": "223.5.5.5", "server_port": 853, "tls": map[string]any{"server_name": "dns.alidns.com"}},
-				map[string]any{"type": "tls", "tag": "remote", "server": "8.8.8.8", "server_port": 853, "tls": map[string]any{"server_name": "dns.google"}, "detour": remoteOutbound},
-			)
-		}
-		rules := singBoxDNSRules(shared, true, !desktop)
-		result := map[string]any{"servers": servers, "rules": rules, "independent_cache": false}
-		if desktop {
-			result["reverse_mapping"] = true
-			result["final"] = "remote"
+		servers = append(servers,
+			map[string]any{"type": "tls", "tag": "bootstrap", "server": shared.BootstrapDNS, "server_port": shared.BootstrapDNSPort, "tls": map[string]any{"server_name": shared.BootstrapServerName}, "detour": "direct"},
+			map[string]any{"type": "tls", "tag": "remote", "server": shared.RemoteDNS, "server_port": shared.RemoteDNSPort, "tls": map[string]any{"server_name": shared.RemoteServerName}, "detour": remoteOutbound},
+		)
+		rules := singBoxDNSRules(shared, true, shared.FakeIPEnabled)
+		result := map[string]any{"servers": servers, "rules": rules, "independent_cache": false, "reverse_mapping": true, "final": "remote"}
+		if shared.PreferIPv4 {
+			result["strategy"] = "prefer_ipv4"
 		}
 		return result
 	}
 	servers := []any{map[string]any{"tag": "local", "address": shared.LocalDNS, "detour": "direct"}}
-	if shared.FakeIPEnabled && !desktop {
+	if shared.FakeIPEnabled {
 		servers = append(servers, map[string]any{"tag": "fakeip", "address": "fakeip", "strategy": "ipv4_only"})
 	}
 	servers = append(servers, map[string]any{"tag": "local_v4", "address": shared.LocalDNS, "strategy": "ipv4_only", "detour": "direct"})
-	result := map[string]any{"disable_cache": false, "servers": servers, "rules": singBoxDNSRules(shared, false, !desktop), "disable_expire": false, "independent_cache": false, "reverse_mapping": desktop}
-	if shared.FakeIPEnabled && !desktop {
+	servers = append(servers,
+		map[string]any{"tag": "bootstrap", "address": fmt.Sprintf("tls://%s:%d", shared.BootstrapDNS, shared.BootstrapDNSPort), "detour": "direct"},
+		map[string]any{"tag": "remote", "address": fmt.Sprintf("tls://%s:%d", shared.RemoteDNS, shared.RemoteDNSPort), "detour": remoteOutbound},
+	)
+	result := map[string]any{"disable_cache": false, "servers": servers, "rules": singBoxDNSRules(shared, false, shared.FakeIPEnabled), "disable_expire": false, "independent_cache": false, "reverse_mapping": true, "final": "remote"}
+	if shared.PreferIPv4 {
+		result["strategy"] = "prefer_ipv4"
+	}
+	if shared.FakeIPEnabled {
 		result["fakeip"] = map[string]any{"enabled": true, "inet4_range": shared.FakeIPIPv4Range, "inet6_range": shared.FakeIPIPv6Range}
 	}
 	return result
 }
 
 type dnsShared struct {
-	LocalDNS, FakeIPIPv4Range, FakeIPIPv6Range, ClashAPISecret, ClashAPIUIPath string
-	LocalDNSPort, FakeIPTTL, DNSListenPort, TProxyPort, ClashAPIPort           int
-	FakeIPEnabled, RejectHTTPS, CNDomainLocalDNS                               bool
+	LocalDNS, FakeIPIPv4Range, FakeIPIPv6Range, ClashAPISecret, ClashAPIUIPath   string
+	BootstrapDNS, BootstrapServerName, RemoteDNS, RemoteServerName, RemoteDetour string
+	LocalDNSPort, FakeIPTTL, DNSListenPort, TProxyPort, ClashAPIPort             int
+	BootstrapDNSPort, RemoteDNSPort                                              int
+	FakeIPEnabled, RejectHTTPS, CNDomainLocalDNS, PreferIPv4                     bool
 }
 
 func resolveDNSShared(config map[string]any) dnsShared {
-	result := dnsShared{LocalDNS: "127.0.0.1", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, DNSListenPort: 1053, TProxyPort: 7893, RejectHTTPS: true, CNDomainLocalDNS: true, ClashAPIPort: 9999, ClashAPISecret: "123456", ClashAPIUIPath: "/etc/sb/ui"}
+	result := dnsShared{LocalDNS: "127.0.0.1", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, DNSListenPort: 1053, TProxyPort: 7893, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true}
 	shared := config
 	if nested, ok := objectValue(config["shared"]); ok {
 		shared = nested
@@ -651,7 +684,41 @@ func resolveDNSShared(config map[string]any) dnsShared {
 	result.ClashAPIPort = integerDefault(shared["clashApiPort"], result.ClashAPIPort)
 	result.ClashAPISecret = valueOr(stringValue(shared["clashApiSecret"]), result.ClashAPISecret)
 	result.ClashAPIUIPath = valueOr(stringValue(shared["clashApiUiPath"]), result.ClashAPIUIPath)
+	result.BootstrapDNS = valueOr(stringValue(shared["bootstrapDns"]), result.BootstrapDNS)
+	result.BootstrapDNSPort = integerDefault(shared["bootstrapDnsPort"], result.BootstrapDNSPort)
+	result.BootstrapServerName = valueOr(stringValue(shared["bootstrapServerName"]), result.BootstrapServerName)
+	result.RemoteDNS = valueOr(stringValue(shared["remoteDns"]), result.RemoteDNS)
+	result.RemoteDNSPort = integerDefault(shared["remoteDnsPort"], result.RemoteDNSPort)
+	result.RemoteServerName = valueOr(stringValue(shared["remoteServerName"]), result.RemoteServerName)
+	result.RemoteDetour = stringValue(shared["remoteDetour"])
+	result.PreferIPv4 = boolDefault(shared["preferIpv4"], result.PreferIPv4)
 	return result
+}
+
+func validateManagedOverrides(profile Profile, target Target) error {
+	if target.Platform != "default" || profile.TransparentProxy.Mode == TransparentProxyDisabled {
+		return nil
+	}
+	if _, exists := profile.CustomConfig["inbounds"]; exists {
+		return fmt.Errorf("top-level inbound overrides require transparent_proxy.mode=disabled on Linux")
+	}
+	if route, ok := objectValue(profile.CustomConfig["route"]); ok {
+		if value, exists := route["auto_detect_interface"]; exists && value != true && profile.TransparentProxy.Mode == TransparentProxyTUN {
+			return fmt.Errorf("route.auto_detect_interface cannot be disabled in Linux tun-router mode")
+		}
+	}
+	if profile.ClashAPI.Enabled {
+		if experimental, ok := objectValue(profile.CustomConfig["experimental"]); ok {
+			if clashAPI, ok := objectValue(experimental["clash_api"]); ok {
+				for _, key := range []string{"external_controller", "secret", "external_ui"} {
+					if _, exists := clashAPI[key]; exists {
+						return fmt.Errorf("experimental.clash_api.%s is managed by the structured Clash API settings", key)
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func singBoxDNSOverride(config map[string]any, modern bool) map[string]any {

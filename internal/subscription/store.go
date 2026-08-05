@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -130,8 +132,12 @@ func (store *Store) readUnlocked() (Catalog, error) {
 		return Catalog{}, fmt.Errorf("decode subscription catalog: %w", err)
 	}
 	if catalog.Schema > 0 && catalog.Schema < CatalogSchema {
+		previousSchema := catalog.Schema
 		catalog.Schema = CatalogSchema
 		for index := range catalog.Profiles {
+			if previousSchema < 4 {
+				migrateLinuxRuntimeConfig(&catalog.Profiles[index])
+			}
 			normalizeProfile(&catalog.Profiles[index])
 		}
 	}
@@ -187,6 +193,27 @@ func normalizeProfile(profile *Profile) {
 	}
 	if profile.LastCompilerWarnings == nil {
 		profile.LastCompilerWarnings = []string{}
+	}
+	if profile.TransparentProxy.Mode == "" {
+		profile.TransparentProxy = defaultTransparentProxyConfig()
+	}
+	if profile.TransparentProxy.TUN.InterfaceName == "" {
+		profile.TransparentProxy.TUN.InterfaceName = "sing-box"
+	}
+	if profile.TransparentProxy.TUN.RouteExcludeAddress == nil {
+		profile.TransparentProxy.TUN.RouteExcludeAddress = []string{}
+	}
+	if profile.TransparentProxy.TProxy.ListenPort == 0 {
+		profile.TransparentProxy.TProxy.ListenPort = 7893
+	}
+	if profile.TransparentProxy.TProxy.DNSListenPort == 0 {
+		profile.TransparentProxy.TProxy.DNSListenPort = 1053
+	}
+	if profile.TransparentProxy.TProxy.LANInterfaces == nil {
+		profile.TransparentProxy.TProxy.LANInterfaces = []string{}
+	}
+	if profile.ClashAPI.AllowOrigins == nil {
+		profile.ClashAPI.AllowOrigins = []string{}
 	}
 	for index := range profile.Sources {
 		source := &profile.Sources[index]
@@ -273,6 +300,15 @@ func validateCatalog(catalog Catalog) error {
 			default:
 				return fmt.Errorf("profile %q group %q has unsupported type %q", profile.Name, name, group.Type)
 			}
+			if group.Default != "" && !configuredMember(group.Proxies, group.Default) {
+				return fmt.Errorf("profile %q group %q default %q is not a configured member", profile.Name, name, group.Default)
+			}
+		}
+		if err := validateTransparentProxy(profile.TransparentProxy); err != nil {
+			return fmt.Errorf("profile %q: %w", profile.Name, err)
+		}
+		if err := validateClashAPI(profile.ClashAPI); err != nil {
+			return fmt.Errorf("profile %q: %w", profile.Name, err)
 		}
 		providerTags := map[string]bool{}
 		for _, provider := range profile.RuleProviders {
@@ -289,6 +325,91 @@ func validateCatalog(catalog Catalog) error {
 		}
 	}
 	return nil
+}
+
+func migrateLinuxRuntimeConfig(profile *Profile) {
+	profile.TransparentProxy = defaultTransparentProxyConfig()
+	shared := profile.DNS
+	if nested, ok := shared["shared"].(map[string]any); ok {
+		shared = nested
+	}
+	if value, ok := numberValue(shared["tproxyPort"]); ok && value > 0 {
+		profile.TransparentProxy.TProxy.ListenPort = value
+	}
+	if value, ok := numberValue(shared["dnsListenPort"]); ok && value > 0 {
+		profile.TransparentProxy.TProxy.DNSListenPort = value
+	}
+}
+
+func validateTransparentProxy(config TransparentProxyConfig) error {
+	switch config.Mode {
+	case TransparentProxyTUN, TransparentProxyTProxy, TransparentProxyDisabled:
+	default:
+		return fmt.Errorf("unsupported transparent proxy mode %q", config.Mode)
+	}
+	if strings.TrimSpace(config.TUN.InterfaceName) == "" || len(config.TUN.InterfaceName) > 15 {
+		return fmt.Errorf("TUN interface name must contain 1 to 15 characters")
+	}
+	if config.TUN.Address != "" {
+		prefix, err := netip.ParsePrefix(config.TUN.Address)
+		if err != nil || !prefix.Addr().Is4() || prefix.Bits() != 30 {
+			return fmt.Errorf("TUN address must be an IPv4 /30 prefix")
+		}
+	}
+	for _, value := range config.TUN.RouteExcludeAddress {
+		if _, err := netip.ParsePrefix(value); err != nil {
+			return fmt.Errorf("invalid TUN route exclusion %q", value)
+		}
+	}
+	if config.TProxy.ListenPort < 1 || config.TProxy.ListenPort > 65535 || config.TProxy.DNSListenPort < 1 || config.TProxy.DNSListenPort > 65535 {
+		return fmt.Errorf("transparent proxy ports must be between 1 and 65535")
+	}
+	seen := map[string]bool{}
+	for _, name := range config.TProxy.LANInterfaces {
+		name = strings.TrimSpace(name)
+		if name == "" || len(name) > 15 || seen[name] {
+			return fmt.Errorf("TProxy LAN interfaces must be unique valid interface names")
+		}
+		seen[name] = true
+	}
+	return nil
+}
+
+func validateClashAPI(config ClashAPIConfig) error {
+	if !config.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(config.ExternalController) == "" {
+		return fmt.Errorf("external Clash API controller is required when enabled")
+	}
+	host, port, err := net.SplitHostPort(config.ExternalController)
+	if err != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" {
+		return fmt.Errorf("external Clash API controller must use host:port syntax")
+	}
+	if strings.TrimSpace(config.Secret) == "" {
+		return fmt.Errorf("external Clash API secret is required when enabled")
+	}
+	return nil
+}
+
+func configuredMember(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func numberValue(value any) (int, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed), typed == float64(int(typed))
+	case int:
+		return typed, true
+	default:
+		return 0, false
+	}
 }
 
 func ValidateCatalog(catalog Catalog) error {

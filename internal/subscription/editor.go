@@ -22,6 +22,7 @@ type editorProxyGroup struct {
 	URL       string   `json:"url,omitempty"`
 	Interval  int      `json:"interval,omitempty"`
 	Tolerance int      `json:"tolerance,omitempty"`
+	Default   string   `json:"default,omitempty"`
 }
 
 func editorConfigPresent(config EditorConfig) bool {
@@ -39,7 +40,7 @@ func editorConfigFromProfile(profile Profile) EditorConfig {
 	}
 	groups := make([]editorProxyGroup, 0, len(profile.Groups))
 	for _, group := range profile.Groups {
-		groups = append(groups, editorProxyGroup{Name: group.Name, Type: group.Type, Proxies: group.Proxies, Readonly: group.Readonly, URL: group.URL, Interval: group.Interval, Tolerance: group.Tolerance})
+		groups = append(groups, editorProxyGroup{Name: group.Name, Type: group.Type, Proxies: group.Proxies, Readonly: group.Readonly, URL: group.URL, Interval: group.Interval, Tolerance: group.Tolerance, Default: group.Default})
 	}
 	return EditorConfig{
 		RuleList:            marshalEditorJSON(providers, "{}"),
@@ -82,7 +83,7 @@ func ApplyEditorConfig(profile *Profile) error {
 	}
 	profile.Groups = make([]ProxyGroup, 0, len(groups))
 	for _, group := range groups {
-		profile.Groups = append(profile.Groups, ProxyGroup{Name: group.Name, Type: group.Type, Proxies: group.Proxies, Readonly: group.Readonly, URL: group.URL, Interval: group.Interval, Tolerance: group.Tolerance})
+		profile.Groups = append(profile.Groups, ProxyGroup{Name: group.Name, Type: group.Type, Proxies: group.Proxies, Readonly: group.Readonly, URL: group.URL, Interval: group.Interval, Tolerance: group.Tolerance, Default: group.Default})
 	}
 
 	providers := map[string][]editorRuleProvider{}

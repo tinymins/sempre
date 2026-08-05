@@ -191,3 +191,110 @@ func TestSingBoxV11CountsOnlyRepresentableNodes(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 }
+
+func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false,
+		"preferIpv4":    true,
+		"remoteDetour":  "foreign",
+	}}
+	profile.Groups = []ProxyGroup{{Name: "foreign", Type: "select", IncludeAll: true, Default: "edge"}}
+	profile.TransparentProxy.TUN.Address = "172.30.0.1/30"
+	profile.TransparentProxy.TUN.RouteExcludeAddress = []string{"10.10.10.0/24"}
+
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	inbounds := config["inbounds"].([]any)
+	tun := inbounds[0].(map[string]any)
+	if tun["type"] != "tun" || tun["interface_name"] != "sing-box" || tun["auto_route"] != true || tun["auto_redirect"] != true || tun["strict_route"] != true || tun["stack"] != "system" {
+		t.Fatalf("TUN inbound = %#v", tun)
+	}
+	if tun["address"].([]any)[0] != "172.30.0.1/30" || tun["route_exclude_address"].([]any)[0] != "10.10.10.0/24" {
+		t.Fatalf("TUN address configuration = %#v", tun)
+	}
+	dns := config["dns"].(map[string]any)
+	if dns["final"] != "remote" || dns["strategy"] != "prefer_ipv4" {
+		t.Fatalf("DNS defaults = %#v", dns)
+	}
+	servers := dns["servers"].([]any)
+	remote := servers[len(servers)-1].(map[string]any)
+	if remote["tag"] != "remote" || remote["detour"] != "foreign" {
+		t.Fatalf("remote DNS = %#v", remote)
+	}
+	route := config["route"].(map[string]any)
+	if route["auto_detect_interface"] != true {
+		t.Fatalf("route = %#v", route)
+	}
+}
+
+func TestLinuxSingBoxTProxyAndDisabledModes(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.TransparentProxy.Mode = TransparentProxyTProxy
+	profile.TransparentProxy.TProxy.ListenPort = 17893
+	profile.TransparentProxy.TProxy.DNSListenPort = 11053
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	inbounds := config["inbounds"].([]any)
+	if len(inbounds) != 2 || inbounds[0].(map[string]any)["listen_port"] != float64(11053) || inbounds[1].(map[string]any)["listen_port"] != float64(17893) {
+		t.Fatalf("TProxy inbounds = %#v", inbounds)
+	}
+
+	profile.TransparentProxy.Mode = TransparentProxyDisabled
+	profile.CustomConfig = map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "tag": "manual", "listen": "127.0.0.1", "listen_port": 1080}}}
+	result, _, err = compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	if config["inbounds"].([]any)[0].(map[string]any)["tag"] != "manual" {
+		t.Fatalf("disabled/manual inbounds = %#v", config["inbounds"])
+	}
+}
+
+func TestLinuxManagedInboundOverrideIsRejected(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.CustomConfig = map[string]any{"inbounds": []any{}}
+	_, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err == nil {
+		t.Fatal("managed inbound override was accepted")
+	}
+}
+
+func compilerFixture(t *testing.T) (Profile, Catalog, *Compiler) {
+	t.Helper()
+	paths := layout.At(filepath.Join(t.TempDir(), "root"))
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(paths)
+	if err := store.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := catalog.Profiles[0]
+	profile.UseSystemGroups = false
+	profile.UseSystemRules = false
+	profile.UseSystemFilters = false
+	profile.UseSystemDNS = false
+	profile.UseSystemCustomConfig = false
+	profile.Sources = []Source{{ID: NewID(), Type: SourceRaw, Enabled: true, Content: "proxies:\n- name: edge\n  type: socks5\n  server: edge.example.com\n  port: 1080\n"}}
+	return profile, catalog, NewCompiler(store)
+}
