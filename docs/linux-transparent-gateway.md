@@ -1,14 +1,15 @@
 # Linux Transparent Gateway
 
-Sempre supports transparent sing-box routing on Debian, Ubuntu, and Proxmox
-VE. The feature is available only for the sing-box core; Mihomo behavior is
-unchanged.
+Sempre supports transparent routing with the stable `sing-box` and `mihomo`
+adapters on Debian, Ubuntu, and Proxmox VE. The profile stores one
+core-independent capture intent; each core adapter generates its inbound while
+the Linux backend owns nftables, marks, and policy routes.
 
 ## Modes
 
 | Mode | Data plane | Host traffic | LAN forwarding |
 | --- | --- | --- | --- |
-| `tun-router` | sing-box TUN with `auto_route` and `auto_redirect` | Always | Yes |
+| `tun-router` | Core TUN with automatic routes and redirect | Always | Yes |
 | `tproxy` | Sempre-owned nftables table, fwmark, policy rule, and local route table | Optional | Selected LAN interfaces |
 | `disabled` | No Linux transparent routing managed by Sempre | No | No |
 
@@ -39,10 +40,13 @@ invalid. The previous deployment is restored when one exists.
 
 ## TUN Router
 
-The generated inbound uses `interface_name: sing-box`, `auto_route: true`,
-`auto_redirect: true`, `strict_route: true`, and `stack: system`. Sempre resolves
-the final TUN address and route exclusions in the private runtime copy, then
-validates that exact copy with the installed sing-box binary.
+For sing-box the generated inbound uses `interface_name: sempre-tun`,
+`auto_route: true`, `auto_redirect: true`, `strict_route: true`, and
+`stack: system`. Sempre resolves the final `/30` address and exclusions in the
+private runtime copy. For Mihomo it generates the equivalent `tun` keys using
+their kebab-case names. Include/exclude interface policies are mapped to each
+core's native fields. Sempre validates the final runtime copy with the selected
+core binary.
 
 sing-box owns the TUN interface and its `inet sing-box` nftables table. Sempre
 does not rewrite the host default route, Docker rules, LXC rules, PVE firewall
@@ -56,15 +60,18 @@ Sempre owns only these names and identifiers:
 | --- | --- |
 | nftables table | `sempre_tproxy` in IPv4 and IPv6 families |
 | packet mark | `0x53500001` |
-| sing-box bypass mark | `0x53500002` |
+| core bypass mark | `0x53500002` |
 | policy route table | `20240` |
 | policy rule priority | `20240` |
 | policy object protocol | `253` |
 
 TCP and UDP from selected LAN interfaces are captured in prerouting. TCP and
 UDP port 53 are sent to the configured DNS inbound. With `capture_host` enabled,
-OUTPUT packets are marked and routed back through prerouting; sing-box outbound
-sockets use the separate bypass mark to prevent loops.
+OUTPUT packets are marked and routed back through prerouting. The selected core
+uses the separate bypass mark to prevent its own outbound sockets from looping.
+DNS has a distinct listener port because port 53 packets are captured separately,
+but both ports belong exclusively to `transparent_proxy.tproxy`; they are not DNS
+upstream settings.
 
 Apply is transactional: policy routes are installed before nftables begins
 capturing traffic, and any failure removes all Sempre-owned state. Stop,
@@ -74,20 +81,22 @@ collisions, and never flushes a ruleset or deletes another table.
 
 ## DNS Routing
 
-The default Linux sing-box configuration uses local DNS for `geosite-cn`, a
-direct bootstrap DoT server for proxy node hostnames, and a remote DoT server
-detoured through the configured foreign selector. `dns.final` is `remote`, so
-the same split remains active when FakeIP is disabled. `prefer_ipv4` is enabled
-by default and can be changed in the DNS editor.
+The managed DNS model has local, bootstrap, and remote upstreams. Domestic
+domains use local DNS, proxy node names use the direct bootstrap resolver, and
+remote DNS follows the configured foreign selector. sing-box emits
+`dns.final: remote`; Mihomo emits `respect-rules`, `nameserver-policy`, and a
+selector-qualified remote nameserver. The split remains active when FakeIP is
+disabled. `prefer_ipv4` is shown only for cores that implement it.
 
-## MetaCubeX
+## Management API And MetaCubeX
 
-The core controller always remains on a random loopback port with a random
-internal Secret. When the external Clash API is enabled, Sempre listens on the
-configured `external_controller`, authenticates the fixed user Secret, and
-proxies HTTP and WebSocket requests to the internal controller. The proxy also
-serves `external_ui` at `/ui/` and applies the configured origin and private
-network access policy.
+The current stable cores expose a private Clash-compatible controller on a
+random loopback port with a random internal secret. `management_api` optionally
+starts a Sempre-authenticated reverse proxy at the user controller address.
+HTTP and WebSocket endpoints, including connections, proxies, providers, rules,
+traffic, and delay, are forwarded. The proxy serves `external_ui` at `/ui/` and
+applies the configured origin and private-network policy. MetaCubeX connects to
+this external Sempre endpoint; the running core remains sing-box or Mihomo.
 
 Binding to `0.0.0.0` exposes control over proxy selection and connection data.
 Use a strong Secret and enforce host firewall restrictions. The external
@@ -95,15 +104,17 @@ listener is disabled by default.
 
 ## Advanced Overrides
 
-The profile's Advanced Config editor stores a structured top-level JSONC
-object. It is deep-merged into the generated configuration and survives saves,
-subscription refreshes, scheduled updates, recompilation, service restarts,
-and host reboots.
+The profile stores advanced documents in the open
+`core_overrides.<core-id>` map. The editor displays only the selected target's
+document and preserves every other key, including unknown future core IDs.
+Known overrides are deep-merged into that core's generated configuration and
+survive saves, refreshes, scheduled updates, recompilation, restarts, and
+reboots.
 
-In managed Linux modes, top-level `inbounds` cannot be overridden and TUN
-`route.auto_detect_interface` cannot be disabled. Structured external Clash
-API fields also cannot be duplicated under `experimental.clash_api`. Select
-`disabled` when a fully custom inbound topology is required.
+In managed Linux modes, fields owned by the runtime plan cannot also be set in
+the native override. Structured management API fields likewise cannot be
+duplicated in a core override. Select `disabled` when a fully custom inbound
+topology is required.
 
 ## Diagnostics And Recovery
 
@@ -114,7 +125,7 @@ sempre doctor
 ```
 
 Required checks cover the prepared runtime hash, profile build revision, TUN
-interface, sing-box auto-redirect rules, Sempre TProxy rules, policy routing,
+interface, core auto-redirect rules, Sempre TProxy rules, policy routing,
 listeners, LAN interfaces, IPv4 forwarding, split DNS, and domestic/foreign
 route structure. TProxy capture counters report whether host, LAN, and DNS
 packets have actually reached the data plane since startup. Missing traffic and

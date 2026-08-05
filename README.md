@@ -103,10 +103,12 @@ service reports `idle` until one is configured.
 Open a new terminal after installation; `sempre status`, `sempre doctor`, and
 the rest of the CLI are available globally.
 
-On Linux, sing-box profiles can run as a TUN router or as a fully managed
-TProxy gateway. Debian, Ubuntu, and Proxmox VE setup, routing ownership,
+On Linux, sing-box and Mihomo profiles can run as a TUN router or as a fully
+managed TProxy gateway. Debian, Ubuntu, and Proxmox VE setup, routing ownership,
 MetaCubeX access, and recovery procedures are documented in
-[Linux Transparent Gateway](docs/linux-transparent-gateway.md).
+[Linux Transparent Gateway](docs/linux-transparent-gateway.md). The stable,
+planned, experimental, and protocol-only compatibility boundaries are recorded
+in the [Core Capability Model](docs/core-capability-matrix.md).
 
 For an offline or fully manual installation, download and extract a bundle
 from the [Downloads](#downloads) section and run `sempre install` yourself.
@@ -276,10 +278,10 @@ stale until they are selected again.
 
 The Go conversion pipeline accepts Clash YAML/JSON proxy lists and lenient
 Base64 URI subscriptions. It parses VLESS, VMess, Shadowsocks, Trojan,
-Hysteria 2, and AnyTLS URIs, then produces Clash, Clash Meta, or sing-box
-v1.11/v1.12/v1.13 configurations. Linux uses TProxy defaults; Windows and
-macOS previews use TUN defaults. The selected core version and host platform
-choose the format used for an active profile. Rule-provider YAML is fetched
+Hysteria, Hysteria 2, TUIC, and AnyTLS nodes, then produces Clash, Clash Meta,
+or sing-box v1.11/v1.12/v1.13 configurations. Linux gateway profiles default
+to TUN router mode. The selected core version and host platform choose the
+format used for an active profile. Rule-provider YAML is fetched
 and embedded for sing-box, so generated configurations do not depend on a
 public Sempre conversion endpoint.
 
