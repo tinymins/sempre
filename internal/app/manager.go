@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/tinymins/sempre/internal/clashproxy"
 	"github.com/tinymins/sempre/internal/control"
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/core/mihomo"
@@ -66,6 +67,7 @@ type Manager struct {
 	subscriptions *subscriptions.Store
 	compiler      *subscriptions.Compiler
 	transparent   *transparentproxy.Controller
+	externalClash *clashproxy.Server
 	ui            *uiassets.Manager
 	uiReleases    uiassets.ReleaseResolver
 	reload        chan struct{}
@@ -120,6 +122,7 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 		subscriptions: subscriptionStore,
 		compiler:      subscriptions.NewCompiler(subscriptionStore),
 		transparent:   transparentproxy.New(),
+		externalClash: clashproxy.New(),
 		ui:            uiassets.New(paths.UI, paths.UICurrent),
 		uiReleases:    release.NewClient(),
 		reload:        make(chan struct{}, 1),

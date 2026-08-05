@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tinymins/sempre/internal/clashproxy"
 	"github.com/tinymins/sempre/internal/control"
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/state"
@@ -30,6 +31,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 		_, _ = fmt.Fprintf(logger, time.Now().UTC().Format(time.RFC3339)+" "+format+"\n", arguments...)
 	}
 	dataPlanePlan := transparentproxy.Plan{}
+	externalClashPlan := clashproxy.Config{}
 	runner := supervisor.Runner{
 		Stdout: stdout,
 		Stderr: stderr,
@@ -80,6 +82,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err != nil {
 					return supervisor.Plan{}, err
 				}
+				externalClashPlan = clashproxy.Config{External: profile.ClashAPI, Upstream: runtimeSpec.Control}
 				dataPlanePlan, err = manager.transparent.Prepare(
 					runCtx,
 					deployment.Core,
@@ -99,6 +102,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				}, nil
 			},
 			ResolveFailure: func(failure error) (bool, error) {
+				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
+					logf("stop external Clash API after resolve failure: %v", stopErr)
+				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean transparent proxy after resolve failure: %v", cleanupErr)
 				}
@@ -131,6 +137,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			},
 			Starting: func(plan supervisor.Plan) error {
 				logf("starting %s", deploymentLabel(plan.Deployment))
+				if err := manager.externalClash.Stop(ctx); err != nil {
+					return fmt.Errorf("stop stale external Clash API: %w", err)
+				}
 				if err := manager.transparent.Cleanup(ctx); err != nil {
 					return fmt.Errorf("clean stale Linux transparent proxy state: %w", err)
 				}
@@ -151,6 +160,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				logf("started %s with PID %d", deploymentLabel(plan.Deployment), pid)
 				if err := manager.transparent.Apply(ctx, dataPlanePlan); err != nil {
 					return fmt.Errorf("activate Linux transparent proxy: %w", err)
+				}
+				if err := manager.externalClash.Start(ctx, externalClashPlan); err != nil {
+					return fmt.Errorf("start external Clash API: %w", err)
 				}
 				if plan.Control.BaseURL != "" {
 					manager.setControl(control.New(plan.Control.Core, plan.Control.BaseURL, plan.Control.Secret))
@@ -210,6 +222,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			},
 			Stopping: func(plan supervisor.Plan) error {
 				logf("stopping %s", deploymentLabel(plan.Deployment))
+				if err := manager.externalClash.Stop(ctx); err != nil {
+					logf("stop external Clash API: %v", err)
+				}
 				if err := manager.transparent.Cleanup(ctx); err != nil {
 					logf("clean Linux transparent proxy while stopping: %v", err)
 				}
@@ -234,6 +249,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				})
 			},
 			EarlyFailure: func(plan supervisor.Plan, failure error) error {
+				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
+					logf("stop external Clash API after startup failure: %v", stopErr)
+				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean Linux transparent proxy after startup failure: %v", cleanupErr)
 				}
@@ -245,6 +263,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				return err
 			},
 			Exited: func(plan supervisor.Plan, failure error, _ int) error {
+				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
+					logf("stop external Clash API after core exit: %v", stopErr)
+				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean Linux transparent proxy after core exit: %v", cleanupErr)
 				}
@@ -266,6 +287,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				})
 			},
 			Stopped: func() error {
+				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
+					logf("stop external Clash API after stop: %v", stopErr)
+				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean Linux transparent proxy after stop: %v", cleanupErr)
 				}
@@ -310,6 +334,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				})
 			},
 			Idle: func() error {
+				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
+					logf("stop external Clash API while idle: %v", stopErr)
+				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean Linux transparent proxy while idle: %v", cleanupErr)
 				}
