@@ -129,7 +129,7 @@ func (store *Store) readUnlocked() (Catalog, error) {
 	if err := json.Unmarshal(data, &catalog); err != nil {
 		return Catalog{}, fmt.Errorf("decode subscription catalog: %w", err)
 	}
-	if catalog.Schema == 1 {
+	if catalog.Schema > 0 && catalog.Schema < CatalogSchema {
 		catalog.Schema = CatalogSchema
 		for index := range catalog.Profiles {
 			normalizeProfile(&catalog.Profiles[index])
@@ -161,6 +161,9 @@ func (store *Store) writeUnlocked(catalog Catalog) error {
 }
 
 func normalizeProfile(profile *Profile) {
+	if profile.Revision == 0 {
+		profile.Revision = 1
+	}
 	if profile.LogLevel == "" {
 		profile.LogLevel = "info"
 	}
@@ -229,6 +232,9 @@ func validateCatalog(catalog Catalog) error {
 			return fmt.Errorf("duplicate profile ID %q", profile.ID)
 		}
 		profileIDs[profile.ID] = true
+		if profile.Revision == 0 {
+			return fmt.Errorf("profile %q has no revision", profile.Name)
+		}
 		name := strings.ToLower(strings.TrimSpace(profile.Name))
 		if index > 0 && name == "" {
 			return fmt.Errorf("profile name is required")

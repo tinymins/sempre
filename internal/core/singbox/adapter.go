@@ -2,12 +2,9 @@ package singbox
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -181,17 +178,13 @@ func (adapter *Adapter) PrepareRuntime(config, runtimeDirectory string) (core.Ru
 	}
 	experimental := object(document["experimental"])
 	clashAPI := object(experimental["clash_api"])
-	address, err := availableLoopbackAddress()
+	control, err := core.NewPrivateControl(adapter.ID())
 	if err != nil {
 		return core.RuntimeSpec{}, err
 	}
-	secretBytes := make([]byte, 32)
-	if _, err := rand.Read(secretBytes); err != nil {
-		return core.RuntimeSpec{}, fmt.Errorf("generate internal core API secret: %w", err)
-	}
-	secret := hex.EncodeToString(secretBytes)
+	address := strings.TrimPrefix(control.BaseURL, "http://")
 	clashAPI["external_controller"] = address
-	clashAPI["secret"] = secret
+	clashAPI["secret"] = control.Secret
 	clashAPI["external_ui"] = ""
 	clashAPI["external_ui_download_url"] = ""
 	clashAPI["external_ui_download_detour"] = ""
@@ -212,11 +205,8 @@ func (adapter *Adapter) PrepareRuntime(config, runtimeDirectory string) (core.Ru
 		return core.RuntimeSpec{}, fmt.Errorf("write sing-box runtime configuration: %w", err)
 	}
 	return core.RuntimeSpec{
-		Config: runtimeConfig,
-		Control: core.ControlSpec{
-			BaseURL: "http://" + address,
-			Secret:  secret,
-		},
+		Config:  runtimeConfig,
+		Control: control,
 	}, nil
 }
 
@@ -225,18 +215,6 @@ func object(value any) map[string]any {
 		return result
 	}
 	return map[string]any{}
-}
-
-func availableLoopbackAddress() (string, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", fmt.Errorf("reserve internal core API address: %w", err)
-	}
-	address := listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		return "", err
-	}
-	return address, nil
 }
 
 var _ core.Adapter = (*Adapter)(nil)

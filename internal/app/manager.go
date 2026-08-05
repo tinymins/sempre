@@ -14,6 +14,7 @@ import (
 
 	"github.com/tinymins/sempre/internal/control"
 	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/core/mihomo"
 	"github.com/tinymins/sempre/internal/core/singbox"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/release"
@@ -108,7 +109,7 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 	return &Manager{
 		paths:         paths,
 		store:         store,
-		registry:      core.NewRegistry(singbox.New()),
+		registry:      core.NewRegistry(singbox.New(), mihomo.New()),
 		output:        output,
 		errors:        errorOutput,
 		service:       controller,
@@ -159,10 +160,10 @@ func (manager *Manager) controlClient() (*control.Client, error) {
 		return nil, fmt.Errorf("no managed core control API is available")
 	}
 	var spec core.ControlSpec
-	if err := json.Unmarshal(data, &spec); err != nil || spec.BaseURL == "" || spec.Secret == "" {
+	if err := json.Unmarshal(data, &spec); err != nil || spec.Core == "" || spec.BaseURL == "" || spec.Secret == "" {
 		return nil, fmt.Errorf("managed core control metadata is invalid")
 	}
-	return control.New(spec.BaseURL, spec.Secret), nil
+	return control.New(spec.Core, spec.BaseURL, spec.Secret), nil
 }
 
 func (manager *Manager) RuntimeControl() (*control.Client, error) {

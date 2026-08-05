@@ -76,6 +76,7 @@ func TestStoreReadsSchemaOneProfilesWithEditorConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	profile := NewProfile("legacy")
+	profile.Revision = 0
 	profile.Editor = EditorConfig{}
 	profile.Groups = []ProxyGroup{{Name: "proxy", Type: "select", Proxies: []string{"DIRECT"}}}
 	profile.Filters = []string{"expired"}
@@ -97,6 +98,9 @@ func TestStoreReadsSchemaOneProfilesWithEditorConfig(t *testing.T) {
 		t.Fatalf("schema = %d", loaded.Schema)
 	}
 	migrated := loaded.Profiles[0]
+	if migrated.Revision != 1 {
+		t.Fatalf("revision = %d", migrated.Revision)
+	}
 	if migrated.Editor.Group == "" || migrated.Editor.RuleList == "" || migrated.Editor.Filter == "" || migrated.Editor.CustomConfig == "" || migrated.Editor.Servers != "[]" {
 		t.Fatalf("editor config = %#v", migrated.Editor)
 	}

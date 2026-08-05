@@ -74,6 +74,9 @@ func TestSystemDefaultsDriveClashCompilation(t *testing.T) {
 	if config["unified-delay"] != true {
 		t.Fatalf("clash-meta options = %#v", config)
 	}
+	if _, exists := config["global-client-fingerprint"]; exists {
+		t.Fatalf("removed Mihomo option remains: %#v", config)
+	}
 }
 
 func TestSingBoxEmbedsFetchedRuleProvider(t *testing.T) {

@@ -85,6 +85,7 @@ describe('RuntimeControlPanel', () => {
     await waitFor(() => expect(stop).toBeEnabled())
     fireEvent.click(stop)
     const dialog = screen.getByRole('dialog')
+	expect(within(dialog).getByText(/stopping sing-box/i)).toBeInTheDocument()
     expect(within(dialog).getByText(/interrupts current proxy traffic/i)).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Stop managed core' }))
 

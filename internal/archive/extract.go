@@ -13,18 +13,63 @@ import (
 
 const MaxExpandedSize = int64(2 << 30)
 
-func Extract(path, destination, format string) error {
+type ExtractOptions struct {
+	Format         string
+	SingleFileName string
+}
+
+func Extract(path, destination string, options ExtractOptions) error {
 	if err := os.MkdirAll(destination, 0o700); err != nil {
 		return err
 	}
-	switch format {
+	switch options.Format {
 	case "zip":
 		return extractZIP(path, destination)
 	case "tar.gz":
 		return extractTarGZ(path, destination)
+	case "gz":
+		return extractGZ(path, destination, options.SingleFileName)
 	default:
-		return fmt.Errorf("unsupported archive format %q", format)
+		return fmt.Errorf("unsupported archive format %q", options.Format)
 	}
+}
+
+func extractGZ(path, destination, name string) error {
+	return extractGZWithLimit(path, destination, name, MaxExpandedSize)
+}
+
+func extractGZWithLimit(path, destination, name string, limit int64) error {
+	if name == "" || name != filepath.Base(name) || name == "." {
+		return fmt.Errorf("single-file gzip output name must be a non-empty base name")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	reader, err := gzip.NewReader(file)
+	if err != nil {
+		return fmt.Errorf("open gzip: %w", err)
+	}
+	defer reader.Close()
+	target, err := safeTarget(destination, name)
+	if err != nil {
+		return err
+	}
+	limited := io.LimitReader(reader, limit+1)
+	if err := writeFile(target, limited, 0o600); err != nil {
+		_ = os.Remove(target)
+		return err
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return err
+	}
+	if info.Size() > limit {
+		_ = os.Remove(target)
+		return fmt.Errorf("gzip archive expands beyond %d bytes", limit)
+	}
+	return nil
 }
 
 func Find(root, name string) (string, error) {

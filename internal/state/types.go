@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 const (
 	DesiredRunning = "running"
@@ -23,26 +23,33 @@ var (
 )
 
 type Document struct {
-	Schema          int                   `json:"schema"`
-	UpdatedAt       time.Time             `json:"updated_at"`
-	Selected        *Selection            `json:"selected,omitempty"`
-	Active          *Deployment           `json:"active,omitempty"`
-	Previous        *Deployment           `json:"previous,omitempty"`
-	Pending         bool                  `json:"pending"`
-	LastError       string                `json:"last_error,omitempty"`
-	Cores           map[string]*CoreState `json:"cores"`
-	Configs         map[string]string     `json:"configs"`
-	Subscription    Subscription          `json:"subscription"`
-	ActiveProfileID string                `json:"active_profile_id,omitempty"`
-	AutoRestart     bool                  `json:"subscription_auto_restart"`
-	DesiredState    string                `json:"desired_state"`
-	Runtime         Runtime               `json:"runtime"`
+	Schema          int                    `json:"schema"`
+	UpdatedAt       time.Time              `json:"updated_at"`
+	Selected        *Selection             `json:"selected,omitempty"`
+	Active          *Deployment            `json:"active,omitempty"`
+	Previous        *Deployment            `json:"previous,omitempty"`
+	Pending         bool                   `json:"pending"`
+	LastError       string                 `json:"last_error,omitempty"`
+	Cores           map[string]*CoreState  `json:"cores"`
+	Configs         map[string]string      `json:"configs"`
+	ConfigBuilds    map[string]ConfigBuild `json:"config_builds"`
+	Subscription    Subscription           `json:"subscription"`
+	ActiveProfileID string                 `json:"active_profile_id,omitempty"`
+	AutoRestart     bool                   `json:"subscription_auto_restart"`
+	DesiredState    string                 `json:"desired_state"`
+	Runtime         Runtime                `json:"runtime"`
 }
 
 type Selection struct {
 	Core       string `json:"core"`
 	Repository string `json:"repository,omitempty"`
 	Ref        string `json:"ref"`
+}
+
+type ConfigBuild struct {
+	ProfileID       string `json:"profile_id"`
+	ProfileRevision uint64 `json:"profile_revision"`
+	TargetKey       string `json:"target_key"`
 }
 
 type Deployment struct {
@@ -106,6 +113,7 @@ func NewDocument() Document {
 		Schema:       SchemaVersion,
 		Cores:        map[string]*CoreState{},
 		Configs:      map[string]string{},
+		ConfigBuilds: map[string]ConfigBuild{},
 		DesiredState: DesiredRunning,
 		AutoRestart:  true,
 		Subscription: Subscription{
@@ -132,6 +140,9 @@ func (document *Document) Normalize() {
 	}
 	if document.Configs == nil {
 		document.Configs = map[string]string{}
+	}
+	if document.ConfigBuilds == nil {
+		document.ConfigBuilds = map[string]ConfigBuild{}
 	}
 	if document.Subscription.Interval == "" {
 		document.Subscription.Interval = "24h"
@@ -202,6 +213,17 @@ func (document Document) Validate() error {
 		}
 		if !hashPattern.MatchString(hash) {
 			return fmt.Errorf("core %q has invalid configuration hash %q", coreID, hash)
+		}
+	}
+	for coreID, build := range document.ConfigBuilds {
+		if !coreIDPattern.MatchString(coreID) {
+			return fmt.Errorf("invalid configuration build core ID %q", coreID)
+		}
+		if document.Configs[coreID] == "" {
+			return fmt.Errorf("core %q has configuration build metadata without a configuration", coreID)
+		}
+		if strings.TrimSpace(build.ProfileID) == "" || build.ProfileRevision == 0 || strings.TrimSpace(build.TargetKey) == "" {
+			return fmt.Errorf("core %q has invalid configuration build metadata", coreID)
 		}
 	}
 	if document.Selected != nil {

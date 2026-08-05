@@ -29,6 +29,7 @@ let restartResponse: Promise<Response> | undefined
 function profile(id: string, name: string): SubscriptionProfile {
   return {
     id,
+	revision: 1,
     name,
     log_level: 'info',
     editor: { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' },

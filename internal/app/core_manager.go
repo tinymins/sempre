@@ -72,9 +72,14 @@ func (manager *Manager) installCore(ctx context.Context, value string) (Change, 
 	if err != nil {
 		return Change{}, err
 	}
+	selectedConfigHash := ""
 	if selectionMatches(document.Selected, reference) {
-		if configHash := document.Configs[reference.Core]; configHash != "" {
-			config := manager.paths.Config(reference.Core, configHash)
+		selectedConfigHash, err = manager.currentProfileConfigHash(document, adapter, resolved.Version)
+		if err != nil {
+			return Change{}, err
+		}
+		if selectedConfigHash != "" {
+			config := manager.paths.Config(reference.Core, selectedConfigHash)
 			if err := manager.validateConfiguration(ctx, adapter, binary, config, manager.output, manager.errors); err != nil {
 				if installed {
 					_ = os.RemoveAll(manager.paths.CoreVersionDir(reference.Core, reference.Repository, resolved.Version))
@@ -113,13 +118,13 @@ func (manager *Manager) installCore(ctx context.Context, value string) (Change, 
 		}
 
 		if selectionMatches(document.Selected, reference) {
-			if configHash := document.Configs[reference.Core]; configHash != "" {
+			if selectedConfigHash != "" {
 				deployment := state.Deployment{
 					Core:       reference.Core,
 					Repository: reference.Repository,
 					Ref:        reference.Value,
 					Version:    resolved.Version,
-					ConfigHash: configHash,
+					ConfigHash: selectedConfigHash,
 				}
 				if !state.SameDeployment(document.Active, &deployment) {
 					document.Stage(deployment)
@@ -162,6 +167,15 @@ func (manager *Manager) UpdateCores(ctx context.Context, value string) ([]Change
 		changes, err = manager.updateCores(ctx, value)
 		return err
 	})
+	if err == nil {
+		compiled, compileErr := manager.compileSelectedProfileIfNeeded(ctx, Change{})
+		if compileErr != nil {
+			return nil, compileErr
+		}
+		if compiled.Changed {
+			changes = append(changes, compiled)
+		}
+	}
 	return changes, err
 }
 
@@ -224,7 +238,7 @@ func (manager *Manager) UseCore(ctx context.Context, value string) (Change, erro
 	}
 	if err != nil {
 		after, readErr := manager.store.Read()
-		if readErr == nil && after.Selected != nil && !sameSelection(before.Selected, after.Selected) && after.Configs[after.Selected.Core] == "" {
+		if readErr == nil && after.Selected != nil && !sameSelection(before.Selected, after.Selected) {
 			rollbackErr := manager.withOperation(func() error {
 				return manager.store.Update(func(document *state.Document) error {
 					if sameSelection(document.Selected, after.Selected) {
@@ -258,17 +272,28 @@ func (manager *Manager) compileSelectedProfileIfNeeded(ctx context.Context, chan
 	if err != nil {
 		return Change{}, err
 	}
-	if document.Selected == nil || document.Configs[document.Selected.Core] != "" {
+	if document.Selected == nil {
 		return change, nil
 	}
-	_, profile, _, err := manager.activeProfile()
+	catalog, profile, _, err := manager.activeProfile()
 	if err != nil {
 		return Change{}, err
 	}
 	if !subscriptionProfileHasInputs(*profile) {
 		return change, nil
 	}
-	compiled, err := manager.UpdateSubscription(ctx)
+	deployment, adapter, err := manager.configurationTarget(document)
+	if err != nil {
+		return Change{}, err
+	}
+	expected, err := expectedConfigBuild(*profile, adapter, deployment.Version)
+	if err != nil {
+		return Change{}, err
+	}
+	if document.Configs[deployment.Core] != "" && document.ConfigBuilds[deployment.Core] == expected {
+		return change, nil
+	}
+	compiled, err := manager.compileActiveProfileForSelectedCore(ctx, catalog, *profile, document)
 	if err != nil {
 		return Change{}, err
 	}
@@ -292,9 +317,13 @@ func (manager *Manager) useCore(ctx context.Context, value string) (Change, erro
 	if err != nil {
 		return Change{}, err
 	}
-	configHash := document.Configs[reference.Core]
+	storedConfigHash := document.Configs[reference.Core]
+	configHash, err := manager.currentProfileConfigHash(document, adapter, version)
+	if err != nil {
+		return Change{}, err
+	}
 	if configHash != "" {
-		binary := manager.paths.CoreBinary(reference.Core, reference.Repository, version)
+		binary := coreBinaryPath(manager.paths, adapter, reference.Repository, version)
 		config := manager.paths.Config(reference.Core, configHash)
 		if err := manager.validateConfiguration(ctx, adapter, binary, config, manager.output, manager.errors); err != nil {
 			return Change{}, fmt.Errorf("candidate %s rejected the active configuration: %w", reference, err)
@@ -306,7 +335,7 @@ func (manager *Manager) useCore(ctx context.Context, value string) (Change, erro
 		if err != nil {
 			return err
 		}
-		if currentVersion != version || document.Configs[reference.Core] != configHash {
+		if currentVersion != version || document.Configs[reference.Core] != storedConfigHash {
 			return fmt.Errorf("core state changed while selecting %s; retry the command", reference)
 		}
 		installation := document.Cores[reference.Core].LookupSource(reference.Repository).Installed[version]
@@ -569,7 +598,10 @@ func (manager *Manager) installPackage(
 		return "", false, err
 	}
 	extracted := filepath.Join(temporary, "extract")
-	if err := archive.Extract(archivePath, extracted, item.Format); err != nil {
+	if err := archive.Extract(archivePath, extracted, archive.ExtractOptions{
+		Format:         item.Format,
+		SingleFileName: adapter.ExecutableName(core.CurrentTarget()),
+	}); err != nil {
 		return "", false, err
 	}
 	sourceBinary, err := archive.Find(extracted, adapter.ExecutableName(core.CurrentTarget()))

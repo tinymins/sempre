@@ -199,6 +199,7 @@ export interface SubscriptionEditorConfig {
 
 export interface SubscriptionProfile {
   id: string
+  revision: number
   name: string
   remark?: string
   log_level: 'off' | 'error' | 'warn' | 'info' | 'debug'

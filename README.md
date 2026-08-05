@@ -3,8 +3,9 @@
 Sempre is a cross-platform lifecycle manager for proxy cores.
 
 It installs and switches core versions, validates and updates configuration,
-registers a native system service, and keeps the selected core running. The
-first supported core is [sing-box](https://github.com/SagerNet/sing-box).
+registers a native system service, and keeps the selected core running.
+Supported cores currently include [sing-box](https://github.com/SagerNet/sing-box)
+and [Mihomo](https://github.com/MetaCubeX/mihomo).
 
 > Any core. Always current. Always running.
 
@@ -173,8 +174,11 @@ sempre core install sing-box@stable
 sempre core install sing-box@1.13.15
 sempre core install sing-box:tinymins/sing-box@stable
 sempre core install sing-box:tinymins/sing-box@1.13.15-ddns.1
+sempre core install mihomo@stable
+sempre core install mihomo@1.19.29
 sempre core list
 sempre core use sing-box@stable
+sempre core use mihomo@stable
 sempre core use sing-box@1.13.15
 sempre run --core sing-box@1.13.15
 sempre core update sing-box@stable
@@ -182,12 +186,25 @@ sempre core remove sing-box@1.13.15
 ```
 
 Core references use `<adapter>[:<github-owner>/<repository>][@<stable-or-version>]`.
-The repository defaults to `SagerNet/sing-box`, so `sing-box@1.13.15` is the
-official-source shorthand. Repository and version are separate identity
+Each adapter has an official default repository:
+
+| Adapter | Default repository | Compiled configuration | Release package |
+| --- | --- | --- | --- |
+| `sing-box` | `SagerNet/sing-box` | Version/platform-specific sing-box JSON | ZIP on Windows, tar.gz elsewhere |
+| `mihomo` | `MetaCubeX/mihomo` | Clash Meta YAML | ZIP on Windows, single-file gzip elsewhere |
+
+Repository and version are separate identity
 dimensions: an official `1.13.15` and a fork's `1.13.15` can be installed and
 selected independently without changing the version reported by either
 binary. A custom source must remain explicit in later commands, for example
 `sempre core use sing-box:tinymins/sing-box@1.13.15-ddns.1`.
+
+On amd64, the Mihomo adapter detects the host's x86-64 microarchitecture level.
+Level 3 hosts try `v3`, then `v2`, then `compatible`; level 2 hosts try `v2`,
+then `compatible`; all other or unknown hosts use `compatible`. Sempre never
+selects a binary above the detected CPU level and does not use the unqualified
+amd64 asset. arm64 uses the official OS/arm64 asset directly. Custom Mihomo
+repositories must follow the same asset naming and SHA-256 metadata contract.
 
 `stable` keeps its existing meaning for every repository: the latest
 non-draft, non-prerelease GitHub Release. Install a prerelease fork build by
@@ -242,6 +259,15 @@ custom nodes. `config import` adds its file as a raw source; it no longer
 bypasses conversion by installing a complete core configuration. Both clear
 forms remove the active profile's sources and check history while retaining
 the active configuration.
+
+The active profile is shared by every core. Sempre stores a separate compiled
+configuration for each adapter and records the profile revision and compiler
+target that produced it. Switching cores reuses a configuration only when that
+metadata is current; otherwise Sempre recompiles from cached subscription
+snapshots, validates with the selected binary, and stages the new deployment
+without fetching remote sources. Explicit and scheduled subscription refreshes
+update remote snapshots and make the other cores' compiled configurations
+stale until they are selected again.
 
 The Go conversion pipeline accepts Clash YAML/JSON proxy lists and lenient
 Base64 URI subscriptions. It parses VLESS, VMess, Shadowsocks, Trojan,
@@ -433,11 +459,13 @@ System mode is the default:
 | Linux | `/usr/local/libexec/sempre/sempre` | `/var/lib/sempre` | `/var/log/sempre` | `/run/sempre` |
 | macOS | `/Library/Application Support/Sempre/bin/sempre` | `/Library/Application Support/Sempre/data` | `/Library/Logs/Sempre` | `/var/run/sempre` |
 
-State schema 4 adds the persisted managed-core desired state. Schema 1-3 state
-is migrated with `desired_state=running` to preserve the previous automatic
-startup behavior. Older Sempre releases reject schema 4 instead of silently
-discarding an explicit stopped intent; downgrade by restoring a pre-upgrade
-state snapshot or migrating the state document with the matching release.
+State schema 6 adds per-core configuration build provenance. Existing hashes
+and the current deployment are retained during migration; a legacy hash is
+recompiled the next time that core is selected because it has no provenance.
+Earlier migrations still default legacy desired state to `running`. Older
+Sempre releases reject newer schemas instead of silently discarding state;
+downgrade by restoring a pre-upgrade snapshot or migrating the document with
+the matching release.
 
 Portable mode keeps the following structure beside the executable:
 
@@ -453,9 +481,11 @@ resources/
 |-- web.json
 |-- cores/
 |   |-- sing-box/<version>/
-|   `-- sing-box/sources/<owner>/<repository>/<version>/
+|   |-- sing-box/sources/<owner>/<repository>/<version>/
+|   `-- mihomo/<version>/
 |-- configs/
-|   `-- sing-box/<sha256>.json
+|   |-- sing-box/<sha256>.json
+|   `-- mihomo/<sha256>.json
 |-- ui/
 |   `-- current/
 |-- logs/
@@ -510,11 +540,11 @@ Git commit timestamp, publish per-target CycloneDX SBOMs, and attach GitHub
 artifact attestations. Release binaries are currently unsigned at the operating
 system level.
 
-Sempre itself does not redistribute sing-box. Core releases are downloaded at
+Sempre itself does not redistribute sing-box or Mihomo. Core releases are downloaded at
 runtime from the selected GitHub repository and verified against the SHA-256
-digest supplied by GitHub's release API. A custom repository still uses the
-sing-box adapter contract, asset naming, configuration validation, and binary
-version verification; arbitrary executables are not accepted.
+digest supplied by GitHub's release API. A custom repository still uses its
+selected adapter's asset naming, configuration validation, and binary version
+contract; arbitrary executables are not accepted.
 
 ## License
 

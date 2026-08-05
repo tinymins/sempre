@@ -99,13 +99,15 @@ func (err *HTTPError) Error() string {
 }
 
 type Client struct {
+	core    string
 	baseURL string
 	secret  string
 	http    *http.Client
 }
 
-func New(baseURL, secret string) *Client {
+func New(core, baseURL, secret string) *Client {
 	return &Client{
+		core:    core,
 		baseURL: strings.TrimRight(baseURL, "/"),
 		secret:  secret,
 		http:    &http.Client{Timeout: 30 * time.Second},
@@ -193,7 +195,7 @@ func (client *Client) Overview(ctx context.Context) (Overview, error) {
 	connections, _ := client.Connections(ctx)
 	mode, _ := config["mode"].(string)
 	return Overview{
-		Core:        "sing-box",
+		Core:        client.core,
 		Version:     version,
 		Mode:        mode,
 		Connections: len(connections.Connections),

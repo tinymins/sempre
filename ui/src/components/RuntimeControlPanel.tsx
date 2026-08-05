@@ -39,6 +39,7 @@ export function RuntimeControlPanel() {
   const runtimeState = value?.runtime_state || 'idle'
   const desiredState = value?.desired_state || 'running'
   const deployment = value?.active || value?.target
+	const coreName = deployment?.core || t('managedCore')
   const tone = runtimeTone(runtimeState)
   const actionPending = action.isPending ? action.variables : null
 
@@ -80,7 +81,7 @@ export function RuntimeControlPanel() {
       {value?.pending ? <div className="mx-4 mb-4 flex items-start gap-2 rounded-md border border-amber-500/35 bg-amber-500/8 px-3 py-2 text-sm text-amber-800 dark:text-amber-300 md:mx-5 md:mb-5"><Clock3 size={16} className="mt-0.5 shrink-0" /><span>{t('pendingChange')}</span></div> : null}
       {value?.last_error ? <div className="mx-4 mb-4 flex flex-wrap items-start gap-3 rounded-md border border-red-500/35 bg-red-500/8 px-3 py-3 text-sm text-red-800 dark:text-red-300 md:mx-5 md:mb-5"><AlertCircle size={17} className="mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="font-medium">{t('lastError')}</p><p className="mt-1 break-words text-xs leading-5">{value.last_error}</p></div><Link className="inline-flex h-8 items-center rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-hover)]" to="/logs">{t('viewLogs')}</Link></div> : value?.last_exit ? <div className="border-t border-[var(--border)] px-4 py-3 text-xs text-[var(--muted)] md:px-5"><span className="font-medium">{t('lastExit')}:</span> {value.last_exit}</div> : null}
     </Card>
-    <ConfirmDialog open={confirmStop} title={t('coreStopTitle')} detail={t('coreStopWarning')} confirmLabel={t('stopCore')} cancelLabel={t('cancel')} pending={actionPending === 'stop'} onCancel={() => setConfirmStop(false)} onConfirm={() => run('stop')} />
+	<ConfirmDialog open={confirmStop} title={t('coreStopTitle')} detail={t('coreStopWarning').replace('{core}', coreName)} confirmLabel={t('stopCore')} cancelLabel={t('cancel')} pending={actionPending === 'stop'} onCancel={() => setConfirmStop(false)} onConfirm={() => run('stop')} />
   </>
 }
 

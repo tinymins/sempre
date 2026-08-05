@@ -261,7 +261,10 @@ func (manager *Manager) runtimeDeployment(document state.Document) (state.Deploy
 			return state.Deployment{}, fmt.Errorf("no active configuration; import a configuration first")
 		}
 	}
-	binary := manager.paths.CoreBinary(deployment.Core, deployment.Repository, deployment.Version)
+	binary, err := manager.coreBinary(deployment.Core, deployment.Repository, deployment.Version)
+	if err != nil {
+		return state.Deployment{}, err
+	}
 	if _, err := os.Stat(binary); err != nil {
 		return state.Deployment{}, fmt.Errorf("managed core binary is unavailable: %w", err)
 	}

@@ -261,7 +261,6 @@ func buildClash(profile Profile, proxies []Proxy, meta bool) (string, error) {
 		config["unified-delay"] = true
 		config["tcp-concurrent"] = true
 		config["find-process-mode"] = "strict"
-		config["global-client-fingerprint"] = "chrome"
 		config["geodata-mode"] = true
 		config["geo-auto-update"] = true
 		config["geo-update-interval"] = 24

@@ -46,3 +46,12 @@ func TestParseRefRejectsInvalidValues(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeAMD64Level(t *testing.T) {
+	t.Parallel()
+	for input, expected := range map[int]int{-1: 0, 0: 0, 1: 1, 2: 2, 3: 3, 4: 3} {
+		if actual := normalizeAMD64Level(input); actual != expected {
+			t.Fatalf("normalizeAMD64Level(%d) = %d, want %d", input, actual, expected)
+		}
+	}
+}

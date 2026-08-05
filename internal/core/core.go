@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/klauspost/cpuid/v2"
 )
 
 const Stable = "stable"
@@ -75,12 +77,27 @@ func (ref Ref) IsChannel() bool {
 }
 
 type Target struct {
-	OS   string
-	Arch string
+	OS         string
+	Arch       string
+	AMD64Level int
 }
 
 func CurrentTarget() Target {
-	return Target{OS: runtime.GOOS, Arch: runtime.GOARCH}
+	target := Target{OS: runtime.GOOS, Arch: runtime.GOARCH}
+	if target.Arch == "amd64" {
+		target.AMD64Level = normalizeAMD64Level(cpuid.CPU.X64Level())
+	}
+	return target
+}
+
+func normalizeAMD64Level(level int) int {
+	if level < 1 {
+		return 0
+	}
+	if level > 3 {
+		return 3
+	}
+	return level
 }
 
 type Package struct {
@@ -99,6 +116,7 @@ type RunSpec struct {
 }
 
 type ControlSpec struct {
+	Core    string
 	BaseURL string
 	Secret  string
 }

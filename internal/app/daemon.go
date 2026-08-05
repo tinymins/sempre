@@ -47,7 +47,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err != nil {
 					return supervisor.Plan{}, err
 				}
-				binary := manager.paths.CoreBinary(deployment.Core, deployment.Repository, deployment.Version)
+				binary := coreBinaryPath(manager.paths, adapter, deployment.Repository, deployment.Version)
 				config := manager.paths.Config(deployment.Core, deployment.ConfigHash)
 				if _, err := os.Stat(binary); err != nil {
 					return supervisor.Plan{}, fmt.Errorf("active core binary is unavailable: %w", err)
@@ -125,7 +125,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			Started: func(plan supervisor.Plan, pid int) error {
 				logf("started %s with PID %d", deploymentLabel(plan.Deployment), pid)
 				if plan.Control.BaseURL != "" {
-					manager.setControl(control.New(plan.Control.BaseURL, plan.Control.Secret))
+					manager.setControl(control.New(plan.Control.Core, plan.Control.BaseURL, plan.Control.Secret))
 					data, err := json.Marshal(plan.Control)
 					if err != nil {
 						return err
@@ -302,10 +302,17 @@ func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (
 		document.LastError = fmt.Sprintf("%s: %v", stage, failure)
 		if document.Pending {
 			changed = true
+			failedCore := ""
+			if document.Active != nil {
+				failedCore = document.Active.Core
+			}
 			if document.Previous != nil {
 				restored := *document.Previous
 				document.Active = &restored
 				document.Configs[restored.Core] = restored.ConfigHash
+				if failedCore == restored.Core {
+					delete(document.ConfigBuilds, restored.Core)
+				}
 				retry = true
 			} else {
 				document.Active = nil
@@ -438,7 +445,7 @@ func (manager *Manager) deploymentSpec(ctx context.Context, referenceValue strin
 			ConfigHash: configHash,
 		}
 	}
-	binary := manager.paths.CoreBinary(deployment.Core, deployment.Repository, deployment.Version)
+	binary := coreBinaryPath(manager.paths, adapter, deployment.Repository, deployment.Version)
 	config := manager.paths.Config(deployment.Core, deployment.ConfigHash)
 	dataDir := filepath.Join(manager.paths.Runtime, deployment.Core)
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {

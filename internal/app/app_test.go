@@ -20,6 +20,8 @@ import (
 
 type fakeAdapter struct{}
 
+type fakeMihomoAdapter struct{ fakeAdapter }
+
 type rejectingAdapter struct{ fakeAdapter }
 
 func (rejectingAdapter) Validate(context.Context, string, string, string, io.Writer, io.Writer) error {
@@ -34,7 +36,33 @@ var (
 
 const testSubscription = "proxies:\n  - name: edge\n    type: ss\n    server: edge.example.com\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n"
 
+func TestNewManagerRegistersOfficialCoreAdapters(t *testing.T) {
+	t.Parallel()
+	manager, err := New(layout.At(t.TempDir()), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual := strings.Join(manager.CoreIDs(), ","); actual != "mihomo,sing-box" {
+		t.Fatalf("supported cores = %q", actual)
+	}
+}
+
 func (fakeAdapter) ID() string { return "sing-box" }
+
+func (fakeMihomoAdapter) ID() string { return "mihomo" }
+
+func (fakeMihomoAdapter) DefaultRepository() string { return "MetaCubeX/mihomo" }
+
+func (fakeMihomoAdapter) CompilerTarget(string, core.Target) (core.CompilerTarget, error) {
+	return core.CompilerTarget{Format: "clash-meta"}, nil
+}
+
+func (fakeMihomoAdapter) ExecutableName(target core.Target) string {
+	if target.OS == "windows" {
+		return "mihomo-core.exe"
+	}
+	return "mihomo-core"
+}
 
 func (fakeAdapter) DefaultRepository() string { return "SagerNet/sing-box" }
 func (fakeAdapter) CompilerTarget(version string, target core.Target) (core.CompilerTarget, error) {

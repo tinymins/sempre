@@ -130,6 +130,31 @@ func TestStoreMigratesSchemaThreeToDesiredRunning(t *testing.T) {
 	}
 }
 
+func TestStoreMigratesSchemaFiveWithoutInventingConfigBuilds(t *testing.T) {
+	t.Parallel()
+	paths := layout.At(t.TempDir())
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	legacy := NewDocument()
+	legacy.Schema = 5
+	legacy.Configs["sing-box"] = strings.Repeat("a", 64)
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.State, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	document, err := New(paths).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Schema != SchemaVersion || document.Configs["sing-box"] == "" || len(document.ConfigBuilds) != 0 {
+		t.Fatalf("migrated document = %#v", document)
+	}
+}
+
 func TestStorePersistsDesiredStopped(t *testing.T) {
 	t.Parallel()
 	store := New(layout.At(t.TempDir()))
@@ -249,6 +274,20 @@ func TestDocumentRejectsInvalidConfigurationHash(t *testing.T) {
 	document.Configs["sing-box"] = "short"
 	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "invalid configuration hash") {
 		t.Fatalf("invalid hash error = %v", err)
+	}
+}
+
+func TestDocumentValidatesConfigurationBuildMetadata(t *testing.T) {
+	t.Parallel()
+	document := NewDocument()
+	document.Configs["mihomo"] = strings.Repeat("a", 64)
+	document.ConfigBuilds["mihomo"] = ConfigBuild{ProfileID: "profile", ProfileRevision: 2, TargetKey: "clash-meta||"}
+	if err := document.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	document.ConfigBuilds["mihomo"] = ConfigBuild{ProfileID: "profile", TargetKey: "clash-meta||"}
+	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "invalid configuration build metadata") {
+		t.Fatalf("invalid build error = %v", err)
 	}
 }
 

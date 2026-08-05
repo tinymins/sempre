@@ -235,6 +235,9 @@ func mergeInstallDocument(source, existing state.Document, preserveSubscriptions
 	for coreID, hash := range source.Configs {
 		if result.Configs[coreID] == "" {
 			result.Configs[coreID] = hash
+			if build, ok := source.ConfigBuilds[coreID]; ok {
+				result.ConfigBuilds[coreID] = build
+			}
 		}
 	}
 	if !hadExistingDeployment {
@@ -310,7 +313,7 @@ func (manager *Manager) stageCores(
 				operation.cleanup()
 				return nil, err
 			}
-			actual, err := adapter.Version(ctx, manager.paths.CoreBinary(coreID, installed.Repository, version))
+			actual, err := adapter.Version(ctx, coreBinaryPath(manager.paths, adapter, installed.Repository, version))
 			if err != nil {
 				operation.cleanup()
 				return nil, fmt.Errorf("validate portable %s: %w", exactRef(core.Ref{Core: coreID, Repository: installed.Repository}, version), err)
@@ -348,7 +351,7 @@ func (manager *Manager) validateTargetCores(
 			if err := validateCoreVersion(coreID, version); err != nil {
 				return err
 			}
-			actual, err := adapter.Version(ctx, target.CoreBinary(coreID, installed.Repository, version))
+			actual, err := adapter.Version(ctx, coreBinaryPath(target, adapter, installed.Repository, version))
 			if err != nil {
 				return fmt.Errorf("system core %s@%s is required by data deployment: %w", coreID, version, err)
 			}

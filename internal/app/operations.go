@@ -193,8 +193,10 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 	if document.Active == nil {
 		check("active core", fmt.Errorf("not selected"))
 	} else {
-		binary := manager.paths.CoreBinary(document.Active.Core, document.Active.Repository, document.Active.Version)
-		_, binaryErr := os.Stat(binary)
+		binary, binaryErr := manager.coreBinary(document.Active.Core, document.Active.Repository, document.Active.Version)
+		if binaryErr == nil {
+			_, binaryErr = os.Stat(binary)
+		}
 		check("active core binary", binaryErr)
 		config := manager.paths.Config(document.Active.Core, document.Active.ConfigHash)
 		_, configErr := os.Stat(config)

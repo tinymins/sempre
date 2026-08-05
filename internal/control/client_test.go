@@ -19,7 +19,7 @@ func TestProxiesPreservesCoreOrder(t *testing.T) {
 	}))
 	defer server.Close()
 
-	proxies, err := New(server.URL, "").Proxies(context.Background())
+	proxies, err := New("sing-box", server.URL, "").Proxies(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,5 +32,31 @@ func TestProxiesPreservesCoreOrder(t *testing.T) {
 	}
 	if expected := []string{"node-b", "node-a"}; !reflect.DeepEqual(proxies[1].All, expected) {
 		t.Fatalf("node order = %v, want %v", proxies[1].All, expected)
+	}
+}
+
+func TestOverviewReportsConfiguredCore(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/version":
+			_, _ = writer.Write([]byte(`{"version":"1.0.0"}`))
+		case "/configs":
+			_, _ = writer.Write([]byte(`{"mode":"rule"}`))
+		case "/connections":
+			_, _ = writer.Write([]byte(`{"downloadTotal":0,"uploadTotal":0,"connections":[]}`))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	overview, err := New("mihomo", server.URL, "").Overview(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.Core != "mihomo" {
+		t.Fatalf("core = %q, want mihomo", overview.Core)
 	}
 }

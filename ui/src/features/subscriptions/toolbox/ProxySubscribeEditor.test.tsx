@@ -15,6 +15,7 @@ vi.mock('monaco-editor', () => ({}))
 
 const profile: SubscriptionProfile = {
   id: 'profile-1',
+	revision: 1,
   name: 'Local subscription',
   remark: 'Home network',
   log_level: 'info',

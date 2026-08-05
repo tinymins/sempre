@@ -69,7 +69,7 @@ func (manager *Manager) ValidateConfigContent(ctx context.Context, data []byte) 
 	return manager.validateConfiguration(
 		ctx,
 		adapter,
-		manager.paths.CoreBinary(target.Core, target.Repository, target.Version),
+		coreBinaryPath(manager.paths, adapter, target.Repository, target.Version),
 		path,
 		manager.output,
 		manager.errors,
@@ -251,6 +251,7 @@ func (manager *Manager) SubscriptionStatus() (string, error) {
 func (manager *Manager) activateConfig(
 	ctx context.Context,
 	data []byte,
+	build state.ConfigBuild,
 	updateSubscription func(*state.Document, bool),
 ) (Change, error) {
 	lease, err := manager.store.AcquireConfig()
@@ -266,7 +267,7 @@ func (manager *Manager) activateConfig(
 	if err != nil {
 		return Change{}, err
 	}
-	binary := manager.paths.CoreBinary(target.Core, target.Repository, target.Version)
+	binary := coreBinaryPath(manager.paths, adapter, target.Repository, target.Version)
 	candidate, err := os.CreateTemp(manager.paths.Runtime, "config-candidate-*.json")
 	if err != nil {
 		return Change{}, err
@@ -318,6 +319,7 @@ func (manager *Manager) activateConfig(
 			updateSubscription(document, configChanged)
 		}
 		document.Configs[target.Core] = hash
+		document.ConfigBuilds[target.Core] = build
 		target.ConfigHash = hash
 		deploymentChanged := !state.SameDeployment(document.Active, &target)
 		if deploymentChanged {

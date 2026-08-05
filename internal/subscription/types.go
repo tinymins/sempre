@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	CatalogSchema       = 2
+	CatalogSchema       = 3
 	DefaultUserAgent    = "clash.meta"
 	MaxSourceSize       = int64(32 << 20)
 	SourceURL           = "url"
@@ -28,6 +28,7 @@ type Catalog struct {
 
 type Profile struct {
 	ID                    string         `json:"id"`
+	Revision              uint64         `json:"revision"`
 	Name                  string         `json:"name"`
 	Remark                string         `json:"remark,omitempty"`
 	LogLevel              string         `json:"log_level"`
@@ -190,7 +191,7 @@ func NewCatalog(legacyURL string) Catalog {
 
 func NewProfile(name string) Profile {
 	return Profile{
-		ID: NewID(), Name: strings.TrimSpace(name), LogLevel: "info", Editor: EditorConfig{Servers: "[]"}, Sources: []Source{}, CustomNodeIDs: []string{},
+		ID: NewID(), Revision: 1, Name: strings.TrimSpace(name), LogLevel: "info", Editor: EditorConfig{Servers: "[]"}, Sources: []Source{}, CustomNodeIDs: []string{},
 		Groups: []ProxyGroup{}, Rules: []string{}, RuleProviders: []RuleProvider{}, Filters: []string{},
 		UseSystemGroups: true, UseSystemRules: true, UseSystemFilters: true,
 		UseSystemDNS: true, UseSystemCustomConfig: true,
