@@ -48,9 +48,10 @@ type Hooks struct {
 }
 
 type Runner struct {
-	Stdout *RollingWriter
-	Stderr *RollingWriter
-	Hooks  Hooks
+	Stdout       *RollingWriter
+	Stderr       *RollingWriter
+	Hooks        Hooks
+	StartupGrace time.Duration
 }
 
 func RunForeground(ctx context.Context, spec core.RunSpec, stdout, stderr interface{ Write([]byte) (int, error) }) error {
@@ -194,12 +195,31 @@ func (runner *Runner) Run(ctx context.Context) error {
 			_ = forceStop(process)
 			_ = command.Wait()
 			closeProcess(process)
-			return err
+			if runner.Hooks.EarlyFailure != nil {
+				_ = runner.Hooks.EarlyFailure(plan, err)
+			}
+			restarts++
+			if runner.Hooks.Exited != nil {
+				_ = runner.Hooks.Exited(plan, err, restarts)
+			}
+			if err := waitBackoff(ctx, runner.Hooks.Reload, backoff); err != nil {
+				if runner.Hooks.Stopped != nil {
+					_ = runner.Hooks.Stopped()
+				}
+				return nil
+			}
+			backoff = nextBackoff(backoff)
+			restarting = true
+			continue
 		}
 		releaseStart()
 		waited := make(chan error, 1)
 		go func() { waited <- command.Wait() }()
-		grace := time.NewTimer(startupGrace)
+		graceDuration := runner.StartupGrace
+		if graceDuration <= 0 {
+			graceDuration = startupGrace
+		}
+		grace := time.NewTimer(graceDuration)
 		updateTimer, updateChannel := runner.updateTimer()
 		healthy := false
 		intentionalRestart := false
@@ -233,11 +253,32 @@ func (runner *Runner) Run(ctx context.Context) error {
 				closeProcess(process)
 				break processLoop
 			case <-grace.C:
-				healthy = true
-				backoff = time.Second
 				if err := runner.Hooks.Healthy(plan); err != nil {
 					runner.Hooks.Log("commit healthy deployment: %v", err)
+					if updateTimer != nil {
+						updateTimer.Stop()
+					}
+					if runner.Hooks.EarlyFailure != nil {
+						_ = runner.Hooks.EarlyFailure(plan, err)
+					}
+					stopProcess(process, waited)
+					closeProcess(process)
+					restarts++
+					if runner.Hooks.Exited != nil {
+						_ = runner.Hooks.Exited(plan, err, restarts)
+					}
+					if err := waitBackoff(ctx, runner.Hooks.Reload, backoff); err != nil {
+						if runner.Hooks.Stopped != nil {
+							_ = runner.Hooks.Stopped()
+						}
+						return nil
+					}
+					backoff = nextBackoff(backoff)
+					restarting = true
+					break processLoop
 				}
+				healthy = true
+				backoff = time.Second
 			case <-updateChannel:
 				changed, updateErr := runner.Hooks.ScheduledUpdate(ctx)
 				if updateErr != nil {

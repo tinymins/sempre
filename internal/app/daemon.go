@@ -14,6 +14,7 @@ import (
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	"github.com/tinymins/sempre/internal/supervisor"
+	"github.com/tinymins/sempre/internal/transparentproxy"
 )
 
 func (manager *Manager) RunDaemon(ctx context.Context) error {
@@ -28,6 +29,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 	logf := func(format string, arguments ...any) {
 		_, _ = fmt.Fprintf(logger, time.Now().UTC().Format(time.RFC3339)+" "+format+"\n", arguments...)
 	}
+	dataPlanePlan := transparentproxy.Plan{}
 	runner := supervisor.Runner{
 		Stdout: stdout,
 		Stderr: stderr,
@@ -59,9 +61,6 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err := os.MkdirAll(dataDir, 0o700); err != nil {
 					return supervisor.Plan{}, err
 				}
-				if err := manager.validateConfiguration(runCtx, adapter, binary, config, logger, logger); err != nil {
-					return supervisor.Plan{}, err
-				}
 				runtimeSpec := core.RuntimeSpec{Config: config}
 				if preparer, ok := adapter.(core.RuntimePreparer); ok {
 					runtimeDirectory := filepath.Join(manager.paths.Runtime, deployment.Core, "control")
@@ -73,6 +72,26 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 						return supervisor.Plan{}, err
 					}
 				}
+				catalog, err := manager.subscriptions.Read()
+				if err != nil {
+					return supervisor.Plan{}, err
+				}
+				profile, err := subscriptions.FindProfile(&catalog, document.ActiveProfileID)
+				if err != nil {
+					return supervisor.Plan{}, err
+				}
+				dataPlanePlan, err = manager.transparent.Prepare(
+					runCtx,
+					deployment.Core,
+					*profile,
+					runtimeSpec.Config,
+				)
+				if err != nil {
+					return supervisor.Plan{}, err
+				}
+				if err := manager.validateConfiguration(runCtx, adapter, binary, runtimeSpec.Config, logger, logger); err != nil {
+					return supervisor.Plan{}, err
+				}
 				return supervisor.Plan{
 					Deployment: deployment,
 					Spec:       adapter.Run(binary, runtimeSpec.Config, dataDir),
@@ -80,6 +99,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				}, nil
 			},
 			ResolveFailure: func(failure error) (bool, error) {
+				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
+					logf("clean transparent proxy after resolve failure: %v", cleanupErr)
+				}
 				logf("resolve deployment failed: %v", failure)
 				return manager.rollbackPendingDeployment("resolve failed", failure)
 			},
@@ -109,6 +131,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			},
 			Starting: func(plan supervisor.Plan) error {
 				logf("starting %s", deploymentLabel(plan.Deployment))
+				if err := manager.transparent.Cleanup(ctx); err != nil {
+					return fmt.Errorf("clean stale Linux transparent proxy state: %w", err)
+				}
 				return manager.store.Update(func(document *state.Document) error {
 					document.Runtime.State = "starting"
 					document.Runtime.PID = 0
@@ -124,6 +149,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			},
 			Started: func(plan supervisor.Plan, pid int) error {
 				logf("started %s with PID %d", deploymentLabel(plan.Deployment), pid)
+				if err := manager.transparent.Apply(ctx, dataPlanePlan); err != nil {
+					return fmt.Errorf("activate Linux transparent proxy: %w", err)
+				}
 				if plan.Control.BaseURL != "" {
 					manager.setControl(control.New(plan.Control.Core, plan.Control.BaseURL, plan.Control.Secret))
 					data, err := json.Marshal(plan.Control)
@@ -151,6 +179,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			},
 			Healthy: func(plan supervisor.Plan) error {
 				logf("healthy %s", deploymentLabel(plan.Deployment))
+				if err := manager.transparent.Verify(ctx, dataPlanePlan); err != nil {
+					return fmt.Errorf("verify Linux transparent proxy: %w", err)
+				}
 				var cleanupCore, cleanupRepository, cleanupVersion string
 				err := manager.store.Update(func(document *state.Document) error {
 					if document.Pending && state.SameDeployment(document.Active, &plan.Deployment) {
@@ -179,6 +210,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			},
 			Stopping: func(plan supervisor.Plan) error {
 				logf("stopping %s", deploymentLabel(plan.Deployment))
+				if err := manager.transparent.Cleanup(ctx); err != nil {
+					logf("clean Linux transparent proxy while stopping: %v", err)
+				}
 				return manager.store.Update(func(document *state.Document) error {
 					document.Runtime.State = "stopping"
 					if document.DesiredState == state.DesiredStopped {
@@ -200,6 +234,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				})
 			},
 			EarlyFailure: func(plan supervisor.Plan, failure error) error {
+				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
+					logf("clean Linux transparent proxy after startup failure: %v", cleanupErr)
+				}
 				logf("startup failed for %s: %v", deploymentLabel(plan.Deployment), failure)
 				_, err := manager.rollbackPendingDeployment(
 					"startup failed for "+deploymentLabel(plan.Deployment),
@@ -208,6 +245,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				return err
 			},
 			Exited: func(plan supervisor.Plan, failure error, _ int) error {
+				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
+					logf("clean Linux transparent proxy after core exit: %v", cleanupErr)
+				}
 				manager.setControl(nil)
 				_ = os.Remove(manager.paths.CoreControl)
 				logf("exited %s: %v", deploymentLabel(plan.Deployment), failure)
@@ -226,6 +266,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				})
 			},
 			Stopped: func() error {
+				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
+					logf("clean Linux transparent proxy after stop: %v", cleanupErr)
+				}
 				manager.setControl(nil)
 				_ = os.Remove(manager.paths.CoreControl)
 				logf("managed core stopped")
@@ -267,6 +310,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				})
 			},
 			Idle: func() error {
+				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
+					logf("clean Linux transparent proxy while idle: %v", cleanupErr)
+				}
 				manager.setControl(nil)
 				_ = os.Remove(manager.paths.CoreControl)
 				logf("waiting for an active core deployment")

@@ -21,6 +21,7 @@ import (
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
+	"github.com/tinymins/sempre/internal/transparentproxy"
 	uiassets "github.com/tinymins/sempre/internal/ui"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
@@ -64,6 +65,7 @@ type Manager struct {
 	web           *webconfig.Store
 	subscriptions *subscriptions.Store
 	compiler      *subscriptions.Compiler
+	transparent   *transparentproxy.Controller
 	ui            *uiassets.Manager
 	uiReleases    uiassets.ReleaseResolver
 	reload        chan struct{}
@@ -117,6 +119,7 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 		web:           webStore,
 		subscriptions: subscriptionStore,
 		compiler:      subscriptions.NewCompiler(subscriptionStore),
+		transparent:   transparentproxy.New(),
 		ui:            uiassets.New(paths.UI, paths.UICurrent),
 		uiReleases:    release.NewClient(),
 		reload:        make(chan struct{}, 1),
