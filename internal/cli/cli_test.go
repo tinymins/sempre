@@ -126,6 +126,20 @@ func TestRunStatelessManagesPortableMarker(t *testing.T) {
 	}
 }
 
+func TestRunStatelessDefersPortableRun(t *testing.T) {
+	t.Parallel()
+	handled, code := runStateless(
+		t.Context(),
+		[]string{"portable", "run"},
+		filepath.Join(t.TempDir(), "sempre"),
+		testWriter{t},
+		testWriter{t},
+	)
+	if handled || code != 0 {
+		t.Fatalf("handled = %v, code = %d", handled, code)
+	}
+}
+
 func TestUIReadyRequiresSuccessfulRootResponse(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {

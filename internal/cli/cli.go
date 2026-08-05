@@ -558,8 +558,7 @@ func runStateless(
 		case "disable":
 			enabled = false
 		default:
-			fmt.Fprintln(errorOutput, "ERROR: portable accepts enable or disable")
-			return true, 1
+			return false, 0
 		}
 		if err := layout.SetPortableMarker(executable, enabled); err != nil {
 			fmt.Fprintln(errorOutput, "ERROR:", err)
