@@ -103,6 +103,11 @@ service reports `idle` until one is configured.
 Open a new terminal after installation; `sempre status`, `sempre doctor`, and
 the rest of the CLI are available globally.
 
+On Linux, sing-box profiles can run as a TUN router or as a fully managed
+TProxy gateway. Debian, Ubuntu, and Proxmox VE setup, routing ownership,
+MetaCubeX access, and recovery procedures are documented in
+[Linux Transparent Gateway](docs/linux-transparent-gateway.md).
+
 For an offline or fully manual installation, download and extract a bundle
 from the [Downloads](#downloads) section and run `sempre install` yourself.
 
