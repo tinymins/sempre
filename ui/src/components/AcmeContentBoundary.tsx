@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ModalContainerContext,
   setActiveModalContainer,
@@ -12,9 +12,13 @@ function currentTheme(): UIContextValue['theme'] {
 }
 
 export function AcmeContentBoundary({ children }: { children: ReactNode }) {
-  const [portalElement, setPortalElement] = useState<HTMLDivElement | null>(null)
+  const portalRef = useRef<HTMLDivElement | null>(null)
+  const [portalReady, setPortalReady] = useState(false)
   const [theme, setTheme] = useState<UIContextValue['theme']>(currentTheme)
-  const portalRef = useMemo<RefObject<HTMLElement | null>>(() => ({ current: portalElement }), [portalElement])
+
+  useLayoutEffect(() => {
+    if (portalRef.current) setPortalReady(true)
+  }, [])
 
   useEffect(() => {
     const root = document.documentElement
@@ -24,10 +28,9 @@ export function AcmeContentBoundary({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!portalElement) return
     setActiveModalContainer(portalRef)
     return () => setActiveModalContainer(null)
-  }, [portalElement, portalRef])
+  }, [])
 
   const ui = useMemo<UIContextValue>(
     () => ({ wallpaperUrl: null, theme, windowBlur: 0, windowOpacity: 100 }),
@@ -36,8 +39,8 @@ export function AcmeContentBoundary({ children }: { children: ReactNode }) {
 
   return (
     <div className="acme-content-scope relative isolate min-h-0" data-acme-content-boundary>
-      <div ref={setPortalElement} className="acme-portal-root pointer-events-none fixed inset-0 z-50" data-acme-portal-root />
-      {portalElement ? (
+      <div ref={portalRef} className="acme-portal-root pointer-events-none fixed inset-0 z-50" data-acme-portal-root />
+      {portalReady ? (
         <UIContext.Provider value={ui}>
           <ModalContainerContext.Provider value={portalRef}>
             <ToastProvider>{children}</ToastProvider>
