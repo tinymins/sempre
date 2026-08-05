@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tinymins/sempre/internal/controlplane"
+	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	"github.com/tinymins/sempre/internal/webconfig"
@@ -153,6 +154,45 @@ func TestControlPlaneStaysAvailableWithoutCore(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("control endpoint %q remains after shutdown: %v", path, err)
 		}
+	}
+}
+
+func TestDevelopmentServerRejectsSystemServiceActions(t *testing.T) {
+	manager, err := NewDevelopment(layout.At(t.TempDir()), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := newAdminServer(manager)
+	server := httptest.NewServer(admin.handler)
+	defer server.Close()
+
+	response := testJSONRequest(t, http.MethodPost, server.URL+"/api/v1/auth/login", server.URL, "", map[string]string{"password": ""})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d", response.StatusCode)
+	}
+	var login struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&login); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+
+	response = testJSONRequest(t, http.MethodPost, server.URL+"/api/v1/service/action", server.URL, login.Token, map[string]string{"action": "stop"})
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("service action status = %d", response.StatusCode)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "SERVICE_NOT_INSTALLED" {
+		t.Fatalf("service action error = %q", body.Error.Code)
 	}
 }
 

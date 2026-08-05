@@ -1,0 +1,34 @@
+root = "."
+tmp_dir = ".cache/sempre-dev/build"
+
+[build]
+cmd = "go build -o ./.cache/sempre-dev/build/sempre-dev ./cmd/develop"
+entrypoint = ["./.cache/sempre-dev/build/sempre-dev"]
+include_dir = ["cmd", "internal"]
+include_ext = ["go"]
+include_file = ["go.mod", "go.sum"]
+exclude_dir = [".cache", "dist", "site", "ui"]
+exclude_regex = ["_test\\.go"]
+exclude_unchanged = true
+delay = 200
+stop_on_error = true
+send_interrupt = true
+kill_delay = "2s"
+
+[build.windows]
+cmd = "go build -o ./.cache/sempre-dev/build/sempre-dev.exe ./cmd/develop"
+entrypoint = [".cache\\sempre-dev\\build\\sempre-dev.exe"]
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true
+startup_banner = ""
+
+[screen]
+clear_on_rebuild = false
+keep_scroll = true
+
+[proxy]
+enabled = false

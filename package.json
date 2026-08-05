@@ -2,6 +2,12 @@
   "name": "sempre-workspace",
   "private": true,
   "scripts": {
+    "bootstrap": "go mod download && go tool air -v && bun install --cwd=ui --frozen-lockfile && bun install --cwd=site --frozen-lockfile",
+    "prestart": "bun run scripts/development-addresses.ts",
+    "start": "bun run --parallel \"dev:*\"",
+    "dev:api": "go tool air -c .air.toml",
+    "dev:ui": "bun --cwd=ui run dev",
+    "dev:site": "bun --cwd=site run dev",
     "lint": "bun --cwd=ui run lint && bun --cwd=site run lint && shellcheck installer/install.sh installer/install_test.sh",
     "tsc": "bun --cwd=ui run tsc && bun --cwd=site run tsc",
     "test": "bun --cwd=ui run test && bun --cwd=site run test && sh installer/install_test.sh",

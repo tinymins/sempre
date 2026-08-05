@@ -516,6 +516,15 @@ func (admin *adminServer) serviceAction(writer http.ResponseWriter, request *htt
 		apiWriteError(writer, http.StatusBadRequest, "INVALID_SERVICE_ACTION", "service action must be restart or stop", nil)
 		return
 	}
+	serviceState, err := admin.manager.service.Status(request.Context())
+	if err != nil {
+		admin.internalError(writer, err)
+		return
+	}
+	if serviceState == service.NotInstalled {
+		apiWriteError(writer, http.StatusConflict, "SERVICE_NOT_INSTALLED", "system service is not installed", nil)
+		return
+	}
 	apiWriteJSON(writer, http.StatusAccepted, map[string]string{"status": "scheduled", "action": input.Action})
 	go func(action string) {
 		time.Sleep(250 * time.Millisecond)

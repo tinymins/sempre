@@ -72,6 +72,10 @@ type Manager struct {
 }
 
 func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
+	return newManager(paths, output, errorOutput, service.New())
+}
+
+func newManager(paths layout.Layout, output, errorOutput io.Writer, controller service.Controller) (*Manager, error) {
 	store := state.New(paths)
 	if err := store.Initialize(); err != nil {
 		return nil, err
@@ -107,7 +111,7 @@ func New(paths layout.Layout, output, errorOutput io.Writer) (*Manager, error) {
 		registry:      core.NewRegistry(singbox.New()),
 		output:        output,
 		errors:        errorOutput,
-		service:       service.New(),
+		service:       controller,
 		commands:      platformCommandRegistrar{},
 		web:           webStore,
 		subscriptions: subscriptionStore,

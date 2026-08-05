@@ -465,13 +465,30 @@ resources/
 The system service always runs the protected system executable with
 `--system daemon`, even when installation was initiated from portable mode.
 
+## Development
+
+Install every development dependency and start the API, control UI, and
+website from the repository root:
+
+```text
+bun bootstrap
+bun start
+```
+
+The aggregated command prints prefixed logs and serves the development API at
+`http://127.0.0.1:33212`, the control UI at `http://127.0.0.1:5173`, and the
+website at `http://127.0.0.1:4174`. The frontend projects use Vite HMR; Go
+changes are rebuilt and restarted automatically. See
+[`DEVELOPMENT.md`](DEVELOPMENT.md) for isolated-state behavior, individual
+commands, debugging, and validation.
+
 ## Build
 
 Go 1.25 or newer and Bun 1.3.14 are required. The backend build is pure Go and
 uses `CGO_ENABLED=0`.
 
 ```text
-bun install --cwd ui --frozen-lockfile
+bun bootstrap
 bun run lint
 bun run tsc
 bun run test
