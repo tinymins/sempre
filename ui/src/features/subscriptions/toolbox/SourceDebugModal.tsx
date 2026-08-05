@@ -782,7 +782,7 @@ const SourceDebugModal = ({ open, item, onClose }: Props) => {
   return (
     <Modal
       title={
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <BugOutlined />
           <span>{t("proxy.sourceDebug.title")}</span>
           <Tag color="processing">
@@ -792,10 +792,10 @@ const SourceDebugModal = ({ open, item, onClose }: Props) => {
       }
       open={open}
       onCancel={handleClose}
-      size={isMobile ? "full" : "almost-full"}
+      size="full"
       destroyOnClose
       footer={
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex justify-end gap-2">
           {started && (
             <Button onClick={restart} disabled={running}>
               {t("proxy.sourceDebug.restart")}

@@ -1,4 +1,5 @@
 import {
+  FloatingPortal,
   flip,
   offset,
   size,
@@ -17,7 +18,6 @@ import {
   useState,
 } from "react";
 import { cn } from "./utils";
-import { FloatingPortal } from "./FloatingPortal";
 
 export interface AutoCompleteOption {
   value: string;

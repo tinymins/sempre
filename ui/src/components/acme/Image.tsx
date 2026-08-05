@@ -95,7 +95,7 @@ export function Image({
       {isPreviewable &&
       (typeof preview === "object" ? preview.visible : previewVisible) ? (
         <div
-          className="absolute inset-0 z-[9999] flex items-center justify-center bg-black/70 cursor-zoom-out"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 cursor-zoom-out"
           role="presentation"
           onClick={() => {
             if (typeof preview === "object" && preview.onVisibleChange) {

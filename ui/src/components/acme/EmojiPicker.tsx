@@ -2,6 +2,7 @@ import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
 import {
   autoUpdate,
+  FloatingPortal,
   flip,
   offset,
   type Placement,
@@ -13,7 +14,6 @@ import {
 } from "@floating-ui/react";
 import { Smile } from "lucide-react";
 import React, { type MouseEvent, useState } from "react";
-import { FloatingPortal } from "./FloatingPortal";
 import { cn } from "./utils";
 
 export interface EmojiPickerProps {

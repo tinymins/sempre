@@ -60,7 +60,7 @@ describe('SourceDebugModal', () => {
     )
 
     const dialog = await screen.findByRole('dialog', { name: /Subscription Source Debug/ })
-    expect(dialog).toHaveStyle({ width: 'calc(100% - 48px)', height: 'calc(100% - 48px)' })
+    expect(dialog).toHaveStyle({ width: '100%', height: '100%', maxWidth: '100%', borderRadius: 0 })
     fireEvent.click(screen.getByRole('button', { name: 'Start debug' }))
 
     await waitFor(() => expect(mocks.stream).toHaveBeenCalledOnce())

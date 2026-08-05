@@ -21,7 +21,7 @@ describe('AcmeContentBoundary', () => {
     document.documentElement.classList.remove('dark')
   })
 
-  it('keeps modal and Floating UI portals inside the content boundary', async () => {
+  it('keeps modal and Floating UI portals at the viewport root', async () => {
     const rendered = render(
       <AcmeContentBoundary>
         <Modal open title="Contained modal" footer={null}>Modal body</Modal>
@@ -31,11 +31,12 @@ describe('AcmeContentBoundary', () => {
       </AcmeContentBoundary>,
     )
 
-    const portal = rendered.container.querySelector('[data-acme-portal-root]')
-    expect(portal).not.toBeNull()
-    expect(portal).toContainElement(await screen.findByRole('dialog', { name: 'Contained modal' }))
+    expect(rendered.container.querySelector('[data-acme-portal-root]')).toBeNull()
+    const dialog = await screen.findByRole('dialog', { name: 'Contained modal' })
+    expect(dialog.parentElement?.parentElement).toBe(document.body)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }))
-    expect(portal).toContainElement(await screen.findByText('Edit source'))
+    const menuItem = await screen.findByText('Edit source')
+    expect(menuItem.closest('[data-floating-ui-portal]')?.parentElement).toBe(document.body)
   })
 })

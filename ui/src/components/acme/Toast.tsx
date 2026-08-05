@@ -10,7 +10,6 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { ModalContainerContext } from "./Modal";
 import { cn } from "./utils";
 
 /* ─── Types ─── */
@@ -45,7 +44,6 @@ const ToastContext = createContext<ToastAPI | null>(null);
 
 /* ─── Provider ─── */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const container = useContext(ModalContainerContext);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -129,7 +127,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {mounted &&
         createPortal(
-          <div data-acme-toast-stack className={`${container?.current ? "absolute" : "fixed"} top-4 left-1/2 -translate-x-1/2 z-[99999] flex flex-col items-center gap-2 pointer-events-none`}>
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] flex flex-col items-center gap-2 pointer-events-none">
             {toasts.map((toast) => (
               <ToastItem
                 key={toast.id}
@@ -138,7 +136,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               />
             ))}
           </div>,
-          container?.current ?? document.body,
+          document.body,
         )}
     </ToastContext.Provider>
   );

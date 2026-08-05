@@ -652,7 +652,7 @@ const NodeTraceModal = forwardRef<NodeTraceModalRef, NodeTraceModalProps>(
     return (
       <Modal
         title={
-          <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3">
             <Button
               variant="text"
               size="small"

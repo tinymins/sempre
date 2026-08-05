@@ -16,14 +16,35 @@ describe('Modal', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit subscription' })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(dialog).toHaveClass('bg-[var(--surface)]')
+    expect(dialog).not.toHaveClass('backdrop-blur-2xl')
+    expect(dialog.parentElement).toHaveClass('fixed', 'inset-0')
+    expect(dialog.parentElement?.parentElement).toBe(document.body)
     expect(within(dialog).getByText('Modal body')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'OK' }).parentElement?.parentElement).toHaveClass('border-t')
+    const okButton = within(dialog).getByRole('button', { name: 'OK' })
+    expect(okButton.parentElement).toHaveClass('pt-4')
+    expect(okButton.parentElement?.parentElement).toHaveClass('px-6', 'pb-4')
 
     const mask = dialog.parentElement
     expect(mask).not.toBeNull()
     fireEvent.mouseDown(mask!)
     fireEvent.click(mask!)
     expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it('uses viewport-relative full and almost-full presets', async () => {
+    const rendered = render(<Modal open title="Full" size="full" footer={null}>Full body</Modal>)
+    const full = await screen.findByRole('dialog', { name: 'Full' })
+    expect(full).toHaveStyle({ width: '100%', height: '100%', maxWidth: '100%', borderRadius: 0 })
+
+    rendered.rerender(<Modal open title="Almost full" size="almost-full" footer={null}>Almost full body</Modal>)
+    const almostFull = await screen.findByRole('dialog', { name: 'Almost full' })
+    expect(almostFull).toHaveStyle({
+      width: 'calc(100% - 48px)',
+      height: 'calc(100% - 48px)',
+      maxWidth: 'calc(100% - 48px)',
+    })
+    expect(almostFull.parentElement).toHaveClass('items-center', 'overflow-hidden')
   })
 
   it('dispatches Escape only to the topmost modal', async () => {

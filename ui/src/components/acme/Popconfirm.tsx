@@ -1,5 +1,6 @@
 import {
   autoUpdate,
+  FloatingPortal,
   flip,
   offset,
   type Placement,
@@ -19,7 +20,6 @@ import {
   useState,
 } from "react";
 import { Button } from "./Button";
-import { FloatingPortal } from "./FloatingPortal";
 import { FloatingVibrancy } from "./FloatingVibrancy";
 import { cn } from "./utils";
 

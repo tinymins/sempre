@@ -21,7 +21,6 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { proxyApi } from "@/generated/rust-api";
-import { useIsMobile } from "@/hooks";
 import {
   ConfigStepContent,
   DoneStepContent,
@@ -44,7 +43,6 @@ export interface ProxyDebugModalRef {
 
 const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   const [visible, setVisible] = useState(false);
   const [subscribeId, setSubscribeId] = useState<string | null>(null);
   const [format, setFormat] = useState<ProxyDebugFormat>("clash");
@@ -277,7 +275,7 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
   return (
     <Modal
       title={
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex gap-2 items-center">
           <BugOutlined />
           <span>{t("proxy.debug.title")}</span>
           <Tag color="processing">{formatLabel[format]}</Tag>
@@ -286,7 +284,7 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
       open={visible}
       onCancel={handleClose}
       footer={null}
-      size={isMobile ? "full" : "almost-full"}
+      size="full"
       destroyOnClose
     >
       {error && (

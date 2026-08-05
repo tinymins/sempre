@@ -1,5 +1,6 @@
 import {
   autoUpdate,
+  FloatingPortal,
   flip,
   offset,
   type Placement,
@@ -20,7 +21,6 @@ import {
   useState,
 } from "react";
 import { FloatingVibrancy } from "./FloatingVibrancy";
-import { FloatingPortal } from "./FloatingPortal";
 import { cn } from "./utils";
 
 export interface DropdownMenuItem {

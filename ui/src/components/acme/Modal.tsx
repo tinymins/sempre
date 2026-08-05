@@ -333,7 +333,7 @@ export function Modal({
   const isLoading = confirmLoading || okButtonProps?.loading;
 
   const defaultFooter = (
-    <div className="flex justify-end gap-2">
+    <div className="flex justify-end gap-2 pt-4">
       <Button onClick={onCancel} disabled={cancelButtonProps?.disabled}>
         {cancelText}
       </Button>
@@ -392,7 +392,7 @@ export function Modal({
         ref={contentRef}
         className={cn(
           "relative rounded-lg shadow-2xl flex flex-col shrink-0 transition-all duration-200",
-          "bg-white/72 dark:bg-[rgba(20,20,35,0.65)] backdrop-blur-2xl border border-white/[0.12] dark:border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.3)]",
+          "bg-[var(--surface)] text-[var(--text-primary)] border border-[var(--border)] shadow-[0_8px_32px_rgba(0,0,0,0.3)]",
           animClass
             ? "opacity-100 scale-100 translate-y-0"
             : "opacity-0 scale-95 translate-y-4",
@@ -424,23 +424,23 @@ export function Modal({
       >
         {/* Header */}
         {(title || closable) && (
-          <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-black/[0.06] dark:border-white/[0.08] shrink-0">
+          <div className="flex items-center justify-between px-6 py-3 border-b border-black/[0.06] dark:border-white/[0.08] shrink-0">
             {title ? (
               <h3
                 id={titleId}
-                className="min-w-0 flex-1 text-base font-semibold text-[var(--text-primary)] m-0"
+                className="text-base font-semibold text-[var(--text-primary)] m-0"
               >
                 {title}
               </h3>
             ) : (
               <span />
             )}
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex items-center gap-1">
               {extra}
               {closable ? (
                 <button
                   type="button"
-                  className="inline-flex size-8 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-black/[0.04] hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] dark:hover:bg-white/[0.06] cursor-pointer"
+                  className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
                   onClick={onCancel}
                   aria-label="Close"
                 >
@@ -464,9 +464,7 @@ export function Modal({
         </div>
         {/* Footer */}
         {renderedFooter ? (
-          <div className="shrink-0 border-t border-black/[0.06] px-6 py-4 dark:border-white/[0.08]">
-            {renderedFooter}
-          </div>
+          <div className="px-6 pb-4 shrink-0">{renderedFooter}</div>
         ) : null}
       </div>
     </div>,

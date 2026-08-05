@@ -6,6 +6,8 @@ import { App } from './App'
 import { I18nProvider } from './lib/i18n'
 import { SessionProvider } from './lib/session'
 
+vi.mock('./components/RuntimeChart', () => ({ RuntimeChart: () => <div data-testid="runtime-chart" /> }))
+
 const systemStatus = {
   version: '0.2.0',
   commit: 'test',

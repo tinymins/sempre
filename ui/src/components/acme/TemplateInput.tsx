@@ -1,5 +1,6 @@
 import {
   autoUpdate,
+  FloatingPortal,
   flip,
   offset,
   shift,
@@ -15,7 +16,6 @@ import {
   useState,
 } from "react";
 import { FloatingVibrancy } from "./FloatingVibrancy";
-import { FloatingPortal } from "./FloatingPortal";
 import { cn } from "./utils";
 
 export interface TemplateVariable {

@@ -1,4 +1,5 @@
 import {
+  FloatingPortal,
   flip,
   offset,
   safePolygon,
@@ -21,7 +22,6 @@ import {
   useState,
 } from "react";
 import { FloatingVibrancy } from "./FloatingVibrancy";
-import { FloatingPortal } from "./FloatingPortal";
 import { cn } from "./utils";
 
 /* ─── Types ─── */
