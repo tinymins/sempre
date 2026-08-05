@@ -63,8 +63,8 @@ jobs:
           done
           grep -q "Desired: stopped" <<<"$runtime_status"
           grep -q "State: stopped" <<<"$runtime_status"
-          printf '%s\n' '{"log":{"disabled":true},"inbounds":[],"outbounds":[],"revision":2}' > smoke/config-updated.json
-          sudo ./smoke/sempre --system config import smoke/config-updated.json | grep -q "next time it starts"
+          printf '%s\n' '{"proxies":[{"name":"smoke-updated","type":"socks5","server":"127.0.0.1","port":1080}]}' > smoke/config-updated.json
+          sudo ./smoke/sempre --system config import smoke/config-updated.json | grep -q "subscription profile saved, validated, and staged"
           sudo ./smoke/sempre --system runtime status | grep -q "State: stopped"
           sudo ./smoke/sempre --system runtime start | grep -q "State: running"
           sudo ./smoke/sempre --system runtime restart | grep -q "State: running"
@@ -114,9 +114,9 @@ jobs:
             Start-Sleep -Milliseconds 200
           }
           if ($runtimeStatus -notmatch 'Desired: stopped' -or $runtimeStatus -notmatch 'State: stopped') { throw "stopped intent was not preserved: $runtimeStatus" }
-          Set-Content -Path smoke/config-updated.json -NoNewline -Value '{"log":{"disabled":true},"inbounds":[],"outbounds":[],"revision":2}'
+          Set-Content -Path smoke/config-updated.json -NoNewline -Value '{"proxies":[{"name":"smoke-updated","type":"socks5","server":"127.0.0.1","port":1080}]}'
           $configResult = ./smoke/sempre.exe --system config import smoke/config-updated.json | Out-String
-          if ($configResult -notmatch 'next time it starts') { throw "stopped config import did not defer activation: $configResult" }
+          if ($configResult -notmatch 'subscription profile saved, validated, and staged') { throw "stopped config import was not staged: $configResult" }
           $runtimeStatus = ./smoke/sempre.exe --system runtime status | Out-String
           if ($runtimeStatus -notmatch 'State: stopped') { throw "config import started the managed core: $runtimeStatus" }
           $runtimeStatus = ./smoke/sempre.exe --system runtime start | Out-String

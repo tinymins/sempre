@@ -73,7 +73,12 @@ func (fakeAdapter) Resolve(context.Context, string, string, core.Target) (core.P
 	return core.Package{}, nil
 }
 
-func (fakeAdapter) ExecutableName(core.Target) string { return "sing-box" }
+func (fakeAdapter) ExecutableName(target core.Target) string {
+	if target.OS == "windows" {
+		return "sing-box.exe"
+	}
+	return "sing-box"
+}
 
 func (fakeAdapter) Version(_ context.Context, binary string) (string, error) {
 	if _, err := os.Stat(binary); err != nil {
