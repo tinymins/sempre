@@ -46,12 +46,15 @@ func (manager *Manager) BootstrapApplication(ctx context.Context, options Bootst
 	}
 	result := BootstrapResult{PreviousService: previousService}
 
-	coreReference, coreChange, err := manager.prepareBootstrapCore(ctx, options.Core, options.Subscription == "")
-	if err != nil {
-		return result, err
+	bootstrapRuntime := shouldBootstrapRuntime(options, previousService)
+	if bootstrapRuntime {
+		coreReference, coreChange, err := manager.prepareBootstrapCore(ctx, options.Core, options.Subscription == "")
+		if err != nil {
+			return result, err
+		}
+		result.CoreReference = coreReference
+		result.ApplicationChange = coreChange
 	}
-	result.CoreReference = coreReference
-	result.ApplicationChange = coreChange
 
 	if options.Subscription != "" {
 		profile, changed, err := manager.prepareDefaultSubscription(options.Subscription)
@@ -76,19 +79,26 @@ func (manager *Manager) BootstrapApplication(ctx context.Context, options Bootst
 	if installed {
 		result.UI = &metadata
 	}
-	status, err := manager.ManagedRuntimeStatus()
-	if err != nil {
-		return result, err
-	}
-	if status.Active != nil {
-		result.RuntimeTarget = status.Active
-	} else if status.Target != nil {
-		result.RuntimeTarget = status.Target
+	if bootstrapRuntime {
+		status, err := manager.ManagedRuntimeStatus()
+		if err != nil {
+			return result, err
+		}
+		if status.Active != nil {
+			result.RuntimeTarget = status.Active
+		} else if status.Target != nil {
+			result.RuntimeTarget = status.Target
+		}
 	}
 	if err := manager.InstallApplication(ctx, true); err != nil {
 		return result, err
 	}
 	return result, nil
+}
+
+func shouldBootstrapRuntime(options BootstrapOptions, previousService service.State) bool {
+	return previousService == service.NotInstalled ||
+		strings.TrimSpace(options.Core) != "" || strings.TrimSpace(options.Subscription) != ""
 }
 
 func (manager *Manager) validateBootstrapOptions(options BootstrapOptions) error {

@@ -72,3 +72,48 @@ func TestSameRuntimeDeploymentRequiresExactTarget(t *testing.T) {
 		t.Fatal("different runtime deployments matched")
 	}
 }
+
+func TestBootstrapRuntimeResultWaitsForTransientDeadPID(t *testing.T) {
+	t.Parallel()
+	target := &app.RuntimeDeployment{Core: "sing-box", Ref: "stable", Version: "1.13.15", ConfigHash: strings.Repeat("a", 64)}
+	status := app.RuntimeStatus{
+		RuntimeState: "failed",
+		PID:          41,
+		LastError:    "recorded PID 41 is not running",
+	}
+	done, err := bootstrapRuntimeResult(status, target)
+	if done || err != nil {
+		t.Fatalf("transient dead PID result = done %t, error %v", done, err)
+	}
+
+	status.PID = 0
+	status.LastError = "exit status 1"
+	done, err = bootstrapRuntimeResult(status, target)
+	if !done || err == nil || err.Error() != status.LastError {
+		t.Fatalf("stable failure result = done %t, error %v", done, err)
+	}
+}
+
+func TestBootstrapRuntimeResultRequiresExpectedRunningDeployment(t *testing.T) {
+	t.Parallel()
+	target := &app.RuntimeDeployment{Core: "sing-box", Repository: "tinymins/sing-box", Ref: "stable", Version: "1.13.15", ConfigHash: strings.Repeat("a", 64)}
+	status := app.RuntimeStatus{RuntimeState: "running", Active: target}
+	done, err := bootstrapRuntimeResult(status, target)
+	if !done || err != nil {
+		t.Fatalf("expected running result = done %t, error %v", done, err)
+	}
+
+	other := *target
+	other.Version = "1.13.14"
+	status.Active = &other
+	done, err = bootstrapRuntimeResult(status, target)
+	if !done || err == nil {
+		t.Fatalf("wrong running deployment result = done %t, error %v", done, err)
+	}
+
+	status = app.RuntimeStatus{RuntimeState: "restarting"}
+	done, err = bootstrapRuntimeResult(status, target)
+	if done || err != nil {
+		t.Fatalf("restarting result = done %t, error %v", done, err)
+	}
+}

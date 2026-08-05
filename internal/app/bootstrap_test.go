@@ -4,9 +4,34 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
+
+func TestShouldBootstrapRuntimeOnlyForSetupIntent(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		options  BootstrapOptions
+		previous service.State
+		want     bool
+	}{
+		{name: "existing application repair", previous: service.Running},
+		{name: "existing application UI repair", options: BootstrapOptions{UI: "official"}, previous: service.Running},
+		{name: "fresh install", previous: service.NotInstalled, want: true},
+		{name: "explicit core", options: BootstrapOptions{Core: "sing-box@stable"}, previous: service.Running, want: true},
+		{name: "explicit subscription", options: BootstrapOptions{Subscription: "https://example.com/subscription"}, previous: service.Running, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shouldBootstrapRuntime(test.options, test.previous); got != test.want {
+				t.Fatalf("shouldBootstrapRuntime(%#v, %q) = %t, want %t", test.options, test.previous, got, test.want)
+			}
+		})
+	}
+}
 
 func TestBootstrapCoreReferenceDefaultsOnlyWithoutSelection(t *testing.T) {
 	t.Parallel()

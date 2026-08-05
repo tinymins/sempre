@@ -80,18 +80,9 @@ func (command *CLI) startBootstrapRuntime(ctx context.Context, expected *app.Run
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if current.RuntimeState == "running" {
-			if sameRuntimeDeployment(current.Active, expected) {
-				return nil
-			}
-			return fmt.Errorf("requested core did not become active; Sempre rolled back to %s", runtimeReference(current.Active))
-		}
-		if current.RuntimeState == "failed" {
-			message := current.LastError
-			if message == "" {
-				message = "managed core entered failed state"
-			}
-			return fmt.Errorf("%s", message)
+		done, resultErr := bootstrapRuntimeResult(current, expected)
+		if done {
+			return resultErr
 		}
 		select {
 		case <-ctx.Done():
@@ -104,6 +95,23 @@ func (command *CLI) startBootstrapRuntime(ctx context.Context, expected *app.Run
 			}
 		}
 	}
+}
+
+func bootstrapRuntimeResult(current app.RuntimeStatus, expected *app.RuntimeDeployment) (bool, error) {
+	if current.RuntimeState == "running" {
+		if sameRuntimeDeployment(current.Active, expected) {
+			return true, nil
+		}
+		return true, fmt.Errorf("requested core did not become active; Sempre rolled back to %s", runtimeReference(current.Active))
+	}
+	if current.RuntimeState != "failed" || current.PID > 0 {
+		return false, nil
+	}
+	message := current.LastError
+	if message == "" {
+		message = "managed core entered failed state"
+	}
+	return true, errors.New(message)
 }
 
 func sameRuntimeDeployment(left, right *app.RuntimeDeployment) bool {
