@@ -155,16 +155,16 @@ select:disabled {
 }
 
 .acme-portal-root {
-  clip-path: inset(64px 0 0 224px);
+  clip-path: inset(64px 0 0 var(--shell-sidebar-width, 14rem));
 }
 
 .acme-portal-root > [role="presentation"] {
-  inset: 64px 0 0 224px;
+  inset: 64px 0 0 var(--shell-sidebar-width, 14rem);
 }
 
 .acme-portal-root > [data-acme-toast-stack] {
   top: 80px;
-  left: calc(50% + 112px);
+  left: calc(50% + var(--shell-sidebar-center-offset, 7rem));
 }
 
 @media (max-width: 1023px) {
