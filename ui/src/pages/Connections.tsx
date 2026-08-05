@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Select } from '@acme/components'
 import { Ban, RefreshCw, Search, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { formatBytes, formatDate } from '../lib/format'
@@ -33,7 +34,7 @@ export function Connections() {
     <PageTitle title={t('connections')} detail={`${connections.data?.connections.length || 0} · ↓ ${formatBytes(connections.data?.download_total)} · ↑ ${formatBytes(connections.data?.upload_total)}`}>
       <div className="flex gap-2"><Button size="icon" title={t('refresh')} onClick={() => connections.refetch()}><RefreshCw size={17} /></Button><Button variant="danger" disabled={!rows.length || close.isPending} onClick={() => close.mutate('')}><Ban size={16} />{t('closeAll')}</Button></div>
     </PageTitle>
-    <div className="flex flex-wrap gap-3"><div className="relative min-w-64 flex-1"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div><select className="h-9 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-sm" value={sort} onChange={(event) => setSort(event.target.value as SortKey)}><option value="download">{t('download')}</option><option value="upload">{t('upload')}</option><option value="start">{t('uptime')}</option></select></div>
+    <div className="flex flex-wrap gap-3"><div className="relative min-w-64 flex-1"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div><Select className="h-9 min-w-36" value={sort} options={[{ value: 'download', label: t('download') }, { value: 'upload', label: t('upload') }, { value: 'start', label: t('uptime') }]} onChange={(value) => setSort(value as SortKey)} /></div>
     {connections.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : rows.length ? <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"><div className="max-h-[calc(100vh-230px)] overflow-auto"><table className="w-full min-w-[980px] border-collapse text-left text-sm"><thead className="sticky top-0 z-10 bg-[var(--surface)] text-xs text-[var(--muted)]"><tr><th className="px-3 py-3 font-medium">{t('host')}</th><th className="px-3 py-3 font-medium">{t('source')}</th><th className="px-3 py-3 font-medium">{t('process')}</th><th className="px-3 py-3 font-medium">{t('chain')}</th><th className="px-3 py-3 text-right font-medium">{t('download')}</th><th className="px-3 py-3 text-right font-medium">{t('upload')}</th><th className="w-14" /></tr></thead><tbody>{rows.map((item) => <ConnectionRow key={item.id} item={item} close={() => close.mutate(item.id)} busy={close.isPending} />)}</tbody></table></div></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
   </div>
 }

@@ -21,6 +21,13 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message: 'Use Select from @acme/components instead of a native <select>.',
+        },
+      ],
     },
   },
   {
@@ -30,6 +37,7 @@ export default tseslint.config(
       // unused symbols; these compiler-oriented React rules are not compatible
       // with its Floating UI refs and effect-driven transition state.
       '@typescript-eslint/no-unused-vars': 'off',
+      'no-restricted-syntax': 'off',
       'react-hooks/exhaustive-deps': 'off',
       'react-hooks/immutability': 'off',
       'react-hooks/refs': 'off',

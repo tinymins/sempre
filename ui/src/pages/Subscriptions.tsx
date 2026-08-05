@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Trash2 } from 'lucide-react'
-import { Dropdown, Modal } from '@acme/components'
+import { Dropdown, Modal, Select } from '@acme/components'
 import type { ProxyDebugFormat } from '@acme/types'
 import { Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { api } from '../lib/api'
@@ -245,9 +245,12 @@ export function Subscriptions() {
               <div className="space-y-5">
                 <div className="flex flex-wrap items-end gap-3">
                   <Field label={t('compilerTarget')}>
-                    <select className="h-9 min-w-56 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-sm" value={format} onChange={(event) => setFormat(event.target.value as ProxyDebugFormat)}>
-                      {(catalog.data?.targets ?? []).map((target) => <option key={target.format} value={target.format}>{target.format}</option>)}
-                    </select>
+                    <Select
+                      className="h-9 min-w-56"
+                      value={format}
+                      options={(catalog.data?.targets ?? []).map((target) => ({ value: target.format, label: target.format }))}
+                      onChange={(value) => setFormat(value as ProxyDebugFormat)}
+                    />
                   </Field>
                   <Button type="button" onClick={() => previewRef.current?.open(currentProfile.id, currentProfile.remark || currentProfile.name)}><FileJson size={16} />{t('preview')}</Button>
                   <Button type="button" onClick={() => debugRef.current?.open(currentProfile.id, format)}><Activity size={16} />{t('diagnostics')}</Button>
