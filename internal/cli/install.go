@@ -15,10 +15,23 @@ import (
 
 const maxSubscriptionArgumentSize = int64(64 << 10)
 
-func (command *CLI) install(ctx context.Context, arguments []string, _ Options) error {
+func (command *CLI) install(ctx context.Context, arguments []string, global Options) error {
 	options, err := parseInstallOptions(arguments)
 	if err != nil {
 		return err
+	}
+	if options.UI == "" {
+		replacement, err := command.manager.BundledUIReplacement()
+		if err != nil {
+			return err
+		}
+		if replacement != nil {
+			if global.Yes || command.confirmBundledUIReplacement(*replacement) {
+				options.UI = "official"
+			} else {
+				fmt.Fprintln(command.output, "Keeping the installed UI.")
+			}
+		}
 	}
 	result, err := command.manager.BootstrapApplication(ctx, options)
 	if err != nil {
@@ -47,6 +60,17 @@ func (command *CLI) install(ctx context.Context, arguments []string, _ Options) 
 	fmt.Fprintln(command.output, "Service:", endpoint.LocalURL)
 	fmt.Fprintln(command.output, "Web UI: not installed")
 	return nil
+}
+
+func (command *CLI) confirmBundledUIReplacement(current app.BundledUIReplacement) bool {
+	fmt.Fprintf(command.output, "Installed UI %s %s uses the %s source.\n", current.Name, current.Version, current.SourceType)
+	fmt.Fprint(command.output, "This installer includes a bundled UI. Replace the installed UI? [y/N]: ")
+	line, err := command.input.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false
+	}
+	value := strings.TrimSpace(line)
+	return strings.EqualFold(value, "y") || strings.EqualFold(value, "yes")
 }
 
 func (command *CLI) cleanupFreshInstall(ctx context.Context, result app.BootstrapResult, cause error) error {

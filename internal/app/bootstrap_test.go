@@ -1,12 +1,16 @@
 package app
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
+	uiassets "github.com/tinymins/sempre/internal/ui"
 )
 
 func TestShouldBootstrapRuntimeOnlyForSetupIntent(t *testing.T) {
@@ -140,5 +144,56 @@ func TestValidateBootstrapUIOptions(t *testing.T) {
 		if err := manager.validateBootstrapOptions(options); err == nil {
 			t.Errorf("validateBootstrapOptions(%#v) unexpectedly succeeded", options)
 		}
+	}
+}
+
+func TestBundledUIReplacementRequiresNonOfficialCurrentAndBundle(t *testing.T) {
+	manager := newTestManager(t)
+	metadata := uiassets.Metadata{
+		Manifest:   uiassets.Manifest{Schema: 1, Name: "Custom UI", Version: "1.2.3", Entry: "index.html", API: uiassets.API{Major: 1}},
+		SourceType: "local",
+	}
+	if err := os.MkdirAll(manager.paths.UICurrent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(manager.paths.UICurrent, uiassets.MetadataName), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resources := t.TempDir()
+	if err := os.WriteFile(filepath.Join(resources, "sempre-ui.zip"), []byte("bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(resources, "SHA256SUMS"), []byte(strings.Repeat("a", 64)+"  sempre-ui.zip\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	replacement, err := manager.bundledUIReplacement(resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement == nil || replacement.Name != "Custom UI" || replacement.Version != "1.2.3" || replacement.SourceType != "local" {
+		t.Fatalf("replacement = %#v", replacement)
+	}
+	if err := os.Remove(filepath.Join(resources, "sempre-ui.zip")); err != nil {
+		t.Fatal(err)
+	}
+	if replacement, err := manager.bundledUIReplacement(resources); err != nil || replacement != nil {
+		t.Fatalf("missing bundle replacement = %#v, %v", replacement, err)
+	}
+	if err := os.WriteFile(filepath.Join(resources, "sempre-ui.zip"), []byte("bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	metadata.SourceType = "official"
+	data, _ = json.Marshal(metadata)
+	if err := os.WriteFile(filepath.Join(manager.paths.UICurrent, uiassets.MetadataName), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if replacement, err := manager.bundledUIReplacement(resources); err != nil || replacement != nil {
+		t.Fatalf("official replacement = %#v, %v", replacement, err)
 	}
 }

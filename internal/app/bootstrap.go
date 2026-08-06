@@ -36,6 +36,47 @@ type BootstrapResult struct {
 	ApplicationChange Change
 }
 
+type BundledUIReplacement struct {
+	Name       string
+	Version    string
+	SourceType string
+}
+
+func (manager *Manager) BundledUIReplacement() (*BundledUIReplacement, error) {
+	executable, err := layout.CurrentExecutable()
+	if err != nil {
+		return nil, err
+	}
+	return manager.bundledUIReplacement(filepath.Join(filepath.Dir(executable), "resources"))
+}
+
+func (manager *Manager) bundledUIReplacement(resources string) (*BundledUIReplacement, error) {
+	metadata, err := manager.ui.Current()
+	if errors.Is(err, os.ErrNotExist) || (err == nil && metadata.SourceType == "official") {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	archive := filepath.Join(resources, "sempre-ui.zip")
+	info, err := os.Stat(archive)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("bundled UI is not a regular file: %s", archive)
+	}
+	if _, err := checksumFromFile(filepath.Join(resources, "SHA256SUMS"), "sempre-ui.zip"); err != nil {
+		return nil, fmt.Errorf("verify bundled UI: %w", err)
+	}
+	return &BundledUIReplacement{
+		Name: metadata.Manifest.Name, Version: metadata.Manifest.Version, SourceType: metadata.SourceType,
+	}, nil
+}
+
 func (manager *Manager) BootstrapApplication(ctx context.Context, options BootstrapOptions) (BootstrapResult, error) {
 	if err := manager.validateBootstrapOptions(options); err != nil {
 		return BootstrapResult{}, err

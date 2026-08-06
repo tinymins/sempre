@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"net/http"
@@ -164,6 +165,30 @@ func TestUIReadyRequiresSuccessfulRootResponse(t *testing.T) {
 				t.Fatalf("uiReady() = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestConfirmBundledUIReplacement(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  bool
+	}{
+		{input: "y\n", want: true},
+		{input: "YES\n", want: true},
+		{input: "n\n"},
+		{input: "\n"},
+	} {
+		var output bytes.Buffer
+		command := &CLI{input: bufio.NewReader(strings.NewReader(test.input)), output: &output}
+		got := command.confirmBundledUIReplacement(app.BundledUIReplacement{Name: "Sempre Console", Version: "1.2.3", SourceType: "local"})
+		if got != test.want {
+			t.Errorf("confirmation %q = %t, want %t", test.input, got, test.want)
+		}
+		for _, expected := range []string{"Sempre Console", "1.2.3", "local", "Replace the installed UI? [y/N]:"} {
+			if !strings.Contains(output.String(), expected) {
+				t.Errorf("confirmation output %q does not contain %q", output.String(), expected)
+			}
+		}
 	}
 }
 
