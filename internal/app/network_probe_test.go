@@ -84,7 +84,7 @@ func TestParseTextIPRejectsMissingAddress(t *testing.T) {
 }
 
 func TestNetworkTestTimeoutConstant(t *testing.T) {
-	if networkTestTimeout != 8*time.Second {
+	if networkTestTimeout != 15*time.Second {
 		t.Fatalf("network test timeout = %s", networkTestTimeout)
 	}
 }

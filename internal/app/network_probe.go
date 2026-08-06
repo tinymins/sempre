@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const networkTestTimeout = 8 * time.Second
+const networkTestTimeout = 15 * time.Second
 
 var ipv4Pattern = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
 

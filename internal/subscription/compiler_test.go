@@ -86,6 +86,37 @@ func TestSystemDefaultsDriveClashCompilation(t *testing.T) {
 	}
 }
 
+func TestSystemDefaultForeignSelectorPrefersFirstProxy(t *testing.T) {
+	paths := layout.At(filepath.Join(t.TempDir(), "root"))
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(paths)
+	if err := store.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	catalog, _ := store.Read()
+	profile := EffectiveProfile(catalog.Profiles[0])
+	profile.UseSystemRules = false
+	profile.UseSystemFilters = false
+	profile.UseSystemDNS = false
+	profile.UseSystemCustomConfig = false
+	profile.Sources = []Source{{ID: NewID(), Type: SourceRaw, Enabled: true, Content: "proxies:\n- name: edge\n  type: socks5\n  server: edge.example.com\n  port: 1080\n"}}
+
+	result, _, err := NewCompiler(store).Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	foreign := mapByKey(t, config["outbounds"].([]any), "tag", "🔰 国外流量")
+	if foreign["default"] != "edge" {
+		t.Fatalf("foreign selector default = %#v", foreign)
+	}
+}
+
 func TestSingBoxEmbedsFetchedRuleProvider(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/rules" {

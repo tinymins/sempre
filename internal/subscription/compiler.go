@@ -643,10 +643,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 		}
 		outbound := map[string]any{"type": kind, "tag": group.Name, "outbounds": members}
 		if kind == "selector" {
-			defaultMember := normalizeOutboundName(group.Default)
-			if defaultMember == "" {
-				defaultMember = members[0]
-			}
+			defaultMember := defaultSelectorMember(group, members)
 			if !configuredMember(members, defaultMember) {
 				return nil, diffs, warnings, fmt.Errorf("proxy group %q default %q is not an available member", group.Name, group.Default)
 			}
@@ -1388,6 +1385,19 @@ func foreignOutbound(groups []ProxyGroup, fallback string) string {
 		}
 	}
 	return fallback
+}
+func defaultSelectorMember(group ProxyGroup, members []string) string {
+	if configured := normalizeOutboundName(group.Default); configured != "" {
+		return configured
+	}
+	if group.Name == "🔰 国外流量" {
+		for _, member := range members {
+			if !builtinOutboundName(member) {
+				return member
+			}
+		}
+	}
+	return members[0]
 }
 func normalizeOutboundNames(values []string) []string {
 	result := make([]string, 0, len(values))
