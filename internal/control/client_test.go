@@ -60,3 +60,24 @@ func TestOverviewReportsConfiguredCore(t *testing.T) {
 		t.Fatalf("core = %q, want mihomo", overview.Core)
 	}
 }
+
+func TestConnectionsNormalizesNullConnectionList(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/connections" {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"downloadTotal":0,"uploadTotal":0,"connections":null}`))
+	}))
+	defer server.Close()
+
+	snapshot, err := New("sing-box", server.URL, "").Connections(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Connections == nil || len(snapshot.Connections) != 0 {
+		t.Fatalf("connections = %#v, want empty non-nil slice", snapshot.Connections)
+	}
+}

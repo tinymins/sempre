@@ -317,7 +317,7 @@ func (client *Client) Connections(ctx context.Context) (ConnectionSnapshot, erro
 	if err := client.get(ctx, "/connections", &raw); err != nil {
 		return ConnectionSnapshot{}, err
 	}
-	result := ConnectionSnapshot{DownloadTotal: raw.DownloadTotal, UploadTotal: raw.UploadTotal}
+	result := ConnectionSnapshot{DownloadTotal: raw.DownloadTotal, UploadTotal: raw.UploadTotal, Connections: []Connection{}}
 	for _, item := range raw.Connections {
 		result.Connections = append(result.Connections, Connection{
 			ID: item.ID,

@@ -22,16 +22,17 @@ export function Connections() {
     mutationFn: (id: string) => api(session!, '/runtime/connections/close', { method: 'POST', body: JSON.stringify({ id }) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runtime', 'connections'] }),
   })
+  const connectionItems = useMemo(() => Array.isArray(connections.data?.connections) ? connections.data.connections : [], [connections.data])
   const rows = useMemo(() => {
     const query = search.toLowerCase()
-    return [...(connections.data?.connections || [])].filter((item) => connectionText(item).includes(query)).sort((left, right) => {
+    return [...connectionItems].filter((item) => connectionText(item).includes(query)).sort((left, right) => {
       if (sort === 'start') return new Date(right.start || 0).valueOf() - new Date(left.start || 0).valueOf()
       return right[sort] - left[sort]
     })
-  }, [connections.data, search, sort])
+  }, [connectionItems, search, sort])
 
   return <div className="space-y-5">
-    <PageTitle title={t('connections')} detail={`${connections.data?.connections.length || 0} · ↓ ${formatBytes(connections.data?.download_total)} · ↑ ${formatBytes(connections.data?.upload_total)}`}>
+    <PageTitle title={t('connections')} detail={`${connectionItems.length} · ↓ ${formatBytes(connections.data?.download_total)} · ↑ ${formatBytes(connections.data?.upload_total)}`}>
       <div className="flex gap-2"><Button size="icon" title={t('refresh')} onClick={() => connections.refetch()}><RefreshCw size={17} /></Button><Button variant="danger" disabled={!rows.length || close.isPending} onClick={() => close.mutate('')}><Ban size={16} />{t('closeAll')}</Button></div>
     </PageTitle>
     <div className="flex flex-wrap gap-3"><div className="relative min-w-64 flex-1"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div><Select className="h-9 min-w-36" value={sort} options={[{ value: 'download', label: t('download') }, { value: 'upload', label: t('upload') }, { value: 'start', label: t('uptime') }]} onChange={(value) => setSort(value as SortKey)} /></div>
