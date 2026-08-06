@@ -146,7 +146,8 @@ the executable. `--portable` and `--system` select a mode for one invocation.
 
 Canonical releases are published at
 [github.com/tinymins/sempre/releases](https://github.com/tinymins/sempre/releases).
-Bundles are recommended because they include the verified official UI:
+Bundles are recommended because they include the verified official UI and
+preinstalled stable sing-box, Mihomo, Xray, and V2Ray cores:
 
 | Platform | amd64 | arm64 |
 | --- | --- | --- |
@@ -154,9 +155,10 @@ Bundles are recommended because they include the verified official UI:
 | Linux | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-arm64.zip) |
 | macOS | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-arm64.zip) |
 
-Standalone binaries remain available and install the service without a UI.
-Place the canonical `resources/` directory beside a standalone binary for an
-offline UI install, or add the UI later with `sempre ui install official`:
+Standalone binaries remain available and install the service without bundled UI
+or cores. Place the canonical `resources/` directory beside a standalone binary
+for an offline UI install, or add the UI later with
+`sempre ui install official`:
 
 | Platform | amd64 | arm64 |
 | --- | --- | --- |
@@ -518,7 +520,9 @@ resources/
 |-- cores/
 |   |-- sing-box/<version>/
 |   |-- sing-box/sources/<owner>/<repository>/<version>/
-|   `-- mihomo/<version>/
+|   |-- mihomo/<version>/
+|   |-- xray/<version>/
+|   `-- v2ray/<version>/
 |-- configs/
 |   |-- sing-box/<sha256>.json
 |   `-- mihomo/<sha256>.json
@@ -567,20 +571,23 @@ bun run build
 
 The build command validates both projects and emits Windows, Linux, and macOS
 binaries for amd64 and arm64, `sempre-ui.zip`, the canonical
-`resources/{sempre-ui.zip,SHA256SUMS}` directory, six self-contained bundle
-ZIPs, and `dist/SHA256SUMS`. Windows resources use an `asInvoker` manifest; UAC
-is requested at runtime only for privileged commands.
+`resources/{sempre-ui.zip,SHA256SUMS}` directory, six self-contained portable
+bundle ZIPs, and `dist/SHA256SUMS`. Bundle ZIPs include the official UI plus
+stable sing-box, Mihomo, Xray, and V2Ray snapshots for their target platform.
+Windows resources use an `asInvoker` manifest; UAC is requested at runtime only
+for privileged commands.
 
 Tagged release builds use Go 1.25.12, derive their embedded build date from the
 Git commit timestamp, publish per-target CycloneDX SBOMs, and attach GitHub
 artifact attestations. Release binaries are currently unsigned at the operating
 system level.
 
-Sempre itself does not redistribute sing-box or Mihomo. Core releases are downloaded at
-runtime from the selected GitHub repository and verified against the SHA-256
-digest supplied by GitHub's release API. A custom repository still uses its
-selected adapter's asset naming, configuration validation, and binary version
-contract; arbitrary executables are not accepted.
+Release bundles redistribute the stable core binaries listed above. Other core
+installs and updates are downloaded at runtime from the selected GitHub
+repository and verified against the SHA-256 digest supplied by GitHub's release
+API. A custom repository still uses its selected adapter's asset naming,
+configuration validation, and binary version contract; arbitrary executables are
+not accepted.
 
 ## License
 

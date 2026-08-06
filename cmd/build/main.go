@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,19 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/tinymins/sempre/internal/archive"
+	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/core/mihomo"
+	"github.com/tinymins/sempre/internal/core/singbox"
+	"github.com/tinymins/sempre/internal/core/v2ray"
+	"github.com/tinymins/sempre/internal/core/xray"
+	"github.com/tinymins/sempre/internal/download"
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
+	"github.com/tinymins/sempre/internal/webconfig"
 )
 
 type target struct {
@@ -25,6 +39,17 @@ type target struct {
 
 func (item target) bundleName() string {
 	return fmt.Sprintf("sempre-bundle-%s-%s.zip", item.os, item.arch)
+}
+
+func (item target) directoryName() string {
+	return fmt.Sprintf("sempre-%s-%s", item.os, item.arch)
+}
+
+func (item target) executableName() string {
+	if item.os == "windows" {
+		return "sempre.exe"
+	}
+	return "sempre"
 }
 
 func main() {
@@ -124,6 +149,7 @@ func build() error {
 		{"darwin", "amd64", "sempre-darwin-amd64"},
 		{"darwin", "arm64", "sempre-darwin-arm64"},
 	}
+	installedAt := parseBuildDate(date)
 	for _, item := range targets {
 		output := filepath.Join(dist, item.name)
 		environment := map[string]string{
@@ -135,7 +161,7 @@ func build() error {
 		if err := run(root, environment, goBinary, "build", "-trimpath", "-ldflags", ldflags, "-o", output, "./cmd/sempre"); err != nil {
 			return err
 		}
-		if err := writeBundle(dist, item); err != nil {
+		if err := writeBundle(context.Background(), dist, item, installedAt); err != nil {
 			return err
 		}
 	}
@@ -195,32 +221,226 @@ func writeDistributionResources(dist string) error {
 	return os.WriteFile(filepath.Join(directory, "SHA256SUMS"), checksums, 0o644)
 }
 
-func writeBundle(dist string, item target) error {
-	archive, err := os.Create(filepath.Join(dist, item.bundleName()))
+func writeBundle(ctx context.Context, dist string, item target, installedAt time.Time) error {
+	workDir := filepath.Join(dist, ".bundle-work", item.directoryName())
+	if err := os.RemoveAll(workDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		return err
+	}
+	if err := copyFile(filepath.Join(dist, item.name), filepath.Join(workDir, item.executableName()), 0o755); err != nil {
+		return err
+	}
+	if err := copyDirectory(filepath.Join(dist, "resources"), filepath.Join(workDir, "resources"), 0o600); err != nil {
+		return err
+	}
+	if err := writeReleaseSnapshot(ctx, workDir, item, installedAt); err != nil {
+		_ = os.RemoveAll(workDir)
+		return err
+	}
+	if err := writeBundleInstallers(workDir, item.executableName()); err != nil {
+		_ = os.RemoveAll(workDir)
+		return err
+	}
+	if err := zipDirectoryWithPrefix(filepath.Join(dist, item.bundleName()), workDir, item.directoryName()); err != nil {
+		_ = os.RemoveAll(workDir)
+		_ = os.Remove(filepath.Join(dist, item.bundleName()))
+		return err
+	}
+	return cleanupBundleWork(workDir)
+}
+
+func cleanupBundleWork(workDir string) error {
+	if err := os.RemoveAll(workDir); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Dir(workDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func writeReleaseSnapshot(ctx context.Context, packageDir string, item target, installedAt time.Time) error {
+	paths := layout.PortableAt(filepath.Join(packageDir, item.executableName()))
+	if err := paths.Ensure(); err != nil {
+		return err
+	}
+	if err := state.WriteAtomic(layout.PortableMarkerPath(paths.ServiceExecutable), []byte{}, 0o600); err != nil {
+		return err
+	}
+	if err := writeReleaseWebConfig(paths.WebConfig); err != nil {
+		return err
+	}
+	if err := subscriptions.NewStore(paths).Initialize(""); err != nil {
+		return err
+	}
+	installations := []releaseCoreInstallation{}
+	for _, adapter := range releaseCoreAdapters() {
+		resolved, err := adapter.Resolve(ctx, "", core.Stable, releaseCoreTarget(item))
+		if err != nil {
+			return fmt.Errorf("resolve %s for %s/%s: %w", adapter.ID(), item.os, item.arch, err)
+		}
+		if err := installReleaseCore(ctx, paths, item, adapter, resolved); err != nil {
+			return fmt.Errorf("install %s %s for %s/%s: %w", adapter.ID(), resolved.Version, item.os, item.arch, err)
+		}
+		installations = append(installations, releaseCoreInstallation{Core: adapter.ID(), Package: resolved})
+	}
+	document, err := buildReleaseState(installedAt, installations)
 	if err != nil {
 		return err
 	}
-	writer := zip.NewWriter(archive)
-	closeWithError := func(cause error) error {
-		return errors.Join(cause, writer.Close(), archive.Close())
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return err
 	}
-	prefix := fmt.Sprintf("sempre-%s-%s", item.os, item.arch)
-	executable := "sempre"
-	if item.os == "windows" {
-		executable += ".exe"
+	return state.WriteAtomic(paths.State, append(data, '\n'), 0o600)
+}
+
+type releaseCoreInstallation struct {
+	Core    string
+	Package core.Package
+}
+
+func buildReleaseState(installedAt time.Time, installations []releaseCoreInstallation) (state.Document, error) {
+	document := state.NewDocument()
+	document.Selected = &state.Selection{Core: "sing-box", Ref: core.Stable}
+	for _, installation := range installations {
+		source := document.Core(installation.Core).Source("")
+		source.Channels[core.Stable] = installation.Package.Version
+		source.Installed[installation.Package.Version] = &state.Installation{
+			Digest:      installation.Package.Digest,
+			Source:      installation.Package.URL,
+			InstalledAt: installedAt,
+		}
 	}
-	if err := addFileToZIP(writer, filepath.Join(dist, item.name), filepath.ToSlash(filepath.Join(prefix, executable)), 0o755); err != nil {
-		return closeWithError(err)
+	document.Normalize()
+	if err := document.Validate(); err != nil {
+		return state.Document{}, err
 	}
-	uiArchive := filepath.Join(dist, "resources", "sempre-ui.zip")
-	if err := addFileToZIP(writer, uiArchive, filepath.ToSlash(filepath.Join(prefix, "resources", "sempre-ui.zip")), 0o600); err != nil {
-		return closeWithError(err)
+	return document, nil
+}
+
+func releaseCoreAdapters() []core.Adapter {
+	return []core.Adapter{singbox.New(), mihomo.New(), xray.New(), v2ray.New()}
+}
+
+func releaseCoreTarget(item target) core.Target {
+	return core.Target{OS: item.os, Arch: item.arch}
+}
+
+func installReleaseCore(ctx context.Context, paths layout.Layout, item target, adapter core.Adapter, resolved core.Package) error {
+	temporary, err := os.MkdirTemp(paths.Runtime, "release-core-*")
+	if err != nil {
+		return err
 	}
-	checksums := filepath.Join(dist, "resources", "SHA256SUMS")
-	if err := addFileToZIP(writer, checksums, filepath.ToSlash(filepath.Join(prefix, "resources", "SHA256SUMS")), 0o600); err != nil {
-		return closeWithError(err)
+	defer os.RemoveAll(temporary)
+	archivePath := filepath.Join(temporary, resolved.Name)
+	if err := download.Verified(ctx, download.Artifact{
+		Name:   resolved.Name,
+		URL:    resolved.URL,
+		Digest: resolved.Digest,
+		Size:   resolved.Size,
+	}, archivePath); err != nil {
+		return err
 	}
-	return closeWithError(nil)
+	target := releaseCoreTarget(item)
+	extracted := filepath.Join(temporary, "extract")
+	if err := archive.Extract(archivePath, extracted, archive.ExtractOptions{
+		Format:         resolved.Format,
+		SingleFileName: adapter.ExecutableName(target),
+	}); err != nil {
+		return err
+	}
+	executableName := adapter.ExecutableName(target)
+	sourceBinary, err := findReleaseBinary(extracted, executableName, item)
+	if err != nil {
+		return err
+	}
+	destination := releaseCoreVersionDir(paths, adapter.ID(), resolved.Version)
+	if err := os.RemoveAll(destination); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	if err := copyDirectory(filepath.Dir(sourceBinary), destination, 0o700); err != nil {
+		return err
+	}
+	copiedBinary := filepath.Join(destination, filepath.Base(sourceBinary))
+	finalBinary := filepath.Join(destination, executableName)
+	if copiedBinary != finalBinary {
+		if err := os.Rename(copiedBinary, finalBinary); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func releaseCoreVersionDir(paths layout.Layout, coreID, version string) string {
+	return filepath.Join(paths.Cores, coreID, version)
+}
+
+func findReleaseBinary(root, executableName string, item target) (string, error) {
+	if path, err := archive.Find(root, executableName); err == nil {
+		return path, nil
+	}
+	candidates := []string{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		if item.os == "windows" && !strings.EqualFold(filepath.Ext(entry.Name()), ".exe") {
+			return nil
+		}
+		candidates = append(candidates, path)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(candidates) != 1 {
+		return "", fmt.Errorf("archive does not contain %s", executableName)
+	}
+	return candidates[0], nil
+}
+
+func writeReleaseWebConfig(path string) error {
+	config := webconfig.Config{Schema: webconfig.SchemaVersion, Listen: webconfig.DefaultListen}
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return state.WriteAtomic(path, append(data, '\n'), 0o600)
+}
+
+func writeBundleInstallers(packageDir, executableName string) error {
+	windows := fmt.Sprintf("@echo off\r\ncd /d \"%%~dp0\"\r\n\"%%~dp0%s\" bundle install --yes\r\nset EXITCODE=%%ERRORLEVEL%%\r\npause\r\nexit /b %%EXITCODE%%\r\n", executableName)
+	if err := state.WriteAtomic(filepath.Join(packageDir, "install.cmd"), []byte(windows), 0o755); err != nil {
+		return err
+	}
+	unix := fmt.Sprintf("#!/bin/sh\nset -eu\ncd -- \"$(dirname -- \"$0\")\"\n./%s bundle install --yes\n", executableName)
+	if err := state.WriteAtomic(filepath.Join(packageDir, "install.sh"), []byte(unix), 0o755); err != nil {
+		return err
+	}
+	if err := state.WriteAtomic(filepath.Join(packageDir, "install.command"), []byte(unix), 0o755); err != nil {
+		return err
+	}
+	desktop := "[Desktop Entry]\nType=Application\nName=Install Sempre Bundle\nTerminal=true\nExec=sh -c 'cd \"$(dirname \"$1\")\" && sh install.sh' sh %k\n"
+	return state.WriteAtomic(filepath.Join(packageDir, "install.desktop"), []byte(desktop), 0o755)
 }
 
 func zipDirectory(destination, source string) error {
@@ -245,6 +465,48 @@ func zipDirectory(destination, source string) error {
 	return errors.Join(err, writer.Close(), archive.Close())
 }
 
+func zipDirectoryWithPrefix(destination, source, prefix string) error {
+	archive, err := os.Create(destination)
+	if err != nil {
+		return err
+	}
+	writer := zip.NewWriter(archive)
+	closeWithError := func(cause error) error {
+		return errors.Join(cause, writer.Close(), archive.Close())
+	}
+	err = filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == source {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refuse symlink while archiving %s", path)
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		name := filepath.ToSlash(filepath.Join(prefix, relative))
+		if entry.IsDir() {
+			header := &zip.FileHeader{Name: name + "/", Method: zip.Store}
+			header.SetMode(0o700 | os.ModeDir)
+			_, err := writer.CreateHeader(header)
+			return err
+		}
+		return addFileToZIP(writer, path, name, info.Mode())
+	})
+	if err != nil {
+		return closeWithError(err)
+	}
+	return closeWithError(nil)
+}
+
 func addFileToZIP(writer *zip.Writer, source, name string, mode os.FileMode) error {
 	file, err := os.Open(source)
 	if err != nil {
@@ -259,6 +521,59 @@ func addFileToZIP(writer *zip.Writer, source, name string, mode os.FileMode) err
 	}
 	_, err = io.Copy(destination, file)
 	return err
+}
+
+func copyDirectory(source, target string, mode os.FileMode) error {
+	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refuse symlink while copying %s", path)
+		}
+		destination := filepath.Join(target, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(destination, 0o755)
+		}
+		return copyFile(path, destination, mode)
+	})
+}
+
+func copyFile(source, target string, mode os.FileMode) error {
+	sourceFile, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	targetFile, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(targetFile, sourceFile)
+	closeErr := targetFile.Close()
+	return errors.Join(copyErr, closeErr)
+}
+
+func parseBuildDate(value string) time.Time {
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Now().UTC()
+	}
+	return parsed.UTC()
 }
 
 func checkFormatting(root string) error {

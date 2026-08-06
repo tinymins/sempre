@@ -27,6 +27,8 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --cwd ui --frozen-lockfile
       - run: go run ./cmd/build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Attest build provenance
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
         with:

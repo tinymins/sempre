@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tinymins/sempre/internal/buildinfo"
@@ -28,9 +30,15 @@ type GitHubRelease struct {
 	Assets     []Asset `json:"assets"`
 }
 
+var releaseCache = struct {
+	sync.Mutex
+	items map[string]GitHubRelease
+}{items: map[string]GitHubRelease{}}
+
 type Client struct {
-	http *http.Client
-	base string
+	http  *http.Client
+	base  string
+	token string
 }
 
 func NewClient() *Client {
@@ -47,7 +55,8 @@ func NewClient() *Client {
 				return nil
 			},
 		},
-		base: "https://api.github.com",
+		base:  "https://api.github.com",
+		token: githubTokenFromEnvironment(),
 	}
 }
 
@@ -61,6 +70,12 @@ func (client *Client) Version(ctx context.Context, repository, version string) (
 }
 
 func (client *Client) get(ctx context.Context, endpoint string) (GitHubRelease, error) {
+	releaseCache.Lock()
+	if cached, ok := releaseCache.items[endpoint]; ok {
+		releaseCache.Unlock()
+		return cloneRelease(cached), nil
+	}
+	releaseCache.Unlock()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return GitHubRelease{}, err
@@ -68,6 +83,9 @@ func (client *Client) get(ctx context.Context, endpoint string) (GitHubRelease, 
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	request.Header.Set("User-Agent", "Sempre/"+buildinfo.Version)
+	if client.token != "" {
+		request.Header.Set("Authorization", "Bearer "+client.token)
+	}
 	response, err := client.http.Do(request)
 	if err != nil {
 		return GitHubRelease{}, fmt.Errorf("query GitHub release: %w", err)
@@ -84,5 +102,20 @@ func (client *Client) get(ctx context.Context, endpoint string) (GitHubRelease, 
 	if result.Draft {
 		return GitHubRelease{}, fmt.Errorf("GitHub release %s is a draft", result.Tag)
 	}
+	releaseCache.Lock()
+	releaseCache.items[endpoint] = cloneRelease(result)
+	releaseCache.Unlock()
 	return result, nil
+}
+
+func cloneRelease(item GitHubRelease) GitHubRelease {
+	item.Assets = append([]Asset(nil), item.Assets...)
+	return item
+}
+
+func githubTokenFromEnvironment() string {
+	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+		return token
+	}
+	return strings.TrimSpace(os.Getenv("GH_TOKEN"))
 }
