@@ -179,22 +179,34 @@ export interface ProxyGroup {
 }
 
 export interface TransparentProxyConfig {
-	mode: 'tun-router' | 'tproxy' | 'disabled'
+	mode: 'tun-router' | 'tproxy' | 'ebpf-router' | 'disabled'
+	capture_host: boolean
+	lan_interfaces: string[]
+	route_exclusions: string[]
+	interface_mode: 'all' | 'include' | 'exclude'
+	interfaces: string[]
+	auto_exclude_local_routes: boolean
+	auto_exclude_vpn_routes: boolean
 	tun: {
 		interface_name: string
 		address?: string
-		route_exclude_address: string[]
-		interface_mode: 'all' | 'include' | 'exclude'
-		interfaces: string[]
-		auto_exclude_local_routes: boolean
-		auto_exclude_vpn_routes: boolean
 	}
 	tproxy: {
 		listen_port: number
 		dns_listen_port: number
-		capture_host: boolean
-		lan_interfaces: string[]
 	}
+	ebpf: {
+		wan_interface: string
+		auto_config_kernel_parameter: boolean
+	}
+}
+
+export interface LocalProxyConfig {
+	enabled: boolean
+	socks_port: number
+	http_port: number
+	username: string
+	password: string
 }
 
 export interface ManagementAPIConfig {
@@ -280,6 +292,7 @@ export interface SubscriptionProfile {
   dns?: Record<string, unknown>
   private_access?: Record<string, unknown>
 	core_overrides: Record<string, Record<string, unknown>>
+	local_proxy?: LocalProxyConfig
 	transparent_proxy?: TransparentProxyConfig
 	management_api?: ManagementAPIConfig
   use_system_groups: boolean

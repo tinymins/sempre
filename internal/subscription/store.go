@@ -29,8 +29,28 @@ type legacyCatalogConfiguration struct {
 }
 
 type legacyProfileConfiguration struct {
-	CustomConfig map[string]any       `json:"custom_config"`
-	ClashAPI     *ManagementAPIConfig `json:"clash_api"`
+	CustomConfig     map[string]any               `json:"custom_config"`
+	ClashAPI         *ManagementAPIConfig         `json:"clash_api"`
+	TransparentProxy legacyTransparentProxyConfig `json:"transparent_proxy"`
+}
+
+type legacyTransparentProxyConfig struct {
+	Mode string `json:"mode"`
+	TUN  struct {
+		InterfaceName          string   `json:"interface_name"`
+		Address                string   `json:"address,omitempty"`
+		RouteExcludeAddress    []string `json:"route_exclude_address"`
+		InterfaceMode          string   `json:"interface_mode"`
+		Interfaces             []string `json:"interfaces"`
+		AutoExcludeLocalRoutes bool     `json:"auto_exclude_local_routes"`
+		AutoExcludeVPNRoutes   bool     `json:"auto_exclude_vpn_routes"`
+	} `json:"tun"`
+	TProxy struct {
+		ListenPort    int      `json:"listen_port"`
+		DNSListenPort int      `json:"dns_listen_port"`
+		CaptureHost   bool     `json:"capture_host"`
+		LANInterfaces []string `json:"lan_interfaces"`
+	} `json:"tproxy"`
 }
 
 func NewStore(paths layout.Layout) *Store {
@@ -143,21 +163,28 @@ func (store *Store) readUnlocked() (Catalog, error) {
 	if catalog.Schema > 0 && catalog.Schema < CatalogSchema {
 		previousSchema := catalog.Schema
 		legacy := legacyCatalogConfiguration{}
-		if previousSchema < 5 {
+		if previousSchema < 6 {
 			if err := json.Unmarshal(data, &legacy); err != nil {
 				return Catalog{}, fmt.Errorf("decode legacy subscription configuration: %w", err)
 			}
 		}
 		catalog.Schema = CatalogSchema
 		for index := range catalog.Profiles {
+			configuration := legacyProfileConfiguration{}
+			if index < len(legacy.Profiles) {
+				configuration = legacy.Profiles[index]
+			}
 			if previousSchema < 4 {
 				migrateLinuxRuntimeConfig(&catalog.Profiles[index])
 			}
-			if previousSchema < 5 {
-				configuration := legacyProfileConfiguration{}
-				if index < len(legacy.Profiles) {
-					configuration = legacy.Profiles[index]
+			if previousSchema < 6 {
+				if previousSchema >= 4 {
+					migrateRuntimeIntent(&catalog.Profiles[index], configuration.TransparentProxy)
+				} else {
+					catalog.Profiles[index].LocalProxy = defaultLocalProxyConfig()
 				}
+			}
+			if previousSchema < 5 {
 				migrateCoreConfiguration(&catalog.Profiles[index], configuration)
 			}
 			normalizeProfile(&catalog.Profiles[index])
@@ -223,14 +250,14 @@ func normalizeProfile(profile *Profile) {
 	if profile.TransparentProxy.TUN.InterfaceName == "" {
 		profile.TransparentProxy.TUN.InterfaceName = "sempre-tun"
 	}
-	if profile.TransparentProxy.TUN.RouteExcludeAddress == nil {
-		profile.TransparentProxy.TUN.RouteExcludeAddress = []string{}
+	if profile.TransparentProxy.RouteExclusions == nil {
+		profile.TransparentProxy.RouteExclusions = []string{}
 	}
-	if profile.TransparentProxy.TUN.InterfaceMode == "" {
-		profile.TransparentProxy.TUN.InterfaceMode = "all"
+	if profile.TransparentProxy.InterfaceMode == "" {
+		profile.TransparentProxy.InterfaceMode = "all"
 	}
-	if profile.TransparentProxy.TUN.Interfaces == nil {
-		profile.TransparentProxy.TUN.Interfaces = []string{}
+	if profile.TransparentProxy.Interfaces == nil {
+		profile.TransparentProxy.Interfaces = []string{}
 	}
 	if profile.TransparentProxy.TProxy.ListenPort == 0 {
 		profile.TransparentProxy.TProxy.ListenPort = 7893
@@ -238,8 +265,27 @@ func normalizeProfile(profile *Profile) {
 	if profile.TransparentProxy.TProxy.DNSListenPort == 0 {
 		profile.TransparentProxy.TProxy.DNSListenPort = 1053
 	}
-	if profile.TransparentProxy.TProxy.LANInterfaces == nil {
-		profile.TransparentProxy.TProxy.LANInterfaces = []string{}
+	if profile.TransparentProxy.LANInterfaces == nil {
+		profile.TransparentProxy.LANInterfaces = []string{}
+	}
+	if profile.TransparentProxy.EBPF.WANInterface == "" {
+		profile.TransparentProxy.EBPF.WANInterface = "auto"
+	}
+	if profile.LocalProxy == (LocalProxyConfig{}) {
+		profile.LocalProxy = defaultLocalProxyConfig()
+	} else {
+		if profile.LocalProxy.SOCKSPort == 0 {
+			profile.LocalProxy.SOCKSPort = 1080
+		}
+		if profile.LocalProxy.HTTPPort == 0 {
+			profile.LocalProxy.HTTPPort = 1081
+		}
+		if profile.LocalProxy.Username == "" {
+			profile.LocalProxy.Username = "sempre"
+		}
+		if profile.LocalProxy.Password == "" {
+			profile.LocalProxy.Password = NewPassword()
+		}
 	}
 	if profile.CoreOverrides == nil {
 		profile.CoreOverrides = map[string]map[string]any{}
@@ -339,6 +385,9 @@ func validateCatalog(catalog Catalog) error {
 		if err := validateTransparentProxy(profile.TransparentProxy); err != nil {
 			return fmt.Errorf("profile %q: %w", profile.Name, err)
 		}
+		if err := validateLocalProxy(profile.LocalProxy, profile.TransparentProxy); err != nil {
+			return fmt.Errorf("profile %q: %w", profile.Name, err)
+		}
 		if err := validateManagementAPI(profile.ManagementAPI); err != nil {
 			return fmt.Errorf("profile %q: %w", profile.Name, err)
 		}
@@ -387,6 +436,40 @@ func migrateCoreConfiguration(profile *Profile, legacy legacyProfileConfiguratio
 		profile.ManagementAPI = *legacy.ClashAPI
 	}
 	migrateLegacyDNSFields(profile)
+}
+
+func migrateRuntimeIntent(profile *Profile, legacy legacyTransparentProxyConfig) {
+	if legacy.Mode != "" {
+		profile.TransparentProxy.Mode = legacy.Mode
+	}
+	if legacy.TUN.InterfaceName != "" {
+		profile.TransparentProxy.TUN.InterfaceName = legacy.TUN.InterfaceName
+	}
+	if legacy.TUN.Address != "" {
+		profile.TransparentProxy.TUN.Address = legacy.TUN.Address
+	}
+	if legacy.TUN.RouteExcludeAddress != nil {
+		profile.TransparentProxy.RouteExclusions = append([]string{}, legacy.TUN.RouteExcludeAddress...)
+	}
+	if legacy.TUN.InterfaceMode != "" {
+		profile.TransparentProxy.InterfaceMode = legacy.TUN.InterfaceMode
+	}
+	if legacy.TUN.Interfaces != nil {
+		profile.TransparentProxy.Interfaces = append([]string{}, legacy.TUN.Interfaces...)
+	}
+	profile.TransparentProxy.AutoExcludeLocalRoutes = legacy.TUN.AutoExcludeLocalRoutes
+	profile.TransparentProxy.AutoExcludeVPNRoutes = legacy.TUN.AutoExcludeVPNRoutes
+	if legacy.TProxy.ListenPort > 0 {
+		profile.TransparentProxy.TProxy.ListenPort = legacy.TProxy.ListenPort
+	}
+	if legacy.TProxy.DNSListenPort > 0 {
+		profile.TransparentProxy.TProxy.DNSListenPort = legacy.TProxy.DNSListenPort
+	}
+	profile.TransparentProxy.CaptureHost = legacy.TProxy.CaptureHost
+	if legacy.TProxy.LANInterfaces != nil {
+		profile.TransparentProxy.LANInterfaces = append([]string{}, legacy.TProxy.LANInterfaces...)
+	}
+	profile.LocalProxy = defaultLocalProxyConfig()
 }
 
 func migrateLegacyDNSFields(profile *Profile) {
@@ -464,7 +547,7 @@ func migrateLegacyDNSFields(profile *Profile) {
 
 func validateTransparentProxy(config TransparentProxyConfig) error {
 	switch config.Mode {
-	case TransparentProxyTUN, TransparentProxyTProxy, TransparentProxyDisabled:
+	case TransparentProxyTUN, TransparentProxyTProxy, TransparentProxyEBPF, TransparentProxyDisabled:
 	default:
 		return fmt.Errorf("unsupported transparent proxy mode %q", config.Mode)
 	}
@@ -477,37 +560,63 @@ func validateTransparentProxy(config TransparentProxyConfig) error {
 			return fmt.Errorf("TUN address must be an IPv4 /30 prefix")
 		}
 	}
-	for _, value := range config.TUN.RouteExcludeAddress {
+	for _, value := range config.RouteExclusions {
 		if _, err := netip.ParsePrefix(value); err != nil {
 			return fmt.Errorf("invalid TUN route exclusion %q", value)
 		}
 	}
-	switch config.TUN.InterfaceMode {
+	switch config.InterfaceMode {
 	case "all", "include", "exclude":
 	default:
 		return fmt.Errorf("TUN interface mode must be all, include, or exclude")
 	}
 	interfaceNames := map[string]bool{}
-	for _, name := range config.TUN.Interfaces {
+	for _, name := range config.Interfaces {
 		name = strings.TrimSpace(name)
 		if name == "" || len(name) > 15 || interfaceNames[name] {
 			return fmt.Errorf("TUN interfaces must be unique valid interface names")
 		}
 		interfaceNames[name] = true
 	}
-	if config.TUN.InterfaceMode != "all" && len(config.TUN.Interfaces) == 0 {
-		return fmt.Errorf("TUN interface mode %s requires at least one interface", config.TUN.InterfaceMode)
+	if config.InterfaceMode != "all" && len(config.Interfaces) == 0 {
+		return fmt.Errorf("transparent interface mode %s requires at least one interface", config.InterfaceMode)
 	}
 	if config.TProxy.ListenPort < 1 || config.TProxy.ListenPort > 65535 || config.TProxy.DNSListenPort < 1 || config.TProxy.DNSListenPort > 65535 {
 		return fmt.Errorf("transparent proxy ports must be between 1 and 65535")
 	}
 	seen := map[string]bool{}
-	for _, name := range config.TProxy.LANInterfaces {
+	for _, name := range config.LANInterfaces {
 		name = strings.TrimSpace(name)
 		if name == "" || len(name) > 15 || seen[name] {
 			return fmt.Errorf("TProxy LAN interfaces must be unique valid interface names")
 		}
 		seen[name] = true
+	}
+	if config.Mode == TransparentProxyEBPF && strings.TrimSpace(config.EBPF.WANInterface) == "" {
+		return fmt.Errorf("eBPF router WAN interface is required")
+	}
+	return nil
+}
+
+func validateLocalProxy(config LocalProxyConfig, transparent TransparentProxyConfig) error {
+	if !config.Enabled {
+		return nil
+	}
+	if config.SOCKSPort < 1 || config.SOCKSPort > 65535 || config.HTTPPort < 1 || config.HTTPPort > 65535 {
+		return fmt.Errorf("local proxy ports must be between 1 and 65535")
+	}
+	if config.SOCKSPort == config.HTTPPort {
+		return fmt.Errorf("local SOCKS and HTTP proxy ports must be different")
+	}
+	if strings.TrimSpace(config.Username) == "" || strings.TrimSpace(config.Password) == "" {
+		return fmt.Errorf("local proxy username and password are required")
+	}
+	if transparent.Mode == TransparentProxyTProxy {
+		for _, port := range []int{transparent.TProxy.ListenPort, transparent.TProxy.DNSListenPort} {
+			if config.SOCKSPort == port || config.HTTPPort == port {
+				return fmt.Errorf("local proxy ports must not conflict with transparent proxy ports")
+			}
+		}
 	}
 	return nil
 }

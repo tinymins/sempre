@@ -130,6 +130,17 @@ func TestStoreMigratesOpenCoreOverridesAndRemovesDuplicateDNSFields(t *testing.T
 	}
 	profileDocument["custom_config"] = map[string]any{"route": map[string]any{"final": "proxy"}}
 	profileDocument["clash_api"] = ManagementAPIConfig{Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "legacy-secret", AllowOrigins: []string{}}
+	profileDocument["transparent_proxy"] = map[string]any{
+		"mode": "tun-router",
+		"tun": map[string]any{
+			"interface_name": "sing-box", "address": "172.30.0.1/30",
+			"route_exclude_address": []string{"10.10.10.0/24"}, "interface_mode": "exclude",
+			"interfaces": []string{"docker0"}, "auto_exclude_local_routes": true, "auto_exclude_vpn_routes": true,
+		},
+		"tproxy": map[string]any{
+			"listen_port": 7893, "dns_listen_port": 1053, "capture_host": true, "lan_interfaces": []string{"vmbr1"},
+		},
+	}
 	legacyCatalog := map[string]any{"schema": 4, "profiles": []any{profileDocument}, "custom_nodes": []any{}}
 	data, err := json.Marshal(legacyCatalog)
 	if err != nil {
@@ -165,6 +176,12 @@ func TestStoreMigratesOpenCoreOverridesAndRemovesDuplicateDNSFields(t *testing.T
 	}
 	if migrated.TransparentProxy.TProxy.ListenPort != 17893 || migrated.TransparentProxy.TProxy.DNSListenPort != 11053 {
 		t.Fatalf("transparent proxy migration = %#v", migrated.TransparentProxy)
+	}
+	if migrated.TransparentProxy.TUN.InterfaceName != "sempre-tun" || !migrated.TransparentProxy.CaptureHost || migrated.TransparentProxy.InterfaceMode != "exclude" || len(migrated.TransparentProxy.RouteExclusions) != 1 || len(migrated.TransparentProxy.LANInterfaces) != 1 {
+		t.Fatalf("flattened transparent runtime intent = %#v", migrated.TransparentProxy)
+	}
+	if !migrated.LocalProxy.Enabled || migrated.LocalProxy.SOCKSPort != 1080 || migrated.LocalProxy.HTTPPort != 1081 || migrated.LocalProxy.Username != "sempre" || len(migrated.LocalProxy.Password) < 40 {
+		t.Fatalf("authenticated local proxy migration = %#v", migrated.LocalProxy)
 	}
 	shared := migrated.DNS["shared"].(map[string]any)
 	for _, key := range []string{"tproxyPort", "dnsListenPort", "clashApiSecret"} {

@@ -286,7 +286,7 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 			check("external management API", probeExternalManagementAPI(ctx, profile.ManagementAPI))
 		}
 		if profile.TransparentProxy.Mode == subscriptions.TransparentProxyTUN ||
-			(profile.TransparentProxy.Mode == subscriptions.TransparentProxyTProxy && profile.TransparentProxy.TProxy.CaptureHost) {
+			(profile.TransparentProxy.Mode == subscriptions.TransparentProxyTProxy && profile.TransparentProxy.CaptureHost) {
 			for _, result := range transparentNetworkProbes(ctx) {
 				warn(result.name, result.err)
 			}

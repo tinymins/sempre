@@ -201,7 +201,7 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 	}}
 	profile.Groups = []ProxyGroup{{Name: "foreign", Type: "select", IncludeAll: true, Default: "edge"}}
 	profile.TransparentProxy.TUN.Address = "172.30.0.1/30"
-	profile.TransparentProxy.TUN.RouteExcludeAddress = []string{"10.10.10.0/24"}
+	profile.TransparentProxy.RouteExclusions = []string{"10.10.10.0/24"}
 
 	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 		t.Fatal(err)
 	}
 	inbounds := config["inbounds"].([]any)
-	tun := inbounds[0].(map[string]any)
+	tun := mapByKey(t, inbounds, "tag", "tun-in")
 	if tun["type"] != "tun" || tun["interface_name"] != "sempre-tun" || tun["auto_route"] != true || tun["auto_redirect"] != true || tun["strict_route"] != true || tun["stack"] != "system" {
 		t.Fatalf("TUN inbound = %#v", tun)
 	}
@@ -276,11 +276,13 @@ func TestLinuxSingBoxTProxyAndDisabledModes(t *testing.T) {
 		t.Fatal(err)
 	}
 	inbounds := config["inbounds"].([]any)
-	if len(inbounds) != 2 || inbounds[0].(map[string]any)["listen_port"] != float64(11053) || inbounds[1].(map[string]any)["listen_port"] != float64(17893) {
+	if len(inbounds) != 4 || mapByKey(t, inbounds, "tag", "dns-in")["listen_port"] != float64(11053) || mapByKey(t, inbounds, "tag", "tproxy-in")["listen_port"] != float64(17893) {
 		t.Fatalf("TProxy inbounds = %#v", inbounds)
 	}
+	assertLocalSingBoxInbounds(t, inbounds, profile.LocalProxy)
 
 	profile.TransparentProxy.Mode = TransparentProxyDisabled
+	profile.LocalProxy.Enabled = false
 	profile.CoreOverrides["sing-box"] = map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "tag": "manual", "listen": "127.0.0.1", "listen_port": 1080}}}
 	result, _, err = compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
 	if err != nil {
@@ -374,13 +376,46 @@ func TestMihomoManagedDNSAndTransparentModes(t *testing.T) {
 		t.Fatalf("Mihomo TProxy port = %#v", config["tproxy-port"])
 	}
 	listeners := config["listeners"].([]any)
-	listener := listeners[0].(map[string]any)
+	listener := mapByKey(t, listeners, "name", "sempre-dns-in")
 	if listener["type"] != "tproxy" || listener["port"] != 11053 {
 		t.Fatalf("Mihomo DNS listener = %#v", listeners)
+	}
+	for _, name := range []string{"sempre-socks-in", "sempre-http-in"} {
+		local := mapByKey(t, listeners, "name", name)
+		if local["listen"] != "127.0.0.1" || len(local["users"].([]any)) != 1 {
+			t.Fatalf("Mihomo local proxy listener = %#v", local)
+		}
 	}
 	rules := config["rules"].([]any)
 	if rules[0] != "DST-PORT,53,sempre-dns-out" {
 		t.Fatalf("Mihomo DNS capture rule = %#v", rules)
+	}
+}
+
+func mapByKey(t *testing.T, values []any, key string, expected any) map[string]any {
+	t.Helper()
+	for _, value := range values {
+		item, ok := value.(map[string]any)
+		if ok && item[key] == expected {
+			return item
+		}
+	}
+	t.Fatalf("missing %s=%v in %#v", key, expected, values)
+	return nil
+}
+
+func assertLocalSingBoxInbounds(t *testing.T, inbounds []any, config LocalProxyConfig) {
+	t.Helper()
+	for _, tag := range []string{"sempre-socks-in", "sempre-http-in"} {
+		inbound := mapByKey(t, inbounds, "tag", tag)
+		if inbound["listen"] != "127.0.0.1" {
+			t.Fatalf("local proxy is not loopback-only: %#v", inbound)
+		}
+		users := inbound["users"].([]any)
+		user := users[0].(map[string]any)
+		if user["username"] != config.Username || user["password"] != config.Password {
+			t.Fatalf("local proxy authentication = %#v", users)
+		}
 	}
 }
 

@@ -52,6 +52,7 @@ func (adapter *Adapter) Capabilities(_ string, target core.Target) core.Capabili
 		core.CapabilityDNSSplit, core.CapabilityDNSNative,
 		core.CapabilityRoutingRules, core.CapabilityRoutingRuleProviders,
 		core.CapabilityRoutingSelector, core.CapabilityRoutingURLTest,
+		core.CapabilityLocalProxy,
 		core.CapabilityTransparentTUN,
 		core.CapabilityManagementConnections, core.CapabilityManagementSelectors,
 		core.CapabilityManagementDelay, core.CapabilityManagementTraffic,

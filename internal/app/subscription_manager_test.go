@@ -61,7 +61,12 @@ func TestProfileRuntimeKeyTracksOnlyRuntimePlan(t *testing.T) {
 	if profileRuntimeKey(profile) != original {
 		t.Fatal("remark changed the runtime key")
 	}
-	profile.TransparentProxy.TProxy.CaptureHost = true
+	profile.LocalProxy.SOCKSPort++
+	if profileRuntimeKey(profile) == original {
+		t.Fatal("local proxy change did not change the runtime key")
+	}
+	profile.LocalProxy.SOCKSPort--
+	profile.TransparentProxy.CaptureHost = true
 	if profileRuntimeKey(profile) == original {
 		t.Fatal("transparent proxy change did not change the runtime key")
 	}
@@ -304,16 +309,21 @@ func TestScheduledSubscriptionUpdatePreservesLinuxRuntimeSettings(t *testing.T) 
 	candidate := *profile
 	candidate.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true, Content: testSubscription}}
 	candidate.TransparentProxy = subscriptions.TransparentProxyConfig{
-		Mode: subscriptions.TransparentProxyTUN,
+		Mode:                   subscriptions.TransparentProxyTUN,
+		InterfaceMode:          "all",
+		Interfaces:             []string{},
+		RouteExclusions:        []string{"10.10.10.0/24", "10.23.0.0/21"},
+		AutoExcludeLocalRoutes: true,
+		AutoExcludeVPNRoutes:   true,
+		CaptureHost:            true,
+		LANInterfaces:          []string{"vmbr1"},
 		TUN: subscriptions.TUNConfig{
-			InterfaceName: "sempre-tun", Address: "172.30.0.1/30", InterfaceMode: "all", Interfaces: []string{},
-			RouteExcludeAddress:    []string{"10.10.10.0/24", "10.23.0.0/21"},
-			AutoExcludeLocalRoutes: true, AutoExcludeVPNRoutes: true,
+			InterfaceName: "sempre-tun", Address: "172.30.0.1/30",
 		},
 		TProxy: subscriptions.TProxyConfig{
-			ListenPort: 17893, DNSListenPort: 11053, CaptureHost: true,
-			LANInterfaces: []string{"vmbr1"},
+			ListenPort: 17893, DNSListenPort: 11053,
 		},
+		EBPF: subscriptions.EBPFConfig{WANInterface: "auto"},
 	}
 	candidate.ManagementAPI = subscriptions.ManagementAPIConfig{
 		Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "fixed-secret",

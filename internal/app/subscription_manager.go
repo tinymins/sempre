@@ -605,8 +605,9 @@ func configBuild(profile subscriptions.Profile, target subscriptions.Target) sta
 func profileRuntimeKey(profile subscriptions.Profile) string {
 	data, _ := json.Marshal(struct {
 		Transparent subscriptions.TransparentProxyConfig `json:"transparent_proxy"`
+		LocalProxy  subscriptions.LocalProxyConfig       `json:"local_proxy"`
 		Management  subscriptions.ManagementAPIConfig    `json:"management_api"`
-	}{Transparent: profile.TransparentProxy, Management: profile.ManagementAPI})
+	}{Transparent: profile.TransparentProxy, LocalProxy: profile.LocalProxy, Management: profile.ManagementAPI})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

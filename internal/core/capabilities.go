@@ -20,6 +20,7 @@ const (
 	CapabilityRoutingRuleProviders   = "routing.rule_providers"
 	CapabilityRoutingSelector        = "routing.selector"
 	CapabilityRoutingURLTest         = "routing.url_test"
+	CapabilityLocalProxy             = "inbound.local_proxy"
 	CapabilityTransparentTUN         = "transparent.tun"
 	CapabilityTransparentTUNAddress  = "transparent.tun.address"
 	CapabilityTransparentInterfaces  = "transparent.interface_policy"

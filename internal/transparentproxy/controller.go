@@ -136,15 +136,15 @@ func (controller *Controller) Prepare(
 	switch transparent.Mode {
 	case subscriptions.TransparentProxyTUN:
 		if coreID == "sing-box" {
-			plan, err = prepareTUN(plan, transparent.TUN, inventory, document)
+			plan, err = prepareTUN(plan, transparent, inventory, document)
 		} else {
-			plan, err = prepareMihomoTUN(plan, transparent.TUN, inventory, document)
+			plan, err = prepareMihomoTUN(plan, transparent, inventory, document)
 		}
 	case subscriptions.TransparentProxyTProxy:
 		if coreID == "sing-box" {
-			plan, err = prepareTProxy(plan, transparent.TProxy, inventory, document)
+			plan, err = prepareTProxy(plan, transparent, inventory, document)
 		} else {
-			plan, err = prepareMihomoTProxy(plan, transparent.TProxy, inventory, document)
+			plan, err = prepareMihomoTProxy(plan, transparent, inventory, document)
 		}
 	default:
 		err = fmt.Errorf("unsupported Linux transparent proxy mode %q", transparent.Mode)
@@ -283,9 +283,9 @@ func (controller *Controller) runtimePlan(
 		}
 		plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
 	} else {
-		config := profile.TransparentProxy.TProxy
-		plan.TProxyPort = config.ListenPort
-		plan.DNSPort = config.DNSListenPort
+		config := profile.TransparentProxy
+		plan.TProxyPort = config.TProxy.ListenPort
+		plan.DNSPort = config.TProxy.DNSListenPort
 		plan.CaptureHost = config.CaptureHost
 		plan.LANInterfaces = uniqueStrings(config.LANInterfaces)
 		if len(plan.LANInterfaces) == 0 {
@@ -426,15 +426,15 @@ func validateMihomoRuntimePlan(plan Plan, document map[string]any) error {
 
 func prepareTUN(
 	plan Plan,
-	config subscriptions.TUNConfig,
+	config subscriptions.TransparentProxyConfig,
 	inventory Inventory,
 	document map[string]any,
 ) (Plan, error) {
-	address, err := resolveTUNAddress(config.Address, inventory.OccupiedPrefixes)
+	address, err := resolveTUNAddress(config.TUN.Address, inventory.OccupiedPrefixes)
 	if err != nil {
 		return Plan{}, err
 	}
-	exclusions := append([]string{}, config.RouteExcludeAddress...)
+	exclusions := append([]string{}, config.RouteExclusions...)
 	if config.AutoExcludeLocalRoutes {
 		exclusions = append(exclusions, inventory.LocalPrefixes...)
 	}
@@ -446,7 +446,7 @@ func prepareTUN(
 	if err != nil {
 		return Plan{}, err
 	}
-	inbound["interface_name"] = config.InterfaceName
+	inbound["interface_name"] = config.TUN.InterfaceName
 	inbound["address"] = []string{address}
 	inbound["auto_route"] = true
 	inbound["auto_redirect"] = true
@@ -467,7 +467,7 @@ func prepareTUN(
 	route := object(document["route"])
 	route["auto_detect_interface"] = true
 	document["route"] = route
-	plan.TUNInterface = config.InterfaceName
+	plan.TUNInterface = config.TUN.InterfaceName
 	plan.TUNAddress = address
 	plan.RouteExclusions = exclusions
 	plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
@@ -476,7 +476,7 @@ func prepareTUN(
 
 func prepareTProxy(
 	plan Plan,
-	config subscriptions.TProxyConfig,
+	config subscriptions.TransparentProxyConfig,
 	inventory Inventory,
 	document map[string]any,
 ) (Plan, error) {
@@ -497,8 +497,8 @@ func prepareTProxy(
 	route["default_mark"] = BypassMark
 	route["auto_detect_interface"] = true
 	document["route"] = route
-	plan.TProxyPort = config.ListenPort
-	plan.DNSPort = config.DNSListenPort
+	plan.TProxyPort = config.TProxy.ListenPort
+	plan.DNSPort = config.TProxy.DNSListenPort
 	plan.CaptureHost = config.CaptureHost
 	plan.LANInterfaces = interfaces
 	plan.ExcludedPrefixes = normalizedPrefixes(append(reservedPrefixes(), inventory.LocalPrefixes...))
@@ -508,11 +508,11 @@ func prepareTProxy(
 
 func prepareMihomoTUN(
 	plan Plan,
-	config subscriptions.TUNConfig,
+	config subscriptions.TransparentProxyConfig,
 	inventory Inventory,
 	document map[string]any,
 ) (Plan, error) {
-	exclusions := append([]string{}, config.RouteExcludeAddress...)
+	exclusions := append([]string{}, config.RouteExclusions...)
 	if config.AutoExcludeLocalRoutes {
 		exclusions = append(exclusions, inventory.LocalPrefixes...)
 	}
@@ -522,7 +522,7 @@ func prepareMihomoTUN(
 	exclusions = normalizedPrefixes(exclusions)
 	tun := object(document["tun"])
 	tun["enable"] = true
-	tun["device"] = config.InterfaceName
+	tun["device"] = config.TUN.InterfaceName
 	tun["stack"] = "system"
 	tun["auto-route"] = true
 	tun["auto-redirect"] = true
@@ -542,7 +542,7 @@ func prepareMihomoTUN(
 		tun["exclude-interface"] = config.Interfaces
 	}
 	document["tun"] = tun
-	plan.TUNInterface = config.InterfaceName
+	plan.TUNInterface = config.TUN.InterfaceName
 	plan.RouteExclusions = exclusions
 	plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
 	return plan, nil
@@ -550,15 +550,15 @@ func prepareMihomoTUN(
 
 func prepareMihomoTProxy(
 	plan Plan,
-	config subscriptions.TProxyConfig,
+	config subscriptions.TransparentProxyConfig,
 	inventory Inventory,
 	document map[string]any,
 ) (Plan, error) {
-	if integer(document["tproxy-port"]) != config.ListenPort {
-		return Plan{}, fmt.Errorf("runtime configuration is missing tproxy-port %d", config.ListenPort)
+	if integer(document["tproxy-port"]) != config.TProxy.ListenPort {
+		return Plan{}, fmt.Errorf("runtime configuration is missing tproxy-port %d", config.TProxy.ListenPort)
 	}
-	if !mihomoDNSListener(document, config.DNSListenPort) {
-		return Plan{}, fmt.Errorf("runtime configuration is missing DNS TProxy listener %d", config.DNSListenPort)
+	if !mihomoDNSListener(document, config.TProxy.DNSListenPort) {
+		return Plan{}, fmt.Errorf("runtime configuration is missing DNS TProxy listener %d", config.TProxy.DNSListenPort)
 	}
 	interfaces, err := resolveLANInterfaces(config.LANInterfaces, inventory)
 	if err != nil {
@@ -568,8 +568,8 @@ func prepareMihomoTProxy(
 		return Plan{}, fmt.Errorf("TProxy mode needs a LAN interface or capture_host enabled")
 	}
 	document["routing-mark"] = BypassMark
-	plan.TProxyPort = config.ListenPort
-	plan.DNSPort = config.DNSListenPort
+	plan.TProxyPort = config.TProxy.ListenPort
+	plan.DNSPort = config.TProxy.DNSListenPort
 	plan.CaptureHost = config.CaptureHost
 	plan.LANInterfaces = interfaces
 	plan.ExcludedPrefixes = normalizedPrefixes(append(reservedPrefixes(), inventory.LocalPrefixes...))

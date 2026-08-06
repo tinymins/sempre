@@ -66,8 +66,8 @@ func TestPrepareTUNResolvesAddressAndRouteExclusions(t *testing.T) {
 	}
 	controller := &Controller{backend: backend}
 	profile := subscriptions.NewProfile("gateway")
-	profile.TransparentProxy.TUN.InterfaceMode = "include"
-	profile.TransparentProxy.TUN.Interfaces = []string{"vmbr1"}
+	profile.TransparentProxy.InterfaceMode = "include"
+	profile.TransparentProxy.Interfaces = []string{"vmbr1"}
 	path := writeRuntimeConfig(t, map[string]any{
 		"inbounds": []any{map[string]any{"type": "tun", "tag": "tun-in"}},
 		"route":    map[string]any{},
@@ -181,8 +181,8 @@ func TestPrepareMihomoTUNAndTProxyRuntime(t *testing.T) {
 	}
 	controller := &Controller{backend: backend}
 	profile := subscriptions.NewProfile("mihomo")
-	profile.TransparentProxy.TUN.InterfaceMode = "exclude"
-	profile.TransparentProxy.TUN.Interfaces = []string{"vmbr1"}
+	profile.TransparentProxy.InterfaceMode = "exclude"
+	profile.TransparentProxy.Interfaces = []string{"vmbr1"}
 	path := writeYAMLRuntimeConfig(t, map[string]any{
 		"tun":   map[string]any{},
 		"dns":   map[string]any{"respect-rules": true, "nameserver": []string{"tls://dns.google:853#proxy"}, "nameserver-policy": map[string]any{"geosite:cn": []string{"127.0.0.1:53"}}},
@@ -202,8 +202,8 @@ func TestPrepareMihomoTUNAndTProxyRuntime(t *testing.T) {
 	}
 
 	profile.TransparentProxy.Mode = subscriptions.TransparentProxyTProxy
-	profile.TransparentProxy.TProxy.CaptureHost = true
-	profile.TransparentProxy.TProxy.LANInterfaces = []string{"vmbr1"}
+	profile.TransparentProxy.CaptureHost = true
+	profile.TransparentProxy.LANInterfaces = []string{"vmbr1"}
 	path = writeYAMLRuntimeConfig(t, map[string]any{
 		"tproxy-port": 7893,
 		"listeners":   []any{map[string]any{"name": "sempre-dns-in", "type": "tproxy", "port": 1053}},

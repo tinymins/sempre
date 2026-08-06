@@ -289,17 +289,21 @@ function dnsNativeTarget(context: SubscriptionConfigurationContext) {
 
 function profileFormValues(profile: SubscriptionProfile, configurationContext: SubscriptionConfigurationContext): FormFieldValues {
 	const transparent = profile.transparent_proxy ?? {
-		mode: "tun-router" as const,
-		tun: {
-			interface_name: "sempre-tun",
-			route_exclude_address: [],
+			mode: "tun-router" as const,
+			capture_host: false,
+			lan_interfaces: [],
+			route_exclusions: [],
 			interface_mode: "all" as const,
 			interfaces: [],
 			auto_exclude_local_routes: true,
 			auto_exclude_vpn_routes: true,
-		},
-		tproxy: { listen_port: 7893, dns_listen_port: 1053, capture_host: false, lan_interfaces: [] },
-	};
+			tun: {
+				interface_name: "sempre-tun",
+			},
+			tproxy: { listen_port: 7893, dns_listen_port: 1053 },
+			ebpf: { wan_interface: "auto", auto_config_kernel_parameter: false },
+		};
+	const localProxy = profile.local_proxy ?? { enabled: true, socks_port: 1080, http_port: 1081, username: "sempre", password: "" };
 	const managementAPI = profile.management_api ?? { enabled: false, allow_origins: [], allow_private_network: false };
 	const targetCore = configurationContext.target?.core;
   const items: SubscribeItem[] = profile.sources
@@ -346,15 +350,19 @@ function profileFormValues(profile: SubscriptionProfile, configurationContext: S
 		transparentMode: transparent.mode,
 		tunInterfaceName: transparent.tun.interface_name,
 		tunAddress: transparent.tun.address ?? "",
-		tunRouteExclusions: transparent.tun.route_exclude_address.join("\n"),
-		tunInterfaceMode: transparent.tun.interface_mode ?? "all",
-		tunInterfaces: transparent.tun.interfaces ?? [],
-		tunAutoExcludeLocal: transparent.tun.auto_exclude_local_routes,
-		tunAutoExcludeVPN: transparent.tun.auto_exclude_vpn_routes,
+		tunRouteExclusions: transparent.route_exclusions.join("\n"),
+		tunInterfaceMode: transparent.interface_mode ?? "all",
+		tunInterfaces: transparent.interfaces ?? [],
+		tunAutoExcludeLocal: transparent.auto_exclude_local_routes,
+		tunAutoExcludeVPN: transparent.auto_exclude_vpn_routes,
 		tproxyPort: transparent.tproxy.listen_port,
 		tproxyDNSPort: transparent.tproxy.dns_listen_port,
-		tproxyCaptureHost: transparent.tproxy.capture_host,
-		tproxyLANInterfaces: transparent.tproxy.lan_interfaces,
+		tproxyCaptureHost: transparent.capture_host,
+		tproxyLANInterfaces: transparent.lan_interfaces,
+		localProxySOCKSPort: localProxy.socks_port,
+		localProxyHTTPPort: localProxy.http_port,
+		localProxyUsername: localProxy.username,
+		localProxyPassword: localProxy.password,
 		managementAPIEnabled: managementAPI.enabled,
 		managementAPIController: managementAPI.external_controller ?? "0.0.0.0:9090",
 		managementAPISecret: managementAPI.secret ?? "",
@@ -396,9 +404,10 @@ const ProxySubscribeEditor = ({
     const [scheduleFeedback, setScheduleFeedback] = useState<SaveFeedback>({ state: "idle" });
 		const features = useMemo(() => new Set(configurationContext.capabilities.features), [configurationContext.capabilities.features]);
 		const supportsTransparent = features.has("transparent.tun") || features.has("transparent.tproxy");
+		const supportsLocalProxy = features.has("inbound.local_proxy");
 		const supportsManagement = features.has("management.external_api");
 		const supportsDNS = configurationContext.capabilities.features.some((feature) => feature.startsWith("dns."));
-		const runtimeVisible = supportsTransparent || supportsManagement;
+		const runtimeVisible = supportsLocalProxy || supportsTransparent || supportsManagement;
 		const availableTabs = useMemo(() => [
 				...BASE_TABS,
 				...(features.has("routing.rule_providers") ? [{ label: "ruleList", value: "ruleList" }] : []),
@@ -503,23 +512,31 @@ const ProxySubscribeEditor = ({
         sources: [...sources, ...rawSourcesRef.current],
         custom_node_ids: values.selectedCustomNodeIds ?? [],
 			core_overrides: currentOverrides,
+			local_proxy: {
+				enabled: true,
+				socks_port: values.localProxySOCKSPort ?? 1080,
+				http_port: values.localProxyHTTPPort ?? 1081,
+				username: values.localProxyUsername || "sempre",
+				password: values.localProxyPassword || profileRef.current.local_proxy?.password || "",
+			},
 			transparent_proxy: {
 				mode: values.transparentMode ?? "tun-router",
+				capture_host: values.tproxyCaptureHost ?? false,
+				lan_interfaces: values.tproxyLANInterfaces ?? [],
+				route_exclusions: String(values.tunRouteExclusions || "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
+				interface_mode: values.tunInterfaceMode ?? "all",
+				interfaces: values.tunInterfaces ?? [],
+				auto_exclude_local_routes: values.tunAutoExcludeLocal ?? true,
+				auto_exclude_vpn_routes: values.tunAutoExcludeVPN ?? true,
 				tun: {
 					interface_name: values.tunInterfaceName || "sempre-tun",
 					address: values.tunAddress?.trim() || undefined,
-					route_exclude_address: String(values.tunRouteExclusions || "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
-					interface_mode: values.tunInterfaceMode ?? "all",
-					interfaces: values.tunInterfaces ?? [],
-					auto_exclude_local_routes: values.tunAutoExcludeLocal ?? true,
-					auto_exclude_vpn_routes: values.tunAutoExcludeVPN ?? true,
 				},
 				tproxy: {
 					listen_port: values.tproxyPort ?? 7893,
 					dns_listen_port: values.tproxyDNSPort ?? 1053,
-					capture_host: values.tproxyCaptureHost ?? false,
-					lan_interfaces: values.tproxyLANInterfaces ?? [],
 				},
+				ebpf: profileRef.current.transparent_proxy?.ebpf ?? { wan_interface: "auto", auto_config_kernel_parameter: false },
 			},
 			management_api: {
 				enabled: values.managementAPIEnabled ?? false,
@@ -931,6 +948,22 @@ const ProxySubscribeEditor = ({
             </div>
 
 			<div className={visibleActiveTab === "runtime" ? "space-y-5" : "hidden"}>
+				{supportsLocalProxy ? <section className="space-y-4">
+					<div className="grid gap-4 md:grid-cols-2">
+						<Form.Item label={t("proxy.form.localProxySOCKSPort")} name="localProxySOCKSPort">
+							<InputNumber min={1} max={65535} className="w-full" />
+						</Form.Item>
+						<Form.Item label={t("proxy.form.localProxyHTTPPort")} name="localProxyHTTPPort">
+							<InputNumber min={1} max={65535} className="w-full" />
+						</Form.Item>
+						<Form.Item label={t("proxy.form.localProxyUsername")} name="localProxyUsername">
+							<Input autoComplete="username" />
+						</Form.Item>
+						<Form.Item label={t("proxy.form.localProxyPassword")} name="localProxyPassword">
+							<Password autoComplete="new-password" />
+						</Form.Item>
+					</div>
+				</section> : null}
 				{supportsTransparent ? <section className="space-y-4">
 					<Form.Item label={t("proxy.form.transparentMode")} name="transparentMode">
 						<Select

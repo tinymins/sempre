@@ -395,6 +395,14 @@ func legacyClashDNSOverride(config map[string]any, meta bool) map[string]any {
 
 func configureMihomoRuntime(config map[string]any, profile Profile) {
 	transparent := profile.TransparentProxy
+	listeners := []map[string]any{}
+	if profile.LocalProxy.Enabled {
+		users := []map[string]any{{"username": profile.LocalProxy.Username, "password": profile.LocalProxy.Password}}
+		listeners = append(listeners,
+			map[string]any{"name": "sempre-socks-in", "type": "socks", "listen": "127.0.0.1", "port": profile.LocalProxy.SOCKSPort, "udp": true, "users": users},
+			map[string]any{"name": "sempre-http-in", "type": "http", "listen": "127.0.0.1", "port": profile.LocalProxy.HTTPPort, "users": users},
+		)
+	}
 	switch transparent.Mode {
 	case TransparentProxyTUN:
 		tun := map[string]any{
@@ -402,21 +410,24 @@ func configureMihomoRuntime(config map[string]any, profile Profile) {
 			"auto-route": true, "auto-redirect": true, "strict-route": true, "auto-detect-interface": true,
 			"dns-hijack": []string{"any:53", "tcp://any:53"},
 		}
-		if len(transparent.TUN.RouteExcludeAddress) > 0 {
-			tun["route-exclude-address"] = transparent.TUN.RouteExcludeAddress
+		if len(transparent.RouteExclusions) > 0 {
+			tun["route-exclude-address"] = transparent.RouteExclusions
 		}
-		if transparent.TUN.InterfaceMode == "include" {
-			tun["include-interface"] = transparent.TUN.Interfaces
-		} else if transparent.TUN.InterfaceMode == "exclude" {
-			tun["exclude-interface"] = transparent.TUN.Interfaces
+		if transparent.InterfaceMode == "include" {
+			tun["include-interface"] = transparent.Interfaces
+		} else if transparent.InterfaceMode == "exclude" {
+			tun["exclude-interface"] = transparent.Interfaces
 		}
 		config["tun"] = tun
 	case TransparentProxyTProxy:
 		config["tproxy-port"] = transparent.TProxy.ListenPort
-		config["listeners"] = []map[string]any{{
+		listeners = append(listeners, map[string]any{
 			"name": "sempre-dns-in", "type": "tproxy", "listen": "0.0.0.0",
 			"port": transparent.TProxy.DNSListenPort, "udp": true,
-		}}
+		})
+	}
+	if len(listeners) > 0 {
+		config["listeners"] = listeners
 	}
 }
 
@@ -573,7 +584,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	if err := validateManagedOverrides(profile, target); err != nil {
 		return nil, diffs, warnings, err
 	}
-	inbounds := singBoxInbounds(target, modern, profile.TransparentProxy, shared)
+	inbounds := singBoxInbounds(target, modern, profile.TransparentProxy, profile.LocalProxy)
 	remoteOutbound := valueOr(shared.RemoteDetour, foreignOutbound(groups, final))
 	dns := singBoxDNS(profile.DNS, modern, shared, remoteOutbound)
 	if servers, ok := dns["servers"].([]any); ok {
@@ -668,17 +679,18 @@ func (compiler *Compiler) loadRuleProviders(
 	return ruleSets, routes, warnings, nil
 }
 
-func singBoxInbounds(target Target, modern bool, transparent TransparentProxyConfig, dns dnsShared) []any {
+func singBoxInbounds(target Target, modern bool, transparent TransparentProxyConfig, localProxy LocalProxyConfig) []any {
+	inbounds := localProxySingBoxInbounds(localProxy)
 	if target.Platform != "default" {
 		inbound := map[string]any{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "stack": "mixed"}
 		if target.Platform == "windows" {
 			inbound["interface_name"] = "sing-box"
 		}
-		return []any{inbound}
+		return append(inbounds, inbound)
 	}
 	switch transparent.Mode {
 	case TransparentProxyDisabled:
-		return []any{}
+		return inbounds
 	case TransparentProxyTUN:
 		address := valueOr(transparent.TUN.Address, "172.19.0.1/30")
 		inbound := map[string]any{
@@ -686,10 +698,10 @@ func singBoxInbounds(target Target, modern bool, transparent TransparentProxyCon
 			"address": []string{address}, "auto_route": true, "auto_redirect": true,
 			"strict_route": true, "stack": "system",
 		}
-		if len(transparent.TUN.RouteExcludeAddress) > 0 {
-			inbound["route_exclude_address"] = transparent.TUN.RouteExcludeAddress
+		if len(transparent.RouteExclusions) > 0 {
+			inbound["route_exclude_address"] = transparent.RouteExclusions
 		}
-		return []any{inbound}
+		return append(inbounds, inbound)
 	}
 	dnsInbound := map[string]any{"type": "direct", "tag": "dns-in", "listen": "::", "listen_port": transparent.TProxy.DNSListenPort}
 	tproxy := map[string]any{"type": "tproxy", "tag": "tproxy-in", "listen": "::", "listen_port": transparent.TProxy.ListenPort, "tcp_multi_path": false, "tcp_fast_open": true, "udp_fragment": true}
@@ -698,7 +710,18 @@ func singBoxInbounds(target Target, modern bool, transparent TransparentProxyCon
 		tproxy["sniff"] = true
 		tproxy["sniff_override_destination"] = false
 	}
-	return []any{dnsInbound, tproxy}
+	return append(inbounds, dnsInbound, tproxy)
+}
+
+func localProxySingBoxInbounds(config LocalProxyConfig) []any {
+	if !config.Enabled {
+		return []any{}
+	}
+	users := []map[string]any{{"username": config.Username, "password": config.Password}}
+	return []any{
+		map[string]any{"type": "socks", "tag": "sempre-socks-in", "listen": "127.0.0.1", "listen_port": config.SOCKSPort, "users": users},
+		map[string]any{"type": "http", "tag": "sempre-http-in", "listen": "127.0.0.1", "listen_port": config.HTTPPort, "users": users},
+	}
 }
 
 func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutbound string) map[string]any {
@@ -776,7 +799,7 @@ func resolveDNSShared(config map[string]any) dnsShared {
 
 func validateManagedOverrides(profile Profile, target Target) error {
 	override := profile.CoreOverrides["sing-box"]
-	if target.Platform != "default" || profile.TransparentProxy.Mode == TransparentProxyDisabled {
+	if target.Platform != "default" || (profile.TransparentProxy.Mode == TransparentProxyDisabled && !profile.LocalProxy.Enabled) {
 		return nil
 	}
 	if _, exists := override["inbounds"]; exists {
@@ -806,8 +829,12 @@ func validateMihomoOverrides(profile Profile) error {
 			return fmt.Errorf("top-level tun overrides require transparent_proxy.mode=disabled")
 		}
 	}
-	if profile.TransparentProxy.Mode == TransparentProxyTProxy {
-		for _, key := range []string{"tproxy-port", "listeners", "routing-mark"} {
+	if profile.TransparentProxy.Mode == TransparentProxyTProxy || profile.LocalProxy.Enabled {
+		keys := []string{"listeners"}
+		if profile.TransparentProxy.Mode == TransparentProxyTProxy {
+			keys = append(keys, "tproxy-port", "routing-mark")
+		}
+		for _, key := range keys {
 			if _, exists := override[key]; exists {
 				return fmt.Errorf("top-level %s is managed by Linux TProxy mode", key)
 			}

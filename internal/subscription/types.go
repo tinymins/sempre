@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/url"
@@ -10,7 +11,7 @@ import (
 )
 
 const (
-	CatalogSchema       = 5
+	CatalogSchema       = 6
 	DefaultUserAgent    = "clash.meta"
 	MaxSourceSize       = int64(32 << 20)
 	SourceURL           = "url"
@@ -42,6 +43,7 @@ type Profile struct {
 	DNS                   map[string]any            `json:"dns,omitempty"`
 	PrivateAccess         map[string]any            `json:"private_access,omitempty"`
 	CoreOverrides         map[string]map[string]any `json:"core_overrides"`
+	LocalProxy            LocalProxyConfig          `json:"local_proxy"`
 	TransparentProxy      TransparentProxyConfig    `json:"transparent_proxy"`
 	ManagementAPI         ManagementAPIConfig       `json:"management_api"`
 	UseSystemGroups       bool                      `json:"use_system_groups"`
@@ -108,30 +110,45 @@ type ProxyGroup struct {
 const (
 	TransparentProxyTUN      = "tun-router"
 	TransparentProxyTProxy   = "tproxy"
+	TransparentProxyEBPF     = "ebpf-router"
 	TransparentProxyDisabled = "disabled"
 )
 
 type TransparentProxyConfig struct {
-	Mode   string       `json:"mode"`
-	TUN    TUNConfig    `json:"tun"`
-	TProxy TProxyConfig `json:"tproxy"`
+	Mode                   string       `json:"mode"`
+	CaptureHost            bool         `json:"capture_host"`
+	LANInterfaces          []string     `json:"lan_interfaces"`
+	RouteExclusions        []string     `json:"route_exclusions"`
+	InterfaceMode          string       `json:"interface_mode"`
+	Interfaces             []string     `json:"interfaces"`
+	AutoExcludeLocalRoutes bool         `json:"auto_exclude_local_routes"`
+	AutoExcludeVPNRoutes   bool         `json:"auto_exclude_vpn_routes"`
+	TUN                    TUNConfig    `json:"tun"`
+	TProxy                 TProxyConfig `json:"tproxy"`
+	EBPF                   EBPFConfig   `json:"ebpf"`
 }
 
 type TUNConfig struct {
-	InterfaceName          string   `json:"interface_name"`
-	Address                string   `json:"address,omitempty"`
-	RouteExcludeAddress    []string `json:"route_exclude_address"`
-	InterfaceMode          string   `json:"interface_mode"`
-	Interfaces             []string `json:"interfaces"`
-	AutoExcludeLocalRoutes bool     `json:"auto_exclude_local_routes"`
-	AutoExcludeVPNRoutes   bool     `json:"auto_exclude_vpn_routes"`
+	InterfaceName string `json:"interface_name"`
+	Address       string `json:"address,omitempty"`
 }
 
 type TProxyConfig struct {
-	ListenPort    int      `json:"listen_port"`
-	DNSListenPort int      `json:"dns_listen_port"`
-	CaptureHost   bool     `json:"capture_host"`
-	LANInterfaces []string `json:"lan_interfaces"`
+	ListenPort    int `json:"listen_port"`
+	DNSListenPort int `json:"dns_listen_port"`
+}
+
+type EBPFConfig struct {
+	WANInterface              string `json:"wan_interface"`
+	AutoConfigKernelParameter bool   `json:"auto_config_kernel_parameter"`
+}
+
+type LocalProxyConfig struct {
+	Enabled   bool   `json:"enabled"`
+	SOCKSPort int    `json:"socks_port"`
+	HTTPPort  int    `json:"http_port"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
 }
 
 type ManagementAPIConfig struct {
@@ -237,6 +254,7 @@ func NewProfile(name string) Profile {
 		UseSystemGroups: true, UseSystemRules: true, UseSystemFilters: true,
 		UseSystemDNS: true, UseSystemCustomConfig: true,
 		TransparentProxy: defaultTransparentProxyConfig(),
+		LocalProxy:       defaultLocalProxyConfig(),
 		CoreOverrides:    map[string]map[string]any{},
 		ManagementAPI:    ManagementAPIConfig{AllowOrigins: []string{}},
 	}
@@ -244,17 +262,27 @@ func NewProfile(name string) Profile {
 
 func defaultTransparentProxyConfig() TransparentProxyConfig {
 	return TransparentProxyConfig{
-		Mode: TransparentProxyTUN,
-		TUN: TUNConfig{
-			InterfaceName:          "sempre-tun",
-			RouteExcludeAddress:    []string{},
-			InterfaceMode:          "all",
-			Interfaces:             []string{},
-			AutoExcludeLocalRoutes: true,
-			AutoExcludeVPNRoutes:   true,
-		},
-		TProxy: TProxyConfig{ListenPort: 7893, DNSListenPort: 1053, LANInterfaces: []string{}},
+		Mode: TransparentProxyTUN, LANInterfaces: []string{}, RouteExclusions: []string{},
+		InterfaceMode: "all", Interfaces: []string{}, AutoExcludeLocalRoutes: true, AutoExcludeVPNRoutes: true,
+		TUN:    TUNConfig{InterfaceName: "sempre-tun"},
+		TProxy: TProxyConfig{ListenPort: 7893, DNSListenPort: 1053},
+		EBPF:   EBPFConfig{WANInterface: "auto"},
 	}
+}
+
+func defaultLocalProxyConfig() LocalProxyConfig {
+	return LocalProxyConfig{
+		Enabled: true, SOCKSPort: 1080, HTTPPort: 1081,
+		Username: "sempre", Password: NewPassword(),
+	}
+}
+
+func NewPassword() string {
+	data := make([]byte, 32)
+	if _, err := rand.Read(data); err != nil {
+		panic(fmt.Sprintf("generate local proxy password: %v", err))
+	}
+	return base64.RawURLEncoding.EncodeToString(data)
 }
 
 func NewID() string {

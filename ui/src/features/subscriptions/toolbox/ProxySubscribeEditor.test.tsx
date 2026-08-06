@@ -35,6 +35,7 @@ const profile: SubscriptionProfile = {
   rule_providers: [],
   filters: [],
 	core_overrides: {},
+	local_proxy: { enabled: true, socks_port: 1080, http_port: 1081, username: 'sempre', password: 'local-secret' },
   use_system_groups: true,
   use_system_rules: true,
   use_system_filters: true,
@@ -55,7 +56,7 @@ const singBoxContext: SubscriptionConfigurationContext = {
 			'dns.bootstrap_server_name', 'dns.fake_ip', 'dns.split', 'dns.native', 'dns.prefer_ipv4',
 			'dns.remote_server_name', 'dns.remote_detour', 'dns.reject_https',
 			'routing.rules', 'routing.rule_providers', 'routing.selector', 'routing.url_test',
-			'native_override', 'private_access', 'transparent.tun', 'transparent.tun.address',
+			'native_override', 'private_access', 'inbound.local_proxy', 'transparent.tun', 'transparent.tun.address',
 			'transparent.tproxy', 'transparent.interface_policy', 'management.external_api',
 		],
 		enum_values: {}, protocols: [{ protocol: 'trojan', transports: ['tcp'], security: ['tls'] }],
@@ -189,9 +190,12 @@ describe('ProxySubscribeEditor', () => {
 
 		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({
+			local_proxy: { enabled: true, socks_port: 1080, http_port: 1081, username: 'sempre', password: 'local-secret' },
 			transparent_proxy: {
 				mode: 'tproxy',
-				tproxy: { listen_port: 7893, dns_listen_port: 1053, capture_host: false, lan_interfaces: ['vmbr1'] },
+				capture_host: false,
+				lan_interfaces: ['vmbr1'],
+				tproxy: { listen_port: 7893, dns_listen_port: 1053 },
 			},
 			management_api: { enabled: true, external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
 		})
