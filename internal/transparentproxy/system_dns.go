@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -25,6 +26,8 @@ type systemDNSManager struct {
 type systemDNSState struct {
 	Original string `json:"original"`
 }
+
+var systemDNSChattr = runSystemDNSChattr
 
 func (manager *systemDNSManager) Apply() error {
 	if manager == nil || !manager.allowed {
@@ -61,6 +64,9 @@ func (manager *systemDNSManager) Apply() error {
 	if err := state.WriteAtomic(manager.resolvConf, systemDNSContent(), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", manager.resolvConf, err)
 	}
+	if err := systemDNSChattr(manager.resolvConf, true); err != nil {
+		return fmt.Errorf("lock %s against external DNS rewrites: %w", manager.resolvConf, err)
+	}
 	return nil
 }
 
@@ -78,6 +84,9 @@ func (manager *systemDNSManager) Restore() error {
 	var saved systemDNSState
 	if err := json.Unmarshal(backup, &saved); err != nil {
 		return fmt.Errorf("decode system DNS backup: %w", err)
+	}
+	if err := systemDNSChattr(manager.resolvConf, false); err != nil {
+		return fmt.Errorf("unlock %s before restoring system DNS: %w", manager.resolvConf, err)
 	}
 	current, err := os.ReadFile(manager.resolvConf)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -114,6 +123,25 @@ func (manager *systemDNSManager) statePath() string {
 
 func systemDNSContent() []byte {
 	return []byte("# Managed by Sempre system DNS takeover. Do not edit while enabled.\nnameserver 127.0.0.1\noptions timeout:1 attempts:1\n")
+}
+
+func runSystemDNSChattr(path string, immutable bool) error {
+	binary, err := exec.LookPath("chattr")
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	flag := "-i"
+	if immutable {
+		flag = "+i"
+	}
+	output, err := exec.Command(binary, flag, path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("chattr %s: %w: %s", flag, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func systemDNSManaged(data []byte) bool {

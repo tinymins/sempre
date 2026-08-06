@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -331,6 +332,7 @@ func TestApplyTProxyRollsBackFailedVerification(t *testing.T) {
 }
 
 func TestSystemDNSTakeoverWritesAndRestoresResolvConf(t *testing.T) {
+	stubSystemDNSChattr(t, nil)
 	root := t.TempDir()
 	resolv := filepath.Join(root, "resolv.conf")
 	if err := os.WriteFile(resolv, []byte("nameserver 10.251.1.1\nnameserver 223.6.6.6\n"), 0o644); err != nil {
@@ -366,6 +368,7 @@ func TestSystemDNSTakeoverWritesAndRestoresResolvConf(t *testing.T) {
 }
 
 func TestSystemDNSTakeoverDoesNotOverwriteUserChangedResolvConf(t *testing.T) {
+	stubSystemDNSChattr(t, nil)
 	root := t.TempDir()
 	resolv := filepath.Join(root, "resolv.conf")
 	if err := os.WriteFile(resolv, []byte("nameserver 10.251.1.1\n"), 0o644); err != nil {
@@ -390,6 +393,29 @@ func TestSystemDNSTakeoverDoesNotOverwriteUserChangedResolvConf(t *testing.T) {
 	}
 }
 
+func TestSystemDNSTakeoverLocksAndUnlocksResolvConf(t *testing.T) {
+	var calls []bool
+	stubSystemDNSChattr(t, func(_ string, immutable bool) error {
+		calls = append(calls, immutable)
+		return nil
+	})
+	root := t.TempDir()
+	resolv := filepath.Join(root, "resolv.conf")
+	if err := os.WriteFile(resolv, []byte("nameserver 10.251.1.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := &systemDNSManager{allowed: true, stateDir: filepath.Join(root, "state"), resolvConf: resolv}
+	if err := manager.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Restore(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(calls, []bool{true, false}) {
+		t.Fatalf("chattr calls = %#v", calls)
+	}
+}
+
 func TestSystemDNSManagedRequiresFirstNameserver(t *testing.T) {
 	if !systemDNSManaged([]byte("# comment\noptions timeout:1\nnameserver 127.0.0.1\nnameserver 10.251.1.1\n")) {
 		t.Fatal("expected first nameserver 127.0.0.1 to be managed")
@@ -397,6 +423,18 @@ func TestSystemDNSManagedRequiresFirstNameserver(t *testing.T) {
 	if systemDNSManaged([]byte("nameserver 10.251.1.1\nnameserver 127.0.0.1\n")) {
 		t.Fatal("expected later 127.0.0.1 nameserver to be unmanaged")
 	}
+}
+
+func stubSystemDNSChattr(t *testing.T, replacement func(string, bool) error) {
+	t.Helper()
+	previous := systemDNSChattr
+	if replacement == nil {
+		replacement = func(string, bool) error { return nil }
+	}
+	systemDNSChattr = replacement
+	t.Cleanup(func() {
+		systemDNSChattr = previous
+	})
 }
 
 func TestApplyTUNReadinessTimeoutExplainsInterface(t *testing.T) {
