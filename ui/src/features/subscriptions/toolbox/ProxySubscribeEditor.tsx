@@ -328,18 +328,7 @@ function profileFormValues(profile: SubscriptionProfile, configurationContext: S
   return {
     remark: profile.remark ?? "",
     logLevel: profile.log_level ?? "info",
-    subscribeItems:
-      items.length > 0
-        ? items
-        : [
-            {
-              enabled: true,
-              url: "",
-              prefix: "",
-              remark: "",
-              fetchMode: "auto",
-            },
-          ],
+    subscribeItems: items,
     ruleList: profile.editor.rule_list ?? "",
     useSystemRuleList: profile.use_system_rules,
     group: profile.editor.group ?? "",

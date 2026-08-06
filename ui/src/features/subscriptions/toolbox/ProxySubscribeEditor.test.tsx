@@ -80,14 +80,14 @@ describe('ProxySubscribeEditor', () => {
     vi.useRealTimers()
   })
 
-  function renderEditor(overrides: { onSave?: (candidate: SubscriptionProfile) => Promise<void> | void; onScheduleSave?: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void; configurationContext?: SubscriptionConfigurationContext } = {}) {
+  function renderEditor(overrides: { profile?: SubscriptionProfile; onSave?: (candidate: SubscriptionProfile) => Promise<void> | void; onScheduleSave?: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void; configurationContext?: SubscriptionConfigurationContext } = {}) {
     const onSave = vi.fn(overrides.onSave ?? (() => undefined))
     const onScheduleSave = vi.fn(overrides.onScheduleSave ?? (() => undefined))
     const rendered = render(
       <I18nProvider>
         <AcmeContentBoundary>
           <ProxySubscribeEditor
-            profile={profile}
+            profile={overrides.profile ?? profile}
             defaults={defaults}
             customNodes={[{ id: 'custom-1', name: 'Local node', proxy: { name: 'Local node', type: 'socks5', server: '127.0.0.1', port: 1080 } }]}
 			networkInventory={{
@@ -148,6 +148,25 @@ describe('ProxySubscribeEditor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }))
     expect(screen.getByText('Diagnostic tools')).toBeInTheDocument()
+  })
+
+  it('starts Subscribe URL empty and allows deleting the last source', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('sempre.locale', 'en')
+    const { onSave } = renderEditor({ profile: { ...profile, sources: [] } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Subscribe URL' }))
+    expect(screen.queryByPlaceholderText('URL')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Subscribe Source' }))
+    expect(screen.getByPlaceholderText('URL')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await act(async () => vi.advanceTimersByTime(800))
+
+    expect(screen.queryByPlaceholderText('URL')).not.toBeInTheDocument()
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0].sources).toEqual([])
   })
 
   it('debounces profile and schedule changes before saving the latest values', async () => {

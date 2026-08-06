@@ -171,6 +171,7 @@ const SortableCard = ({
                 variant="text"
                 size="small"
                 danger
+                aria-label={t("proxy.actions.delete")}
                 icon={<DeleteOutlined />}
                 onClick={onRemove}
                 className="shrink-0"
@@ -281,10 +282,7 @@ const SortableCard = ({
 
 const SubscribeItemsEditor = ({ value = [], onChange }: Props) => {
   const { t } = useTranslation();
-  const items = useMemo(
-    () => (value.length > 0 ? value : [emptyItem()]),
-    [value],
-  );
+  const items = useMemo(() => value, [value]);
 
   const [idCounter, setIdCounter] = useState(() => items.length);
   const [sortIds, setSortIds] = useState<string[]>(() =>
@@ -328,11 +326,10 @@ const SubscribeItemsEditor = ({ value = [], onChange }: Props) => {
     (index: number) => {
       const next = items.filter((_, i) => i !== index);
       const nextIds = effectiveSortIds.filter((_, i) => i !== index);
-      setSortIds(nextIds.length > 0 ? nextIds : [`item-${idCounter}`]);
-      if (nextIds.length === 0) setIdCounter((c) => c + 1);
-      onChange?.(next.length > 0 ? next : [emptyItem()]);
+      setSortIds(nextIds);
+      onChange?.(next);
     },
-    [items, onChange, effectiveSortIds, idCounter],
+    [items, onChange, effectiveSortIds],
   );
 
   const handleDragEnd = useCallback(
