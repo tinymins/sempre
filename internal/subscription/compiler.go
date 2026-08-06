@@ -837,12 +837,19 @@ func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutb
 	if override := singBoxDNSOverride(custom, modern); override != nil {
 		return override
 	}
+	localDNS, localSystem := localDNSServer(shared.LocalDNS)
 	if modern {
-		servers := []any{map[string]any{"type": "local", "tag": "local"}}
+		local := map[string]any{"type": "local", "tag": "local"}
+		if !localSystem {
+			local = map[string]any{"type": "udp", "tag": "local", "server": localDNS, "server_port": shared.LocalDNSPort}
+		}
+		servers := []any{local}
 		if shared.FakeIPEnabled {
 			servers = append(servers, map[string]any{"type": "fakeip", "tag": "fakeip", "inet4_range": shared.FakeIPIPv4Range, "inet6_range": shared.FakeIPIPv6Range})
 		}
-		servers = append(servers, map[string]any{"type": "udp", "tag": "local_v4", "server": shared.LocalDNS, "server_port": shared.LocalDNSPort})
+		if !localSystem {
+			servers = append(servers, map[string]any{"type": "udp", "tag": "local_v4", "server": localDNS, "server_port": shared.LocalDNSPort})
+		}
 		bootstrap := map[string]any{"type": "tls", "tag": "bootstrap", "server": shared.BootstrapDNS, "server_port": shared.BootstrapDNSPort, "tls": map[string]any{"server_name": shared.BootstrapServerName}}
 		remote := map[string]any{"type": "tls", "tag": "remote", "server": shared.RemoteDNS, "server_port": shared.RemoteDNSPort, "tls": map[string]any{"server_name": shared.RemoteServerName}}
 		setSingBoxDNSDetour(remote, remoteOutbound)
@@ -857,11 +864,13 @@ func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutb
 		}
 		return result
 	}
-	servers := []any{map[string]any{"tag": "local", "address": shared.LocalDNS}}
+	servers := []any{map[string]any{"tag": "local", "address": localDNS}}
 	if shared.FakeIPEnabled {
 		servers = append(servers, map[string]any{"tag": "fakeip", "address": "fakeip", "strategy": "ipv4_only"})
 	}
-	servers = append(servers, map[string]any{"tag": "local_v4", "address": shared.LocalDNS, "strategy": "ipv4_only"})
+	if !localSystem {
+		servers = append(servers, map[string]any{"tag": "local_v4", "address": localDNS, "strategy": "ipv4_only"})
+	}
 	bootstrap := map[string]any{"tag": "bootstrap", "address": fmt.Sprintf("tls://%s:%d", shared.BootstrapDNS, shared.BootstrapDNSPort)}
 	remote := map[string]any{"tag": "remote", "address": fmt.Sprintf("tls://%s:%d", shared.RemoteDNS, shared.RemoteDNSPort)}
 	setSingBoxDNSDetour(remote, remoteOutbound)
@@ -886,6 +895,17 @@ func setSingBoxDNSDetour(server map[string]any, detour string) {
 	server["detour"] = detour
 }
 
+func localDNSServer(value string) (string, bool) {
+	for part := range strings.SplitSeq(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		return part, strings.EqualFold(part, "local")
+	}
+	return "local", true
+}
+
 type dnsShared struct {
 	LocalDNS, FakeIPIPv4Range, FakeIPIPv6Range                                   string
 	BootstrapDNS, BootstrapServerName, RemoteDNS, RemoteServerName, RemoteDetour string
@@ -895,7 +915,7 @@ type dnsShared struct {
 }
 
 func resolveDNSShared(config map[string]any) dnsShared {
-	result := dnsShared{LocalDNS: "127.0.0.1", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true}
+	result := dnsShared{LocalDNS: "local", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true}
 	shared := config
 	if nested, ok := objectValue(config["shared"]); ok {
 		shared = nested

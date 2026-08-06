@@ -262,6 +262,10 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 		t.Fatalf("DNS defaults = %#v", dns)
 	}
 	servers := dns["servers"].([]any)
+	local := mapByKey(t, servers, "tag", "local")
+	if local["type"] != "local" {
+		t.Fatalf("default local DNS should use system resolver: %#v", local)
+	}
 	bootstrap := mapByKey(t, servers, "tag", "bootstrap")
 	if _, ok := bootstrap["detour"]; ok {
 		t.Fatalf("bootstrap DNS should use the default direct dialer: %#v", bootstrap)
@@ -283,6 +287,46 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 	}
 	if !foundDefault {
 		t.Fatalf("foreign selector does not persist edge as its default: %#v", config["outbounds"])
+	}
+}
+
+func TestSingBoxManagedDNSUsesExplicitLocalUpstream(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false, "localDns": "223.5.5.5", "localDnsPort": 53,
+	}}
+
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	local := mapByKey(t, config["dns"].(map[string]any)["servers"].([]any), "tag", "local")
+	if local["type"] != "udp" || local["server"] != "223.5.5.5" || local["server_port"] != float64(53) {
+		t.Fatalf("explicit local DNS = %#v", local)
+	}
+}
+
+func TestSingBoxManagedDNSUsesFirstCommaSeparatedLocalUpstream(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false, "localDns": "223.5.5.5, 223.6.6.6", "localDnsPort": 53,
+	}}
+
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	local := mapByKey(t, config["dns"].(map[string]any)["servers"].([]any), "tag", "local")
+	if local["type"] != "udp" || local["server"] != "223.5.5.5" {
+		t.Fatalf("comma-separated local DNS = %#v", local)
 	}
 }
 
@@ -386,7 +430,7 @@ func TestLegacySingBoxOmitsDirectDNSDetours(t *testing.T) {
 		t.Fatal(err)
 	}
 	servers := config["dns"].(map[string]any)["servers"].([]any)
-	for _, tag := range []string{"local", "local_v4", "bootstrap", "remote"} {
+	for _, tag := range []string{"local", "bootstrap", "remote"} {
 		server := mapByKey(t, servers, "tag", tag)
 		if _, ok := server["detour"]; ok {
 			t.Fatalf("%s DNS should use the default direct dialer: %#v", tag, server)

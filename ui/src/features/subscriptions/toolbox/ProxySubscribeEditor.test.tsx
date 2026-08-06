@@ -146,11 +146,19 @@ describe('ProxySubscribeEditor', () => {
     expect(screen.getByText('Configuration nodes')).toBeInTheDocument()
     expect(screen.getAllByText('Manual Servers').length).toBeGreaterThan(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }))
-    expect(screen.getByText('Diagnostic tools')).toBeInTheDocument()
-  })
+	  fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }))
+	  expect(screen.getByText('Diagnostic tools')).toBeInTheDocument()
+	})
 
-  it('starts Subscribe URL empty and allows deleting the last source', async () => {
+	it('uses system DNS as the managed local DNS default', async () => {
+		localStorage.setItem('sempre.locale', 'en')
+		renderEditor()
+
+		fireEvent.click(await screen.findByRole('button', { name: 'DNS Config' }))
+		expect(screen.getByDisplayValue('local')).toBeInTheDocument()
+	})
+
+	it('starts Subscribe URL empty and allows deleting the last source', async () => {
     vi.useFakeTimers()
     localStorage.setItem('sempre.locale', 'en')
     const { onSave } = renderEditor({ profile: { ...profile, sources: [] } })

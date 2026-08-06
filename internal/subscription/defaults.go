@@ -66,7 +66,7 @@ func SystemDefaults() Defaults {
 		Filters: []string{"官网", "客服", "qq群"},
 		Rules:   []string{},
 		DNS: map[string]any{"shared": map[string]any{
-			"localDns": "127.0.0.1", "localDnsPort": 53,
+			"localDns": "local", "localDnsPort": 53,
 			"bootstrapDns": "223.5.5.5", "bootstrapDnsPort": 853, "bootstrapServerName": "dns.alidns.com",
 			"remoteDns": "8.8.8.8", "remoteDnsPort": 853, "remoteServerName": "dns.google",
 			"fakeipIpv4Range": "198.18.0.0/15", "fakeipIpv6Range": "fc00::/18",

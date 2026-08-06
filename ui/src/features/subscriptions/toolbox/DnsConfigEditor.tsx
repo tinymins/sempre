@@ -10,7 +10,7 @@ import "@/lib/monaco";
 type TopTab = "shared" | "native";
 
 const CLIENT_DEFAULT_SHARED: Required<DnsSharedConfig> = {
-  localDns: "127.0.0.1",
+  localDns: "local",
   localDnsPort: 53,
   bootstrapDns: "223.5.5.5",
   bootstrapDnsPort: 853,

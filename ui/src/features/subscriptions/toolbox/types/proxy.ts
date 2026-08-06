@@ -6,7 +6,7 @@ import { z } from "zod";
 
 /** 表单级别的通用 DNS 设置，用于自动生成各格式的 DNS 段 */
 export const DnsSharedConfigSchema = z.object({
-  /** 本地 DNS 服务器地址（用于 CN 域名解析），默认 "127.0.0.1" */
+  /** 本地 DNS 服务器地址（用于 CN 域名解析），默认 "local" */
   localDns: z.string().optional(),
   /** 本地 DNS 端口，默认 53 */
   localDnsPort: z.number().int().min(1).max(65535).optional(),
