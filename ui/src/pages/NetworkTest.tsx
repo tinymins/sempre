@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, CheckCircle2, Clock3, Globe2, RefreshCw, XCircle } from 'lucide-react'
-import { Button, Card, Spin, Table, Tag, type TableColumn } from '@acme/components'
+import { Button, Card, Table, Tag, type TableColumn } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -73,19 +73,18 @@ export function NetworkTest() {
       <Metric icon={Activity} label={t('domesticIP')} value={domesticIP} tone="cyan" />
       <Metric icon={Globe2} label={t('foreignIP')} value={foreignIP} tone="blue" />
     </div>
-    {report.isLoading ? <Card className="min-h-72 !rounded-lg"><Spin className="min-h-72" tip={t('testingNetwork')} /></Card> : (
-      <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
-        <Table<NetworkTestResult>
-          rowKey="id"
-          size="middle"
-          pagination={false}
-          columns={columns}
-          dataSource={results}
-          scroll={{ x: 980 }}
-          locale={{ emptyText: report.isError ? (report.error instanceof Error ? report.error.message : t('operationFailed')) : t('noData') }}
-        />
-      </Card>
-    )}
+    <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
+      <Table<NetworkTestResult>
+        rowKey="id"
+        size="middle"
+        loading={report.isFetching}
+        pagination={false}
+        columns={columns}
+        dataSource={results}
+        scroll={{ x: 980 }}
+        locale={{ emptyText: report.isError ? (report.error instanceof Error ? report.error.message : t('operationFailed')) : t('noData') }}
+      />
+    </Card>
   </div>
 }
 

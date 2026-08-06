@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -56,16 +57,16 @@ var defaultNetworkTestProbes = []networkTestProbe{
 }
 
 func (manager *Manager) NetworkTest(ctx context.Context) NetworkTestReport {
-	return runNetworkTest(ctx, defaultNetworkTestProbes)
+	return runNetworkTest(ctx, defaultNetworkTestProbes, manager.networkTestDNSAddress())
 }
 
-func runNetworkTest(ctx context.Context, probes []networkTestProbe) NetworkTestReport {
+func runNetworkTest(ctx context.Context, probes []networkTestProbe, dnsAddress string) NetworkTestReport {
 	results := make([]NetworkTestResult, len(probes))
 	output := make(chan struct {
 		index  int
 		result NetworkTestResult
 	}, len(probes))
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}}
+	client := networkTestClient(dnsAddress)
 	for index, probe := range probes {
 		go func() {
 			output <- struct {
@@ -79,6 +80,71 @@ func runNetworkTest(ctx context.Context, probes []networkTestProbe) NetworkTestR
 		results[item.index] = item.result
 	}
 	return NetworkTestReport{CheckedAt: time.Now().UTC(), Results: results}
+}
+
+func networkTestClient(dnsAddress string) *http.Client {
+	dialer := &net.Dialer{}
+	if dnsAddress != "" {
+		resolverDialer := &net.Dialer{}
+		dialer.Resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return resolverDialer.DialContext(ctx, network, dnsAddress)
+			},
+		}
+	}
+	return &http.Client{Transport: &http.Transport{Proxy: nil, DialContext: dialer.DialContext}}
+}
+
+func (manager *Manager) networkTestDNSAddress() string {
+	catalog, err := manager.subscriptions.Read()
+	if err != nil {
+		return ""
+	}
+	document, err := manager.store.Read()
+	if err != nil {
+		return ""
+	}
+	for _, profile := range catalog.Profiles {
+		if profile.ID != document.ActiveProfileID {
+			continue
+		}
+		if address := explicitNetworkTestDNS(profile.DNS); address != "" {
+			return address
+		}
+		return ""
+	}
+	return ""
+}
+
+func explicitNetworkTestDNS(config map[string]any) string {
+	shared := config
+	if nested, ok := config["shared"].(map[string]any); ok {
+		shared = nested
+	}
+	local, _ := shared["localDns"].(string)
+	for value := range strings.SplitSeq(local, ",") {
+		value = strings.TrimSpace(value)
+		if value == "" || strings.EqualFold(value, "local") {
+			continue
+		}
+		return net.JoinHostPort(value, strconv.Itoa(dnsPort(shared["localDnsPort"])))
+	}
+	return ""
+}
+
+func dnsPort(value any) int {
+	switch typed := value.(type) {
+	case int:
+		if typed > 0 && typed <= 65535 {
+			return typed
+		}
+	case float64:
+		if typed >= 1 && typed <= 65535 {
+			return int(typed)
+		}
+	}
+	return 53
 }
 
 func runNetworkTestProbe(ctx context.Context, client *http.Client, probe networkTestProbe) NetworkTestResult {

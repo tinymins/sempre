@@ -37,7 +37,7 @@ func TestRunNetworkTestClassifiesReachabilityAndIPResults(t *testing.T) {
 		{ID: "foreign-ip", Name: "Foreign IP", Region: "foreign", Category: "ip", URL: server.URL + "/foreign-ip", Success: status2xx3xx, ParseIP: parseJSONIP},
 		{ID: "bad-status", Name: "Bad Status", Region: "foreign", Category: "reachability", URL: server.URL + "/bad-status", Success: status2xx3xx},
 		{ID: "bad-ip", Name: "Bad IP", Region: "foreign", Category: "ip", URL: server.URL + "/bad-ip", Success: status2xx3xx, ParseIP: parseTextIP},
-	})
+	}, "")
 
 	if len(report.Results) != 6 || report.CheckedAt.IsZero() {
 		t.Fatalf("report = %#v", report)
@@ -68,7 +68,7 @@ func TestRunNetworkTestHonorsContextCancellation(t *testing.T) {
 	report := runNetworkTest(ctx, []networkTestProbe{{
 		ID: "cancelled", Name: "Cancelled", Region: "foreign", Category: "reachability",
 		URL: "https://example.invalid", Success: status2xx3xx,
-	}})
+	}}, "")
 	if len(report.Results) != 1 || report.Results[0].OK || report.Results[0].Detail == "" {
 		t.Fatalf("report = %#v", report)
 	}
@@ -86,5 +86,18 @@ func TestParseTextIPRejectsMissingAddress(t *testing.T) {
 func TestNetworkTestTimeoutConstant(t *testing.T) {
 	if networkTestTimeout != 15*time.Second {
 		t.Fatalf("network test timeout = %s", networkTestTimeout)
+	}
+}
+
+func TestExplicitNetworkTestDNSUsesFirstNonLocalAddress(t *testing.T) {
+	config := map[string]any{"shared": map[string]any{"localDns": " local, 223.5.5.5,223.6.6.6", "localDnsPort": float64(1053)}}
+	if got := explicitNetworkTestDNS(config); got != "223.5.5.5:1053" {
+		t.Fatalf("DNS address = %q", got)
+	}
+	if got := explicitNetworkTestDNS(map[string]any{"shared": map[string]any{"localDns": "local"}}); got != "" {
+		t.Fatalf("local DNS should fall back, got %q", got)
+	}
+	if got := explicitNetworkTestDNS(nil); got != "" {
+		t.Fatalf("empty DNS should use local resolver, got %q", got)
 	}
 }
