@@ -55,7 +55,7 @@ func (command *CLI) install(ctx context.Context, arguments []string, global Opti
 	}
 	if installedUI {
 		fmt.Fprintln(command.output, "Web UI:", endpoint.LocalURL)
-		return openBrowser(endpoint.LocalURL)
+		return openBrowser(endpoint.LocalURL, command.output)
 	}
 	fmt.Fprintln(command.output, "Service:", endpoint.LocalURL)
 	fmt.Fprintln(command.output, "Web UI: not installed")

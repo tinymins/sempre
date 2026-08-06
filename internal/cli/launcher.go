@@ -211,7 +211,7 @@ func parseSempreVersion(output []byte) (string, error) {
 	return fields[1], nil
 }
 
-func openSystemUI(ctx context.Context) error {
+func openSystemUI(ctx context.Context, output io.Writer) error {
 	paths, err := layout.ForMode(layout.System)
 	if err != nil {
 		return err
@@ -223,7 +223,7 @@ func openSystemUI(ctx context.Context) error {
 	if !healthy(ctx, endpoint.LocalURL) {
 		return fmt.Errorf("Sempre Web is not responding at %s", endpoint.LocalURL)
 	}
-	return openBrowser(endpoint.LocalURL)
+	return openBrowser(endpoint.LocalURL, output)
 }
 
 func waitAndOpenSystem(ctx context.Context, output io.Writer) error {
@@ -237,7 +237,7 @@ func waitAndOpenSystem(ctx context.Context, output io.Writer) error {
 		return nil
 	}
 	fmt.Fprintln(output, "Web UI:", endpoint.LocalURL)
-	return openBrowser(endpoint.LocalURL)
+	return openBrowser(endpoint.LocalURL, output)
 }
 
 func waitForSystemReady(ctx context.Context) (webconfig.Endpoint, bool, error) {

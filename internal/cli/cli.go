@@ -592,7 +592,7 @@ func runStateless(
 			fmt.Fprintf(output, "Sempre %s (%s, %s)\n", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
 			return true, 0
 		case "open":
-			if err := openSystemUI(ctx); err != nil {
+			if err := openSystemUI(ctx, output); err != nil {
 				fmt.Fprintln(errorOutput, "ERROR:", err)
 				return true, 1
 			}

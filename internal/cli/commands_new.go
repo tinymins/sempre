@@ -208,7 +208,7 @@ func (command *CLI) runPortable(ctx context.Context) error {
 					return
 				}
 				fmt.Fprintln(command.output, "Portable Web UI:", endpoint.LocalURL)
-				if err := openBrowser(endpoint.LocalURL); err != nil {
+				if err := openBrowser(endpoint.LocalURL, command.output); err != nil {
 					fmt.Fprintln(command.errors, "ERROR:", err)
 				}
 				return

@@ -4,11 +4,12 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
 	"golang.org/x/sys/windows"
 )
 
-func openBrowser(address string) error {
+func openBrowser(address string, output io.Writer) error {
 	operation, _ := windows.UTF16PtrFromString("open")
 	target, err := windows.UTF16PtrFromString(address)
 	if err != nil {
