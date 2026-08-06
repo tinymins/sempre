@@ -80,7 +80,7 @@ describe('App', () => {
     expect(await screen.findByRole('link', { name: 'Overview' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Network Test' })).toBeInTheDocument()
     expect(await screen.findByText('Managed core runtime')).toBeInTheDocument()
-    expect(screen.getByText('exit status 1')).toBeInTheDocument()
+    expect(await screen.findByText('exit status 1')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('link', { name: 'Network Test' }))
     expect(await screen.findByRole('heading', { name: 'Network Test' })).toBeInTheDocument()
   })
