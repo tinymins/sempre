@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/tinymins/sempre/internal/layout"
@@ -59,15 +60,12 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 		packagePaths.CoreBinary("sing-box", "", "1.2.3"),
 		packagePaths.CoreBinary("sing-box", repository, "1.2.3"),
 		filepath.Join(packagePaths.UICurrent, "index.html"),
-		filepath.Join(result.Directory, "install.cmd"),
-		filepath.Join(result.Directory, "install.sh"),
-		filepath.Join(result.Directory, "install.command"),
-		filepath.Join(result.Directory, "install.desktop"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}
 	}
+	assertBundleInstallers(t, result.Directory, runtime.GOOS)
 	archive, err := zip.OpenReader(result.Archive)
 	if err != nil {
 		t.Fatal(err)
@@ -87,5 +85,29 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("custom core binary was not archived")
+	}
+}
+
+func assertBundleInstallers(t *testing.T, directory, goos string) {
+	t.Helper()
+	want := map[string]bool{}
+	switch goos {
+	case "windows":
+		want["install.cmd"] = true
+	case "darwin":
+		want["install.command"] = true
+		want["install.sh"] = true
+	default:
+		want["install.sh"] = true
+		want["install.desktop"] = true
+	}
+	for _, name := range []string{"install.cmd", "install.sh", "install.command", "install.desktop"} {
+		_, err := os.Stat(filepath.Join(directory, name))
+		if want[name] && err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !want[name] && !os.IsNotExist(err) {
+			t.Fatalf("%s should not exist: %v", name, err)
+		}
 	}
 }

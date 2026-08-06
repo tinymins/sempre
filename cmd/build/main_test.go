@@ -73,7 +73,7 @@ func TestBundleArchiveUsesReleaseDirectoryPrefix(t *testing.T) {
 	if err := stateMarker(packageDir); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeBundleInstallers(packageDir, "sempre"); err != nil {
+	if err := writeBundleInstallers(packageDir, "sempre", "linux"); err != nil {
 		t.Fatal(err)
 	}
 	archivePath := filepath.Join(root, "sempre-bundle-linux-amd64.zip")
@@ -93,14 +93,53 @@ func TestBundleArchiveUsesReleaseDirectoryPrefix(t *testing.T) {
 		"sempre-linux-amd64/sempre",
 		"sempre-linux-amd64/.sempre-portable",
 		"sempre-linux-amd64/.sempre/state.json",
-		"sempre-linux-amd64/install.cmd",
 		"sempre-linux-amd64/install.sh",
-		"sempre-linux-amd64/install.command",
 		"sempre-linux-amd64/install.desktop",
 	} {
 		if !names[name] {
 			t.Fatalf("%s was not archived", name)
 		}
+	}
+	for _, name := range []string{
+		"sempre-linux-amd64/install.cmd",
+		"sempre-linux-amd64/install.command",
+	} {
+		if names[name] {
+			t.Fatalf("%s should not be archived", name)
+		}
+	}
+}
+
+func TestWriteBundleInstallersUsesTargetOS(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		goos string
+		want []string
+	}{
+		{"windows", []string{"install.cmd"}},
+		{"linux", []string{"install.sh", "install.desktop"}},
+		{"darwin", []string{"install.command", "install.sh"}},
+	} {
+		t.Run(test.goos, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if err := writeBundleInstallers(root, "sempre", test.goos); err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]bool{}
+			for _, name := range test.want {
+				want[name] = true
+			}
+			for _, name := range []string{"install.cmd", "install.sh", "install.command", "install.desktop"} {
+				_, err := os.Stat(filepath.Join(root, name))
+				if want[name] && err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				if !want[name] && !os.IsNotExist(err) {
+					t.Fatalf("%s should not exist: %v", name, err)
+				}
+			}
+		})
 	}
 }
 

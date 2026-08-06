@@ -444,7 +444,9 @@ The administrator password hash is intentionally cleared in the exported
 
 Each bundle is valid only for the operating system and architecture that
 created it. Install a bundle on a target machine by running the included
-`install.cmd`, `install.command`, or `install.sh`; each script invokes:
+platform installer: Windows uses `install.cmd`, macOS uses `install.command`
+or `install.sh`, and Linux uses `install.sh` or `install.desktop`. Each script
+invokes:
 
 ```text
 sempre bundle install --yes

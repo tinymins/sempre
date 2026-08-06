@@ -239,7 +239,7 @@ func writeBundle(ctx context.Context, dist string, item target, installedAt time
 		_ = os.RemoveAll(workDir)
 		return err
 	}
-	if err := writeBundleInstallers(workDir, item.executableName()); err != nil {
+	if err := writeBundleInstallers(workDir, item.executableName(), item.os); err != nil {
 		_ = os.RemoveAll(workDir)
 		return err
 	}
@@ -427,20 +427,24 @@ func writeReleaseWebConfig(path string) error {
 	return state.WriteAtomic(path, append(data, '\n'), 0o600)
 }
 
-func writeBundleInstallers(packageDir, executableName string) error {
-	windows := fmt.Sprintf("@echo off\r\ncd /d \"%%~dp0\"\r\n\"%%~dp0%s\" bundle install --yes\r\nset EXITCODE=%%ERRORLEVEL%%\r\npause\r\nexit /b %%EXITCODE%%\r\n", executableName)
-	if err := state.WriteAtomic(filepath.Join(packageDir, "install.cmd"), []byte(windows), 0o755); err != nil {
-		return err
-	}
+func writeBundleInstallers(packageDir, executableName, goos string) error {
 	unix := fmt.Sprintf("#!/bin/sh\nset -eu\ncd -- \"$(dirname -- \"$0\")\"\n./%s bundle install --yes\n", executableName)
-	if err := state.WriteAtomic(filepath.Join(packageDir, "install.sh"), []byte(unix), 0o755); err != nil {
-		return err
+	switch goos {
+	case "windows":
+		windows := fmt.Sprintf("@echo off\r\ncd /d \"%%~dp0\"\r\n\"%%~dp0%s\" bundle install --yes\r\nset EXITCODE=%%ERRORLEVEL%%\r\npause\r\nexit /b %%EXITCODE%%\r\n", executableName)
+		return state.WriteAtomic(filepath.Join(packageDir, "install.cmd"), []byte(windows), 0o755)
+	case "darwin":
+		if err := state.WriteAtomic(filepath.Join(packageDir, "install.command"), []byte(unix), 0o755); err != nil {
+			return err
+		}
+		return state.WriteAtomic(filepath.Join(packageDir, "install.sh"), []byte(unix), 0o755)
+	default:
+		if err := state.WriteAtomic(filepath.Join(packageDir, "install.sh"), []byte(unix), 0o755); err != nil {
+			return err
+		}
+		desktop := "[Desktop Entry]\nType=Application\nName=Install Sempre Bundle\nTerminal=true\nExec=sh -c 'cd \"$(dirname \"$1\")\" && sh install.sh' sh %k\n"
+		return state.WriteAtomic(filepath.Join(packageDir, "install.desktop"), []byte(desktop), 0o755)
 	}
-	if err := state.WriteAtomic(filepath.Join(packageDir, "install.command"), []byte(unix), 0o755); err != nil {
-		return err
-	}
-	desktop := "[Desktop Entry]\nType=Application\nName=Install Sempre Bundle\nTerminal=true\nExec=sh -c 'cd \"$(dirname \"$1\")\" && sh install.sh' sh %k\n"
-	return state.WriteAtomic(filepath.Join(packageDir, "install.desktop"), []byte(desktop), 0o755)
 }
 
 func zipDirectory(destination, source string) error {
