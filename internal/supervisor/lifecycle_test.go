@@ -212,6 +212,31 @@ func TestRunnerStartRestartStopLifecycle(t *testing.T) {
 	}
 }
 
+func TestRunForegroundPassesRunEnvironment(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := core.RunSpec{
+		Path: executable,
+		Args: []string{"-test.run=^TestSupervisorEnvironmentHelper$"},
+		Env:  []string{"SEMPRE_SUPERVISOR_ENV_HELPER=expected"},
+	}
+	if err := RunForeground(context.Background(), spec, os.Stdout, os.Stderr); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSupervisorEnvironmentHelper(t *testing.T) {
+	value, exists := os.LookupEnv("SEMPRE_SUPERVISOR_ENV_HELPER")
+	if !exists {
+		return
+	}
+	if value != "expected" {
+		t.Fatalf("environment value = %q", value)
+	}
+}
+
 func TestSupervisorHelperProcess(t *testing.T) {
 	if os.Getenv("SEMPRE_SUPERVISOR_HELPER") != "1" {
 		return

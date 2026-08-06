@@ -293,6 +293,12 @@ func normalizeProfile(profile *Profile) {
 	if profile.ManagementAPI.AllowOrigins == nil {
 		profile.ManagementAPI.AllowOrigins = []string{}
 	}
+	if profile.ManagementAPI.ExternalController == "" {
+		profile.ManagementAPI.ExternalController = "0.0.0.0:9090"
+	}
+	if profile.ManagementAPI.Secret == "" {
+		profile.ManagementAPI.Secret = NewPassword()
+	}
 	for index := range profile.Sources {
 		source := &profile.Sources[index]
 		if source.UserAgent == "" {
@@ -432,7 +438,7 @@ func migrateCoreConfiguration(profile *Profile, legacy legacyProfileConfiguratio
 	if len(legacy.CustomConfig) > 0 && len(profile.CoreOverrides["sing-box"]) == 0 {
 		profile.CoreOverrides["sing-box"] = cloneMap(legacy.CustomConfig)
 	}
-	if legacy.ClashAPI != nil && !profile.ManagementAPI.Enabled && profile.ManagementAPI.ExternalController == "" && profile.ManagementAPI.Secret == "" && profile.ManagementAPI.ExternalUI == "" {
+	if legacy.ClashAPI != nil && profile.ManagementAPI.ExternalController == "" && profile.ManagementAPI.Secret == "" && profile.ManagementAPI.ExternalUI == "" {
 		profile.ManagementAPI = *legacy.ClashAPI
 	}
 	migrateLegacyDNSFields(profile)
@@ -492,7 +498,7 @@ func migrateLegacyDNSFields(profile *Profile) {
 	if ui := stringValue(shared["clashApiUiPath"]); ui != "" && profile.ManagementAPI.ExternalUI == "" {
 		profile.ManagementAPI.ExternalUI = ui
 	}
-	if port, ok := numberValue(shared["clashApiPort"]); ok && port > 0 && profile.ManagementAPI.Enabled && profile.ManagementAPI.ExternalController == "" {
+	if port, ok := numberValue(shared["clashApiPort"]); ok && port > 0 && profile.ManagementAPI.ExternalController == "" {
 		profile.ManagementAPI.ExternalController = net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
 	}
 	for _, key := range []string{"tproxyPort", "dnsListenPort", "clashApiPort", "clashApiSecret", "clashApiUiPath"} {
@@ -599,9 +605,6 @@ func validateTransparentProxy(config TransparentProxyConfig) error {
 }
 
 func validateLocalProxy(config LocalProxyConfig, transparent TransparentProxyConfig) error {
-	if !config.Enabled {
-		return nil
-	}
 	if config.SOCKSPort < 1 || config.SOCKSPort > 65535 || config.HTTPPort < 1 || config.HTTPPort > 65535 {
 		return fmt.Errorf("local proxy ports must be between 1 and 65535")
 	}
@@ -622,18 +625,15 @@ func validateLocalProxy(config LocalProxyConfig, transparent TransparentProxyCon
 }
 
 func validateManagementAPI(config ManagementAPIConfig) error {
-	if !config.Enabled {
-		return nil
-	}
 	if strings.TrimSpace(config.ExternalController) == "" {
-		return fmt.Errorf("external management API controller is required when enabled")
+		return fmt.Errorf("external management API controller is required")
 	}
 	host, port, err := net.SplitHostPort(config.ExternalController)
 	if err != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" {
 		return fmt.Errorf("external management API controller must use host:port syntax")
 	}
 	if strings.TrimSpace(config.Secret) == "" {
-		return fmt.Errorf("external management API secret is required when enabled")
+		return fmt.Errorf("external management API secret is required")
 	}
 	return nil
 }

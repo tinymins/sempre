@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
@@ -282,7 +284,7 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 				check(diagnostic.Name, diagnostic.Err)
 			}
 		}
-		if profile.ManagementAPI.Enabled {
+		if adapterErr == nil && slices.Contains(manager.registry.Capabilities(adapter, document.Active.Version, core.CurrentTarget()).Features, core.CapabilityManagementExternalAPI) {
 			check("external management API", probeExternalManagementAPI(ctx, profile.ManagementAPI))
 		}
 		if profile.TransparentProxy.Mode == subscriptions.TransparentProxyTUN ||

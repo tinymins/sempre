@@ -179,7 +179,11 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 					return fmt.Errorf("start external Clash API: %w", err)
 				}
 				if plan.Control.BaseURL != "" {
-					manager.setControl(control.New(plan.Control.Core, plan.Control.BaseURL, plan.Control.Secret))
+					if plan.Control.Protocol == core.ControlProtocolClashREST {
+						manager.setControl(control.New(plan.Control.Core, plan.Control.BaseURL, plan.Control.Secret))
+					} else {
+						manager.setControl(nil)
+					}
 					data, err := json.Marshal(plan.Control)
 					if err != nil {
 						return err

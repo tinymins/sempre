@@ -590,7 +590,7 @@ func (admin *adminServer) cores(writer http.ResponseWriter, request *http.Reques
 		return result[i].Version < result[j].Version
 	})
 	apiWriteJSON(writer, http.StatusOK, map[string]any{
-		"supported": admin.manager.CoreIDs(), "installed": result,
+		"supported": admin.manager.CoreIDs(), "catalog": admin.manager.CoreDefinitions(), "installed": result,
 		"selected": document.Selected, "active": document.Active,
 	})
 }

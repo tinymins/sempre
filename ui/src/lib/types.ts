@@ -138,8 +138,18 @@ export interface CoreInstallation {
 export interface CoresResponse {
   supported: string[]
   installed: CoreInstallation[]
+	catalog?: CoreDefinition[]
   selected?: { core: string; repository?: string; ref: string }
   active?: { core: string; repository?: string; ref: string; version: string; config_hash: string }
+}
+
+export interface CoreDefinition {
+	id: string
+	name: string
+	stability: 'stable' | 'experimental'
+	compiler_format: string
+	control_protocol?: 'clash-rest' | 'grpc'
+	platforms: string[]
 }
 export interface Subscription {
   url?: string
@@ -202,7 +212,6 @@ export interface TransparentProxyConfig {
 }
 
 export interface LocalProxyConfig {
-	enabled: boolean
 	socks_port: number
 	http_port: number
 	username: string
@@ -210,7 +219,6 @@ export interface LocalProxyConfig {
 }
 
 export interface ManagementAPIConfig {
-	enabled: boolean
 	external_controller?: string
 	secret?: string
 	external_ui?: string

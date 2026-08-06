@@ -42,8 +42,45 @@ func TestNewManagerRegistersOfficialCoreAdapters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual := strings.Join(manager.CoreIDs(), ","); actual != "mihomo,sing-box" {
+	if actual := strings.Join(manager.CoreIDs(), ","); actual != "clash-rs,dae,mihomo,sing-box,v2ray,xray" {
 		t.Fatalf("supported cores = %q", actual)
+	}
+	definitions := manager.CoreDefinitions()
+	if len(definitions) != 6 || definitions[0].Stability != core.StabilityExperimental || definitions[5].ControlProtocol != core.ControlProtocolGRPC {
+		t.Fatalf("core catalog = %#v", definitions)
+	}
+}
+
+func TestNoSelectedCoreUsesOnlyStableCommonCapabilities(t *testing.T) {
+	t.Parallel()
+	manager, err := New(layout.At(t.TempDir()), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := manager.SubscriptionConfigurationContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuration.Target != nil || configuration.Key != "common" {
+		t.Fatalf("configuration target = %#v", configuration)
+	}
+	has := func(feature string) bool {
+		for _, current := range configuration.Capabilities.Features {
+			if current == feature {
+				return true
+			}
+		}
+		return false
+	}
+	for _, feature := range []string{core.CapabilityLoggingLevel, core.CapabilityDNSLocalUpstream, core.CapabilityRoutingRules, core.CapabilityLocalProxy} {
+		if !has(feature) {
+			t.Fatalf("stable common capability %q is missing: %#v", feature, configuration.Capabilities.Features)
+		}
+	}
+	for _, feature := range []string{core.CapabilityTransparentEBPF, core.CapabilityManagementExternalAPI, core.CapabilityPrivateAccess} {
+		if has(feature) {
+			t.Fatalf("core-specific capability %q leaked into common settings: %#v", feature, configuration.Capabilities.Features)
+		}
 	}
 }
 

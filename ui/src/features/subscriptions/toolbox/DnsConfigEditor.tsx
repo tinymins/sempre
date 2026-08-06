@@ -180,7 +180,7 @@ const SharedForm = ({ merged, readOnly, features, onFieldChange }: SharedFormPro
           <SectionTitle title={t("proxy.form.dnsRemoteSection")} />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <FieldRow label={t("proxy.form.dnsRemoteDns")}><Input size="small" value={merged.remoteDns} disabled={disabled} onChange={(event) => onFieldChange("remoteDns", event.target.value)} /></FieldRow>
-            <FieldRow label={t("proxy.form.dnsPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.remoteDnsPort} disabled={disabled} onChange={(next) => onFieldChange("remoteDnsPort", next)} /></FieldRow>
+			{supported.has("dns.remote_port") ? <FieldRow label={t("proxy.form.dnsPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.remoteDnsPort} disabled={disabled} onChange={(next) => onFieldChange("remoteDnsPort", next)} /></FieldRow> : null}
             {supported.has("dns.remote_server_name") ? <FieldRow label={t("proxy.form.dnsServerName")}><Input size="small" value={merged.remoteServerName} disabled={disabled} onChange={(event) => onFieldChange("remoteServerName", event.target.value)} /></FieldRow> : null}
             {supported.has("dns.remote_detour") ? <FieldRow label={t("proxy.form.dnsRemoteDetour")}><Input size="small" value={merged.remoteDetour} disabled={disabled} onChange={(event) => onFieldChange("remoteDetour", event.target.value)} /></FieldRow> : null}
           </div>

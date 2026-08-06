@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	CatalogSchema       = 6
+	CatalogSchema       = 7
 	DefaultUserAgent    = "clash.meta"
 	MaxSourceSize       = int64(32 << 20)
 	SourceURL           = "url"
@@ -144,7 +144,6 @@ type EBPFConfig struct {
 }
 
 type LocalProxyConfig struct {
-	Enabled   bool   `json:"enabled"`
 	SOCKSPort int    `json:"socks_port"`
 	HTTPPort  int    `json:"http_port"`
 	Username  string `json:"username"`
@@ -152,7 +151,6 @@ type LocalProxyConfig struct {
 }
 
 type ManagementAPIConfig struct {
-	Enabled             bool     `json:"enabled"`
 	ExternalController  string   `json:"external_controller,omitempty"`
 	Secret              string   `json:"secret,omitempty"`
 	ExternalUI          string   `json:"external_ui,omitempty"`
@@ -256,7 +254,7 @@ func NewProfile(name string) Profile {
 		TransparentProxy: defaultTransparentProxyConfig(),
 		LocalProxy:       defaultLocalProxyConfig(),
 		CoreOverrides:    map[string]map[string]any{},
-		ManagementAPI:    ManagementAPIConfig{AllowOrigins: []string{}},
+		ManagementAPI:    defaultManagementAPIConfig(),
 	}
 }
 
@@ -272,8 +270,16 @@ func defaultTransparentProxyConfig() TransparentProxyConfig {
 
 func defaultLocalProxyConfig() LocalProxyConfig {
 	return LocalProxyConfig{
-		Enabled: true, SOCKSPort: 1080, HTTPPort: 1081,
+		SOCKSPort: 1080, HTTPPort: 1081,
 		Username: "sempre", Password: NewPassword(),
+	}
+}
+
+func defaultManagementAPIConfig() ManagementAPIConfig {
+	return ManagementAPIConfig{
+		ExternalController: "0.0.0.0:9090",
+		Secret:             NewPassword(),
+		AllowOrigins:       []string{},
 	}
 }
 

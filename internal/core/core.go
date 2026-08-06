@@ -6,6 +6,7 @@ import (
 	"io"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/klauspost/cpuid/v2"
@@ -112,6 +113,7 @@ type Package struct {
 type RunSpec struct {
 	Path       string
 	Args       []string
+	Env        []string
 	WorkingDir string
 }
 
@@ -139,6 +141,19 @@ type CompilerTarget struct {
 	Warnings []string
 }
 
+type Definition struct {
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Stability       string   `json:"stability"`
+	CompilerFormat  string   `json:"compiler_format"`
+	ControlProtocol string   `json:"control_protocol,omitempty"`
+	Platforms       []string `json:"platforms"`
+}
+
+type DefinitionProvider interface {
+	Definition() Definition
+}
+
 type RuntimePreparer interface {
 	PrepareRuntime(string, string) (RuntimeSpec, error)
 }
@@ -161,6 +176,9 @@ type Registry struct {
 func NewRegistry(adapters ...Adapter) *Registry {
 	registry := &Registry{adapters: map[string]Adapter{}}
 	for _, adapter := range adapters {
+		if adapter == nil {
+			continue
+		}
 		registry.adapters[adapter.ID()] = adapter
 	}
 	return registry
@@ -179,6 +197,21 @@ func (registry *Registry) IDs() []string {
 	for name := range registry.adapters {
 		result = append(result, name)
 	}
+	return result
+}
+
+func (registry *Registry) Definitions() []Definition {
+	result := make([]Definition, 0, len(registry.adapters))
+	for _, adapter := range registry.adapters {
+		definition := Definition{ID: adapter.ID(), Name: adapter.ID(), Stability: StabilityStable}
+		if provider, ok := adapter.(DefinitionProvider); ok {
+			definition = provider.Definition()
+		}
+		definition.ID = adapter.ID()
+		definition.Platforms = uniqueSorted(definition.Platforms)
+		result = append(result, definition)
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].ID < result[right].ID })
 	return result
 }
 

@@ -222,6 +222,78 @@ func TestPrepareMihomoTUNAndTProxyRuntime(t *testing.T) {
 	}
 }
 
+func TestPrepareXrayTUNAndV2RayTProxyShareRuntimePlan(t *testing.T) {
+	backend := &fakeBackend{
+		forwarding: true,
+		inventory: Inventory{
+			Interfaces:               []Interface{{Name: "vmbr1"}},
+			RecommendedLANInterfaces: []string{"vmbr1"},
+			LocalPrefixes:            []string{"10.10.10.0/24"},
+		},
+	}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("xray")
+	path := writeRuntimeConfig(t, map[string]any{
+		"inbounds": []any{map[string]any{"tag": "tun-in", "protocol": "tun", "settings": map[string]any{}}},
+		"routing":  map[string]any{"rules": []any{}},
+	})
+	plan, err := controller.Prepare(context.Background(), "xray", profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.TUNInterface != "sempre-tun" || plan.TUNAddress == "" {
+		t.Fatalf("Xray plan = %#v", plan)
+	}
+	document := readRuntimeConfig(t, path)
+	settings := document["inbounds"].([]any)[0].(map[string]any)["settings"].(map[string]any)
+	if settings["autoOutboundsInterface"] != "auto" || firstString(settings["autoSystemRoutingTable"]) != "0.0.0.0/0" {
+		t.Fatalf("Xray TUN settings = %#v", settings)
+	}
+
+	profile.TransparentProxy.Mode = subscriptions.TransparentProxyTProxy
+	path = writeRuntimeConfig(t, map[string]any{
+		"inbounds": []any{
+			map[string]any{"tag": "tproxy-in", "protocol": "dokodemo-door"},
+			map[string]any{"tag": "dns-in", "protocol": "dokodemo-door"},
+		},
+		"outbounds": []any{map[string]any{"tag": "edge", "protocol": "trojan", "settings": map[string]any{"address": "203.0.113.9"}}},
+	})
+	plan, err = controller.Prepare(context.Background(), "v2ray", profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(plan.ExcludedPrefixes, "203.0.113.9/32") {
+		t.Fatalf("V2Ray exclusions = %#v", plan.ExcludedPrefixes)
+	}
+	document = readRuntimeConfig(t, path)
+	outbound := document["outbounds"].([]any)[0].(map[string]any)
+	mark := object(object(outbound["streamSettings"])["sockopt"])["mark"]
+	if number, ok := numberAsUint32(mark); !ok || number != BypassMark {
+		t.Fatalf("V2Ray bypass mark = %#v", mark)
+	}
+}
+
+func TestPrepareClashRSTUNUsesNativeRuntimeFields(t *testing.T) {
+	backend := &fakeBackend{forwarding: true, inventory: Inventory{OccupiedPrefixes: []string{"10.10.10.0/24"}}}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("clash-rs")
+	path := writeYAMLRuntimeConfig(t, map[string]any{"tun": map[string]any{"enable": true}})
+	plan, err := controller.Prepare(context.Background(), "clash-rs", profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := readYAMLRuntimeConfig(t, path)
+	tun := object(document["tun"])
+	if tun["route-all"] != true || tun["dns-hijack"] != true || tun["gateway"] != plan.TUNAddress {
+		t.Fatalf("clash-rs TUN = %#v", tun)
+	}
+	for _, incompatible := range []string{"auto-route", "auto-redirect", "strict-route", "stack"} {
+		if _, exists := tun[incompatible]; exists {
+			t.Fatalf("clash-rs TUN contains Mihomo field %q: %#v", incompatible, tun)
+		}
+	}
+}
+
 func TestApplyTProxyRollsBackFailedVerification(t *testing.T) {
 	first := listenTCP(t)
 	defer first.Close()

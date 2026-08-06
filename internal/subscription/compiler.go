@@ -75,6 +75,8 @@ func ParseTarget(format string) (Target, error) {
 	switch format {
 	case "clash", "clash-meta":
 		return Target{Format: format}, nil
+	case "xray", "v2ray", "clash-rs", "dae":
+		return Target{Core: format, Format: format, Platform: "default"}, nil
 	}
 	result := Target{Format: format, Version: "11", Platform: "default"}
 	value := format
@@ -100,7 +102,7 @@ func ParseTarget(format string) (Target, error) {
 }
 
 func AvailableTargets() []Target {
-	formats := []string{"clash", "clash-meta", "sing-box", "sing-box-windows", "sing-box-macos", "sing-box-v12", "sing-box-v12-windows", "sing-box-v12-macos", "sing-box-v13", "sing-box-v13-windows", "sing-box-v13-macos"}
+	formats := []string{"clash", "clash-meta", "sing-box", "sing-box-windows", "sing-box-macos", "sing-box-v12", "sing-box-v12-windows", "sing-box-v12-macos", "sing-box-v13", "sing-box-v13-windows", "sing-box-v13-macos", "xray", "v2ray", "clash-rs", "dae"}
 	result := make([]Target, 0, len(formats))
 	for _, format := range formats {
 		target, _ := ParseTarget(format)
@@ -114,7 +116,9 @@ func (compiler *Compiler) Render(ctx context.Context, profile Profile, catalog C
 	if err != nil {
 		return RenderResult{}, profile, err
 	}
-	parsedTarget.Core = target.Core
+	if target.Core != "" {
+		parsedTarget.Core = target.Core
+	}
 	effective := EffectiveProfile(profile)
 	nodes, sources, updatedEffective, warnings, origins, err := compiler.collectNodes(ctx, effective, catalog, force)
 	if err != nil {
@@ -124,13 +128,59 @@ func (compiler *Compiler) Render(ctx context.Context, profile Profile, catalog C
 		return RenderResult{}, profile, fmt.Errorf("subscription profile produced no usable nodes")
 	}
 	result := RenderResult{Format: parsedTarget.Format, Version: parsedTarget.Version, Platform: parsedTarget.Platform, NodeCount: len(nodes), SourceResults: sources, FieldDiffs: []FieldDiff{}, NodeOrigins: origins, Warnings: warnings}
-	if parsedTarget.Format == "clash" || parsedTarget.Format == "clash-meta" {
-		content, err := buildClash(effective, nodes, parsedTarget.Format == "clash-meta", parsedTarget.Core)
+	if parsedTarget.Format == "clash" || parsedTarget.Format == "clash-meta" || parsedTarget.Format == "clash-rs" {
+		represented := nodes
+		unsupportedDiffs := []FieldDiff{}
+		if parsedTarget.Core == "clash-rs" {
+			represented = make([]Proxy, 0, len(nodes))
+			for _, node := range nodes {
+				if clashRSSupportsProxy(node.Type) {
+					represented = append(represented, node)
+					continue
+				}
+				warning := node.Name + ": unsupported proxy type " + node.Type
+				result.Warnings = append(result.Warnings, warning)
+				unsupportedDiffs = append(unsupportedDiffs, FieldDiff{Node: node.Name, Dropped: sortedKeys(node.Extra), Warnings: []string{warning}, FieldOrigins: map[string]FieldOrigin{}})
+			}
+			if len(represented) == 0 {
+				return RenderResult{}, profile, fmt.Errorf("no nodes can be represented by clash-rs")
+			}
+		}
+		content, err := buildClash(effective, represented, parsedTarget.Format != "clash", parsedTarget.Core)
 		if err != nil {
 			return RenderResult{}, profile, err
 		}
 		result.Content = content
-		result.FieldDiffs = clashFieldDiffs(nodes)
+		result.FieldDiffs = append(clashFieldDiffs(represented), unsupportedDiffs...)
+		result.NodeCount = len(represented)
+		profile.Sources = updatedEffective.Sources
+		return result, profile, nil
+	}
+	if parsedTarget.Format == "dae" {
+		content, diffs, buildWarnings, err := buildDae(effective, nodes)
+		if err != nil {
+			return RenderResult{}, profile, err
+		}
+		result.Content = content
+		result.FieldDiffs = diffs
+		result.NodeCount = representedNodeCount(diffs)
+		result.Warnings = append(result.Warnings, buildWarnings...)
+		profile.Sources = updatedEffective.Sources
+		return result, profile, nil
+	}
+	if parsedTarget.Format == "xray" || parsedTarget.Format == "v2ray" {
+		config, diffs, buildWarnings, err := buildV2RayFamily(effective, nodes, parsedTarget.Format)
+		if err != nil {
+			return RenderResult{}, profile, err
+		}
+		result.FieldDiffs = diffs
+		result.NodeCount = representedNodeCount(diffs)
+		result.Warnings = append(result.Warnings, buildWarnings...)
+		encoded, err := json.MarshalIndent(config, "", "  ")
+		if err != nil {
+			return RenderResult{}, profile, err
+		}
+		result.Content = string(append(encoded, '\n'))
 		profile.Sources = updatedEffective.Sources
 		return result, profile, nil
 	}
@@ -153,6 +203,25 @@ func (compiler *Compiler) Render(ctx context.Context, profile Profile, catalog C
 	result.Content = string(append(encoded, '\n'))
 	profile.Sources = updatedEffective.Sources
 	return result, profile, nil
+}
+
+func clashRSSupportsProxy(proxyType string) bool {
+	switch proxyType {
+	case "ss", "socks5", "anytls", "trojan", "vmess", "vless", "tuic", "hysteria2":
+		return true
+	default:
+		return false
+	}
+}
+
+func representedNodeCount(diffs []FieldDiff) int {
+	count := 0
+	for _, diff := range diffs {
+		if diff.Outbound != nil {
+			count++
+		}
+	}
+	return count
 }
 
 func (compiler *Compiler) collectNodes(ctx context.Context, profile Profile, catalog Catalog, force bool) ([]Proxy, []SourceResult, Profile, []string, map[string]string, error) {
@@ -237,7 +306,13 @@ func buildClash(profile Profile, proxies []Proxy, meta bool, coreID string) (str
 	proxyMaps := make([]map[string]any, 0, len(proxies))
 	names := make([]string, 0, len(proxies))
 	for _, proxy := range proxies {
-		proxyMaps = append(proxyMaps, proxy.Map())
+		mapped := proxy.Map()
+		if coreID == "clash-rs" && proxy.Type == "hysteria2" {
+			if _, exists := mapped["skip-cert-verify"]; !exists {
+				mapped["skip-cert-verify"] = false
+			}
+		}
+		proxyMaps = append(proxyMaps, mapped)
 		names = append(names, proxy.Name)
 	}
 	groups := clashGroups(profile.Groups, names)
@@ -256,7 +331,7 @@ func buildClash(profile Profile, proxies []Proxy, meta bool, coreID string) (str
 		rules = append(rules, "RULE-SET,"+provider.Tag+","+valueOr(provider.Outbound, groups[0]["name"].(string)))
 	}
 	rules = append(rules, "DOMAIN-SUFFIX,local,DIRECT", "GEOIP,LAN,DIRECT,no-resolve", "GEOIP,CN,DIRECT,no-resolve", "MATCH,"+clashFinalGroup(profile.Groups))
-	if coreID == "mihomo" && profile.TransparentProxy.Mode == TransparentProxyTProxy {
+	if (coreID == "mihomo" || coreID == "clash-rs") && profile.TransparentProxy.Mode == TransparentProxyTProxy {
 		proxyMaps = append(proxyMaps, map[string]any{"name": "sempre-dns-out", "type": "dns"})
 		rules = append([]string{"DST-PORT,53,sempre-dns-out"}, rules...)
 	}
@@ -282,17 +357,19 @@ func buildClash(profile Profile, proxies []Proxy, meta bool, coreID string) (str
 			},
 		}
 	}
-	if coreID == "mihomo" {
-		if err := validateMihomoOverrides(profile); err != nil {
+	if coreID == "mihomo" || coreID == "clash-rs" {
+		if err := validateMihomoOverrides(profile, coreID); err != nil {
 			return "", err
 		}
-		configureMihomoRuntime(config, profile)
-		if override := coreDNSOverride(profile.DNS, "mihomo"); override != nil {
+		configureClashRuntime(config, profile, coreID)
+		if override := coreDNSOverride(profile.DNS, coreID); override != nil {
 			config["dns"] = override
+		} else if coreID == "clash-rs" {
+			config["dns"] = clashRSDNS(profile)
 		} else {
 			config["dns"] = mihomoDNS(profile)
 		}
-		deepMerge(config, profile.CoreOverrides["mihomo"])
+		deepMerge(config, profile.CoreOverrides[coreID])
 	} else if override := legacyClashDNSOverride(profile.DNS, meta); override != nil {
 		config["dns"] = override
 	}
@@ -393,10 +470,16 @@ func legacyClashDNSOverride(config map[string]any, meta bool) map[string]any {
 	return nil
 }
 
-func configureMihomoRuntime(config map[string]any, profile Profile) {
+func configureClashRuntime(config map[string]any, profile Profile, coreID string) {
 	transparent := profile.TransparentProxy
 	listeners := []map[string]any{}
-	if profile.LocalProxy.Enabled {
+	if coreID == "clash-rs" {
+		config["socks-port"] = profile.LocalProxy.SOCKSPort
+		config["port"] = profile.LocalProxy.HTTPPort
+		config["bind-address"] = "127.0.0.1"
+		config["allow-lan"] = false
+		config["authentication"] = []string{profile.LocalProxy.Username + ":" + profile.LocalProxy.Password}
+	} else {
 		users := []map[string]any{{"username": profile.LocalProxy.Username, "password": profile.LocalProxy.Password}}
 		listeners = append(listeners,
 			map[string]any{"name": "sempre-socks-in", "type": "socks", "listen": "127.0.0.1", "port": profile.LocalProxy.SOCKSPort, "udp": true, "users": users},
@@ -405,18 +488,26 @@ func configureMihomoRuntime(config map[string]any, profile Profile) {
 	}
 	switch transparent.Mode {
 	case TransparentProxyTUN:
-		tun := map[string]any{
-			"enable": true, "stack": "system", "device": transparent.TUN.InterfaceName,
-			"auto-route": true, "auto-redirect": true, "strict-route": true, "auto-detect-interface": true,
-			"dns-hijack": []string{"any:53", "tcp://any:53"},
-		}
-		if len(transparent.RouteExclusions) > 0 {
-			tun["route-exclude-address"] = transparent.RouteExclusions
-		}
-		if transparent.InterfaceMode == "include" {
-			tun["include-interface"] = transparent.Interfaces
-		} else if transparent.InterfaceMode == "exclude" {
-			tun["exclude-interface"] = transparent.Interfaces
+		var tun map[string]any
+		if coreID == "clash-rs" {
+			tun = map[string]any{
+				"enable": true, "device": transparent.TUN.InterfaceName,
+				"gateway": valueOr(transparent.TUN.Address, "198.18.0.1/30"), "route-all": true, "dns-hijack": true,
+			}
+		} else {
+			tun = map[string]any{
+				"enable": true, "stack": "system", "device": transparent.TUN.InterfaceName,
+				"auto-route": true, "auto-redirect": true, "strict-route": true, "auto-detect-interface": true,
+				"dns-hijack": []string{"any:53", "tcp://any:53"},
+			}
+			if len(transparent.RouteExclusions) > 0 {
+				tun["route-exclude-address"] = transparent.RouteExclusions
+			}
+			if transparent.InterfaceMode == "include" {
+				tun["include-interface"] = transparent.Interfaces
+			} else if transparent.InterfaceMode == "exclude" {
+				tun["exclude-interface"] = transparent.Interfaces
+			}
 		}
 		config["tun"] = tun
 	case TransparentProxyTProxy:
@@ -429,6 +520,30 @@ func configureMihomoRuntime(config map[string]any, profile Profile) {
 	if len(listeners) > 0 {
 		config["listeners"] = listeners
 	}
+}
+
+func clashRSDNS(profile Profile) map[string]any {
+	shared := resolveDNSShared(profile.DNS)
+	remote := "tls://" + net.JoinHostPort(shared.RemoteDNS, strconv.Itoa(shared.RemoteDNSPort))
+	remoteDetour := valueOr(shared.RemoteDetour, clashFinalGroup(profile.Groups))
+	if remoteDetour != "" {
+		remote += "#" + remoteDetour
+	}
+	local := "udp://" + net.JoinHostPort(shared.LocalDNS, strconv.Itoa(shared.LocalDNSPort))
+	result := map[string]any{
+		"enable": true, "ipv6": true, "respect-rules": true,
+		"enhanced-mode":           map[bool]string{true: "fake-ip", false: "redir-host"}[shared.FakeIPEnabled],
+		"default-nameserver":      []string{shared.BootstrapDNS},
+		"proxy-server-nameserver": []string{shared.BootstrapDNS},
+		"nameserver":              []string{remote},
+	}
+	if shared.CNDomainLocalDNS {
+		result["nameserver-policy"] = map[string]string{"geosite:cn": local}
+	}
+	if shared.FakeIPEnabled {
+		result["fake-ip-range"] = shared.FakeIPIPv4Range
+	}
+	return result
 }
 
 func mihomoDNS(profile Profile) map[string]any {
@@ -714,9 +829,6 @@ func singBoxInbounds(target Target, modern bool, transparent TransparentProxyCon
 }
 
 func localProxySingBoxInbounds(config LocalProxyConfig) []any {
-	if !config.Enabled {
-		return []any{}
-	}
 	users := []map[string]any{{"username": config.Username, "password": config.Password}}
 	return []any{
 		map[string]any{"type": "socks", "tag": "sempre-socks-in", "listen": "127.0.0.1", "listen_port": config.SOCKSPort, "users": users},
@@ -799,7 +911,7 @@ func resolveDNSShared(config map[string]any) dnsShared {
 
 func validateManagedOverrides(profile Profile, target Target) error {
 	override := profile.CoreOverrides["sing-box"]
-	if target.Platform != "default" || (profile.TransparentProxy.Mode == TransparentProxyDisabled && !profile.LocalProxy.Enabled) {
+	if target.Platform != "default" {
 		return nil
 	}
 	if _, exists := override["inbounds"]; exists {
@@ -822,22 +934,23 @@ func validateManagedOverrides(profile Profile, target Target) error {
 	return nil
 }
 
-func validateMihomoOverrides(profile Profile) error {
-	override := profile.CoreOverrides["mihomo"]
+func validateMihomoOverrides(profile Profile, coreID string) error {
+	override := profile.CoreOverrides[coreID]
 	if profile.TransparentProxy.Mode == TransparentProxyTUN {
 		if _, exists := override["tun"]; exists {
 			return fmt.Errorf("top-level tun overrides require transparent_proxy.mode=disabled")
 		}
 	}
-	if profile.TransparentProxy.Mode == TransparentProxyTProxy || profile.LocalProxy.Enabled {
-		keys := []string{"listeners"}
-		if profile.TransparentProxy.Mode == TransparentProxyTProxy {
-			keys = append(keys, "tproxy-port", "routing-mark")
-		}
-		for _, key := range keys {
-			if _, exists := override[key]; exists {
-				return fmt.Errorf("top-level %s is managed by Linux TProxy mode", key)
-			}
+	keys := []string{}
+	if coreID == "mihomo" || profile.TransparentProxy.Mode == TransparentProxyTProxy {
+		keys = append(keys, "listeners")
+	}
+	if profile.TransparentProxy.Mode == TransparentProxyTProxy {
+		keys = append(keys, "tproxy-port", "routing-mark")
+	}
+	for _, key := range keys {
+		if _, exists := override[key]; exists {
+			return fmt.Errorf("top-level %s is managed by Sempre runtime settings", key)
 		}
 	}
 	for _, key := range []string{"external-controller", "external-controller-tls", "external-controller-unix", "external-controller-pipe", "secret", "external-ui"} {

@@ -29,9 +29,34 @@ func Extract(path, destination string, options ExtractOptions) error {
 		return extractTarGZ(path, destination)
 	case "gz":
 		return extractGZ(path, destination, options.SingleFileName)
+	case "raw":
+		return extractRaw(path, destination, options.SingleFileName)
 	default:
 		return fmt.Errorf("unsupported archive format %q", options.Format)
 	}
+}
+
+func extractRaw(path, destination, name string) error {
+	if name == "" || name != filepath.Base(name) || name == "." {
+		return fmt.Errorf("single-file raw output name must be a non-empty base name")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() > MaxExpandedSize {
+		return fmt.Errorf("raw artifact exceeds %d bytes or is not a regular file", MaxExpandedSize)
+	}
+	target, err := safeTarget(destination, name)
+	if err != nil {
+		return err
+	}
+	return writeFile(target, io.LimitReader(file, MaxExpandedSize+1), 0o600)
 }
 
 func extractGZ(path, destination, name string) error {

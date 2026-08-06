@@ -115,6 +115,10 @@ func (controller *Controller) Prepare(
 	plan.Core = coreID
 	transparent := profile.TransparentProxy
 	plan.Mode = transparent.Mode
+	if !coreSupportsMode(coreID, plan.Mode) {
+		plan.Mode = subscriptions.TransparentProxyDisabled
+		return plan, nil
+	}
 	if !plan.Enabled() {
 		return plan, nil
 	}
@@ -135,16 +139,26 @@ func (controller *Controller) Prepare(
 	}
 	switch transparent.Mode {
 	case subscriptions.TransparentProxyTUN:
-		if coreID == "sing-box" {
+		switch coreID {
+		case "sing-box":
 			plan, err = prepareTUN(plan, transparent, inventory, document)
-		} else {
+		case "mihomo":
 			plan, err = prepareMihomoTUN(plan, transparent, inventory, document)
+		case "clash-rs":
+			plan, err = prepareClashRSTUN(plan, transparent, inventory, document)
+		case "xray":
+			plan, err = prepareXrayTUN(plan, transparent, inventory, document)
+		default:
+			err = fmt.Errorf("%s does not support tun-router mode", coreID)
 		}
 	case subscriptions.TransparentProxyTProxy:
-		if coreID == "sing-box" {
+		switch coreID {
+		case "sing-box":
 			plan, err = prepareTProxy(plan, transparent, inventory, document)
-		} else {
+		case "mihomo", "clash-rs":
 			plan, err = prepareMihomoTProxy(plan, transparent, inventory, document)
+		case "xray", "v2ray":
+			plan, err = prepareV2RayTProxy(plan, transparent, inventory, document)
 		}
 	default:
 		err = fmt.Errorf("unsupported Linux transparent proxy mode %q", transparent.Mode)
@@ -270,16 +284,29 @@ func (controller *Controller) runtimePlan(
 		return Plan{}, nil, fmt.Errorf("inspect Linux routes: %w", err)
 	}
 	if plan.Mode == subscriptions.TransparentProxyTUN {
-		if coreID == "sing-box" {
+		switch coreID {
+		case "sing-box":
 			inbound, findErr := findInbound(document, "tun-in", "tun")
 			if findErr != nil {
 				return Plan{}, nil, findErr
 			}
 			plan.TUNInterface, _ = inbound["interface_name"].(string)
 			plan.TUNAddress = firstString(inbound["address"])
-		} else {
+		case "mihomo":
 			tun := object(document["tun"])
 			plan.TUNInterface, _ = tun["device"].(string)
+		case "clash-rs":
+			tun := object(document["tun"])
+			plan.TUNInterface, _ = tun["device"].(string)
+			plan.TUNAddress, _ = tun["gateway"].(string)
+		case "xray":
+			inbound, findErr := findProtocolInbound(document, "tun-in", "tun")
+			if findErr != nil {
+				return Plan{}, nil, findErr
+			}
+			settings := object(inbound["settings"])
+			plan.TUNInterface, _ = settings["name"].(string)
+			plan.TUNAddress = firstString(settings["gateway"])
 		}
 		plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
 	} else {
@@ -296,8 +323,14 @@ func (controller *Controller) runtimePlan(
 }
 
 func validateRuntimePlan(plan Plan, document map[string]any) error {
+	if plan.Core == "clash-rs" {
+		return validateClashRSRuntimePlan(plan, document)
+	}
 	if plan.Core == "mihomo" {
 		return validateMihomoRuntimePlan(plan, document)
+	}
+	if plan.Core == "xray" || plan.Core == "v2ray" {
+		return validateV2RayRuntimePlan(plan, document)
 	}
 	route := object(document["route"])
 	if route["auto_detect_interface"] != true {
@@ -331,7 +364,7 @@ func validateRuntimePlan(plan Plan, document map[string]any) error {
 }
 
 func validateSplitDNS(coreID string, document map[string]any) error {
-	if coreID == "mihomo" {
+	if coreID == "mihomo" || coreID == "clash-rs" {
 		dns := object(document["dns"])
 		if dns["respect-rules"] != true {
 			return fmt.Errorf("dns.respect-rules is not enabled")
@@ -345,6 +378,9 @@ func validateSplitDNS(coreID string, document map[string]any) error {
 			return fmt.Errorf("geosite:cn does not use local DNS")
 		}
 		return nil
+	}
+	if coreID == "xray" || coreID == "v2ray" {
+		return validateV2RaySplitDNS(document)
 	}
 	dns := object(document["dns"])
 	if dns["final"] != "remote" {
@@ -372,7 +408,7 @@ func validateSplitDNS(coreID string, document map[string]any) error {
 }
 
 func validateSplitRouting(coreID string, document map[string]any) error {
-	if coreID == "mihomo" {
+	if coreID == "mihomo" || coreID == "clash-rs" {
 		rules := stringValues(document["rules"])
 		if len(rules) == 0 || !strings.HasPrefix(rules[len(rules)-1], "MATCH,") || strings.HasSuffix(rules[len(rules)-1], ",DIRECT") {
 			return fmt.Errorf("foreign route final is not a proxy selector")
@@ -383,6 +419,9 @@ func validateSplitRouting(coreID string, document map[string]any) error {
 			}
 		}
 		return fmt.Errorf("China routes do not use direct")
+	}
+	if coreID == "xray" || coreID == "v2ray" {
+		return validateV2RaySplitRouting(document)
 	}
 	route := object(document["route"])
 	final, _ := route["final"].(string)
@@ -422,6 +461,20 @@ func validateMihomoRuntimePlan(plan Plan, document map[string]any) error {
 		return fmt.Errorf("routing-mark does not bypass the Sempre TProxy capture mark")
 	}
 	return nil
+}
+
+func validateClashRSRuntimePlan(plan Plan, document map[string]any) error {
+	if plan.Mode == subscriptions.TransparentProxyTUN {
+		tun := object(document["tun"])
+		if tun["enable"] != true || tun["route-all"] != true || tun["dns-hijack"] != true {
+			return fmt.Errorf("clash-rs TUN automatic routing or DNS capture is incomplete")
+		}
+		if plan.TUNInterface == "" || plan.TUNAddress == "" {
+			return fmt.Errorf("clash-rs TUN interface or gateway is missing")
+		}
+		return nil
+	}
+	return validateMihomoRuntimePlan(plan, document)
 }
 
 func prepareTUN(
@@ -548,6 +601,37 @@ func prepareMihomoTUN(
 	return plan, nil
 }
 
+func prepareClashRSTUN(
+	plan Plan,
+	config subscriptions.TransparentProxyConfig,
+	inventory Inventory,
+	document map[string]any,
+) (Plan, error) {
+	address, err := resolveTUNAddress(config.TUN.Address, inventory.OccupiedPrefixes)
+	if err != nil {
+		return Plan{}, err
+	}
+	exclusions := append([]string{}, config.RouteExclusions...)
+	if config.AutoExcludeLocalRoutes {
+		exclusions = append(exclusions, inventory.LocalPrefixes...)
+	}
+	if config.AutoExcludeVPNRoutes {
+		exclusions = append(exclusions, inventory.VPNPrefixes...)
+	}
+	tun := object(document["tun"])
+	tun["enable"] = true
+	tun["device"] = config.TUN.InterfaceName
+	tun["gateway"] = address
+	tun["route-all"] = true
+	tun["dns-hijack"] = true
+	document["tun"] = tun
+	plan.TUNInterface = config.TUN.InterfaceName
+	plan.TUNAddress = address
+	plan.RouteExclusions = normalizedPrefixes(exclusions)
+	plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
+	return plan, nil
+}
+
 func prepareMihomoTProxy(
 	plan Plan,
 	config subscriptions.TransparentProxyConfig,
@@ -574,6 +658,85 @@ func prepareMihomoTProxy(
 	plan.LANInterfaces = interfaces
 	plan.ExcludedPrefixes = normalizedPrefixes(append(reservedPrefixes(), inventory.LocalPrefixes...))
 	plan.ExcludedPrefixes = normalizedPrefixes(append(plan.ExcludedPrefixes, mihomoServerPrefixes(document)...))
+	return plan, nil
+}
+
+func prepareXrayTUN(
+	plan Plan,
+	config subscriptions.TransparentProxyConfig,
+	inventory Inventory,
+	document map[string]any,
+) (Plan, error) {
+	address, err := resolveTUNAddress(config.TUN.Address, inventory.OccupiedPrefixes)
+	if err != nil {
+		return Plan{}, err
+	}
+	inbound, err := findProtocolInbound(document, "tun-in", "tun")
+	if err != nil {
+		return Plan{}, err
+	}
+	settings := object(inbound["settings"])
+	settings["name"] = config.TUN.InterfaceName
+	settings["gateway"] = []string{address}
+	settings["autoSystemRoutingTable"] = []string{"0.0.0.0/0", "::/0"}
+	settings["autoOutboundsInterface"] = "auto"
+	inbound["settings"] = settings
+	exclusions := append([]string{}, config.RouteExclusions...)
+	if config.AutoExcludeLocalRoutes {
+		exclusions = append(exclusions, inventory.LocalPrefixes...)
+	}
+	if config.AutoExcludeVPNRoutes {
+		exclusions = append(exclusions, inventory.VPNPrefixes...)
+	}
+	exclusions = normalizedPrefixes(exclusions)
+	if len(exclusions) > 0 {
+		routing := object(document["routing"])
+		rules, _ := routing["rules"].([]any)
+		rules = append([]any{map[string]any{"type": "field", "ip": exclusions, "outboundTag": "direct"}}, rules...)
+		routing["rules"] = rules
+		document["routing"] = routing
+	}
+	plan.TUNInterface = config.TUN.InterfaceName
+	plan.TUNAddress = address
+	plan.RouteExclusions = exclusions
+	plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
+	return plan, nil
+}
+
+func prepareV2RayTProxy(
+	plan Plan,
+	config subscriptions.TransparentProxyConfig,
+	inventory Inventory,
+	document map[string]any,
+) (Plan, error) {
+	if _, err := findProtocolInbound(document, "tproxy-in", "dokodemo-door"); err != nil {
+		return Plan{}, err
+	}
+	if _, err := findProtocolInbound(document, "dns-in", "dokodemo-door"); err != nil {
+		return Plan{}, err
+	}
+	interfaces, err := resolveLANInterfaces(config.LANInterfaces, inventory)
+	if err != nil {
+		return Plan{}, err
+	}
+	if len(interfaces) == 0 && !config.CaptureHost {
+		return Plan{}, fmt.Errorf("TProxy mode needs a LAN interface or capture_host enabled")
+	}
+	values, _ := document["outbounds"].([]any)
+	for _, value := range values {
+		outbound, _ := value.(map[string]any)
+		stream := object(outbound["streamSettings"])
+		sockopt := object(stream["sockopt"])
+		sockopt["mark"] = BypassMark
+		stream["sockopt"] = sockopt
+		outbound["streamSettings"] = stream
+	}
+	plan.TProxyPort = config.TProxy.ListenPort
+	plan.DNSPort = config.TProxy.DNSListenPort
+	plan.CaptureHost = config.CaptureHost
+	plan.LANInterfaces = interfaces
+	plan.ExcludedPrefixes = normalizedPrefixes(append(reservedPrefixes(), inventory.LocalPrefixes...))
+	plan.ExcludedPrefixes = normalizedPrefixes(append(plan.ExcludedPrefixes, v2RayServerPrefixes(document)...))
 	return plan, nil
 }
 
@@ -609,20 +772,47 @@ func findInbound(document map[string]any, tag, inboundType string) (map[string]a
 	return nil, fmt.Errorf("runtime configuration is missing %s %s inbound", tag, inboundType)
 }
 
+func findProtocolInbound(document map[string]any, tag, protocol string) (map[string]any, error) {
+	values, ok := document["inbounds"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("runtime configuration has no inbounds")
+	}
+	for _, value := range values {
+		inbound, ok := value.(map[string]any)
+		if ok && inbound["tag"] == tag && inbound["protocol"] == protocol {
+			return inbound, nil
+		}
+	}
+	return nil, fmt.Errorf("runtime configuration is missing %s %s inbound", tag, protocol)
+}
+
 func supportedCore(coreID string) bool {
-	return coreID == "sing-box" || coreID == "mihomo"
+	return coreID == "sing-box" || coreID == "mihomo" || coreID == "xray" || coreID == "v2ray" || coreID == "clash-rs"
+}
+
+func coreSupportsMode(coreID, mode string) bool {
+	switch mode {
+	case subscriptions.TransparentProxyDisabled:
+		return true
+	case subscriptions.TransparentProxyTUN:
+		return coreID == "sing-box" || coreID == "mihomo" || coreID == "clash-rs" || coreID == "xray"
+	case subscriptions.TransparentProxyTProxy:
+		return supportedCore(coreID)
+	default:
+		return false
+	}
 }
 
 func decodeRuntimeDocument(coreID string, data []byte) (map[string]any, error) {
 	document := map[string]any{}
-	if coreID == "mihomo" {
+	if coreID == "mihomo" || coreID == "clash-rs" {
 		return document, yaml.Unmarshal(data, &document)
 	}
 	return document, json.Unmarshal(data, &document)
 }
 
 func encodeRuntimeDocument(coreID string, document map[string]any) ([]byte, error) {
-	if coreID == "mihomo" {
+	if coreID == "mihomo" || coreID == "clash-rs" {
 		return yaml.Marshal(document)
 	}
 	encoded, err := json.MarshalIndent(document, "", "  ")
@@ -742,6 +932,99 @@ func outboundServerPrefixes(document map[string]any) []string {
 			result = append(result, netip.PrefixFrom(address, address.BitLen()).String())
 		}
 	}
+	return result
+}
+
+func v2RayServerPrefixes(document map[string]any) []string {
+	values, _ := document["outbounds"].([]any)
+	result := []string{}
+	for _, value := range values {
+		outbound, _ := value.(map[string]any)
+		settings := object(outbound["settings"])
+		if address, err := netip.ParseAddr(strings.TrimSpace(stringValue(settings["address"]))); err == nil {
+			result = append(result, netip.PrefixFrom(address, address.BitLen()).String())
+		}
+		for _, collection := range []string{"servers", "vnext"} {
+			servers, _ := settings[collection].([]any)
+			for _, serverValue := range servers {
+				server, _ := serverValue.(map[string]any)
+				if address, err := netip.ParseAddr(strings.TrimSpace(stringValue(server["address"]))); err == nil {
+					result = append(result, netip.PrefixFrom(address, address.BitLen()).String())
+				}
+			}
+		}
+	}
+	return result
+}
+
+func validateV2RayRuntimePlan(plan Plan, document map[string]any) error {
+	if plan.Mode == subscriptions.TransparentProxyTUN {
+		inbound, err := findProtocolInbound(document, "tun-in", "tun")
+		if err != nil {
+			return err
+		}
+		settings := object(inbound["settings"])
+		if settings["name"] != plan.TUNInterface || firstString(settings["gateway"]) == "" || firstString(settings["autoSystemRoutingTable"]) == "" || settings["autoOutboundsInterface"] != "auto" {
+			return fmt.Errorf("Xray TUN automatic routing is incomplete")
+		}
+		return nil
+	}
+	if _, err := findProtocolInbound(document, "tproxy-in", "dokodemo-door"); err != nil {
+		return err
+	}
+	if _, err := findProtocolInbound(document, "dns-in", "dokodemo-door"); err != nil {
+		return err
+	}
+	values, _ := document["outbounds"].([]any)
+	for _, value := range values {
+		outbound, _ := value.(map[string]any)
+		if number, ok := numberAsUint32(object(object(outbound["streamSettings"])["sockopt"])["mark"]); !ok || number != BypassMark {
+			return fmt.Errorf("outbound %v does not use the Sempre bypass mark", outbound["tag"])
+		}
+	}
+	return nil
+}
+
+func validateV2RaySplitDNS(document map[string]any) error {
+	dns := object(document["dns"])
+	servers, _ := dns["servers"].([]any)
+	hasLocal, hasRemote := false, false
+	for _, value := range servers {
+		server, _ := value.(map[string]any)
+		switch server["tag"] {
+		case "local-dns":
+			hasLocal = stringListContains(server["domains"], "geosite:cn")
+		case "remote-dns":
+			hasRemote = strings.HasPrefix(stringValue(server["address"]), "https://")
+		}
+	}
+	if !hasLocal || !hasRemote {
+		return fmt.Errorf("domestic local DNS or foreign DoH is missing")
+	}
+	return nil
+}
+
+func validateV2RaySplitRouting(document map[string]any) error {
+	routing := object(document["routing"])
+	rules, _ := routing["rules"].([]any)
+	hasDomestic, hasForeign := false, false
+	for _, value := range rules {
+		rule, _ := value.(map[string]any)
+		if rule["outboundTag"] == "direct" && (stringListContains(rule["domain"], "geosite:cn") || stringListContains(rule["ip"], "geoip:cn")) {
+			hasDomestic = true
+		}
+		if rule["balancerTag"] != nil && (rule["network"] == "tcp,udp" || stringListContains(rule["inboundTag"], "remote-dns")) {
+			hasForeign = true
+		}
+	}
+	if !hasDomestic || !hasForeign {
+		return fmt.Errorf("domestic direct or foreign balancer route is missing")
+	}
+	return nil
+}
+
+func stringValue(value any) string {
+	result, _ := value.(string)
 	return result
 }
 

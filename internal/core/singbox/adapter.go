@@ -34,6 +34,14 @@ func (adapter *Adapter) ID() string {
 	return "sing-box"
 }
 
+func (adapter *Adapter) Definition() core.Definition {
+	return core.Definition{
+		ID: adapter.ID(), Name: "sing-box", Stability: core.StabilityStable,
+		CompilerFormat: "sing-box-v13", ControlProtocol: core.ControlProtocolClashREST,
+		Platforms: []string{"darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64", "windows/amd64", "windows/arm64"},
+	}
+}
+
 func (adapter *Adapter) Stability() string {
 	return core.StabilityStable
 }
@@ -42,7 +50,7 @@ func (adapter *Adapter) Capabilities(version string, target core.Target) core.Ca
 	compilerTarget, _ := adapter.CompilerTarget(version, target)
 	features := []string{
 		core.CapabilityLoggingLevel,
-		core.CapabilityDNSLocalUpstream, core.CapabilityDNSRemoteUpstream,
+		core.CapabilityDNSLocalUpstream, core.CapabilityDNSRemoteUpstream, core.CapabilityDNSRemotePort,
 		core.CapabilityDNSBootstrapUpstream, core.CapabilityDNSFakeIP,
 		core.CapabilityDNSBootstrapPort, core.CapabilityDNSBootstrapServerName,
 		core.CapabilityDNSRemoteServerName,
@@ -269,4 +277,5 @@ func object(value any) map[string]any {
 }
 
 var _ core.Adapter = (*Adapter)(nil)
+var _ core.DefinitionProvider = (*Adapter)(nil)
 var _ core.RuntimePreparer = (*Adapter)(nil)

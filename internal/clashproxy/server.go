@@ -36,10 +36,10 @@ func New() *Server {
 }
 
 func (server *Server) Start(ctx context.Context, config Config) error {
-	if !config.External.Enabled {
+	if config.Upstream.BaseURL == "" {
 		return server.Stop(context.Background())
 	}
-	if config.Upstream.BaseURL == "" || config.Upstream.Secret == "" {
+	if config.Upstream.Secret == "" {
 		return fmt.Errorf("internal Clash API is unavailable")
 	}
 	if err := validateExternalUI(config.External.ExternalUI); err != nil {

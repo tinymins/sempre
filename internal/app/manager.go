@@ -15,8 +15,12 @@ import (
 	"github.com/tinymins/sempre/internal/clashproxy"
 	"github.com/tinymins/sempre/internal/control"
 	"github.com/tinymins/sempre/internal/core"
+	"github.com/tinymins/sempre/internal/core/clashrs"
+	"github.com/tinymins/sempre/internal/core/dae"
 	"github.com/tinymins/sempre/internal/core/mihomo"
 	"github.com/tinymins/sempre/internal/core/singbox"
+	"github.com/tinymins/sempre/internal/core/v2ray"
+	"github.com/tinymins/sempre/internal/core/xray"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/release"
 	"github.com/tinymins/sempre/internal/service"
@@ -113,7 +117,7 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 	return &Manager{
 		paths:         paths,
 		store:         store,
-		registry:      core.NewRegistry(singbox.New(), mihomo.New()),
+		registry:      core.NewRegistry(singbox.New(), mihomo.New(), xray.New(), v2ray.New(), clashrs.New(), dae.New()),
 		output:        output,
 		errors:        errorOutput,
 		service:       controller,
@@ -169,6 +173,9 @@ func (manager *Manager) controlClient() (*control.Client, error) {
 	if err := json.Unmarshal(data, &spec); err != nil || spec.Core == "" || spec.BaseURL == "" || spec.Secret == "" {
 		return nil, fmt.Errorf("managed core control metadata is invalid")
 	}
+	if spec.Protocol != core.ControlProtocolClashREST {
+		return nil, fmt.Errorf("%s exposes %s management, not a Clash-compatible REST API", spec.Core, spec.Protocol)
+	}
 	return control.New(spec.Core, spec.BaseURL, spec.Secret), nil
 }
 
@@ -188,6 +195,10 @@ func (manager *Manager) CoreIDs() []string {
 	ids := manager.registry.IDs()
 	sort.Strings(ids)
 	return ids
+}
+
+func (manager *Manager) CoreDefinitions() []core.Definition {
+	return manager.registry.Definitions()
 }
 
 func acquireOperationLocks(paths ...layout.Layout) (func(), error) {

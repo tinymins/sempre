@@ -71,7 +71,7 @@ func TestProfileRuntimeKeyTracksOnlyRuntimePlan(t *testing.T) {
 		t.Fatal("transparent proxy change did not change the runtime key")
 	}
 	transparentKey := profileRuntimeKey(profile)
-	profile.ManagementAPI = subscriptions.ManagementAPIConfig{Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "secret", AllowOrigins: []string{}}
+	profile.ManagementAPI = subscriptions.ManagementAPIConfig{ExternalController: "127.0.0.1:9090", Secret: "secret", AllowOrigins: []string{}}
 	if profileRuntimeKey(profile) == transparentKey {
 		t.Fatal("management API change did not change the runtime key")
 	}
@@ -105,7 +105,7 @@ func TestManagementAPIChangeStagesRuntimeWithoutChangingCoreConfig(t *testing.T)
 		t.Fatal(err)
 	}
 	profile.ManagementAPI = subscriptions.ManagementAPIConfig{
-		Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "fixed-secret", AllowOrigins: []string{},
+		ExternalController: "127.0.0.1:9090", Secret: "fixed-secret", AllowOrigins: []string{},
 	}
 	change, _, err := manager.SaveSubscriptionProfile(context.Background(), active, *profile)
 	if err != nil {
@@ -326,7 +326,7 @@ func TestScheduledSubscriptionUpdatePreservesLinuxRuntimeSettings(t *testing.T) 
 		EBPF: subscriptions.EBPFConfig{WANInterface: "auto"},
 	}
 	candidate.ManagementAPI = subscriptions.ManagementAPIConfig{
-		Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "fixed-secret",
+		ExternalController: "127.0.0.1:9090", Secret: "fixed-secret",
 		ExternalUI: "/srv/metacubex", AllowOrigins: []string{"https://dashboard.example"}, AllowPrivateNetwork: true,
 	}
 	if _, _, err := manager.SaveSubscriptionProfile(context.Background(), active, candidate); err != nil {

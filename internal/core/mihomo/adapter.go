@@ -4,15 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/release"
-	"gopkg.in/yaml.v3"
 )
 
 const repository = "MetaCubeX/mihomo"
@@ -39,6 +36,14 @@ func (adapter *Adapter) ID() string {
 	return "mihomo"
 }
 
+func (adapter *Adapter) Definition() core.Definition {
+	return core.Definition{
+		ID: adapter.ID(), Name: "Mihomo", Stability: core.StabilityStable,
+		CompilerFormat: "clash-meta", ControlProtocol: core.ControlProtocolClashREST,
+		Platforms: []string{"darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64", "windows/amd64", "windows/arm64"},
+	}
+}
+
 func (adapter *Adapter) Stability() string {
 	return core.StabilityStable
 }
@@ -46,7 +51,7 @@ func (adapter *Adapter) Stability() string {
 func (adapter *Adapter) Capabilities(_ string, target core.Target) core.Capabilities {
 	features := []string{
 		core.CapabilityLoggingLevel,
-		core.CapabilityDNSLocalUpstream, core.CapabilityDNSRemoteUpstream,
+		core.CapabilityDNSLocalUpstream, core.CapabilityDNSRemoteUpstream, core.CapabilityDNSRemotePort,
 		core.CapabilityDNSBootstrapUpstream, core.CapabilityDNSFakeIP,
 		core.CapabilityDNSRemoteDetour, core.CapabilityDNSRejectHTTPS,
 		core.CapabilityDNSSplit, core.CapabilityDNSNative,
@@ -231,49 +236,9 @@ func (adapter *Adapter) Run(binary, config, dataDir string) core.RunSpec {
 }
 
 func (adapter *Adapter) PrepareRuntime(config, runtimeDirectory string) (core.RuntimeSpec, error) {
-	data, err := os.ReadFile(config)
-	if err != nil {
-		return core.RuntimeSpec{}, fmt.Errorf("read mihomo configuration: %w", err)
-	}
-	document := map[string]any{}
-	if err := yaml.Unmarshal(data, &document); err != nil {
-		return core.RuntimeSpec{}, fmt.Errorf("decode mihomo configuration: %w", err)
-	}
-	control, err := core.NewPrivateControl(adapter.ID(), core.ControlProtocolClashREST)
-	if err != nil {
-		return core.RuntimeSpec{}, err
-	}
-	for _, key := range []string{
-		"external-controller-tls",
-		"external-controller-unix",
-		"external-controller-pipe",
-		"external-doh-server",
-		"external-ui",
-		"external-ui-name",
-		"external-ui-url",
-		"external-ui-headers",
-	} {
-		delete(document, key)
-	}
-	document["external-controller"] = strings.TrimPrefix(control.BaseURL, "http://")
-	document["secret"] = control.Secret
-	document["external-controller-cors"] = map[string]any{
-		"allow-origins":         []string{"http://localhost.invalid"},
-		"allow-private-network": false,
-	}
-	encoded, err := yaml.Marshal(document)
-	if err != nil {
-		return core.RuntimeSpec{}, fmt.Errorf("encode mihomo runtime configuration: %w", err)
-	}
-	if err := os.MkdirAll(runtimeDirectory, 0o700); err != nil {
-		return core.RuntimeSpec{}, err
-	}
-	runtimeConfig := filepath.Join(runtimeDirectory, "config.yaml")
-	if err := os.WriteFile(runtimeConfig, encoded, 0o600); err != nil {
-		return core.RuntimeSpec{}, fmt.Errorf("write mihomo runtime configuration: %w", err)
-	}
-	return core.RuntimeSpec{Config: runtimeConfig, Control: control}, nil
+	return core.PrepareClashYAMLRuntime(adapter.ID(), config, runtimeDirectory)
 }
 
 var _ core.Adapter = (*Adapter)(nil)
+var _ core.DefinitionProvider = (*Adapter)(nil)
 var _ core.RuntimePreparer = (*Adapter)(nil)

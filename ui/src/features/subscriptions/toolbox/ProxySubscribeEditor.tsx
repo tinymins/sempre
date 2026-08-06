@@ -303,9 +303,16 @@ function profileFormValues(profile: SubscriptionProfile, configurationContext: S
 			tproxy: { listen_port: 7893, dns_listen_port: 1053 },
 			ebpf: { wan_interface: "auto", auto_config_kernel_parameter: false },
 		};
-	const localProxy = profile.local_proxy ?? { enabled: true, socks_port: 1080, http_port: 1081, username: "sempre", password: "" };
-	const managementAPI = profile.management_api ?? { enabled: false, allow_origins: [], allow_private_network: false };
+	const localProxy = profile.local_proxy ?? { socks_port: 1080, http_port: 1081, username: "sempre", password: "" };
+	const managementAPI = profile.management_api ?? { external_controller: "0.0.0.0:9090", secret: "", allow_origins: [], allow_private_network: false };
 	const targetCore = configurationContext.target?.core;
+	const features = new Set(configurationContext.capabilities.features);
+	const transparentMode = (
+		transparent.mode === "tun-router" && features.has("transparent.tun") ||
+		transparent.mode === "tproxy" && features.has("transparent.tproxy") ||
+		transparent.mode === "ebpf-router" && features.has("transparent.ebpf") ||
+		transparent.mode === "disabled"
+	) ? transparent.mode : "disabled";
   const items: SubscribeItem[] = profile.sources
     .filter((source) => source.type === "url")
     .map((source) => ({
@@ -347,7 +354,7 @@ function profileFormValues(profile: SubscriptionProfile, configurationContext: S
     servers: profile.editor.servers || "[]",
 		advancedConfig: JSON.stringify(targetCore ? profile.core_overrides?.[targetCore] ?? {} : {}, null, 2),
     selectedCustomNodeIds: profile.custom_node_ids ?? [],
-		transparentMode: transparent.mode,
+		transparentMode,
 		tunInterfaceName: transparent.tun.interface_name,
 		tunAddress: transparent.tun.address ?? "",
 		tunRouteExclusions: transparent.route_exclusions.join("\n"),
@@ -359,11 +366,12 @@ function profileFormValues(profile: SubscriptionProfile, configurationContext: S
 		tproxyDNSPort: transparent.tproxy.dns_listen_port,
 		tproxyCaptureHost: transparent.capture_host,
 		tproxyLANInterfaces: transparent.lan_interfaces,
+		ebpfWANInterface: transparent.ebpf.wan_interface,
+		ebpfAutoConfigKernel: transparent.ebpf.auto_config_kernel_parameter,
 		localProxySOCKSPort: localProxy.socks_port,
 		localProxyHTTPPort: localProxy.http_port,
 		localProxyUsername: localProxy.username,
 		localProxyPassword: localProxy.password,
-		managementAPIEnabled: managementAPI.enabled,
 		managementAPIController: managementAPI.external_controller ?? "0.0.0.0:9090",
 		managementAPISecret: managementAPI.secret ?? "",
 		managementAPIUI: managementAPI.external_ui ?? "",
@@ -403,7 +411,7 @@ const ProxySubscribeEditor = ({
     const [profileFeedback, setProfileFeedback] = useState<SaveFeedback>({ state: "idle" });
     const [scheduleFeedback, setScheduleFeedback] = useState<SaveFeedback>({ state: "idle" });
 		const features = useMemo(() => new Set(configurationContext.capabilities.features), [configurationContext.capabilities.features]);
-		const supportsTransparent = features.has("transparent.tun") || features.has("transparent.tproxy");
+		const supportsTransparent = features.has("transparent.tun") || features.has("transparent.tproxy") || features.has("transparent.ebpf");
 		const supportsLocalProxy = features.has("inbound.local_proxy");
 		const supportsManagement = features.has("management.external_api");
 		const supportsDNS = configurationContext.capabilities.features.some((feature) => feature.startsWith("dns."));
@@ -423,7 +431,6 @@ const ProxySubscribeEditor = ({
 		const [form] = Form.useForm(profileFormValues(profile, configurationContext));
     const manualServers = Form.useWatch("servers", form) as string | undefined;
 		const transparentMode = Form.useWatch("transparentMode", form) as string | undefined;
-		const managementAPIEnabled = Form.useWatch("managementAPIEnabled", form) as boolean | undefined;
 		const tunInterfaceMode = Form.useWatch("tunInterfaceMode", form) as string | undefined;
 
     const mountedRef = useRef(true);
@@ -513,7 +520,6 @@ const ProxySubscribeEditor = ({
         custom_node_ids: values.selectedCustomNodeIds ?? [],
 			core_overrides: currentOverrides,
 			local_proxy: {
-				enabled: true,
 				socks_port: values.localProxySOCKSPort ?? 1080,
 				http_port: values.localProxyHTTPPort ?? 1081,
 				username: values.localProxyUsername || "sempre",
@@ -536,10 +542,12 @@ const ProxySubscribeEditor = ({
 					listen_port: values.tproxyPort ?? 7893,
 					dns_listen_port: values.tproxyDNSPort ?? 1053,
 				},
-				ebpf: profileRef.current.transparent_proxy?.ebpf ?? { wan_interface: "auto", auto_config_kernel_parameter: false },
+				ebpf: {
+					wan_interface: values.ebpfWANInterface || "auto",
+					auto_config_kernel_parameter: values.ebpfAutoConfigKernel ?? false,
+				},
 			},
 			management_api: {
-				enabled: values.managementAPIEnabled ?? false,
 				external_controller: values.managementAPIController?.trim() || undefined,
 				secret: values.managementAPISecret || undefined,
 				external_ui: values.managementAPIUI?.trim() || undefined,
@@ -970,11 +978,15 @@ const ProxySubscribeEditor = ({
 							options={[
 								...(features.has("transparent.tun") ? [{ value: "tun-router", label: t("proxy.form.transparentModeTun") }] : []),
 								...(features.has("transparent.tproxy") ? [{ value: "tproxy", label: t("proxy.form.transparentModeTProxy") }] : []),
+								...(features.has("transparent.ebpf") ? [{ value: "ebpf-router", label: t("proxy.form.transparentModeEBPF") }] : []),
 								{ value: "disabled", label: t("proxy.form.transparentModeDisabled") },
 							]}
 							onChange={(value) => {
-								if (value === "tproxy" && (form.getFieldValue("tproxyLANInterfaces") as string[] | undefined)?.length === 0 && networkInventory?.recommended_lan_interfaces.length) {
+								if ((value === "tproxy" || value === "ebpf-router") && (form.getFieldValue("tproxyLANInterfaces") as string[] | undefined)?.length === 0 && networkInventory?.recommended_lan_interfaces.length) {
 									form.setFieldValue("tproxyLANInterfaces", networkInventory.recommended_lan_interfaces);
+								}
+								if (value === "ebpf-router" && !form.getFieldValue("ebpfWANInterface")) {
+									form.setFieldValue("ebpfWANInterface", networkInventory?.default_interface || "auto");
 								}
 							}}
 						/>
@@ -1042,34 +1054,45 @@ const ProxySubscribeEditor = ({
 							</Form.Item>
 						</>
 					) : null}
-				</section> : null}
-
-				{supportsManagement ? <section className="space-y-4 border-t border-[var(--border)] pt-5">
-					<Form.Item label={t("proxy.form.managementAPIEnabled")} name="managementAPIEnabled" valuePropName="checked">
-						<Switch />
-					</Form.Item>
-					{managementAPIEnabled ? (
+					{transparentMode === "ebpf-router" && features.has("transparent.ebpf") ? (
 						<>
-							<Alert type="warning" showIcon message={t("proxy.form.managementAPISecurityWarning")} />
 							<div className="grid gap-4 md:grid-cols-2">
-								<Form.Item label={t("proxy.form.managementAPIController")} name="managementAPIController">
-									<Input />
+								<Form.Item label={t("proxy.form.ebpfWANInterface")} name="ebpfWANInterface">
+									<Select options={[
+										{ value: "auto", label: t("proxy.form.ebpfWANAuto") },
+										...(networkInventory?.interfaces ?? []).filter((item) => item.up).map((item) => ({ value: item.name, label: item.name })),
+									]} />
 								</Form.Item>
-								<Form.Item label={t("proxy.form.managementAPISecret")} name="managementAPISecret">
-									<Password autoComplete="new-password" />
+								<Form.Item label={t("proxy.form.ebpfLANInterfaces")} name="tproxyLANInterfaces">
+									<Select mode="tags" showSearch options={(networkInventory?.interfaces ?? []).filter((item) => item.up).map((item) => ({ value: item.name, label: item.name }))} />
 								</Form.Item>
 							</div>
-							<Form.Item label={t("proxy.form.managementAPIUI")} name="managementAPIUI">
-								<Input />
-							</Form.Item>
-							<Form.Item label={t("proxy.form.managementAPIOrigins")} name="managementAPIOrigins">
-								<Select mode="tags" />
-							</Form.Item>
-							<Form.Item label={t("proxy.form.managementAPIPrivateNetwork")} name="managementAPIPrivateNetwork" valuePropName="checked">
+							<Form.Item label={t("proxy.form.ebpfAutoConfigKernel")} name="ebpfAutoConfigKernel" valuePropName="checked">
 								<Switch />
 							</Form.Item>
 						</>
 					) : null}
+				</section> : null}
+
+				{supportsManagement ? <section className="space-y-4 border-t border-[var(--border)] pt-5">
+					<Alert type="warning" showIcon message={t("proxy.form.managementAPISecurityWarning")} />
+					<div className="grid gap-4 md:grid-cols-2">
+						<Form.Item label={t("proxy.form.managementAPIController")} name="managementAPIController">
+							<Input />
+						</Form.Item>
+						<Form.Item label={t("proxy.form.managementAPISecret")} name="managementAPISecret">
+							<Password autoComplete="new-password" />
+						</Form.Item>
+					</div>
+					<Form.Item label={t("proxy.form.managementAPIUI")} name="managementAPIUI">
+						<Input />
+					</Form.Item>
+					<Form.Item label={t("proxy.form.managementAPIOrigins")} name="managementAPIOrigins">
+						<Select mode="tags" />
+					</Form.Item>
+					<Form.Item label={t("proxy.form.managementAPIPrivateNetwork")} name="managementAPIPrivateNetwork" valuePropName="checked">
+						<Switch />
+					</Form.Item>
 				</section> : null}
 			</div>
 

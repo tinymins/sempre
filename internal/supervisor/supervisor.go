@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
@@ -57,6 +58,9 @@ type Runner struct {
 func RunForeground(ctx context.Context, spec core.RunSpec, stdout, stderr interface{ Write([]byte) (int, error) }) error {
 	command := exec.Command(spec.Path, spec.Args...)
 	command.Dir = spec.WorkingDir
+	if len(spec.Env) > 0 {
+		command.Env = append(os.Environ(), spec.Env...)
+	}
 	command.Stdout = stdout
 	command.Stderr = stderr
 	configureCommand(command)
@@ -167,6 +171,9 @@ func (runner *Runner) Run(ctx context.Context) error {
 		}
 		command := exec.Command(plan.Spec.Path, plan.Spec.Args...)
 		command.Dir = plan.Spec.WorkingDir
+		if len(plan.Spec.Env) > 0 {
+			command.Env = append(os.Environ(), plan.Spec.Env...)
+		}
 		command.Stdout = runner.Stdout
 		command.Stderr = runner.Stderr
 		configureCommand(command)

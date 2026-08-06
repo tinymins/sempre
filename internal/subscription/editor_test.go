@@ -128,8 +128,9 @@ func TestStoreMigratesOpenCoreOverridesAndRemovesDuplicateDNSFields(t *testing.T
 	if err := json.Unmarshal(profileData, &profileDocument); err != nil {
 		t.Fatal(err)
 	}
+	delete(profileDocument, "management_api")
 	profileDocument["custom_config"] = map[string]any{"route": map[string]any{"final": "proxy"}}
-	profileDocument["clash_api"] = ManagementAPIConfig{Enabled: true, ExternalController: "127.0.0.1:9090", Secret: "legacy-secret", AllowOrigins: []string{}}
+	profileDocument["clash_api"] = ManagementAPIConfig{ExternalController: "127.0.0.1:9090", Secret: "legacy-secret", AllowOrigins: []string{}}
 	profileDocument["transparent_proxy"] = map[string]any{
 		"mode": "tun-router",
 		"tun": map[string]any{
@@ -174,13 +175,18 @@ func TestStoreMigratesOpenCoreOverridesAndRemovesDuplicateDNSFields(t *testing.T
 	if _, exists := profileKeys["clash_api"]; exists {
 		t.Fatalf("removed fields remain in migrated profile: %s", encoded)
 	}
+	for _, field := range []string{"local_proxy", "management_api"} {
+		if _, exists := profileKeys[field].(map[string]any)["enabled"]; exists {
+			t.Fatalf("removed %s.enabled remains in migrated profile: %s", field, encoded)
+		}
+	}
 	if migrated.TransparentProxy.TProxy.ListenPort != 17893 || migrated.TransparentProxy.TProxy.DNSListenPort != 11053 {
 		t.Fatalf("transparent proxy migration = %#v", migrated.TransparentProxy)
 	}
 	if migrated.TransparentProxy.TUN.InterfaceName != "sempre-tun" || !migrated.TransparentProxy.CaptureHost || migrated.TransparentProxy.InterfaceMode != "exclude" || len(migrated.TransparentProxy.RouteExclusions) != 1 || len(migrated.TransparentProxy.LANInterfaces) != 1 {
 		t.Fatalf("flattened transparent runtime intent = %#v", migrated.TransparentProxy)
 	}
-	if !migrated.LocalProxy.Enabled || migrated.LocalProxy.SOCKSPort != 1080 || migrated.LocalProxy.HTTPPort != 1081 || migrated.LocalProxy.Username != "sempre" || len(migrated.LocalProxy.Password) < 40 {
+	if migrated.LocalProxy.SOCKSPort != 1080 || migrated.LocalProxy.HTTPPort != 1081 || migrated.LocalProxy.Username != "sempre" || len(migrated.LocalProxy.Password) < 40 {
 		t.Fatalf("authenticated local proxy migration = %#v", migrated.LocalProxy)
 	}
 	shared := migrated.DNS["shared"].(map[string]any)

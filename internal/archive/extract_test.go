@@ -120,6 +120,23 @@ func TestExtractSingleFileGZIPRejectsUnsafeName(t *testing.T) {
 	}
 }
 
+func TestExtractRawArtifact(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := filepath.Join(root, "download")
+	if err := os.WriteFile(source, []byte("binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(root, "extract")
+	if err := Extract(source, destination, ExtractOptions{Format: "raw", SingleFileName: "clash-rs"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(destination, "clash-rs"))
+	if err != nil || string(data) != "binary" {
+		t.Fatalf("raw artifact = %q, %v", data, err)
+	}
+}
+
 func TestExtractSingleFileGZIPRejectsInvalidAndOversizedData(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

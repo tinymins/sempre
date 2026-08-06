@@ -27,7 +27,7 @@ func TestServerAuthenticatesAndForwardsClashAPI(t *testing.T) {
 	defer upstream.Close()
 	server, baseURL := startTestServer(t, Config{
 		External: subscriptions.ManagementAPIConfig{
-			Enabled: true, ExternalController: "127.0.0.1:0", Secret: "user-secret",
+			ExternalController: "127.0.0.1:0", Secret: "user-secret",
 		},
 		Upstream: core.ControlSpec{BaseURL: upstream.URL, Secret: "internal-secret"},
 	})
@@ -76,7 +76,7 @@ func TestServerForwardsWebSocketConnections(t *testing.T) {
 	defer upstream.Close()
 	server, baseURL := startTestServer(t, Config{
 		External: subscriptions.ManagementAPIConfig{
-			Enabled: true, ExternalController: "127.0.0.1:0", Secret: "user-secret",
+			ExternalController: "127.0.0.1:0", Secret: "user-secret",
 		},
 		Upstream: core.ControlSpec{BaseURL: upstream.URL, Secret: "internal-secret"},
 	})
@@ -122,7 +122,7 @@ func TestServerForwardsMetaCubeXSelectorChanges(t *testing.T) {
 	defer upstream.Close()
 	server, baseURL := startTestServer(t, Config{
 		External: subscriptions.ManagementAPIConfig{
-			Enabled: true, ExternalController: "127.0.0.1:0", Secret: "user-secret",
+			ExternalController: "127.0.0.1:0", Secret: "user-secret",
 		},
 		Upstream: core.ControlSpec{BaseURL: upstream.URL, Secret: "internal-secret"},
 	})
@@ -154,7 +154,6 @@ func TestServerProvidesExternalUIAndCORS(t *testing.T) {
 	defer upstream.Close()
 	server, baseURL := startTestServer(t, Config{
 		External: subscriptions.ManagementAPIConfig{
-			Enabled:             true,
 			ExternalController:  "127.0.0.1:0",
 			Secret:              "user-secret",
 			ExternalUI:          directory,

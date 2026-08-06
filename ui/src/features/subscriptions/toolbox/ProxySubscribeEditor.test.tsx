@@ -35,7 +35,8 @@ const profile: SubscriptionProfile = {
   rule_providers: [],
   filters: [],
 	core_overrides: {},
-	local_proxy: { enabled: true, socks_port: 1080, http_port: 1081, username: 'sempre', password: 'local-secret' },
+	local_proxy: { socks_port: 1080, http_port: 1081, username: 'sempre', password: 'local-secret' },
+	management_api: { external_controller: '0.0.0.0:9090', secret: 'management-secret', allow_origins: [], allow_private_network: false },
   use_system_groups: true,
   use_system_rules: true,
   use_system_filters: true,
@@ -52,7 +53,7 @@ const singBoxContext: SubscriptionConfigurationContext = {
 	capabilities: {
 		features: [
 			'logging.level',
-			'dns.local_upstream', 'dns.remote_upstream', 'dns.bootstrap_upstream', 'dns.bootstrap_port',
+			'dns.local_upstream', 'dns.remote_upstream', 'dns.remote_port', 'dns.bootstrap_upstream', 'dns.bootstrap_port',
 			'dns.bootstrap_server_name', 'dns.fake_ip', 'dns.split', 'dns.native', 'dns.prefer_ipv4',
 			'dns.remote_server_name', 'dns.remote_detour', 'dns.reject_https',
 			'routing.rules', 'routing.rule_providers', 'routing.selector', 'routing.url_test',
@@ -173,7 +174,7 @@ describe('ProxySubscribeEditor', () => {
     expect(onScheduleSave).toHaveBeenCalledWith({ auto_restart: false })
   })
 
-	it('persists Linux TProxy and authenticated external management API settings', async () => {
+	it('persists Linux TProxy and directly available authenticated management settings', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('sempre.locale', 'en')
 		const { onSave } = renderEditor()
@@ -182,22 +183,20 @@ describe('ProxySubscribeEditor', () => {
 		fireEvent.click(screen.getByText('TProxy'))
 		expect(screen.getByText('vmbr1')).toBeInTheDocument()
 
-		const switches = screen.getAllByRole('switch')
-		fireEvent.click(switches[switches.length - 1])
 		expect(screen.getByText(/Use a strong secret/i)).toBeInTheDocument()
 		fireEvent.change(screen.getByLabelText(/Fixed secret/i), { target: { value: 'fixed-secret' } })
 		await act(async () => vi.advanceTimersByTime(800))
 
 		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({
-			local_proxy: { enabled: true, socks_port: 1080, http_port: 1081, username: 'sempre', password: 'local-secret' },
+			local_proxy: { socks_port: 1080, http_port: 1081, username: 'sempre', password: 'local-secret' },
 			transparent_proxy: {
 				mode: 'tproxy',
 				capture_host: false,
 				lan_interfaces: ['vmbr1'],
 				tproxy: { listen_port: 7893, dns_listen_port: 1053 },
 			},
-			management_api: { enabled: true, external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
+			management_api: { external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
 		})
 	})
 
@@ -300,6 +299,43 @@ describe('ProxySubscribeEditor', () => {
 			expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
 		}
 		expect(screen.queryByLabelText('Log Level')).not.toBeInTheDocument()
+	})
+
+	it('shows and persists only dae eBPF runtime settings', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('sempre.locale', 'en')
+		const { onSave } = renderEditor({
+			configurationContext: {
+				key: 'dae', platform: 'linux',
+				target: { core: 'dae', version: '2.0.0', compiler_target: { core: 'dae', format: 'dae' }, key: 'dae' },
+				capabilities: {
+					features: ['logging.level', 'dns.local_upstream', 'dns.remote_upstream', 'routing.rules', 'routing.selector', 'transparent.ebpf', 'transparent.interface_policy', 'native_override'],
+					enum_values: {}, protocols: [{ protocol: 'trojan', transports: ['tcp'], security: ['tls'] }],
+				},
+			},
+		})
+		fireEvent.click(screen.getByRole('button', { name: 'Runtime' }))
+		const modeLabel = screen.getByText('Linux transparent proxy')
+		const modeControl = modeLabel.parentElement?.nextElementSibling?.firstElementChild
+		expect(modeControl).toBeTruthy()
+		fireEvent.click(modeControl!)
+		fireEvent.click(screen.getByText('eBPF Router'))
+		expect(screen.getByText('WAN interface')).toBeInTheDocument()
+		expect(screen.getByText('LAN interfaces')).toBeInTheDocument()
+		expect(screen.getByText('Configure kernel parameters automatically')).toBeInTheDocument()
+		expect(screen.queryByLabelText('Local SOCKS port')).not.toBeInTheDocument()
+		expect(screen.queryByText('External controller')).not.toBeInTheDocument()
+
+		fireEvent.click(screen.getByRole('switch'))
+		await act(async () => vi.advanceTimersByTime(800))
+		expect(onSave).toHaveBeenCalledTimes(1)
+		expect(onSave.mock.calls[0][0]).toMatchObject({
+			transparent_proxy: {
+				mode: 'ebpf-router',
+				lan_interfaces: ['vmbr1'],
+				ebpf: { wan_interface: 'auto', auto_config_kernel_parameter: true },
+			},
+		})
 	})
 
   it('shows save failures inline without discarding the edited value', async () => {
