@@ -7,6 +7,13 @@ import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import type { NetworkTestReport, NetworkTestResult } from '../lib/types'
 
+const defaultResults: NetworkTestResult[] = [
+  { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: false, latency_ms: 0 },
+  { id: 'google', name: 'Google', region: 'foreign', category: 'reachability', url: 'https://www.google.com/generate_204', ok: false, latency_ms: 0 },
+  { id: 'domestic-ip', name: 'Domestic IP', region: 'domestic', category: 'ip', url: 'https://ip.3322.net', ok: false, latency_ms: 0 },
+  { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: false, latency_ms: 0 },
+]
+
 export function NetworkTest() {
   const { t } = useI18n()
   const { session } = useSession()
@@ -15,7 +22,7 @@ export function NetworkTest() {
     queryFn: () => api<NetworkTestReport>(session!, '/network/test', { method: 'POST' }),
     retry: false,
   })
-  const results = report.data?.results ?? []
+  const results = report.data?.results.length ? report.data.results : defaultResults
   const okResults = results.filter((item) => item.ok)
   const averageLatency = okResults.length ? Math.round(okResults.reduce((sum, item) => sum + item.latency_ms, 0) / okResults.length) : 0
   const domesticIP = results.find((item) => item.id === 'domestic-ip')?.ip || '-'
@@ -31,7 +38,7 @@ export function NetworkTest() {
       title: t('status'),
       key: 'status',
       width: 120,
-      render: (_value, record) => <Tag color={record.ok ? 'success' : 'error'} icon={record.ok ? <CheckCircle2 /> : <XCircle />}>{record.ok ? t('reachable') : t('unreachable')}</Tag>,
+      render: (_value, record) => report.isFetching ? <Tag color="processing">{t('loading')}...</Tag> : <Tag color={record.ok ? 'success' : 'error'} icon={record.ok ? <CheckCircle2 /> : <XCircle />}>{record.ok ? t('reachable') : t('unreachable')}</Tag>,
     },
     {
       title: t('latency'),
@@ -39,36 +46,36 @@ export function NetworkTest() {
       width: 120,
       align: 'right',
       sorter: (left, right) => left.latency_ms - right.latency_ms,
-      render: (value) => value ? `${value} ms` : '-',
+      render: (value) => report.isFetching && !report.data ? '-' : value ? `${value} ms` : '-',
     },
     {
       title: 'HTTP',
       dataIndex: 'http_status',
       width: 90,
       align: 'right',
-      render: (value) => value || '-',
+      render: (value) => report.isFetching && !report.data ? '-' : value || '-',
     },
     {
       title: t('ipAddress'),
       dataIndex: 'ip',
       width: 180,
-      render: (value) => value || '-',
+      render: (value) => report.isFetching && !report.data ? '-' : value || '-',
     },
     {
       title: t('details'),
       dataIndex: 'detail',
       minWidth: 220,
-      render: (value) => value ? <span className="text-red-600 dark:text-red-400">{value}</span> : <span className="text-[var(--muted)]">-</span>,
+      render: (value) => report.isError ? <span className="text-red-600 dark:text-red-400">{report.error instanceof Error ? report.error.message : t('operationFailed')}</span> : value ? <span className="text-red-600 dark:text-red-400">{value}</span> : <span className="text-[var(--muted)]">-</span>,
     },
-  ], [t])
+  ], [report.data, report.error, report.isError, report.isFetching, t])
 
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
       <div><h1 className="text-xl font-semibold">{t('networkTest')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('networkTestDetail')}</p></div>
-      <Button variant="primary" icon={<RefreshCw size={16} />} loading={report.isFetching} onClick={() => report.refetch()}>{t('refresh')}</Button>
+      <Button variant="primary" icon={<RefreshCw size={16} />} disabled={report.isFetching} onClick={() => report.refetch()}>{t('refresh')}</Button>
     </div>
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-      <Metric icon={CheckCircle2} label={t('reachable')} value={`${okResults.length}/${results.length || 7}`} tone="green" />
+      <Metric icon={CheckCircle2} label={t('reachable')} value={`${okResults.length}/${results.length}`} tone="green" />
       <Metric icon={Clock3} label={t('averageLatency')} value={averageLatency ? `${averageLatency} ms` : '-'} tone="amber" />
       <Metric icon={Activity} label={t('domesticIP')} value={domesticIP} tone="cyan" />
       <Metric icon={Globe2} label={t('foreignIP')} value={foreignIP} tone="blue" />
@@ -77,7 +84,6 @@ export function NetworkTest() {
       <Table<NetworkTestResult>
         rowKey="id"
         size="middle"
-        loading={report.isFetching}
         pagination={false}
         columns={columns}
         dataSource={results}

@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Login } from './components/Login'
 import { Spinner } from './components/ui'
 import { useSession } from './lib/session'
+import { NetworkTest } from './pages/NetworkTest'
 
 const Shell = lazy(() => import('./components/Shell').then((module) => ({ default: module.Shell })))
 const Overview = lazy(() => import('./pages/Overview').then((module) => ({ default: module.Overview })))
@@ -13,7 +14,6 @@ const Connections = lazy(() => import('./pages/Connections').then((module) => ({
 const Rules = lazy(() => import('./pages/Rules').then((module) => ({ default: module.Rules })))
 const Traffic = lazy(() => import('./pages/Traffic').then((module) => ({ default: module.Traffic })))
 const Logs = lazy(() => import('./pages/Logs').then((module) => ({ default: module.Logs })))
-const NetworkTest = lazy(() => import('./pages/NetworkTest').then((module) => ({ default: module.NetworkTest })))
 const Management = lazy(() => import('./pages/Management').then((module) => ({ default: module.Management })))
 const AcmeShowcase = import.meta.env.DEV ? lazy(() => import('./pages/AcmeShowcase').then((module) => ({ default: module.AcmeShowcase }))) : null
 

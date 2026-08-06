@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
@@ -28,25 +28,35 @@ describe('NetworkTest', () => {
   })
 
   it('runs host-side network tests on mount and refresh', async () => {
-    const fetch = vi.fn(async () => Response.json(report))
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json(report))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => {
+        setTimeout(() => resolve(Response.json(report)), 50)
+      }))
     vi.stubGlobal('fetch', fetch)
     renderNetworkTest()
 
+    expect(screen.getByText('Baidu')).toBeInTheDocument()
+    expect(screen.getByText('Google')).toBeInTheDocument()
+    expect(screen.getAllByText('Loading...')).toHaveLength(4)
     expect(await screen.findAllByText('183.131.177.101')).toHaveLength(2)
     expect(screen.getAllByText('144.34.229.119')).toHaveLength(2)
     expect(screen.getByText('context deadline exceeded')).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/network/test', expect.objectContaining({ method: 'POST' }))
 
     fireEvent.click(screen.getByRole('button', { name: /Refresh/ }))
-    await screen.findByText('Google')
+    expect(screen.getByText('Google')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByText('Loading...')).toHaveLength(4))
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
-  it('shows request failures in the table empty state', async () => {
+  it('keeps the fixed table visible when the request fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'BROKEN', message: 'network test failed' } }, { status: 500 })))
     renderNetworkTest()
 
-    expect(await screen.findByText('network test failed')).toBeInTheDocument()
+    expect(screen.getByText('Baidu')).toBeInTheDocument()
+    expect(screen.getByText('Google')).toBeInTheDocument()
+    expect(await screen.findAllByText('network test failed')).toHaveLength(4)
   })
 })
 
