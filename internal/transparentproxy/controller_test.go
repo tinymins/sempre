@@ -154,6 +154,18 @@ func TestPrepareTProxyUsesRecommendedLANAndMarksCoreOutbounds(t *testing.T) {
 	}
 }
 
+func TestPrepareSystemDNSTakeoverRequiresSystemSingBox(t *testing.T) {
+	backend := &fakeBackend{}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("gateway")
+	profile.DNS = map[string]any{"shared": map[string]any{"systemDnsTakeoverEnabled": true}}
+	path := writeRuntimeConfig(t, map[string]any{})
+	_, err := controller.Prepare(context.Background(), "sing-box", profile, path)
+	if err == nil || !strings.Contains(err.Error(), "Linux system sing-box") {
+		t.Fatalf("prepare system DNS error = %v", err)
+	}
+}
+
 func TestPrepareGatewayRequiresIPForwarding(t *testing.T) {
 	backend := &fakeBackend{
 		inventory: Inventory{
@@ -315,6 +327,66 @@ func TestApplyTProxyRollsBackFailedVerification(t *testing.T) {
 	}
 	if backend.applyCalls != 1 || backend.cleanupCalls != 1 {
 		t.Fatalf("apply calls = %d, cleanup calls = %d", backend.applyCalls, backend.cleanupCalls)
+	}
+}
+
+func TestSystemDNSTakeoverWritesAndRestoresResolvConf(t *testing.T) {
+	root := t.TempDir()
+	resolv := filepath.Join(root, "resolv.conf")
+	if err := os.WriteFile(resolv, []byte("nameserver 10.251.1.1\nnameserver 223.6.6.6\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	listener := listenTCP(t)
+	defer listener.Close()
+	controller := &Controller{
+		backend:   &fakeBackend{},
+		systemDNS: &systemDNSManager{allowed: true, stateDir: filepath.Join(root, "state"), resolvConf: resolv},
+	}
+	plan := Plan{SystemDNS: true, SystemDNSPort: listenerPort(t, listener)}
+	if err := controller.Apply(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(resolv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(current), "nameserver 127.0.0.1") {
+		t.Fatalf("resolv.conf was not taken over: %q", current)
+	}
+	if err := controller.Cleanup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	current, err = os.ReadFile(resolv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(current) != "nameserver 10.251.1.1\nnameserver 223.6.6.6\n" {
+		t.Fatalf("resolv.conf was not restored: %q", current)
+	}
+}
+
+func TestSystemDNSTakeoverDoesNotOverwriteUserChangedResolvConf(t *testing.T) {
+	root := t.TempDir()
+	resolv := filepath.Join(root, "resolv.conf")
+	if err := os.WriteFile(resolv, []byte("nameserver 10.251.1.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := &systemDNSManager{allowed: true, stateDir: filepath.Join(root, "state"), resolvConf: resolv}
+	if err := manager.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resolv, []byte("nameserver 9.9.9.9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Restore(); err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(resolv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(current) != "nameserver 9.9.9.9\n" {
+		t.Fatalf("user resolv.conf change was overwritten: %q", current)
 	}
 }
 

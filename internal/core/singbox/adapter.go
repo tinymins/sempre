@@ -65,7 +65,7 @@ func (adapter *Adapter) Capabilities(version string, target core.Target) core.Ca
 		core.CapabilityManagementExternalAPI, core.CapabilityNativeOverride,
 	}
 	if target.OS == "linux" || target.OS == "" {
-		features = append(features, core.CapabilityTransparentTProxy, core.CapabilityTransparentInterfaces)
+		features = append(features, core.CapabilityDNSSystemTakeover, core.CapabilityTransparentTProxy, core.CapabilityTransparentInterfaces)
 	}
 	if compilerTarget.Version != "11" {
 		features = append(features, core.CapabilityPrivateAccess)

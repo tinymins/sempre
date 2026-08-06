@@ -30,6 +30,10 @@ export const DnsSharedConfigSchema = z.object({
   rejectHttps: z.boolean().optional(),
   /** CN 域名走本地 DNS，默认 true */
   cnDomainLocalDns: z.boolean().optional(),
+  /** Linux system daemon: point /etc/resolv.conf at Sempre's local DNS listener */
+  systemDnsTakeoverEnabled: z.boolean().optional(),
+  /** Linux system daemon DNS listener port, default 53 */
+  systemDnsListenPort: z.number().int().min(1).max(65535).optional(),
 });
 
 export type DnsSharedConfig = z.infer<typeof DnsSharedConfigSchema>;

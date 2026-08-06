@@ -330,6 +330,36 @@ func TestSingBoxManagedDNSUsesFirstCommaSeparatedLocalUpstream(t *testing.T) {
 	}
 }
 
+func TestSingBoxSystemDNSTakeoverAddsLocalDNSListener(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false, "localDns": "223.5.5.5", "systemDnsTakeoverEnabled": true, "systemDnsListenPort": 53,
+	}}
+
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	inbound := mapByKey(t, config["inbounds"].([]any), "tag", "system-dns-in")
+	if inbound["type"] != "direct" || inbound["listen"] != "127.0.0.1" || inbound["listen_port"] != float64(53) {
+		t.Fatalf("system DNS inbound = %#v", inbound)
+	}
+}
+
+func TestSingBoxSystemDNSTakeoverRequiresExplicitLocalDNS(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{"systemDnsTakeoverEnabled": true}}
+
+	_, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err == nil || !strings.Contains(err.Error(), "explicit local DNS") {
+		t.Fatalf("system DNS takeover error = %v", err)
+	}
+}
+
 func TestSingBoxSelectorDefaultMustResolveToFinalMember(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
 	profile.Groups = []ProxyGroup{{Name: "foreign", Type: "select", IncludeAll: true, Default: "missing"}}

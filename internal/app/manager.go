@@ -125,7 +125,11 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 		web:           webStore,
 		subscriptions: subscriptionStore,
 		compiler:      subscriptions.NewCompiler(subscriptionStore),
-		transparent:   transparentproxy.New(),
+		transparent: transparentproxy.New(transparentproxy.WithSystemDNS(
+			paths.Mode == layout.System,
+			filepath.Join(paths.Home, "system-dns"),
+			"/etc/resolv.conf",
+		)),
 		externalClash: clashproxy.New(),
 		ui:            uiassets.New(paths.UI, paths.UICurrent),
 		uiReleases:    release.NewClient(),

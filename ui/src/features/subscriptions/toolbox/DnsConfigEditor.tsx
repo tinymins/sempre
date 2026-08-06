@@ -26,6 +26,8 @@ const CLIENT_DEFAULT_SHARED: Required<DnsSharedConfig> = {
   rejectHttps: true,
   cnDomainLocalDns: true,
   preferIpv4: true,
+  systemDnsTakeoverEnabled: false,
+  systemDnsListenPort: 53,
 };
 
 interface DnsConfigEditorProps {
@@ -206,6 +208,16 @@ const SharedForm = ({ merged, readOnly, features, onFieldChange }: SharedFormPro
             {supported.has("dns.reject_https") ? <FieldRow label={t("proxy.form.dnsRejectHttps")}><Switch size="small" checked={merged.rejectHttps} disabled={disabled} onChange={(next) => onFieldChange("rejectHttps", next)} /></FieldRow> : null}
             {supported.has("dns.split") ? <FieldRow label={t("proxy.form.dnsCnDomainLocalDns")}><Switch size="small" checked={merged.cnDomainLocalDns} disabled={disabled} onChange={(next) => onFieldChange("cnDomainLocalDns", next)} /></FieldRow> : null}
             {supported.has("dns.prefer_ipv4") ? <FieldRow label={t("proxy.form.dnsPreferIpv4")}><Switch size="small" checked={merged.preferIpv4} disabled={disabled} onChange={(next) => onFieldChange("preferIpv4", next)} /></FieldRow> : null}
+          </div>
+        </>
+      ) : null}
+
+      {supported.has("dns.system_takeover") ? (
+        <>
+          <SectionTitle title={t("proxy.form.dnsSystemSection")} />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <FieldRow label={t("proxy.form.dnsSystemTakeover")}><Switch size="small" checked={merged.systemDnsTakeoverEnabled} disabled={disabled} onChange={(next) => onFieldChange("systemDnsTakeoverEnabled", next)} /></FieldRow>
+            <FieldRow label={t("proxy.form.dnsSystemListenPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.systemDnsListenPort} disabled={disabled || !merged.systemDnsTakeoverEnabled} onChange={(next) => onFieldChange("systemDnsListenPort", next)} /></FieldRow>
           </div>
         </>
       ) : null}

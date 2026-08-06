@@ -17,6 +17,7 @@ const (
 	CapabilityDNSRemoteServerName    = "dns.remote_server_name"
 	CapabilityDNSRemoteDetour        = "dns.remote_detour"
 	CapabilityDNSRejectHTTPS         = "dns.reject_https"
+	CapabilityDNSSystemTakeover      = "dns.system_takeover"
 	CapabilityRoutingRules           = "routing.rules"
 	CapabilityRoutingRuleProviders   = "routing.rule_providers"
 	CapabilityRoutingSelector        = "routing.selector"

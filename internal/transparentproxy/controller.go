@@ -3,6 +3,7 @@ package transparentproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -59,6 +60,8 @@ type Plan struct {
 	Core             string
 	Mode             string
 	Config           string
+	SystemDNS        bool
+	SystemDNSPort    int
 	TUNInterface     string
 	TUNAddress       string
 	RouteExclusions  []string
@@ -86,11 +89,24 @@ type systemBackend interface {
 }
 
 type Controller struct {
-	backend systemBackend
+	backend   systemBackend
+	systemDNS *systemDNSManager
 }
 
-func New() *Controller {
-	return &Controller{backend: newSystemBackend()}
+type Option func(*Controller)
+
+func WithSystemDNS(allowed bool, stateDir, resolvConf string) Option {
+	return func(controller *Controller) {
+		controller.systemDNS = &systemDNSManager{allowed: allowed, stateDir: stateDir, resolvConf: resolvConf}
+	}
+}
+
+func New(options ...Option) *Controller {
+	controller := &Controller{backend: newSystemBackend()}
+	for _, option := range options {
+		option(controller)
+	}
+	return controller
 }
 
 func (controller *Controller) Inventory(ctx context.Context) (Inventory, error) {
@@ -115,6 +131,12 @@ func (controller *Controller) Prepare(
 	configPath string,
 ) (Plan, error) {
 	plan := Plan{Mode: subscriptions.TransparentProxyDisabled, Config: configPath}
+	systemDNS, systemDNSPort := systemDNSIntent(profile.DNS)
+	plan.SystemDNS = systemDNS
+	plan.SystemDNSPort = systemDNSPort
+	if systemDNS && (coreID != "sing-box" || controller.systemDNS == nil || !controller.systemDNS.allowed) {
+		return Plan{}, fmt.Errorf("system DNS takeover is only available for Linux system sing-box runtime")
+	}
 	if !supportedCore(coreID) || !controller.backend.Supported() {
 		return plan, nil
 	}
@@ -123,9 +145,8 @@ func (controller *Controller) Prepare(
 	plan.Mode = transparent.Mode
 	if !coreSupportsMode(coreID, plan.Mode) {
 		plan.Mode = subscriptions.TransparentProxyDisabled
-		return plan, nil
 	}
-	if !plan.Enabled() {
+	if !plan.Enabled() && !plan.SystemDNS {
 		return plan, nil
 	}
 	if err := controller.backend.RequirePrivileges(); err != nil {
@@ -142,6 +163,11 @@ func (controller *Controller) Prepare(
 	document, err := decodeRuntimeDocument(coreID, data)
 	if err != nil {
 		return Plan{}, fmt.Errorf("decode runtime configuration: %w", err)
+	}
+	if plan.SystemDNS {
+		if err := validateSystemDNSInbound(document, plan.SystemDNSPort); err != nil {
+			return Plan{}, err
+		}
 	}
 	switch transparent.Mode {
 	case subscriptions.TransparentProxyTUN:
@@ -167,7 +193,9 @@ func (controller *Controller) Prepare(
 			plan, err = prepareV2RayTProxy(plan, transparent, inventory, document)
 		}
 	default:
-		err = fmt.Errorf("unsupported Linux transparent proxy mode %q", transparent.Mode)
+		if plan.Enabled() {
+			err = fmt.Errorf("unsupported Linux transparent proxy mode %q", transparent.Mode)
+		}
 	}
 	if err != nil {
 		return Plan{}, err
@@ -192,58 +220,77 @@ func (controller *Controller) Prepare(
 }
 
 func (controller *Controller) Apply(ctx context.Context, plan Plan) error {
-	if !plan.Enabled() {
+	if !plan.Enabled() && !plan.SystemDNS {
 		return nil
 	}
-	timeout := listenerReadinessTimeout
-	if plan.Mode == subscriptions.TransparentProxyTUN {
-		timeout = tunReadinessTimeout
-	}
-	deadline := time.Now().Add(timeout)
-	for {
-		var err error
+	if plan.Enabled() {
+		timeout := listenerReadinessTimeout
 		if plan.Mode == subscriptions.TransparentProxyTUN {
-			err = controller.backend.VerifyTUN(ctx, plan)
-		} else {
-			err = listenersReady(plan)
+			timeout = tunReadinessTimeout
 		}
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
+		deadline := time.Now().Add(timeout)
+		for {
+			var err error
 			if plan.Mode == subscriptions.TransparentProxyTUN {
-				return fmt.Errorf("timed out waiting for TUN interface %s to become ready after %s: %w", plan.TUNInterface, timeout, err)
+				err = controller.backend.VerifyTUN(ctx, plan)
+			} else {
+				err = listenersReady(plan)
 			}
-			return fmt.Errorf("transparent proxy did not become ready: %w", err)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(readinessPollInterval):
+			if err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				if plan.Mode == subscriptions.TransparentProxyTUN {
+					return fmt.Errorf("timed out waiting for TUN interface %s to become ready after %s: %w", plan.TUNInterface, timeout, err)
+				}
+				return fmt.Errorf("transparent proxy did not become ready: %w", err)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(readinessPollInterval):
+			}
 		}
 	}
 	if plan.Mode == subscriptions.TransparentProxyTUN {
-		return nil
+		// sing-box owns TUN routing in this mode.
+	} else if plan.Enabled() {
+		if err := controller.backend.ApplyTProxy(ctx, plan); err != nil {
+			_ = controller.Cleanup(ctx)
+			return err
+		}
+		if err := controller.backend.VerifyTProxy(ctx, plan); err != nil {
+			_ = controller.Cleanup(ctx)
+			return fmt.Errorf("verify Linux TProxy data plane: %w", err)
+		}
 	}
-	if err := controller.backend.ApplyTProxy(ctx, plan); err != nil {
-		_ = controller.backend.Cleanup(ctx)
-		return err
-	}
-	if err := controller.backend.VerifyTProxy(ctx, plan); err != nil {
-		_ = controller.backend.Cleanup(ctx)
-		return fmt.Errorf("verify Linux TProxy data plane: %w", err)
+	if plan.SystemDNS {
+		if err := waitForTCP(ctx, plan.SystemDNSPort, listenerReadinessTimeout); err != nil {
+			_ = controller.Cleanup(ctx)
+			return fmt.Errorf("system DNS listener did not become ready: %w", err)
+		}
+		if err := controller.systemDNS.Apply(); err != nil {
+			_ = controller.Cleanup(ctx)
+			return err
+		}
 	}
 	return nil
 }
 
 func (controller *Controller) Verify(ctx context.Context, plan Plan) error {
-	if !plan.Enabled() {
+	if !plan.Enabled() && !plan.SystemDNS {
 		return nil
 	}
+	var failures []error
 	if plan.Mode == subscriptions.TransparentProxyTUN {
-		return controller.backend.VerifyTUN(ctx, plan)
+		failures = append(failures, controller.backend.VerifyTUN(ctx, plan))
+	} else if plan.Enabled() {
+		failures = append(failures, controller.backend.VerifyTProxy(ctx, plan))
 	}
-	return controller.backend.VerifyTProxy(ctx, plan)
+	if plan.SystemDNS {
+		failures = append(failures, controller.systemDNS.Verify())
+	}
+	return errors.Join(failures...)
 }
 
 func (controller *Controller) Cleanup(ctx context.Context) error {
@@ -253,7 +300,12 @@ func (controller *Controller) Cleanup(ctx context.Context) error {
 	if err := controller.backend.RequirePrivileges(); err != nil {
 		return nil
 	}
-	return controller.backend.Cleanup(ctx)
+	var failures []error
+	if controller.systemDNS != nil {
+		failures = append(failures, controller.systemDNS.Restore())
+	}
+	failures = append(failures, controller.backend.Cleanup(ctx))
+	return errors.Join(failures...)
 }
 
 func (controller *Controller) Diagnostics(
@@ -771,6 +823,30 @@ func resolveLANInterfaces(configured []string, inventory Inventory) ([]string, e
 	return interfaces, nil
 }
 
+func systemDNSIntent(config map[string]any) (bool, int) {
+	shared := config
+	if nested := object(config["shared"]); len(nested) > 0 {
+		shared = nested
+	}
+	enabled, _ := shared["systemDnsTakeoverEnabled"].(bool)
+	port := integer(shared["systemDnsListenPort"])
+	if port == 0 {
+		port = 53
+	}
+	return enabled, port
+}
+
+func validateSystemDNSInbound(document map[string]any, port int) error {
+	inbound, err := findInbound(document, "system-dns-in", "direct")
+	if err != nil {
+		return err
+	}
+	if inbound["listen"] != "127.0.0.1" || integer(inbound["listen_port"]) != port {
+		return fmt.Errorf("system DNS inbound must listen on 127.0.0.1:%d", port)
+	}
+	return nil
+}
+
 func findInbound(document map[string]any, tag, inboundType string) (map[string]any, error) {
 	values, ok := document["inbounds"].([]any)
 	if !ok {
@@ -855,6 +931,25 @@ func listenersReady(plan Plan) error {
 		_ = connection.Close()
 	}
 	return nil
+}
+
+func waitForTCP(ctx context.Context, port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		connection, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprint(port)), 100*time.Millisecond)
+		if err == nil {
+			_ = connection.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("TCP port %d is not listening after %s: %w", port, timeout, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(readinessPollInterval):
+		}
+	}
 }
 
 func resolveTUNAddress(explicit string, occupied []string) (string, error) {

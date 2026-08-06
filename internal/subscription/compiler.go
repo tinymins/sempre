@@ -696,7 +696,10 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	if err := validateManagedOverrides(profile, target); err != nil {
 		return nil, diffs, warnings, err
 	}
-	inbounds := singBoxInbounds(target, modern, profile.TransparentProxy, profile.LocalProxy)
+	if err := validateSingBoxSystemDNS(shared, target, profile); err != nil {
+		return nil, diffs, warnings, err
+	}
+	inbounds := singBoxInbounds(target, modern, profile.TransparentProxy, profile.LocalProxy, shared)
 	remoteOutbound := valueOr(shared.RemoteDetour, foreignOutbound(groups, final))
 	dns := singBoxDNS(profile.DNS, modern, shared, remoteOutbound)
 	if servers, ok := dns["servers"].([]any); ok {
@@ -791,8 +794,11 @@ func (compiler *Compiler) loadRuleProviders(
 	return ruleSets, routes, warnings, nil
 }
 
-func singBoxInbounds(target Target, modern bool, transparent TransparentProxyConfig, localProxy LocalProxyConfig) []any {
+func singBoxInbounds(target Target, modern bool, transparent TransparentProxyConfig, localProxy LocalProxyConfig, shared dnsShared) []any {
 	inbounds := localProxySingBoxInbounds(localProxy)
+	if target.Platform == "default" && shared.SystemDNSTakeoverEnabled {
+		inbounds = append(inbounds, map[string]any{"type": "direct", "tag": "system-dns-in", "listen": "127.0.0.1", "listen_port": shared.SystemDNSListenPort})
+	}
 	if target.Platform != "default" {
 		inbound := map[string]any{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "stack": "mixed"}
 		if target.Platform == "windows" {
@@ -911,11 +917,13 @@ type dnsShared struct {
 	BootstrapDNS, BootstrapServerName, RemoteDNS, RemoteServerName, RemoteDetour string
 	LocalDNSPort, FakeIPTTL                                                      int
 	BootstrapDNSPort, RemoteDNSPort                                              int
+	SystemDNSListenPort                                                          int
 	FakeIPEnabled, RejectHTTPS, CNDomainLocalDNS, PreferIPv4                     bool
+	SystemDNSTakeoverEnabled                                                     bool
 }
 
 func resolveDNSShared(config map[string]any) dnsShared {
-	result := dnsShared{LocalDNS: "local", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true}
+	result := dnsShared{LocalDNS: "local", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true, SystemDNSListenPort: 53}
 	shared := config
 	if nested, ok := objectValue(config["shared"]); ok {
 		shared = nested
@@ -936,7 +944,30 @@ func resolveDNSShared(config map[string]any) dnsShared {
 	result.RemoteServerName = valueOr(stringValue(shared["remoteServerName"]), result.RemoteServerName)
 	result.RemoteDetour = stringValue(shared["remoteDetour"])
 	result.PreferIPv4 = boolDefault(shared["preferIpv4"], result.PreferIPv4)
+	result.SystemDNSTakeoverEnabled = boolDefault(shared["systemDnsTakeoverEnabled"], result.SystemDNSTakeoverEnabled)
+	result.SystemDNSListenPort = integerDefault(shared["systemDnsListenPort"], result.SystemDNSListenPort)
 	return result
+}
+
+func validateSingBoxSystemDNS(shared dnsShared, target Target, profile Profile) error {
+	if !shared.SystemDNSTakeoverEnabled {
+		return nil
+	}
+	if target.Platform != "default" {
+		return fmt.Errorf("system DNS takeover is only available for Linux system sing-box runtime")
+	}
+	if shared.SystemDNSListenPort != 53 {
+		return fmt.Errorf("system DNS takeover requires listen port 53 because resolv.conf cannot specify ports")
+	}
+	if _, localSystem := localDNSServer(shared.LocalDNS); localSystem {
+		return fmt.Errorf("system DNS takeover requires an explicit local DNS upstream instead of local")
+	}
+	for _, port := range []int{profile.LocalProxy.SOCKSPort, profile.LocalProxy.HTTPPort, profile.TransparentProxy.TProxy.ListenPort, profile.TransparentProxy.TProxy.DNSListenPort} {
+		if port == shared.SystemDNSListenPort {
+			return fmt.Errorf("system DNS takeover port %d conflicts with another managed listener", shared.SystemDNSListenPort)
+		}
+	}
+	return nil
 }
 
 func validateManagedOverrides(profile Profile, target Target) error {
