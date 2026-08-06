@@ -416,6 +416,24 @@ func TestSystemDNSTakeoverLocksAndUnlocksResolvConf(t *testing.T) {
 	}
 }
 
+func TestSystemDNSTakeoverIgnoresUnsupportedResolvConfLock(t *testing.T) {
+	stubSystemDNSChattr(t, func(string, bool) error {
+		return errors.New("operation not supported")
+	})
+	root := t.TempDir()
+	resolv := filepath.Join(root, "resolv.conf")
+	if err := os.WriteFile(resolv, []byte("nameserver 10.251.1.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := &systemDNSManager{allowed: true, stateDir: filepath.Join(root, "state"), resolvConf: resolv}
+	if err := manager.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Restore(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSystemDNSManagedRequiresFirstNameserver(t *testing.T) {
 	if !systemDNSManaged([]byte("# comment\noptions timeout:1\nnameserver 127.0.0.1\nnameserver 10.251.1.1\n")) {
 		t.Fatal("expected first nameserver 127.0.0.1 to be managed")

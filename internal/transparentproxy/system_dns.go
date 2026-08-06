@@ -64,9 +64,7 @@ func (manager *systemDNSManager) Apply() error {
 	if err := state.WriteAtomic(manager.resolvConf, systemDNSContent(), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", manager.resolvConf, err)
 	}
-	if err := systemDNSChattr(manager.resolvConf, true); err != nil {
-		return fmt.Errorf("lock %s against external DNS rewrites: %w", manager.resolvConf, err)
-	}
+	_ = systemDNSChattr(manager.resolvConf, true)
 	return nil
 }
 
@@ -85,9 +83,7 @@ func (manager *systemDNSManager) Restore() error {
 	if err := json.Unmarshal(backup, &saved); err != nil {
 		return fmt.Errorf("decode system DNS backup: %w", err)
 	}
-	if err := systemDNSChattr(manager.resolvConf, false); err != nil {
-		return fmt.Errorf("unlock %s before restoring system DNS: %w", manager.resolvConf, err)
-	}
+	_ = systemDNSChattr(manager.resolvConf, false)
 	current, err := os.ReadFile(manager.resolvConf)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", manager.resolvConf, err)
