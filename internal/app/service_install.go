@@ -108,10 +108,12 @@ func (manager *Manager) deployToSystem(
 	if err != nil {
 		return err
 	}
-	if (!install || snapshot) && (component == DeployAll || component == DeployData) {
+	if (!install || snapshot) && sourceDocument.Active != nil && (component == DeployAll || component == DeployData) {
 		if _, _, err := manager.deploymentSpec(ctx, ""); err != nil {
 			return fmt.Errorf("portable deployment is not ready: %w", err)
 		}
+	}
+	if (!install || snapshot) && (component == DeployAll || component == DeployData) {
 		targetDocument, err := readSystemDeploymentState(target)
 		if err != nil {
 			return fmt.Errorf("read system state: %w", err)
@@ -217,7 +219,7 @@ func (manager *Manager) deployToSystem(
 	if err := commitSwaps(operations); err != nil {
 		return fmt.Errorf("deployment committed but backup cleanup failed: %w", err)
 	}
-	if install && !snapshot {
+	if install {
 		manager.installBundledUIBestEffort(target)
 	}
 	return nil

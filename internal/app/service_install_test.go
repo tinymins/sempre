@@ -681,6 +681,31 @@ func TestSystemInstallSucceedsWithoutBundledUI(t *testing.T) {
 	}
 }
 
+func TestBundleSnapshotInstallAllowsSelectedCoreWithoutActiveDeployment(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	controller := &recordingService{state: service.NotInstalled}
+	source.service = controller
+
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if controller.state != service.Running {
+		t.Fatalf("service state = %s", controller.state)
+	}
+	document, err := state.New(target).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Selected == nil || document.Selected.Core != "sing-box" {
+		t.Fatalf("selected = %#v", document.Selected)
+	}
+	if document.Active != nil {
+		t.Fatalf("active = %#v", document.Active)
+	}
+}
+
 func TestCommandRegistrationFailureRollsBackSystemInstall(t *testing.T) {
 	t.Parallel()
 	source := newTestManager(t)
