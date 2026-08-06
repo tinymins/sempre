@@ -403,10 +403,10 @@ service:
 
 | Command | Replaces | Preserves |
 | --- | --- | --- |
-| `service deploy bin` | Sempre service executable and service registration | Core, state, configurations, logs, runtime |
+| `service deploy bin` | Sempre service executable, bundled resources, and service registration | Core, state, configurations, Web settings, UI, logs, runtime |
 | `service deploy core` | Managed core/version directories from portable mode | Extra system core versions, state, configurations, logs, runtime |
-| `service deploy data` | State, subscription catalogs/cache/snapshots, and referenced configurations | Sempre binary, cores, logs, runtime |
-| `service deploy all` | Sempre binary, exact managed-core snapshot, state, subscription data, and referenced configurations | Logs and runtime |
+| `service deploy data` | State, subscription catalogs/cache/snapshots, referenced configurations, Web listener/password, and current UI | Sempre binary, cores, logs, runtime |
+| `service deploy all` | Sempre binary/resources, exact managed-core snapshot, state, subscription data, referenced configurations, Web listener/password, and current UI | Logs and runtime |
 
 `service deploy` is available only in portable mode and requires an installed
 system service. A data-only deployment first verifies that every core version
@@ -422,6 +422,35 @@ initialized but otherwise empty system `state.json` is replaceable without a
 prompt. Deployments stage files on the target volume, stop the service only
 after staging succeeds, and restore both files and prior service state if
 activation fails.
+
+For repeatable batch deployment, export a platform-specific bundle from the
+configured instance:
+
+```text
+sempre bundle export ./out
+sempre --portable bundle export ./out
+```
+
+The command uses the current mode as the source: system mode exports protected
+system data, and portable mode exports the `.sempre` directory beside that
+executable. It emits an expanded `sempre-bundle-<os>-<arch>/` directory and a
+matching ZIP. The bundle includes the current Sempre executable, resources,
+all core versions recorded in state, referenced generated configurations,
+subscription catalogs/cache/snapshots, the Web listener, and the current UI.
+The administrator password hash is intentionally cleared in the exported
+`web.json`; installed bundles start with an empty Web password.
+
+Each bundle is valid only for the operating system and architecture that
+created it. Install a bundle on a target machine by running the included
+`install.cmd`, `install.command`, or `install.sh`; each script invokes:
+
+```text
+sempre bundle install --yes
+```
+
+Bundle installation installs or repairs the native system service, replaces
+the system deployment with the packaged snapshot, starts the service, and
+opens the Web UI when available.
 
 Sempre supervises the core on every platform. Unexpected exits use bounded
 exponential backoff. Unix process groups and Windows Job Objects ensure child

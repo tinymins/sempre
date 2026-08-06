@@ -67,6 +67,11 @@ func TestAdminServerAuthenticationBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
+	response = testJSONRequest(t, http.MethodGet, server.URL+"/api/v1/bundle/export", server.URL, login.Token, nil)
+	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "application/zip" {
+		t.Fatalf("bundle export = %d, %q", response.StatusCode, response.Header.Get("Content-Type"))
+	}
+	response.Body.Close()
 	if err := manager.store.Update(func(document *state.Document) error {
 		document.Cores = map[string]*state.CoreState{}
 		document.Selected = nil

@@ -1,0 +1,91 @@
+package app
+
+import (
+	"archive/zip"
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/tinymins/sempre/internal/layout"
+	"github.com/tinymins/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/webconfig"
+)
+
+func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	if _, err := manager.web.SetPassword("administrator"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.web.Update(func(config *webconfig.Config) error {
+		config.Listen = "127.0.0.1:44111"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeTestUI(t, manager.paths.UICurrent, "Custom Console")
+	repository := "acme/sing-box"
+	if err := os.MkdirAll(manager.paths.CoreVersionDir("sing-box", repository, "1.2.3"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manager.paths.CoreBinary("sing-box", repository, "1.2.3"), []byte("custom"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.store.Update(func(document *state.Document) error {
+		source := document.Core("sing-box").Source(repository)
+		source.Installed["1.2.3"] = &state.Installation{Explicit: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := manager.ExportBundle(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(result.Archive); err != nil {
+		t.Fatal(err)
+	}
+	packagePaths := layout.At(result.Directory)
+	web, err := webconfig.New(packagePaths.WebConfig).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if web.Listen != "127.0.0.1:44111" || web.Password != "" {
+		t.Fatalf("exported web config = %#v", web)
+	}
+	for _, path := range []string{
+		packagePaths.CoreBinary("sing-box", "", "1.2.3"),
+		packagePaths.CoreBinary("sing-box", repository, "1.2.3"),
+		filepath.Join(packagePaths.UICurrent, "index.html"),
+		filepath.Join(result.Directory, "install.cmd"),
+		filepath.Join(result.Directory, "install.sh"),
+		filepath.Join(result.Directory, "install.command"),
+		filepath.Join(result.Directory, "install.desktop"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+	}
+	archive, err := zip.OpenReader(result.Archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	corePath, err := filepath.Rel(result.Directory, packagePaths.CoreBinary("sing-box", repository, "1.2.3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	corePath = filepath.ToSlash(filepath.Join(filepath.Base(result.Directory), corePath))
+	found := false
+	for _, file := range archive.File {
+		if filepath.ToSlash(file.Name) == corePath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("custom core binary was not archived")
+	}
+}

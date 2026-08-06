@@ -64,6 +64,12 @@ func (manager *Manager) InstallApplication(ctx context.Context, allowReplace boo
 	return manager.InstallService(ctx, allowReplace)
 }
 
+func (manager *Manager) InstallBundleApplication(ctx context.Context, allowReplace bool) error {
+	return manager.withSystemOperation(func() error {
+		return manager.InstallBundle(ctx, allowReplace)
+	})
+}
+
 func (manager *Manager) DeployService(
 	ctx context.Context,
 	component DeployComponent,

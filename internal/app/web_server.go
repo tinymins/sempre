@@ -153,6 +153,7 @@ func newAdminServer(manager *Manager, daemonToken ...string) *adminServer {
 	mux.HandleFunc("GET /api/v1/system", admin.system)
 	mux.HandleFunc("GET /api/v1/system/network", admin.systemNetwork)
 	mux.HandleFunc("POST /api/v1/service/action", admin.serviceAction)
+	mux.HandleFunc("GET /api/v1/bundle/export", admin.bundleExport)
 	mux.HandleFunc("GET /api/v1/cores", admin.cores)
 	mux.HandleFunc("POST /api/v1/cores/install", admin.coreInstall)
 	mux.HandleFunc("POST /api/v1/cores/update", admin.coreUpdate)
@@ -537,6 +538,23 @@ func (admin *adminServer) serviceAction(writer http.ResponseWriter, request *htt
 			_ = admin.manager.service.Stop(ctx)
 		}
 	}(input.Action)
+}
+
+func (admin *adminServer) bundleExport(writer http.ResponseWriter, request *http.Request) {
+	directory, err := os.MkdirTemp(admin.manager.paths.Runtime, "bundle-export-*")
+	if err != nil {
+		admin.internalError(writer, err)
+		return
+	}
+	defer os.RemoveAll(directory)
+	result, err := admin.manager.ExportBundle(request.Context(), directory)
+	if err != nil {
+		admin.operationError(writer, err)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/zip")
+	writer.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(result.Archive)))
+	http.ServeFile(writer, request, result.Archive)
 }
 
 func (admin *adminServer) cores(writer http.ResponseWriter, request *http.Request) {

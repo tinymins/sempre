@@ -14,6 +14,7 @@ import (
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
+	"github.com/tinymins/sempre/internal/webconfig"
 )
 
 type recordingService struct {
@@ -241,6 +242,55 @@ func TestDataDeploymentCopiesStateAndReferencedConfigsOnly(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(target.Subscriptions, "stale-marker")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stale subscription data was retained: %v", err)
+	}
+}
+
+func TestDataDeploymentCopiesWebAndCurrentUI(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	if err := os.MkdirAll(target.CoreVersionDir("sing-box", "", "1.2.3"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target.CoreBinary("sing-box", "", "1.2.3"), []byte("fake"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := source.web.SetPassword("administrator"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := source.web.Update(func(config *webconfig.Config) error {
+		config.Listen = "127.0.0.1:44111"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeTestUI(t, source.paths.UICurrent, "Custom Console")
+
+	document, err := source.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	operations, err := source.stageDeployment(context.Background(), target, DeployData, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupStaged(operations)
+	if err := activateSwaps(operations); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitSwaps(operations); err != nil {
+		t.Fatal(err)
+	}
+
+	web, err := webconfig.New(target.WebConfig).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if web.Listen != "127.0.0.1:44111" || web.Password == "" {
+		t.Fatalf("web config was not copied: %#v", web)
+	}
+	if _, err := os.Stat(filepath.Join(target.UICurrent, "index.html")); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -617,7 +667,7 @@ func TestSystemInstallSucceedsWithoutBundledUI(t *testing.T) {
 	controller := &recordingService{state: service.NotInstalled}
 	source.service = controller
 
-	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true); err != nil {
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true, false); err != nil {
 		t.Fatal(err)
 	}
 	if controller.state != service.Running {
@@ -644,7 +694,7 @@ func TestCommandRegistrationFailureRollsBackSystemInstall(t *testing.T) {
 	controller := &recordingService{state: service.NotInstalled}
 	source.service = controller
 
-	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true); err == nil {
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true, false); err == nil {
 		t.Fatal("install succeeded despite a conflicting command path")
 	}
 	if controller.state != service.NotInstalled {
@@ -666,7 +716,7 @@ func TestServiceStartFailureRollsBackCommandRegistration(t *testing.T) {
 	controller := &recordingService{state: service.NotInstalled, failStarts: 1}
 	source.service = controller
 
-	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true); err == nil {
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true, false); err == nil {
 		t.Fatal("install succeeded despite service start failure")
 	}
 	if _, err := os.Lstat(target.CommandExecutable); !errors.Is(err, os.ErrNotExist) {
@@ -692,7 +742,7 @@ func TestInvalidBundledUIDoesNotRollBackSystemInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true); err != nil {
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true, false); err != nil {
 		t.Fatal(err)
 	}
 	if controller.state != service.Running {
@@ -710,7 +760,7 @@ func TestCoreDeployRestoresRunningService(t *testing.T) {
 	controller := &recordingService{state: service.Running}
 	source.service = controller
 
-	if err := source.deployToSystem(context.Background(), target, DeployCore, false, false); err != nil {
+	if err := source.deployToSystem(context.Background(), target, DeployCore, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if controller.state != service.Running {
@@ -738,7 +788,7 @@ func TestFailedDeployRestoresFilesAndRunningService(t *testing.T) {
 	controller := &recordingService{state: service.Running, failStarts: 1}
 	source.service = controller
 
-	if err := source.deployToSystem(context.Background(), target, DeployCore, false, false); err == nil {
+	if err := source.deployToSystem(context.Background(), target, DeployCore, false, false, false); err == nil {
 		t.Fatal("deployment succeeded despite service start failure")
 	}
 	data, err := os.ReadFile(targetBinary)
@@ -750,5 +800,23 @@ func TestFailedDeployRestoresFilesAndRunningService(t *testing.T) {
 	}
 	if controller.state != service.Running {
 		t.Fatalf("service state = %s", controller.state)
+	}
+}
+
+func writeTestUI(t *testing.T, directory, name string) {
+	t.Helper()
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "index.html"), []byte("<!doctype html><title>"+name+"</title>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"schema":1,"name":"` + name + `","version":"1.0.0","entry":"index.html","api":{"major":1}}`
+	if err := os.WriteFile(filepath.Join(directory, "sempre-ui.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metadata := `{"manifest":` + manifest + `,"source_type":"local","source":"test.zip","sha256":"` + strings.Repeat("a", 64) + `","installed_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(directory, ".sempre-source.json"), []byte(metadata), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

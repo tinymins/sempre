@@ -125,6 +125,8 @@ func (command *CLI) execute(ctx context.Context, arguments []string, options Opt
 		return command.manager.RunDaemon(ctx)
 	case "install":
 		return command.install(ctx, arguments[1:], options)
+	case "bundle":
+		return command.bundle(ctx, arguments[1:], options)
 	case "uninstall":
 		return command.uninstall(ctx, arguments[1:], options)
 	case "web":
@@ -188,6 +190,48 @@ func (command *CLI) execute(ctx context.Context, arguments []string, options Opt
 	default:
 		return usageError()
 	}
+}
+
+func (command *CLI) bundle(ctx context.Context, arguments []string, options Options) error {
+	if len(arguments) == 0 {
+		return usageError()
+	}
+	switch arguments[0] {
+	case "export":
+		if len(arguments) != 2 {
+			return usageError()
+		}
+		result, err := command.manager.ExportBundle(ctx, arguments[1])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(command.output, "Bundle directory:", result.Directory)
+		fmt.Fprintln(command.output, "Bundle archive:", result.Archive)
+		return nil
+	case "install":
+		if len(arguments) != 1 {
+			return usageError()
+		}
+		if err := command.installBundle(ctx, options); err != nil {
+			return err
+		}
+		fmt.Fprintln(command.output, "Sempre bundle installed, enabled, and started.")
+		return waitAndOpenSystem(ctx, command.output)
+	default:
+		return usageError()
+	}
+}
+
+func (command *CLI) installBundle(ctx context.Context, options Options) error {
+	err := command.manager.InstallBundleApplication(ctx, options.Yes)
+	var confirmation *app.ConfirmationRequired
+	if !errors.As(err, &confirmation) {
+		return err
+	}
+	if !command.confirmReplacement(confirmation.Summary) {
+		return fmt.Errorf("bundle installation cancelled")
+	}
+	return command.manager.InstallBundleApplication(ctx, true)
 }
 
 func (command *CLI) core(ctx context.Context, arguments []string, options Options) error {
@@ -521,6 +565,11 @@ func requiresAdministrator(arguments []string, mode layout.Mode) bool {
 		return len(arguments) == 2 && arguments[1] == "run"
 	case "service":
 		return len(arguments) < 2 || arguments[1] != "status"
+	case "bundle":
+		if len(arguments) >= 2 && arguments[1] == "export" {
+			return mode == layout.System
+		}
+		return true
 	case "run":
 		return true
 	default:
@@ -591,6 +640,7 @@ const usage = `Sempre - cross-platform lifecycle manager for proxy cores
 
 Main entry points:
   sempre install [--core <reference>] [--subscription <URL>] [--ui <source>] [--ui-sha256 <digest>]
+  sempre bundle <export|install>
   sempre uninstall [--purge]
   sempre open
   sempre portable run

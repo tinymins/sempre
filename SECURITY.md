@@ -14,6 +14,13 @@ status output and logs. Bug reports must not include `state.json` from the
 system data directory, portable `.sempre/state.json`, or unredacted command
 output containing a subscription URL.
 
+Deployment bundles contain a full portable snapshot for another machine:
+subscription catalogs, cached/generated configurations, managed core binaries,
+and the installed custom UI. Treat exported bundle directories and ZIP files as
+sensitive artifacts. The Web administrator password hash is intentionally
+cleared during bundle export, so installed bundles start with an empty Web
+password.
+
 ## Trust Boundary
 
 Sempre downloads proxy core archives only from the core adapter's official

@@ -45,7 +45,15 @@ func (manager *Manager) installSystemService(ctx context.Context, allowReplace b
 	if err != nil {
 		return err
 	}
-	return manager.deployToSystem(ctx, systemPaths, DeployAll, allowReplace, true)
+	return manager.deployToSystem(ctx, systemPaths, DeployAll, allowReplace, true, false)
+}
+
+func (manager *Manager) installBundleService(ctx context.Context, allowReplace bool) error {
+	systemPaths, err := layout.ForMode(layout.System)
+	if err != nil {
+		return err
+	}
+	return manager.deployToSystem(ctx, systemPaths, DeployAll, allowReplace, true, true)
 }
 
 func (manager *Manager) deploySystemService(
@@ -60,7 +68,7 @@ func (manager *Manager) deploySystemService(
 	if err != nil {
 		return err
 	}
-	return manager.deployToSystem(ctx, systemPaths, component, allowReplace, false)
+	return manager.deployToSystem(ctx, systemPaths, component, allowReplace, false, false)
 }
 
 func (manager *Manager) systemManager() (*Manager, error) {
@@ -85,6 +93,7 @@ func (manager *Manager) deployToSystem(
 	component DeployComponent,
 	allowReplace bool,
 	install bool,
+	snapshot bool,
 ) error {
 	var configLease *state.Lease
 	if component == DeployAll || component == DeployData {
@@ -99,7 +108,7 @@ func (manager *Manager) deployToSystem(
 	if err != nil {
 		return err
 	}
-	if !install && (component == DeployAll || component == DeployData) {
+	if (!install || snapshot) && (component == DeployAll || component == DeployData) {
 		if _, _, err := manager.deploymentSpec(ctx, ""); err != nil {
 			return fmt.Errorf("portable deployment is not ready: %w", err)
 		}
@@ -132,7 +141,7 @@ func (manager *Manager) deployToSystem(
 	}
 
 	var operations []*swapOperation
-	if install {
+	if install && !snapshot {
 		targetDocument, readErr := readSystemDeploymentState(target)
 		if readErr != nil {
 			return readErr
@@ -208,7 +217,7 @@ func (manager *Manager) deployToSystem(
 	if err := commitSwaps(operations); err != nil {
 		return fmt.Errorf("deployment committed but backup cleanup failed: %w", err)
 	}
-	if install {
+	if install && !snapshot {
 		manager.installBundledUIBestEffort(target)
 	}
 	return nil

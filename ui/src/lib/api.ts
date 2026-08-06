@@ -111,6 +111,25 @@ export async function uploadUI(session: Session, file: File, sha256 = '') {
   return parseResponse(response, session)
 }
 
+export async function downloadBundle(session: Session) {
+  const response = await fetch(`${session.baseURL}/api/v1/bundle/export`, {
+    headers: { Authorization: `Bearer ${session.token}`, Accept: 'application/zip' },
+  })
+  if (!response.ok) await parseResponse(response, session)
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const match = /filename="?([^"]+)"?/i.exec(disposition)
+  const filename = match?.[1] || 'sempre-bundle.zip'
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 export async function streamEvents(
   session: Session,
   topics: string[],

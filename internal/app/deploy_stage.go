@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -32,17 +33,26 @@ func (manager *Manager) stageDeployment(
 		if err := target.EnsureServiceExecutableDirectory(); err != nil {
 			return fail(err)
 		}
-		source, err := layout.CurrentExecutable()
+		executable, err := layout.CurrentExecutable()
 		if err != nil {
 			return fail(err)
 		}
-		if !sameFile(source, target.ServiceExecutable) {
-			operation, err := stageExecutable(source, target.ServiceExecutable)
+		if !sameFile(executable, target.ServiceExecutable) {
+			operation, err := stageExecutable(executable, target.ServiceExecutable)
 			if err != nil {
 				return fail(err)
 			}
 			operations = append(operations, operation)
 		}
+		resources, err := manager.stageMergedDirectory(
+			filepath.Join(filepath.Dir(executable), "resources"),
+			target.Resources,
+			0o600,
+		)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, resources)
 	}
 	if component == DeployAll || component == DeployCore {
 		operation, err := manager.stageCores(ctx, target, document, component == DeployCore)
@@ -76,6 +86,16 @@ func (manager *Manager) stageDeployment(
 			return fail(err)
 		}
 		operations = append(operations, stateFile)
+		web, err := manager.stageWebConfig(target.WebConfig, false)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, web)
+		ui, err := manager.stageCurrentUI(target.UICurrent)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, ui)
 	}
 	return operations, nil
 }
@@ -143,6 +163,16 @@ func (manager *Manager) stageInstallation(
 		return fail(err)
 	}
 	operations = append(operations, stateFile)
+	web, err := manager.stageWebConfig(target.WebConfig, false)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, web)
+	ui, err := manager.stageCurrentUI(target.UICurrent)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, ui)
 	return operations, nil
 }
 
@@ -205,6 +235,58 @@ func (manager *Manager) stageSubscriptionInstallation(
 	stagedPaths.SubscriptionBlobs = filepath.Join(operation.staged, filepath.Base(target.SubscriptionBlobs))
 	stagedPaths.SubscriptionCache = filepath.Join(operation.staged, filepath.Base(target.SubscriptionCache))
 	if err := subscriptions.NewStore(stagedPaths).Initialize(existing.Subscription.URL); err != nil {
+		operation.cleanup()
+		return nil, err
+	}
+	return operation, nil
+}
+
+func (manager *Manager) stageWebConfig(target string, clearPassword bool) (*swapOperation, error) {
+	config, err := manager.web.Read()
+	if err != nil {
+		return nil, err
+	}
+	if clearPassword {
+		config.Password = ""
+	}
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	data = append(data, '\n')
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return nil, err
+	}
+	staging, err := unusedSibling(target, ".sempre-web-*")
+	if err != nil {
+		return nil, err
+	}
+	if err := state.WriteAtomic(staging, data, 0o600); err != nil {
+		return nil, err
+	}
+	return &swapOperation{staged: staging, target: target}, nil
+}
+
+func (manager *Manager) stageCurrentUI(target string) (*swapOperation, error) {
+	staging, err := stageDirectory(target)
+	if err != nil {
+		return nil, err
+	}
+	operation := &swapOperation{staged: staging, target: target}
+	if _, err := os.Stat(manager.paths.UICurrent); errors.Is(err, os.ErrNotExist) {
+		return operation, nil
+	} else if err != nil {
+		operation.cleanup()
+		return nil, err
+	}
+	if _, err := manager.ui.Current(); err != nil {
+		operation.cleanup()
+		return nil, fmt.Errorf("validate current UI: %w", err)
+	}
+	if err := copyDirectory(manager.paths.UICurrent, staging, 0o600); err != nil {
 		operation.cleanup()
 		return nil, err
 	}
