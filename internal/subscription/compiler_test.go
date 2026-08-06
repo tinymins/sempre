@@ -231,6 +231,10 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 		t.Fatalf("DNS defaults = %#v", dns)
 	}
 	servers := dns["servers"].([]any)
+	bootstrap := mapByKey(t, servers, "tag", "bootstrap")
+	if _, ok := bootstrap["detour"]; ok {
+		t.Fatalf("bootstrap DNS should use the default direct dialer: %#v", bootstrap)
+	}
 	remote := servers[len(servers)-1].(map[string]any)
 	if remote["tag"] != "remote" || remote["detour"] != "foreign" {
 		t.Fatalf("remote DNS = %#v", remote)
@@ -332,6 +336,30 @@ func TestNativeManagementControllerOverridesAreRejected(t *testing.T) {
 				t.Fatal("native controller override was silently accepted")
 			}
 		})
+	}
+}
+
+func TestLegacySingBoxOmitsDirectDNSDetours(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false,
+		"remoteDetour":  "direct",
+	}}
+
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	servers := config["dns"].(map[string]any)["servers"].([]any)
+	for _, tag := range []string{"local", "local_v4", "bootstrap", "remote"} {
+		server := mapByKey(t, servers, "tag", tag)
+		if _, ok := server["detour"]; ok {
+			t.Fatalf("%s DNS should use the default direct dialer: %#v", tag, server)
+		}
 	}
 }
 

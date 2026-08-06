@@ -846,9 +846,12 @@ func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutb
 			servers = append(servers, map[string]any{"type": "fakeip", "tag": "fakeip", "inet4_range": shared.FakeIPIPv4Range, "inet6_range": shared.FakeIPIPv6Range})
 		}
 		servers = append(servers, map[string]any{"type": "udp", "tag": "local_v4", "server": shared.LocalDNS, "server_port": shared.LocalDNSPort})
+		bootstrap := map[string]any{"type": "tls", "tag": "bootstrap", "server": shared.BootstrapDNS, "server_port": shared.BootstrapDNSPort, "tls": map[string]any{"server_name": shared.BootstrapServerName}}
+		remote := map[string]any{"type": "tls", "tag": "remote", "server": shared.RemoteDNS, "server_port": shared.RemoteDNSPort, "tls": map[string]any{"server_name": shared.RemoteServerName}}
+		setSingBoxDNSDetour(remote, remoteOutbound)
 		servers = append(servers,
-			map[string]any{"type": "tls", "tag": "bootstrap", "server": shared.BootstrapDNS, "server_port": shared.BootstrapDNSPort, "tls": map[string]any{"server_name": shared.BootstrapServerName}, "detour": "direct"},
-			map[string]any{"type": "tls", "tag": "remote", "server": shared.RemoteDNS, "server_port": shared.RemoteDNSPort, "tls": map[string]any{"server_name": shared.RemoteServerName}, "detour": remoteOutbound},
+			bootstrap,
+			remote,
 		)
 		rules := singBoxDNSRules(shared, true, shared.FakeIPEnabled)
 		result := map[string]any{"servers": servers, "rules": rules, "independent_cache": false, "reverse_mapping": true, "final": "remote"}
@@ -857,14 +860,17 @@ func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutb
 		}
 		return result
 	}
-	servers := []any{map[string]any{"tag": "local", "address": shared.LocalDNS, "detour": "direct"}}
+	servers := []any{map[string]any{"tag": "local", "address": shared.LocalDNS}}
 	if shared.FakeIPEnabled {
 		servers = append(servers, map[string]any{"tag": "fakeip", "address": "fakeip", "strategy": "ipv4_only"})
 	}
-	servers = append(servers, map[string]any{"tag": "local_v4", "address": shared.LocalDNS, "strategy": "ipv4_only", "detour": "direct"})
+	servers = append(servers, map[string]any{"tag": "local_v4", "address": shared.LocalDNS, "strategy": "ipv4_only"})
+	bootstrap := map[string]any{"tag": "bootstrap", "address": fmt.Sprintf("tls://%s:%d", shared.BootstrapDNS, shared.BootstrapDNSPort)}
+	remote := map[string]any{"tag": "remote", "address": fmt.Sprintf("tls://%s:%d", shared.RemoteDNS, shared.RemoteDNSPort)}
+	setSingBoxDNSDetour(remote, remoteOutbound)
 	servers = append(servers,
-		map[string]any{"tag": "bootstrap", "address": fmt.Sprintf("tls://%s:%d", shared.BootstrapDNS, shared.BootstrapDNSPort), "detour": "direct"},
-		map[string]any{"tag": "remote", "address": fmt.Sprintf("tls://%s:%d", shared.RemoteDNS, shared.RemoteDNSPort), "detour": remoteOutbound},
+		bootstrap,
+		remote,
 	)
 	result := map[string]any{"disable_cache": false, "servers": servers, "rules": singBoxDNSRules(shared, false, shared.FakeIPEnabled), "disable_expire": false, "independent_cache": false, "reverse_mapping": true, "final": "remote"}
 	if shared.PreferIPv4 {
@@ -874,6 +880,13 @@ func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutb
 		result["fakeip"] = map[string]any{"enabled": true, "inet4_range": shared.FakeIPIPv4Range, "inet6_range": shared.FakeIPIPv6Range}
 	}
 	return result
+}
+
+func setSingBoxDNSDetour(server map[string]any, detour string) {
+	if detour == "" || detour == "direct" {
+		return
+	}
+	server["detour"] = detour
 }
 
 type dnsShared struct {
