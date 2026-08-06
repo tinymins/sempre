@@ -216,20 +216,7 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				}
 				var cleanupCore, cleanupRepository, cleanupVersion string
 				err := manager.store.Update(func(document *state.Document) error {
-					if document.Pending && state.SameDeployment(document.Active, &plan.Deployment) {
-						old := document.Previous
-						document.Previous = nil
-						document.Pending = false
-						document.LastError = ""
-						if old != nil && manager.collectWeakVersion(document, old.Core, old.Repository, old.Version) {
-							cleanupCore = old.Core
-							cleanupRepository = old.Repository
-							cleanupVersion = old.Version
-						}
-					}
-					document.Runtime.State = "running"
-					document.Runtime.LastError = ""
-					document.Runtime.LastTransition = time.Now().UTC()
+					cleanupCore, cleanupRepository, cleanupVersion = manager.markRuntimeHealthy(document, plan)
 					return nil
 				})
 				if err == nil && cleanupVersion != "" {
@@ -438,6 +425,25 @@ func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (
 		}
 	}
 	return retry, nil
+}
+
+func (manager *Manager) markRuntimeHealthy(document *state.Document, plan supervisor.Plan) (string, string, string) {
+	var cleanupCore, cleanupRepository, cleanupVersion string
+	if document.Pending && state.SameDeployment(document.Active, &plan.Deployment) {
+		old := document.Previous
+		document.Previous = nil
+		document.Pending = false
+		if old != nil && manager.collectWeakVersion(document, old.Core, old.Repository, old.Version) {
+			cleanupCore = old.Core
+			cleanupRepository = old.Repository
+			cleanupVersion = old.Version
+		}
+	}
+	document.LastError = ""
+	document.Runtime.State = "running"
+	document.Runtime.LastError = ""
+	document.Runtime.LastTransition = time.Now().UTC()
+	return cleanupCore, cleanupRepository, cleanupVersion
 }
 
 func (manager *Manager) garbageCollectConfigs() error {

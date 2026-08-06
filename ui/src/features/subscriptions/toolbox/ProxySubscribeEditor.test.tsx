@@ -200,6 +200,25 @@ describe('ProxySubscribeEditor', () => {
 		})
 	})
 
+	it('requires and trims the Linux TUN interface name', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('sempre.locale', 'en')
+		const { onSave } = renderEditor()
+		fireEvent.click(screen.getByRole('button', { name: 'Runtime' }))
+
+		fireEvent.change(screen.getByLabelText('TUN interface'), { target: { value: '   ' } })
+		await act(async () => vi.advanceTimersByTime(800))
+		expect(onSave).not.toHaveBeenCalled()
+		expect(screen.getByText('TUN interface is required.')).toBeInTheDocument()
+
+		fireEvent.change(screen.getByLabelText('TUN interface'), { target: { value: ' sing-box ' } })
+		await act(async () => vi.advanceTimersByTime(800))
+		expect(onSave).toHaveBeenCalledTimes(1)
+		expect(onSave.mock.calls[0][0]).toMatchObject({
+			transparent_proxy: { tun: { interface_name: 'sing-box' } },
+		})
+	})
+
   it('serializes saves and submits only the newest queued profile', async () => {
     vi.useFakeTimers()
     localStorage.setItem('sempre.locale', 'en')

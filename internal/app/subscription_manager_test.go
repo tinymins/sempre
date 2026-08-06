@@ -352,6 +352,59 @@ func TestScheduledSubscriptionUpdatePreservesLinuxRuntimeSettings(t *testing.T) 
 	}
 }
 
+func TestSaveSubscriptionProfileRejectsEmptyTUNInterface(t *testing.T) {
+	manager := newTestManager(t)
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := subscriptions.FindProfile(&catalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := *profile
+	candidate.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true, Content: testSubscription}}
+	candidate.TransparentProxy.TUN.InterfaceName = " "
+
+	_, _, err = manager.SaveSubscriptionProfile(context.Background(), active, candidate)
+	if err == nil {
+		t.Fatal("empty TUN interface was accepted")
+	}
+	if !strings.Contains(err.Error(), "TUN interface name") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSaveSubscriptionProfileTrimsCustomTUNInterface(t *testing.T) {
+	manager := newTestManager(t)
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := subscriptions.FindProfile(&catalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := *profile
+	candidate.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true, Content: testSubscription}}
+	candidate.TransparentProxy.TUN.InterfaceName = " sing-box "
+
+	if _, _, err := manager.SaveSubscriptionProfile(context.Background(), active, candidate); err != nil {
+		t.Fatal(err)
+	}
+	updatedCatalog, _, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := subscriptions.FindProfile(&updatedCatalog, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.TransparentProxy.TUN.InterfaceName != "sing-box" {
+		t.Fatalf("TUN interface = %q", updated.TransparentProxy.TUN.InterfaceName)
+	}
+}
+
 func TestEmptyActiveProfileSaveRetainsCompiledConfiguration(t *testing.T) {
 	manager := newTestManager(t)
 	catalog, active, _, _, err := manager.SubscriptionCatalog()

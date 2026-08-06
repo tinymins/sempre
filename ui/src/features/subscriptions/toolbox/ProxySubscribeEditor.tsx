@@ -535,7 +535,7 @@ const ProxySubscribeEditor = ({
 				auto_exclude_local_routes: values.tunAutoExcludeLocal ?? true,
 				auto_exclude_vpn_routes: values.tunAutoExcludeVPN ?? true,
 				tun: {
-					interface_name: values.tunInterfaceName || "sempre-tun",
+					interface_name: String(values.tunInterfaceName ?? "").trim(),
 					address: values.tunAddress?.trim() || undefined,
 				},
 				tproxy: {
@@ -994,7 +994,15 @@ const ProxySubscribeEditor = ({
 					{transparentMode === "tun-router" && features.has("transparent.tun") ? (
 						<>
 							<div className="grid gap-4 md:grid-cols-2">
-								<Form.Item label={t("proxy.form.tunInterface")} name="tunInterfaceName">
+								<Form.Item
+									label={t("proxy.form.tunInterface")}
+									name="tunInterfaceName"
+									rules={[{ validator: (_rule, value) => {
+										if (!String(value ?? "").trim()) {
+											throw new Error(t("proxy.form.tunInterfaceRequired"));
+										}
+									} }]}
+								>
 									<Input />
 								</Form.Item>
 								{features.has("transparent.tun.address") ? <Form.Item label={t("proxy.form.tunAddress")} name="tunAddress">

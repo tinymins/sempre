@@ -13,6 +13,7 @@ import (
 
 	"github.com/tinymins/sempre/internal/controlplane"
 	"github.com/tinymins/sempre/internal/state"
+	"github.com/tinymins/sempre/internal/supervisor"
 )
 
 func TestManagedRuntimeStatusExplainsMissingDeployment(t *testing.T) {
@@ -305,6 +306,44 @@ func TestRuntimeAPIDirectConfigWriteIsRemoved(t *testing.T) {
 	}
 	if status.DesiredState != state.DesiredStopped || status.RuntimeState != "stopped" {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestRuntimeStatusHidesStaleDeploymentErrorWhileRunning(t *testing.T) {
+	t.Parallel()
+	manager := readyRuntimeManager(t)
+	if err := manager.store.Update(func(document *state.Document) error {
+		document.LastError = "startup failed: stale readiness timeout"
+		document.Runtime.State = "running"
+		document.Runtime.PID = os.Getpid()
+		document.Runtime.LastError = ""
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := manager.ManagedRuntimeStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.RuntimeState != "running" || status.LastError != "" {
+		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestMarkRuntimeHealthyClearsTopLevelAndRuntimeErrors(t *testing.T) {
+	t.Parallel()
+	manager := readyRuntimeManager(t)
+	document, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.LastError = "startup failed: stale readiness timeout"
+	document.Runtime.LastError = "Link not found"
+	manager.markRuntimeHealthy(&document, supervisor.Plan{Deployment: *document.Active})
+
+	if document.LastError != "" || document.Runtime.LastError != "" || document.Runtime.State != "running" {
+		t.Fatalf("document = %#v", document)
 	}
 }
 

@@ -24,6 +24,12 @@ const (
 	PolicyProtocol uint8  = 0xfd
 )
 
+var (
+	listenerReadinessTimeout = 8 * time.Second
+	tunReadinessTimeout      = 20 * time.Second
+	readinessPollInterval    = 100 * time.Millisecond
+)
+
 type Interface struct {
 	Name      string   `json:"name"`
 	Index     int      `json:"index"`
@@ -189,7 +195,11 @@ func (controller *Controller) Apply(ctx context.Context, plan Plan) error {
 	if !plan.Enabled() {
 		return nil
 	}
-	deadline := time.Now().Add(8 * time.Second)
+	timeout := listenerReadinessTimeout
+	if plan.Mode == subscriptions.TransparentProxyTUN {
+		timeout = tunReadinessTimeout
+	}
+	deadline := time.Now().Add(timeout)
 	for {
 		var err error
 		if plan.Mode == subscriptions.TransparentProxyTUN {
@@ -201,12 +211,15 @@ func (controller *Controller) Apply(ctx context.Context, plan Plan) error {
 			break
 		}
 		if time.Now().After(deadline) {
+			if plan.Mode == subscriptions.TransparentProxyTUN {
+				return fmt.Errorf("timed out waiting for TUN interface %s to become ready after %s: %w", plan.TUNInterface, timeout, err)
+			}
 			return fmt.Errorf("transparent proxy did not become ready: %w", err)
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(readinessPollInterval):
 		}
 	}
 	if plan.Mode == subscriptions.TransparentProxyTUN {

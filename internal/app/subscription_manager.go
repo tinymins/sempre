@@ -125,6 +125,9 @@ func (manager *Manager) saveSubscriptionProfile(ctx context.Context, id string, 
 		if err := subscriptions.ApplyEditorConfig(&candidate); err != nil {
 			return err
 		}
+		if err := normalizeSavedTransparentProxy(&candidate); err != nil {
+			return err
+		}
 		candidate.LastCheck = current.LastCheck
 		candidate.LastChange = current.LastChange
 		candidate.LastResult = current.LastResult
@@ -235,6 +238,14 @@ func (manager *Manager) saveSubscriptionProfile(ctx context.Context, id string, 
 		})
 	})
 	return change, rendered, err
+}
+
+func normalizeSavedTransparentProxy(profile *subscriptions.Profile) error {
+	profile.TransparentProxy.TUN.InterfaceName = strings.TrimSpace(profile.TransparentProxy.TUN.InterfaceName)
+	if profile.TransparentProxy.TUN.InterfaceName == "" {
+		return fmt.Errorf("TUN interface name must contain 1 to 15 characters")
+	}
+	return nil
 }
 
 func (manager *Manager) RefreshSubscriptionProfile(ctx context.Context, id string) (Change, subscriptions.RenderResult, error) {

@@ -168,7 +168,7 @@ func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatu
 		}
 	}
 	lastError := document.Runtime.LastError
-	if lastError == "" {
+	if lastError == "" && runtimeState != "running" {
 		lastError = document.LastError
 	}
 	if runtimeState == "idle" && document.DesiredState == state.DesiredRunning && lastError != "" && readyErr == nil {

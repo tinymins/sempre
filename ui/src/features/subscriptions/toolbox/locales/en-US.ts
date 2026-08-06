@@ -71,6 +71,7 @@ export default {
 		transparentModeEBPF: "eBPF Router",
 		transparentModeDisabled: "Disabled",
 		tunInterface: "TUN interface",
+		tunInterfaceRequired: "TUN interface is required.",
 		tunAddress: "TUN address",
 		tunAddressAuto: "Automatic non-conflicting /30",
 		tunRouteExclusions: "Route exclusions",

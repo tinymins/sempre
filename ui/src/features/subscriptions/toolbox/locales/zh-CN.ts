@@ -69,6 +69,7 @@ export default {
 		transparentModeEBPF: "eBPF 旁路由",
 		transparentModeDisabled: "关闭",
 		tunInterface: "TUN 接口",
+		tunInterfaceRequired: "必须填写 TUN 接口。",
 		tunAddress: "TUN 地址",
 		tunAddressAuto: "自动选择不冲突的 /30",
 		tunRouteExclusions: "排除路由",
