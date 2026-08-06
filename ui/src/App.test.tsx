@@ -63,6 +63,7 @@ describe('App', () => {
       }
       if (path === '/api/v1/system') return Response.json(systemStatus)
       if (path === '/api/v1/runtime/status') return Response.json(runtimeStatus)
+      if (path === '/api/v1/network/test') return Response.json({ checked_at: '2026-08-07T00:00:00Z', results: [] })
       return Response.json({ error: { code: 'NOT_FOUND', message: path } }, { status: 404 })
     }))
 
@@ -77,8 +78,11 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /Connect/ }))
 
     expect(await screen.findByRole('link', { name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Network Test' })).toBeInTheDocument()
     expect(await screen.findByText('Managed core runtime')).toBeInTheDocument()
     expect(screen.getByText('exit status 1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: 'Network Test' }))
+    expect(await screen.findByRole('heading', { name: 'Network Test' })).toBeInTheDocument()
   })
 
   it('returns to login when the stored session is rejected', async () => {

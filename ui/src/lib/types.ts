@@ -126,6 +126,24 @@ export interface Connection {
 }
 export interface ConnectionSnapshot { download_total: number; upload_total: number; connections: Connection[] }
 
+export interface NetworkTestResult {
+  id: string
+  name: string
+  region: 'domestic' | 'foreign'
+  category: 'reachability' | 'ip'
+  url: string
+  ok: boolean
+  latency_ms: number
+  http_status?: number
+  ip?: string
+  detail?: string
+}
+
+export interface NetworkTestReport {
+  checked_at: string
+  results: NetworkTestResult[]
+}
+
 export interface CoreInstallation {
   core: string
   repository: string

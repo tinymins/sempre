@@ -50,6 +50,7 @@ describe('Shell sidebar', () => {
     expect(localStorage.getItem('sempre.sidebar.collapsed')).toBe('true')
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('link', { name: 'Subscriptions' })).toHaveAttribute('title', 'Subscriptions')
+    expect(screen.getByRole('link', { name: 'Network Test' })).toHaveAttribute('title', 'Network Test')
     expect(await screen.findByLabelText('Core: running')).toBeInTheDocument()
   })
 

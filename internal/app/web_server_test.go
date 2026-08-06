@@ -72,6 +72,25 @@ func TestAdminServerAuthenticationBoundary(t *testing.T) {
 		t.Fatalf("bundle export = %d, %q", response.StatusCode, response.Header.Get("Content-Type"))
 	}
 	response.Body.Close()
+	probeServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte("ok"))
+	}))
+	defer probeServer.Close()
+	oldProbes := defaultNetworkTestProbes
+	defaultNetworkTestProbes = []networkTestProbe{{ID: "local", Name: "Local", Region: "domestic", Category: "reachability", URL: probeServer.URL, Success: status2xx3xx}}
+	defer func() { defaultNetworkTestProbes = oldProbes }()
+	response = testJSONRequest(t, http.MethodPost, server.URL+"/api/v1/network/test", server.URL, login.Token, nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("network test = %d", response.StatusCode)
+	}
+	var networkReport NetworkTestReport
+	if err := json.NewDecoder(response.Body).Decode(&networkReport); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if len(networkReport.Results) != 1 || !networkReport.Results[0].OK {
+		t.Fatalf("network report = %#v", networkReport)
+	}
 	if err := manager.store.Update(func(document *state.Document) error {
 		document.Cores = map[string]*state.CoreState{}
 		document.Selected = nil
