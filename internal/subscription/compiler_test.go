@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -345,8 +346,13 @@ func TestSingBoxSystemDNSTakeoverAddsLocalDNSListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	inbound := mapByKey(t, config["inbounds"].([]any), "tag", "system-dns-in")
-	if inbound["type"] != "direct" || inbound["listen"] != "127.0.0.1" || inbound["listen_port"] != float64(53) || inbound["sniff"] != true {
+	if inbound["type"] != "direct" || inbound["listen"] != "127.0.0.1" || inbound["listen_port"] != float64(53) || inbound["override_address"] != "1.1.1.1" || inbound["override_port"] != float64(53) {
 		t.Fatalf("system DNS inbound = %#v", inbound)
+	}
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	if !reflect.DeepEqual(rules[0], map[string]any{"inbound": "system-dns-in", "action": "sniff"}) ||
+		!reflect.DeepEqual(rules[1], map[string]any{"inbound": "system-dns-in", "protocol": "dns", "action": "hijack-dns"}) {
+		t.Fatalf("system DNS route rules = %#v", rules[:2])
 	}
 }
 

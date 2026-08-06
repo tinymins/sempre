@@ -662,6 +662,9 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	}
 	final := normalizeOutboundName(clashFinalGroup(groups))
 	routeRules := []any{}
+	if target.Platform == "default" && shared.SystemDNSTakeoverEnabled {
+		routeRules = append(routeRules, map[string]any{"inbound": "system-dns-in", "action": "sniff"}, map[string]any{"inbound": "system-dns-in", "protocol": "dns", "action": "hijack-dns"})
+	}
 	if modern {
 		routeRules = append(routeRules, map[string]any{"action": "sniff"}, map[string]any{"protocol": "dns", "action": "hijack-dns"})
 	} else {
@@ -797,7 +800,7 @@ func (compiler *Compiler) loadRuleProviders(
 func singBoxInbounds(target Target, modern bool, transparent TransparentProxyConfig, localProxy LocalProxyConfig, shared dnsShared) []any {
 	inbounds := localProxySingBoxInbounds(localProxy)
 	if target.Platform == "default" && shared.SystemDNSTakeoverEnabled {
-		inbounds = append(inbounds, map[string]any{"type": "direct", "tag": "system-dns-in", "listen": "127.0.0.1", "listen_port": shared.SystemDNSListenPort, "sniff": true})
+		inbounds = append(inbounds, map[string]any{"type": "direct", "tag": "system-dns-in", "listen": "127.0.0.1", "listen_port": shared.SystemDNSListenPort, "override_address": "1.1.1.1", "override_port": 53})
 	}
 	if target.Platform != "default" {
 		inbound := map[string]any{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "stack": "mixed"}

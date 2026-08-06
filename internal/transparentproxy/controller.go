@@ -841,10 +841,28 @@ func validateSystemDNSInbound(document map[string]any, port int) error {
 	if err != nil {
 		return err
 	}
-	if inbound["listen"] != "127.0.0.1" || integer(inbound["listen_port"]) != port || inbound["sniff"] != true {
+	if inbound["listen"] != "127.0.0.1" || integer(inbound["listen_port"]) != port || inbound["override_address"] != "1.1.1.1" || integer(inbound["override_port"]) != 53 {
 		return fmt.Errorf("system DNS inbound must listen on 127.0.0.1:%d", port)
 	}
+	rules, _ := object(document["route"])["rules"].([]any)
+	if !hasSystemDNSHijackRules(rules) {
+		return fmt.Errorf("runtime configuration is missing system DNS hijack route rules")
+	}
 	return nil
+}
+
+func hasSystemDNSHijackRules(rules []any) bool {
+	for index := 0; index+1 < len(rules); index++ {
+		first, ok := rules[index].(map[string]any)
+		if !ok || first["inbound"] != "system-dns-in" || first["action"] != "sniff" {
+			continue
+		}
+		second, ok := rules[index+1].(map[string]any)
+		if ok && second["inbound"] == "system-dns-in" && second["protocol"] == "dns" && second["action"] == "hijack-dns" {
+			return true
+		}
+	}
+	return false
 }
 
 func findInbound(document map[string]any, tag, inboundType string) (map[string]any, error) {
