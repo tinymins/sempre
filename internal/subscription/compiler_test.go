@@ -345,7 +345,7 @@ func TestSingBoxSystemDNSTakeoverAddsLocalDNSListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	inbound := mapByKey(t, config["inbounds"].([]any), "tag", "system-dns-in")
-	if inbound["type"] != "direct" || inbound["listen"] != "127.0.0.1" || inbound["listen_port"] != float64(53) {
+	if inbound["type"] != "direct" || inbound["listen"] != "127.0.0.1" || inbound["listen_port"] != float64(53) || inbound["sniff"] != true {
 		t.Fatalf("system DNS inbound = %#v", inbound)
 	}
 }

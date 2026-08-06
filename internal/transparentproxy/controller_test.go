@@ -390,6 +390,15 @@ func TestSystemDNSTakeoverDoesNotOverwriteUserChangedResolvConf(t *testing.T) {
 	}
 }
 
+func TestSystemDNSManagedRequiresFirstNameserver(t *testing.T) {
+	if !systemDNSManaged([]byte("# comment\noptions timeout:1\nnameserver 127.0.0.1\nnameserver 10.251.1.1\n")) {
+		t.Fatal("expected first nameserver 127.0.0.1 to be managed")
+	}
+	if systemDNSManaged([]byte("nameserver 10.251.1.1\nnameserver 127.0.0.1\n")) {
+		t.Fatal("expected later 127.0.0.1 nameserver to be unmanaged")
+	}
+}
+
 func TestApplyTUNReadinessTimeoutExplainsInterface(t *testing.T) {
 	backend := &fakeBackend{verifyTUNErr: errors.New("Link not found")}
 	controller := &Controller{backend: backend}

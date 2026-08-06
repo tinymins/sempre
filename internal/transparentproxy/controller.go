@@ -841,7 +841,7 @@ func validateSystemDNSInbound(document map[string]any, port int) error {
 	if err != nil {
 		return err
 	}
-	if inbound["listen"] != "127.0.0.1" || integer(inbound["listen_port"]) != port {
+	if inbound["listen"] != "127.0.0.1" || integer(inbound["listen_port"]) != port || inbound["sniff"] != true {
 		return fmt.Errorf("system DNS inbound must listen on 127.0.0.1:%d", port)
 	}
 	return nil

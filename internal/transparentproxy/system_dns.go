@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tinymins/sempre/internal/state"
 )
@@ -82,7 +83,7 @@ func (manager *systemDNSManager) Restore() error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", manager.resolvConf, err)
 	}
-	if bytes.Equal(current, systemDNSContent()) || errors.Is(err, os.ErrNotExist) {
+	if systemDNSManaged(current) || errors.Is(err, os.ErrNotExist) {
 		if writeErr := state.WriteAtomic(manager.resolvConf, []byte(saved.Original), 0o644); writeErr != nil {
 			return fmt.Errorf("restore %s: %w", manager.resolvConf, writeErr)
 		}
@@ -101,7 +102,7 @@ func (manager *systemDNSManager) Verify() error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", manager.resolvConf, err)
 	}
-	if !bytes.Equal(current, systemDNSContent()) {
+	if !systemDNSManaged(current) {
 		return fmt.Errorf("%s is not managed by Sempre system DNS takeover", manager.resolvConf)
 	}
 	return nil
@@ -113,4 +114,18 @@ func (manager *systemDNSManager) statePath() string {
 
 func systemDNSContent() []byte {
 	return []byte("# Managed by Sempre system DNS takeover. Do not edit while enabled.\nnameserver 127.0.0.1\noptions timeout:1 attempts:1\n")
+}
+
+func systemDNSManaged(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || strings.HasPrefix(fields[0], "#") {
+			continue
+		}
+		if fields[0] != "nameserver" {
+			continue
+		}
+		return len(fields) == 2 && fields[1] == "127.0.0.1"
+	}
+	return false
 }
