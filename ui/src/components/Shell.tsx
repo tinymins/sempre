@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, Globe2, Languages, Library, ListTree, LogOut, Menu, Moon, Network, Rss, Server, Settings, Sun } from 'lucide-react'
+import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, Globe2, Languages, Library, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -44,6 +44,7 @@ export function Shell({ children }: { children: ReactNode }) {
     { path: '/traffic', label: t('traffic'), icon: ChartNoAxesCombined },
     { path: '/logs', label: t('logs'), icon: Activity },
     { path: '/network-test', label: t('networkTest'), icon: Globe2 },
+    { path: '/gateway', label: t('gateway'), icon: Router },
     { path: '/management', label: t('management'), icon: Settings },
   ]
   const runtime = system.data?.runtime.state || 'stopped'

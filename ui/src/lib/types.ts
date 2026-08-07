@@ -282,6 +282,86 @@ export interface LinuxNetworkInventory {
 	}>
 }
 
+export interface GatewayConfig {
+  schema: number
+  topology: 'local-pve' | 'remote-pve'
+  lan: {
+    interface: string
+    gateway_cidr: string
+    wan_interface: string
+    nat_enabled: boolean
+  }
+  dhcp: {
+    enabled: boolean
+    range_start: string
+    range_end: string
+    lease_time: string
+    domain?: string
+    reservations: Array<{ mac: string; ip: string; hostname?: string }>
+  }
+  dns: {
+    enabled: boolean
+    listen_hosts: string[]
+    listen_port: number
+    local_upstreams: string[]
+    remote_upstream: string
+    strategy: 'local-first-classify' | 'rules-first'
+    reject_https: boolean
+    rule_sets: Array<{ id: string; name: string; enabled: boolean; type: 'inline' | 'url' | string; url?: string; rules?: string[]; upstream: string }>
+    domestic_cidrs: string[]
+    cache_ttl_seconds: number
+  }
+  pve: {
+    host?: string
+    port?: number
+    user?: string
+    key_path?: string
+    fingerprint?: string
+    apply_persistent: boolean
+  }
+}
+
+export interface GatewayLease {
+  mac: string
+  ip: string
+  hostname?: string
+  expires_at?: string | null
+  reserved: boolean
+}
+
+export interface GatewayStatus {
+  config: GatewayConfig
+  runtime: {
+    dns_running: boolean
+    dhcp_running: boolean
+    started_at?: string | null
+    dhcp_leases: GatewayLease[]
+    last_error?: string
+  }
+  inventory: LinuxNetworkInventory
+  validation_errors: string[]
+  transparent_proxy?: TransparentProxyConfig
+  host_plan_available: boolean
+}
+
+export interface GatewayHostPlan {
+  topology: string
+  summary: string
+  warnings: string[]
+  commands: string[]
+  persistent_commands: string[]
+  apply_by_ssh: boolean
+  output?: string[]
+}
+
+export interface GatewayDNSDebugResult {
+  name: string
+  type: string
+  upstream: string
+  answers: string[]
+  detail?: string
+}
+
 export interface RuleProvider { tag: string; url: string; outbound?: string; format?: string; behavior?: string }
 
 export interface SubscriptionDefaults {

@@ -85,7 +85,7 @@ func (manager *Manager) UninstallService(ctx context.Context) error {
 		if err := manager.service.Uninstall(ctx); err != nil {
 			return err
 		}
-		return manager.transparent.Cleanup(ctx)
+		return errors.Join(manager.gateway.Stop(ctx), manager.transparent.Cleanup(ctx))
 	})
 }
 
@@ -105,8 +105,9 @@ func (manager *Manager) startService(ctx context.Context) error {
 func (manager *Manager) StopService(ctx context.Context) error {
 	return manager.withSystemOperation(func() error {
 		stopErr := manager.service.Stop(ctx)
+		gatewayErr := manager.gateway.Stop(ctx)
 		cleanupErr := manager.transparent.Cleanup(ctx)
-		return errors.Join(stopErr, cleanupErr)
+		return errors.Join(stopErr, gatewayErr, cleanupErr)
 	})
 }
 

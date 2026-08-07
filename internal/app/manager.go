@@ -21,6 +21,7 @@ import (
 	"github.com/tinymins/sempre/internal/core/singbox"
 	"github.com/tinymins/sempre/internal/core/v2ray"
 	"github.com/tinymins/sempre/internal/core/xray"
+	"github.com/tinymins/sempre/internal/gateway"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/release"
 	"github.com/tinymins/sempre/internal/service"
@@ -71,6 +72,7 @@ type Manager struct {
 	subscriptions *subscriptions.Store
 	compiler      *subscriptions.Compiler
 	transparent   *transparentproxy.Controller
+	gateway       *gateway.Controller
 	externalClash *clashproxy.Server
 	ui            *uiassets.Manager
 	uiReleases    uiassets.ReleaseResolver
@@ -114,6 +116,15 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 	if err := webStore.Initialize(); err != nil {
 		return nil, err
 	}
+	transparent := transparentproxy.New(transparentproxy.WithSystemDNS(
+		paths.Mode == layout.System,
+		filepath.Join(paths.Home, "system-dns"),
+		"/etc/resolv.conf",
+	))
+	gatewayController, err := gateway.New(paths, transparent.Inventory)
+	if err != nil {
+		return nil, err
+	}
 	return &Manager{
 		paths:         paths,
 		store:         store,
@@ -125,11 +136,8 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 		web:           webStore,
 		subscriptions: subscriptionStore,
 		compiler:      subscriptions.NewCompiler(subscriptionStore),
-		transparent: transparentproxy.New(transparentproxy.WithSystemDNS(
-			paths.Mode == layout.System,
-			filepath.Join(paths.Home, "system-dns"),
-			"/etc/resolv.conf",
-		)),
+		transparent:   transparent,
+		gateway:       gatewayController,
 		externalClash: clashproxy.New(),
 		ui:            uiassets.New(paths.UI, paths.UICurrent),
 		uiReleases:    release.NewClient(),

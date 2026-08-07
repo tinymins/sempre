@@ -117,6 +117,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
 					logf("stop external Clash API after resolve failure: %v", stopErr)
 				}
+				if stopErr := manager.gateway.Stop(ctx); stopErr != nil {
+					logf("stop LAN gateway services after resolve failure: %v", stopErr)
+				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean transparent proxy after resolve failure: %v", cleanupErr)
 				}
@@ -152,6 +155,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err := manager.externalClash.Stop(ctx); err != nil {
 					return fmt.Errorf("stop stale external Clash API: %w", err)
 				}
+				if err := manager.gateway.Stop(ctx); err != nil {
+					return fmt.Errorf("stop stale LAN gateway services: %w", err)
+				}
 				if err := manager.transparent.Cleanup(ctx); err != nil {
 					return fmt.Errorf("clean stale Linux transparent proxy state: %w", err)
 				}
@@ -174,6 +180,13 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				logf("started %s with PID %d", deploymentLabel(plan.Deployment), pid)
 				if err := manager.transparent.Apply(ctx, dataPlanePlan); err != nil {
 					return fmt.Errorf("activate Linux transparent proxy: %w", err)
+				}
+				gatewayConfig, err := manager.gateway.Read()
+				if err != nil {
+					return fmt.Errorf("read gateway configuration: %w", err)
+				}
+				if err := manager.gateway.Start(ctx, gatewayConfig); err != nil {
+					return fmt.Errorf("start LAN gateway services: %w", err)
 				}
 				if err := manager.externalClash.Start(ctx, externalClashPlan); err != nil {
 					return fmt.Errorf("start external Clash API: %w", err)
@@ -232,6 +245,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err := manager.externalClash.Stop(ctx); err != nil {
 					logf("stop external Clash API: %v", err)
 				}
+				if err := manager.gateway.Stop(ctx); err != nil {
+					logf("stop LAN gateway services: %v", err)
+				}
 				if err := manager.transparent.Cleanup(ctx); err != nil {
 					logf("clean Linux transparent proxy while stopping: %v", err)
 				}
@@ -259,6 +275,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
 					logf("stop external Clash API after startup failure: %v", stopErr)
 				}
+				if stopErr := manager.gateway.Stop(ctx); stopErr != nil {
+					logf("stop LAN gateway services after startup failure: %v", stopErr)
+				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean Linux transparent proxy after startup failure: %v", cleanupErr)
 				}
@@ -272,6 +291,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			Exited: func(plan supervisor.Plan, failure error, _ int) error {
 				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
 					logf("stop external Clash API after core exit: %v", stopErr)
+				}
+				if stopErr := manager.gateway.Stop(ctx); stopErr != nil {
+					logf("stop LAN gateway services after core exit: %v", stopErr)
 				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean Linux transparent proxy after core exit: %v", cleanupErr)
@@ -296,6 +318,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			Stopped: func() error {
 				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
 					logf("stop external Clash API after stop: %v", stopErr)
+				}
+				if stopErr := manager.gateway.Stop(ctx); stopErr != nil {
+					logf("stop LAN gateway services after stop: %v", stopErr)
 				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean Linux transparent proxy after stop: %v", cleanupErr)
@@ -343,6 +368,9 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 			Idle: func() error {
 				if stopErr := manager.externalClash.Stop(ctx); stopErr != nil {
 					logf("stop external Clash API while idle: %v", stopErr)
+				}
+				if stopErr := manager.gateway.Stop(ctx); stopErr != nil {
+					logf("stop LAN gateway services while idle: %v", stopErr)
 				}
 				if cleanupErr := manager.transparent.Cleanup(ctx); cleanupErr != nil {
 					logf("clean Linux transparent proxy while idle: %v", cleanupErr)
