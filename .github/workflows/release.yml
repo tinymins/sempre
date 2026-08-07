@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag to build"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -24,7 +18,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: 1.25.12
@@ -99,10 +92,9 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           mapfile -d '' assets < <(find dist -maxdepth 1 -type f -print0 | sort -z)
-          gh release create "$RELEASE_TAG" \
+          gh release create "$GITHUB_REF_NAME" \
             "${assets[@]}" \
             --generate-notes \
             --verify-tag
