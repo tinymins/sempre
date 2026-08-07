@@ -167,6 +167,37 @@ func TestPrepareSystemDNSTakeoverRequiresSystemSingBox(t *testing.T) {
 	}
 }
 
+func TestPrepareSystemDNSTakeoverAcceptsSelectedListenHosts(t *testing.T) {
+	backend := &fakeBackend{}
+	controller := &Controller{backend: backend, systemDNS: &systemDNSManager{allowed: true}}
+	profile := subscriptions.NewProfile("gateway")
+	profile.TransparentProxy.Mode = subscriptions.TransparentProxyDisabled
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"systemDnsTakeoverEnabled": true,
+		"systemDnsListenHosts":     []any{"127.0.0.1", "10.10.10.1"},
+	}}
+	path := writeRuntimeConfig(t, map[string]any{
+		"inbounds": []any{
+			map[string]any{"type": "direct", "tag": "system-dns-in", "listen": "127.0.0.1", "listen_port": 53, "override_address": "1.1.1.1", "override_port": 53},
+			map[string]any{"type": "direct", "tag": "system-dns-in-1", "listen": "10.10.10.1", "listen_port": 53, "override_address": "1.1.1.1", "override_port": 53},
+		},
+		"route": map[string]any{"rules": []any{
+			map[string]any{"inbound": "system-dns-in", "action": "sniff"},
+			map[string]any{"inbound": "system-dns-in", "protocol": "dns", "action": "hijack-dns"},
+			map[string]any{"inbound": "system-dns-in-1", "action": "sniff"},
+			map[string]any{"inbound": "system-dns-in-1", "protocol": "dns", "action": "hijack-dns"},
+		}},
+	})
+
+	plan, err := controller.Prepare(context.Background(), "sing-box", profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plan.SystemDNSHosts, []string{"127.0.0.1", "10.10.10.1"}) {
+		t.Fatalf("system DNS hosts = %#v", plan.SystemDNSHosts)
+	}
+}
+
 func TestPrepareGatewayRequiresIPForwarding(t *testing.T) {
 	backend := &fakeBackend{
 		inventory: Inventory{

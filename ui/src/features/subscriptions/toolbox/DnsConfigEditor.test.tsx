@@ -29,11 +29,38 @@ describe('DnsConfigEditor', () => {
 
     expect(screen.getByText('System DNS')).toBeInTheDocument()
     expect(screen.getByText('Take over system DNS')).toBeInTheDocument()
+    expect(screen.getByText('Listen addresses')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('switch'))
 
     expect(onChange).toHaveBeenCalledWith(JSON.stringify({
       shared: { systemDnsTakeoverEnabled: true },
+    }, null, 2))
+  })
+
+  it('persists selected system DNS listen hosts and makes wildcard exclusive', () => {
+    localStorage.setItem('sempre.locale', 'en')
+    const onChange = vi.fn()
+
+    render(
+      <I18nProvider>
+        <DnsConfigEditor
+          features={['dns.system_takeover']}
+          value={JSON.stringify({ shared: { systemDnsTakeoverEnabled: true } })}
+          systemDnsListenHostOptions={[{ value: '10.10.10.1', label: '10.10.10.1 · vmbr1' }]}
+          onChange={onChange}
+        />
+      </I18nProvider>,
+    )
+
+    fireEvent.click(screen.getByText('10.10.10.1 · vmbr1'))
+    expect(onChange).toHaveBeenLastCalledWith(JSON.stringify({
+      shared: { systemDnsTakeoverEnabled: true, systemDnsListenHosts: ['127.0.0.1', '10.10.10.1'] },
+    }, null, 2))
+
+    fireEvent.click(screen.getByText('0.0.0.0'))
+    expect(onChange).toHaveBeenLastCalledWith(JSON.stringify({
+      shared: { systemDnsTakeoverEnabled: true, systemDnsListenHosts: ['0.0.0.0'] },
     }, null, 2))
   })
 })

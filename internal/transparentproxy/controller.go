@@ -62,6 +62,7 @@ type Plan struct {
 	Config           string
 	SystemDNS        bool
 	SystemDNSPort    int
+	SystemDNSHosts   []string
 	TUNInterface     string
 	TUNAddress       string
 	RouteExclusions  []string
@@ -131,9 +132,10 @@ func (controller *Controller) Prepare(
 	configPath string,
 ) (Plan, error) {
 	plan := Plan{Mode: subscriptions.TransparentProxyDisabled, Config: configPath}
-	systemDNS, systemDNSPort := systemDNSIntent(profile.DNS)
+	systemDNS, systemDNSPort, systemDNSHosts := systemDNSIntent(profile.DNS)
 	plan.SystemDNS = systemDNS
 	plan.SystemDNSPort = systemDNSPort
+	plan.SystemDNSHosts = systemDNSHosts
 	if systemDNS && (coreID != "sing-box" || controller.systemDNS == nil || !controller.systemDNS.allowed) {
 		return Plan{}, fmt.Errorf("system DNS takeover is only available for Linux system sing-box runtime")
 	}
@@ -165,7 +167,7 @@ func (controller *Controller) Prepare(
 		return Plan{}, fmt.Errorf("decode runtime configuration: %w", err)
 	}
 	if plan.SystemDNS {
-		if err := validateSystemDNSInbound(document, plan.SystemDNSPort); err != nil {
+		if err := validateSystemDNSInbounds(document, plan.SystemDNSPort, plan.SystemDNSHosts); err != nil {
 			return Plan{}, err
 		}
 	}
@@ -265,7 +267,7 @@ func (controller *Controller) Apply(ctx context.Context, plan Plan) error {
 		}
 	}
 	if plan.SystemDNS {
-		if err := waitForTCP(ctx, plan.SystemDNSPort, listenerReadinessTimeout); err != nil {
+		if err := waitForSystemDNS(ctx, plan.SystemDNSHosts, plan.SystemDNSPort, listenerReadinessTimeout); err != nil {
 			_ = controller.Cleanup(ctx)
 			return fmt.Errorf("system DNS listener did not become ready: %w", err)
 		}
@@ -823,7 +825,7 @@ func resolveLANInterfaces(configured []string, inventory Inventory) ([]string, e
 	return interfaces, nil
 }
 
-func systemDNSIntent(config map[string]any) (bool, int) {
+func systemDNSIntent(config map[string]any) (bool, int, []string) {
 	shared := config
 	if nested := object(config["shared"]); len(nested) > 0 {
 		shared = nested
@@ -833,36 +835,100 @@ func systemDNSIntent(config map[string]any) (bool, int) {
 	if port == 0 {
 		port = 53
 	}
-	return enabled, port
+	return enabled, port, normalizeSystemDNSHosts(stringValues(shared["systemDnsListenHosts"]))
 }
 
-func validateSystemDNSInbound(document map[string]any, port int) error {
-	inbound, err := findInbound(document, "system-dns-in", "direct")
-	if err != nil {
-		return err
+func normalizeSystemDNSHosts(values []string) []string {
+	hosts := []string{}
+	for _, value := range values {
+		host := strings.TrimSpace(value)
+		if host == "" {
+			continue
+		}
+		address, err := netip.ParseAddr(host)
+		if err != nil || !address.Is4() {
+			continue
+		}
+		host = address.String()
+		if host == "0.0.0.0" {
+			return []string{"0.0.0.0"}
+		}
+		if !containsString(hosts, host) {
+			hosts = append(hosts, host)
+		}
 	}
-	if inbound["listen"] != "127.0.0.1" || integer(inbound["listen_port"]) != port || inbound["override_address"] != "1.1.1.1" || integer(inbound["override_port"]) != 53 {
-		return fmt.Errorf("system DNS inbound must listen on 127.0.0.1:%d", port)
+	if len(hosts) == 0 {
+		return []string{"127.0.0.1"}
+	}
+	return hosts
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func systemDNSInboundTags(hosts []string) []string {
+	tags := make([]string, 0, len(hosts))
+	for index, host := range hosts {
+		tags = append(tags, systemDNSInboundTag(host, index))
+	}
+	return tags
+}
+
+func systemDNSInboundTag(host string, index int) string {
+	switch host {
+	case "127.0.0.1":
+		return "system-dns-in"
+	case "0.0.0.0":
+		return "system-dns-in-any"
+	default:
+		return fmt.Sprintf("system-dns-in-%d", index)
+	}
+}
+
+func validateSystemDNSInbounds(document map[string]any, port int, hosts []string) error {
+	tags := systemDNSInboundTags(hosts)
+	for index, host := range hosts {
+		tag := tags[index]
+		inbound, err := findInbound(document, tag, "direct")
+		if err != nil {
+			return err
+		}
+		if inbound["listen"] != host || integer(inbound["listen_port"]) != port || inbound["override_address"] != "1.1.1.1" || integer(inbound["override_port"]) != 53 {
+			return fmt.Errorf("system DNS inbound %s must listen on %s:%d", tag, host, port)
+		}
 	}
 	rules, _ := object(document["route"])["rules"].([]any)
-	if !hasSystemDNSHijackRules(rules) {
+	if !hasSystemDNSHijackRules(rules, tags) {
 		return fmt.Errorf("runtime configuration is missing system DNS hijack route rules")
 	}
 	return nil
 }
 
-func hasSystemDNSHijackRules(rules []any) bool {
-	for index := 0; index+1 < len(rules); index++ {
-		first, ok := rules[index].(map[string]any)
-		if !ok || first["inbound"] != "system-dns-in" || first["action"] != "sniff" {
-			continue
+func hasSystemDNSHijackRules(rules []any, tags []string) bool {
+	for _, tag := range tags {
+		found := false
+		for index := 0; index+1 < len(rules); index++ {
+			first, ok := rules[index].(map[string]any)
+			if !ok || first["inbound"] != tag || first["action"] != "sniff" {
+				continue
+			}
+			second, ok := rules[index+1].(map[string]any)
+			if ok && second["inbound"] == tag && second["protocol"] == "dns" && second["action"] == "hijack-dns" {
+				found = true
+				break
+			}
 		}
-		second, ok := rules[index+1].(map[string]any)
-		if ok && second["inbound"] == "system-dns-in" && second["protocol"] == "dns" && second["action"] == "hijack-dns" {
-			return true
+		if !found {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func findInbound(document map[string]any, tag, inboundType string) (map[string]any, error) {
@@ -968,6 +1034,43 @@ func waitForTCP(ctx context.Context, port int, timeout time.Duration) error {
 		case <-time.After(readinessPollInterval):
 		}
 	}
+}
+
+func waitForSystemDNS(ctx context.Context, hosts []string, port int, timeout time.Duration) error {
+	hosts = normalizeSystemDNSHosts(hosts)
+	for _, host := range hosts {
+		if err := waitForTCPHost(ctx, systemDNSDialHost(host), port, timeout); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func waitForTCPHost(ctx context.Context, host string, port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	address := net.JoinHostPort(host, fmt.Sprint(port))
+	for {
+		connection, err := net.DialTimeout("tcp", address, 100*time.Millisecond)
+		if err == nil {
+			_ = connection.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s is not listening after %s: %w", address, timeout, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(readinessPollInterval):
+		}
+	}
+}
+
+func systemDNSDialHost(host string) string {
+	if host == "0.0.0.0" {
+		return "127.0.0.1"
+	}
+	return host
 }
 
 func resolveTUNAddress(explicit string, occupied []string) (string, error) {

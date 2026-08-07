@@ -55,7 +55,7 @@ const singBoxContext: SubscriptionConfigurationContext = {
 			'logging.level',
 			'dns.local_upstream', 'dns.remote_upstream', 'dns.remote_port', 'dns.bootstrap_upstream', 'dns.bootstrap_port',
 			'dns.bootstrap_server_name', 'dns.fake_ip', 'dns.split', 'dns.native', 'dns.prefer_ipv4',
-			'dns.remote_server_name', 'dns.remote_detour', 'dns.reject_https',
+			'dns.remote_server_name', 'dns.remote_detour', 'dns.reject_https', 'dns.system_takeover',
 			'routing.rules', 'routing.rule_providers', 'routing.selector', 'routing.url_test',
 			'native_override', 'private_access', 'inbound.local_proxy', 'transparent.tun', 'transparent.tun.address',
 			'transparent.tproxy', 'transparent.interface_policy', 'management.external_api',
@@ -156,6 +156,29 @@ describe('ProxySubscribeEditor', () => {
 
 		fireEvent.click(await screen.findByRole('button', { name: 'DNS Config' }))
 		expect(screen.getByDisplayValue('local')).toBeInTheDocument()
+	})
+
+	it('offers network inventory addresses for system DNS listen hosts', async () => {
+		localStorage.setItem('sempre.locale', 'en')
+		const { onSave } = renderEditor({
+			profile: {
+				...profile,
+				use_system_dns: false,
+				editor: { ...profile.editor, dns_config: JSON.stringify({ shared: { systemDnsTakeoverEnabled: true } }) },
+			},
+		})
+
+		fireEvent.click(await screen.findByRole('button', { name: 'DNS Config' }))
+		vi.useFakeTimers()
+		expect(screen.getByText('10.23.0.200 · vmbr0')).toBeInTheDocument()
+		expect(screen.getByText('10.10.10.1 · vmbr1')).toBeInTheDocument()
+
+		fireEvent.click(screen.getByText('10.10.10.1 · vmbr1'))
+		await act(async () => vi.advanceTimersByTime(800))
+
+		expect(onSave).toHaveBeenCalledTimes(1)
+		const dnsConfig = JSON.parse(onSave.mock.calls[0][0].editor.dns_config)
+		expect(dnsConfig.shared.systemDnsListenHosts).toEqual(['127.0.0.1', '10.10.10.1'])
 	})
 
 	it('starts Subscribe URL empty and allows deleting the last source', async () => {

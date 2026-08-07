@@ -356,6 +356,65 @@ func TestSingBoxSystemDNSTakeoverAddsLocalDNSListener(t *testing.T) {
 	}
 }
 
+func TestSingBoxSystemDNSTakeoverAddsSelectedDNSListeners(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false, "localDns": "223.5.5.5", "systemDnsTakeoverEnabled": true, "systemDnsListenHosts": []any{"127.0.0.1", "10.10.10.1"},
+	}}
+
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	inbounds := config["inbounds"].([]any)
+	loopback := mapByKey(t, inbounds, "tag", "system-dns-in")
+	lan := mapByKey(t, inbounds, "tag", "system-dns-in-1")
+	if loopback["listen"] != "127.0.0.1" || lan["listen"] != "10.10.10.1" {
+		t.Fatalf("system DNS inbounds = %#v %#v", loopback, lan)
+	}
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	if !reflect.DeepEqual(rules[0], map[string]any{"inbound": "system-dns-in", "action": "sniff"}) ||
+		!reflect.DeepEqual(rules[2], map[string]any{"inbound": "system-dns-in-1", "action": "sniff"}) {
+		t.Fatalf("system DNS route rules = %#v", rules[:4])
+	}
+}
+
+func TestSingBoxSystemDNSTakeoverWildcardDNSListenerIsExclusive(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false, "localDns": "223.5.5.5", "systemDnsTakeoverEnabled": true, "systemDnsListenHosts": []any{"127.0.0.1", "0.0.0.0", "10.10.10.1"},
+	}}
+
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	inbound := mapByKey(t, config["inbounds"].([]any), "tag", "system-dns-in-any")
+	if inbound["listen"] != "0.0.0.0" || inbound["listen_port"] != float64(53) {
+		t.Fatalf("system DNS wildcard inbound = %#v", inbound)
+	}
+}
+
+func TestSingBoxSystemDNSTakeoverRequiresLoopbackOrWildcard(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"fakeipEnabled": false, "localDns": "223.5.5.5", "systemDnsTakeoverEnabled": true, "systemDnsListenHosts": []any{"10.10.10.1"},
+	}}
+
+	_, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1 or 0.0.0.0") {
+		t.Fatalf("system DNS takeover error = %v", err)
+	}
+}
+
 func TestSingBoxSystemDNSTakeoverRequiresExplicitLocalDNS(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
 	profile.DNS = map[string]any{"shared": map[string]any{"systemDnsTakeoverEnabled": true}}

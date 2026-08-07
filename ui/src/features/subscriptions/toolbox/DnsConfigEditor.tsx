@@ -1,4 +1,4 @@
-import { Input, InputNumber, Select, Switch, Tabs } from "@acme/components";
+import { Checkbox, Input, InputNumber, Select, Switch, Tabs } from "@acme/components";
 import type { DnsConfig, DnsSharedConfig } from "@acme/types";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { parse as parseJsonc } from "jsonc-parser";
@@ -28,7 +28,13 @@ const CLIENT_DEFAULT_SHARED: Required<DnsSharedConfig> = {
   preferIpv4: true,
   systemDnsTakeoverEnabled: false,
   systemDnsListenPort: 53,
+  systemDnsListenHosts: ["127.0.0.1"],
 };
+
+export interface SystemDnsListenHostOption {
+  value: string;
+  label: string;
+}
 
 interface DnsConfigEditorProps {
   value?: string;
@@ -36,6 +42,7 @@ interface DnsConfigEditorProps {
   readOnly?: boolean;
   nativeTarget?: { key: string; label: string };
   features?: string[];
+  systemDnsListenHostOptions?: SystemDnsListenHostOption[];
 }
 
 const parseDnsConfig = (jsonc: string | undefined): DnsConfig => {
@@ -63,7 +70,7 @@ const serializeDnsConfig = (config: DnsConfig): string => {
   return Object.keys(result).length > 0 ? JSON.stringify(result, null, 2) : "";
 };
 
-const DnsConfigEditor = ({ value, onChange, readOnly, nativeTarget, features = [] }: DnsConfigEditorProps) => {
+const DnsConfigEditor = ({ value, onChange, readOnly, nativeTarget, features = [], systemDnsListenHostOptions = [] }: DnsConfigEditorProps) => {
   const { t } = useTranslation();
   const [tab, setTab] = useState<TopTab>("shared");
   const parsed = useMemo(() => parseDnsConfig(value), [value]);
@@ -121,7 +128,7 @@ const DnsConfigEditor = ({ value, onChange, readOnly, nativeTarget, features = [
       ) : null}
 
       {visibleTab === "shared" || readOnly ? (
-        <SharedForm merged={mergedShared} readOnly={readOnly} features={features} onFieldChange={handleSharedChange} />
+        <SharedForm merged={mergedShared} readOnly={readOnly} features={features} systemDnsListenHostOptions={systemDnsListenHostOptions} onFieldChange={handleSharedChange} />
       ) : null}
 
       {visibleTab === "native" && nativeTarget && !readOnly ? (
@@ -147,13 +154,36 @@ interface SharedFormProps {
   merged: Required<DnsSharedConfig>;
   readOnly?: boolean;
   features: string[];
+  systemDnsListenHostOptions: SystemDnsListenHostOption[];
   onFieldChange: (field: keyof DnsSharedConfig, value: unknown) => void;
 }
 
-const SharedForm = ({ merged, readOnly, features, onFieldChange }: SharedFormProps) => {
+const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, onFieldChange }: SharedFormProps) => {
   const { t } = useTranslation();
   const disabled = readOnly ?? false;
   const supported = new Set(features);
+  const listenHostOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const result = [
+      { value: "127.0.0.1", label: "127.0.0.1" },
+      { value: "0.0.0.0", label: "0.0.0.0" },
+      ...systemDnsListenHostOptions,
+    ].filter((option) => {
+      if (seen.has(option.value)) return false;
+      seen.add(option.value);
+      return true;
+    });
+    const wildcard = merged.systemDnsListenHosts.includes("0.0.0.0");
+    return result.map((option) => ({ ...option, disabled: wildcard && option.value !== "0.0.0.0" }));
+  }, [merged.systemDnsListenHosts, systemDnsListenHostOptions]);
+  const handleListenHostsChange = (values: Array<string | number>) => {
+    const hosts = values.map(String);
+    if (hosts.includes("0.0.0.0")) {
+      onFieldChange("systemDnsListenHosts", ["0.0.0.0"]);
+      return;
+    }
+    onFieldChange("systemDnsListenHosts", hosts.length > 0 ? hosts : ["127.0.0.1"]);
+  };
   return (
     <div className="space-y-4">
       {supported.has("dns.local_upstream") ? (
@@ -218,6 +248,7 @@ const SharedForm = ({ merged, readOnly, features, onFieldChange }: SharedFormPro
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <FieldRow label={t("proxy.form.dnsSystemTakeover")}><Switch size="small" checked={merged.systemDnsTakeoverEnabled} disabled={disabled} onChange={(next) => onFieldChange("systemDnsTakeoverEnabled", next)} /></FieldRow>
             <FieldRow label={t("proxy.form.dnsSystemListenPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.systemDnsListenPort} disabled={disabled || !merged.systemDnsTakeoverEnabled} onChange={(next) => onFieldChange("systemDnsListenPort", next)} /></FieldRow>
+            <FieldRow label={t("proxy.form.dnsSystemListenHosts")} span2><Checkbox.Group options={listenHostOptions} value={merged.systemDnsListenHosts} disabled={disabled || !merged.systemDnsTakeoverEnabled} onChange={handleListenHostsChange} /></FieldRow>
           </div>
         </>
       ) : null}

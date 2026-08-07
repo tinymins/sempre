@@ -34,6 +34,8 @@ export const DnsSharedConfigSchema = z.object({
   systemDnsTakeoverEnabled: z.boolean().optional(),
   /** Linux system daemon DNS listener port, default 53 */
   systemDnsListenPort: z.number().int().min(1).max(65535).optional(),
+  /** Linux system daemon DNS listener hosts, default ["127.0.0.1"] */
+  systemDnsListenHosts: z.array(z.string()).optional(),
 });
 
 export type DnsSharedConfig = z.infer<typeof DnsSharedConfigSchema>;

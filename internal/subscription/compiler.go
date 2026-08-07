@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -663,7 +664,9 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	final := normalizeOutboundName(clashFinalGroup(groups))
 	routeRules := []any{}
 	if target.Platform == "default" && shared.SystemDNSTakeoverEnabled {
-		routeRules = append(routeRules, map[string]any{"inbound": "system-dns-in", "action": "sniff"}, map[string]any{"inbound": "system-dns-in", "protocol": "dns", "action": "hijack-dns"})
+		for _, tag := range systemDNSInboundTags(shared.SystemDNSListenHosts) {
+			routeRules = append(routeRules, map[string]any{"inbound": tag, "action": "sniff"}, map[string]any{"inbound": tag, "protocol": "dns", "action": "hijack-dns"})
+		}
 	}
 	if modern {
 		routeRules = append(routeRules, map[string]any{"action": "sniff"}, map[string]any{"protocol": "dns", "action": "hijack-dns"})
@@ -800,7 +803,9 @@ func (compiler *Compiler) loadRuleProviders(
 func singBoxInbounds(target Target, modern bool, transparent TransparentProxyConfig, localProxy LocalProxyConfig, shared dnsShared) []any {
 	inbounds := localProxySingBoxInbounds(localProxy)
 	if target.Platform == "default" && shared.SystemDNSTakeoverEnabled {
-		inbounds = append(inbounds, map[string]any{"type": "direct", "tag": "system-dns-in", "listen": "127.0.0.1", "listen_port": shared.SystemDNSListenPort, "override_address": "1.1.1.1", "override_port": 53})
+		for index, host := range shared.SystemDNSListenHosts {
+			inbounds = append(inbounds, map[string]any{"type": "direct", "tag": systemDNSInboundTag(host, index), "listen": host, "listen_port": shared.SystemDNSListenPort, "override_address": "1.1.1.1", "override_port": 53})
+		}
 	}
 	if target.Platform != "default" {
 		inbound := map[string]any{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "stack": "mixed"}
@@ -918,6 +923,7 @@ func localDNSServer(value string) (string, bool) {
 type dnsShared struct {
 	LocalDNS, FakeIPIPv4Range, FakeIPIPv6Range                                   string
 	BootstrapDNS, BootstrapServerName, RemoteDNS, RemoteServerName, RemoteDetour string
+	SystemDNSListenHosts                                                         []string
 	LocalDNSPort, FakeIPTTL                                                      int
 	BootstrapDNSPort, RemoteDNSPort                                              int
 	SystemDNSListenPort                                                          int
@@ -926,7 +932,7 @@ type dnsShared struct {
 }
 
 func resolveDNSShared(config map[string]any) dnsShared {
-	result := dnsShared{LocalDNS: "local", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true, SystemDNSListenPort: 53}
+	result := dnsShared{LocalDNS: "local", LocalDNSPort: 53, FakeIPIPv4Range: "198.18.0.0/15", FakeIPIPv6Range: "fc00::/18", FakeIPEnabled: true, FakeIPTTL: 300, RejectHTTPS: true, CNDomainLocalDNS: true, BootstrapDNS: "223.5.5.5", BootstrapDNSPort: 853, BootstrapServerName: "dns.alidns.com", RemoteDNS: "8.8.8.8", RemoteDNSPort: 853, RemoteServerName: "dns.google", PreferIPv4: true, SystemDNSListenPort: 53, SystemDNSListenHosts: []string{"127.0.0.1"}}
 	shared := config
 	if nested, ok := objectValue(config["shared"]); ok {
 		shared = nested
@@ -949,6 +955,7 @@ func resolveDNSShared(config map[string]any) dnsShared {
 	result.PreferIPv4 = boolDefault(shared["preferIpv4"], result.PreferIPv4)
 	result.SystemDNSTakeoverEnabled = boolDefault(shared["systemDnsTakeoverEnabled"], result.SystemDNSTakeoverEnabled)
 	result.SystemDNSListenPort = integerDefault(shared["systemDnsListenPort"], result.SystemDNSListenPort)
+	result.SystemDNSListenHosts = normalizeSystemDNSListenHosts(stringListValue(shared["systemDnsListenHosts"]))
 	return result
 }
 
@@ -962,6 +969,9 @@ func validateSingBoxSystemDNS(shared dnsShared, target Target, profile Profile) 
 	if shared.SystemDNSListenPort != 53 {
 		return fmt.Errorf("system DNS takeover requires listen port 53 because resolv.conf cannot specify ports")
 	}
+	if !containsString(shared.SystemDNSListenHosts, "127.0.0.1") && !containsString(shared.SystemDNSListenHosts, "0.0.0.0") {
+		return fmt.Errorf("system DNS takeover listen hosts must include 127.0.0.1 or 0.0.0.0")
+	}
 	if _, localSystem := localDNSServer(shared.LocalDNS); localSystem {
 		return fmt.Errorf("system DNS takeover requires an explicit local DNS upstream instead of local")
 	}
@@ -971,6 +981,48 @@ func validateSingBoxSystemDNS(shared dnsShared, target Target, profile Profile) 
 		}
 	}
 	return nil
+}
+
+func normalizeSystemDNSListenHosts(values []string) []string {
+	hosts := []string{}
+	for _, value := range values {
+		host := strings.TrimSpace(value)
+		if host == "" {
+			continue
+		}
+		address, err := netip.ParseAddr(host)
+		if err != nil || !address.Is4() {
+			continue
+		}
+		host = address.String()
+		if host == "0.0.0.0" {
+			return []string{"0.0.0.0"}
+		}
+		hosts = appendUnique(hosts, host)
+	}
+	if len(hosts) == 0 {
+		return []string{"127.0.0.1"}
+	}
+	return hosts
+}
+
+func systemDNSInboundTags(hosts []string) []string {
+	tags := make([]string, 0, len(hosts))
+	for index, host := range hosts {
+		tags = append(tags, systemDNSInboundTag(host, index))
+	}
+	return tags
+}
+
+func systemDNSInboundTag(host string, index int) string {
+	switch host {
+	case "127.0.0.1":
+		return "system-dns-in"
+	case "0.0.0.0":
+		return "system-dns-in-any"
+	default:
+		return fmt.Sprintf("system-dns-in-%d", index)
+	}
 }
 
 func validateManagedOverrides(profile Profile, target Target) error {
@@ -1417,6 +1469,23 @@ func appendUnique(target []string, values ...string) []string {
 		}
 	}
 	return target
+}
+func stringListValue(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return values
+	case []any:
+		result := []string{}
+		for _, item := range values {
+			text, ok := item.(string)
+			if ok {
+				result = append(result, text)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 func normalizeOutboundName(value string) string {
 	switch value {

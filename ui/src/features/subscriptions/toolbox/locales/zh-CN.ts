@@ -174,6 +174,7 @@ export default {
 		dnsSystemSection: "本机系统 DNS",
 		dnsSystemTakeover: "接管本机 DNS",
 		dnsSystemListenPort: "监听端口",
+		dnsSystemListenHosts: "监听地址",
     dnsDnsRules: "DNS 规则",
     dnsNativeHint: "使用平台原生 DNS 配置格式",
     dnsOverrideHint: "覆盖默认 DNS 配置",

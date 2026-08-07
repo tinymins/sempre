@@ -177,6 +177,7 @@ export default {
 		dnsSystemSection: "System DNS",
 		dnsSystemTakeover: "Take over system DNS",
 		dnsSystemListenPort: "Listen port",
+		dnsSystemListenHosts: "Listen addresses",
     dnsDnsRules: "DNS Rules",
     dnsNativeHint: "Use platform native DNS configuration format",
     dnsOverrideHint: "Override default DNS configuration",
