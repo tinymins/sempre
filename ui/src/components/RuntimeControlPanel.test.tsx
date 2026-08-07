@@ -116,6 +116,33 @@ describe('RuntimeControlPanel', () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/restart', expect.objectContaining({ method: 'POST' })))
   })
+
+  it('describes a starting pending deployment as health-checking', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...runningStatus,
+      runtime_state: 'starting',
+      pending: true,
+      actions: {
+        start: { allowed: false, reason: 'managed core is starting' },
+        stop: { allowed: true },
+        restart: { allowed: false, reason: 'managed core is starting' },
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    renderRuntimePanel()
+
+    expect(await screen.findByText('The new core or configuration is being health-checked and will be committed after about 10 seconds.')).toBeInTheDocument()
+  })
+
+  it('keeps the generic pending message outside startup health checks', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...runningStatus,
+      runtime_state: 'restarting',
+      pending: true,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    renderRuntimePanel()
+
+    expect(await screen.findByText('A core or configuration change is pending and will be committed after the core runs successfully.')).toBeInTheDocument()
+  })
 })
 
 describe('ConfirmDialog', () => {
