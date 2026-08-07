@@ -71,6 +71,8 @@ type Plan struct {
 	CaptureHost      bool
 	LANInterfaces    []string
 	ExcludedPrefixes []string
+	FakeIPPrefixes   []string
+	FakeIPConflicts  []string
 }
 
 func (plan Plan) Enabled() bool {
@@ -171,17 +173,18 @@ func (controller *Controller) Prepare(
 			return Plan{}, err
 		}
 	}
+	fakeIPPrefixes := fakeIPPrefixesForCore(coreID, document)
 	switch transparent.Mode {
 	case subscriptions.TransparentProxyTUN:
 		switch coreID {
 		case "sing-box":
-			plan, err = prepareTUN(plan, transparent, inventory, document)
+			plan, err = prepareTUN(plan, transparent, inventory, document, fakeIPPrefixes)
 		case "mihomo":
-			plan, err = prepareMihomoTUN(plan, transparent, inventory, document)
+			plan, err = prepareMihomoTUN(plan, transparent, inventory, document, fakeIPPrefixes)
 		case "clash-rs":
-			plan, err = prepareClashRSTUN(plan, transparent, inventory, document)
+			plan, err = prepareClashRSTUN(plan, transparent, inventory, document, fakeIPPrefixes)
 		case "xray":
-			plan, err = prepareXrayTUN(plan, transparent, inventory, document)
+			plan, err = prepareXrayTUN(plan, transparent, inventory, document, fakeIPPrefixes)
 		default:
 			err = fmt.Errorf("%s does not support tun-router mode", coreID)
 		}
@@ -328,6 +331,7 @@ func (controller *Controller) Diagnostics(
 		{Name: "Linux split DNS configuration", Err: validateSplitDNS(plan.Core, document)},
 		{Name: "Linux domestic and foreign routing", Err: validateSplitRouting(plan.Core, document)},
 	}
+	diagnostics = append(diagnostics, fakeIPDiagnostics(plan)...)
 	return append(diagnostics, controller.backend.Diagnostics(ctx, plan)...)
 }
 
@@ -375,6 +379,9 @@ func (controller *Controller) runtimePlan(
 			plan.TUNInterface, _ = settings["name"].(string)
 			plan.TUNAddress = firstString(settings["gateway"])
 		}
+		plan.FakeIPPrefixes = fakeIPPrefixesForCore(coreID, document)
+		plan.RouteExclusions = runtimeRouteExclusions(coreID, document)
+		plan.FakeIPConflicts = fakeIPRouteConflicts(plan.FakeIPPrefixes, inventory)
 		plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
 	} else {
 		config := profile.TransparentProxy
@@ -549,19 +556,13 @@ func prepareTUN(
 	config subscriptions.TransparentProxyConfig,
 	inventory Inventory,
 	document map[string]any,
+	fakeIPPrefixes []string,
 ) (Plan, error) {
 	address, err := resolveTUNAddress(config.TUN.Address, inventory.OccupiedPrefixes)
 	if err != nil {
 		return Plan{}, err
 	}
-	exclusions := append([]string{}, config.RouteExclusions...)
-	if config.AutoExcludeLocalRoutes {
-		exclusions = append(exclusions, inventory.LocalPrefixes...)
-	}
-	if config.AutoExcludeVPNRoutes {
-		exclusions = append(exclusions, inventory.VPNPrefixes...)
-	}
-	exclusions = normalizedPrefixes(exclusions)
+	exclusions := tunRouteExclusions(config, inventory, fakeIPPrefixes)
 	inbound, err := findInbound(document, "tun-in", "tun")
 	if err != nil {
 		return Plan{}, err
@@ -590,6 +591,8 @@ func prepareTUN(
 	plan.TUNInterface = config.TUN.InterfaceName
 	plan.TUNAddress = address
 	plan.RouteExclusions = exclusions
+	plan.FakeIPPrefixes = fakeIPPrefixes
+	plan.FakeIPConflicts = fakeIPRouteConflicts(fakeIPPrefixes, inventory)
 	plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
 	return plan, nil
 }
@@ -631,15 +634,9 @@ func prepareMihomoTUN(
 	config subscriptions.TransparentProxyConfig,
 	inventory Inventory,
 	document map[string]any,
+	fakeIPPrefixes []string,
 ) (Plan, error) {
-	exclusions := append([]string{}, config.RouteExclusions...)
-	if config.AutoExcludeLocalRoutes {
-		exclusions = append(exclusions, inventory.LocalPrefixes...)
-	}
-	if config.AutoExcludeVPNRoutes {
-		exclusions = append(exclusions, inventory.VPNPrefixes...)
-	}
-	exclusions = normalizedPrefixes(exclusions)
+	exclusions := tunRouteExclusions(config, inventory, fakeIPPrefixes)
 	tun := object(document["tun"])
 	tun["enable"] = true
 	tun["device"] = config.TUN.InterfaceName
@@ -664,6 +661,8 @@ func prepareMihomoTUN(
 	document["tun"] = tun
 	plan.TUNInterface = config.TUN.InterfaceName
 	plan.RouteExclusions = exclusions
+	plan.FakeIPPrefixes = fakeIPPrefixes
+	plan.FakeIPConflicts = fakeIPRouteConflicts(fakeIPPrefixes, inventory)
 	plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
 	return plan, nil
 }
@@ -673,18 +672,13 @@ func prepareClashRSTUN(
 	config subscriptions.TransparentProxyConfig,
 	inventory Inventory,
 	document map[string]any,
+	fakeIPPrefixes []string,
 ) (Plan, error) {
 	address, err := resolveTUNAddress(config.TUN.Address, inventory.OccupiedPrefixes)
 	if err != nil {
 		return Plan{}, err
 	}
-	exclusions := append([]string{}, config.RouteExclusions...)
-	if config.AutoExcludeLocalRoutes {
-		exclusions = append(exclusions, inventory.LocalPrefixes...)
-	}
-	if config.AutoExcludeVPNRoutes {
-		exclusions = append(exclusions, inventory.VPNPrefixes...)
-	}
+	exclusions := tunRouteExclusions(config, inventory, fakeIPPrefixes)
 	tun := object(document["tun"])
 	tun["enable"] = true
 	tun["device"] = config.TUN.InterfaceName
@@ -694,7 +688,9 @@ func prepareClashRSTUN(
 	document["tun"] = tun
 	plan.TUNInterface = config.TUN.InterfaceName
 	plan.TUNAddress = address
-	plan.RouteExclusions = normalizedPrefixes(exclusions)
+	plan.RouteExclusions = exclusions
+	plan.FakeIPPrefixes = fakeIPPrefixes
+	plan.FakeIPConflicts = fakeIPRouteConflicts(fakeIPPrefixes, inventory)
 	plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
 	return plan, nil
 }
@@ -733,6 +729,7 @@ func prepareXrayTUN(
 	config subscriptions.TransparentProxyConfig,
 	inventory Inventory,
 	document map[string]any,
+	fakeIPPrefixes []string,
 ) (Plan, error) {
 	address, err := resolveTUNAddress(config.TUN.Address, inventory.OccupiedPrefixes)
 	if err != nil {
@@ -748,14 +745,7 @@ func prepareXrayTUN(
 	settings["autoSystemRoutingTable"] = []string{"0.0.0.0/0", "::/0"}
 	settings["autoOutboundsInterface"] = "auto"
 	inbound["settings"] = settings
-	exclusions := append([]string{}, config.RouteExclusions...)
-	if config.AutoExcludeLocalRoutes {
-		exclusions = append(exclusions, inventory.LocalPrefixes...)
-	}
-	if config.AutoExcludeVPNRoutes {
-		exclusions = append(exclusions, inventory.VPNPrefixes...)
-	}
-	exclusions = normalizedPrefixes(exclusions)
+	exclusions := tunRouteExclusions(config, inventory, fakeIPPrefixes)
 	if len(exclusions) > 0 {
 		routing := object(document["routing"])
 		rules, _ := routing["rules"].([]any)
@@ -766,6 +756,8 @@ func prepareXrayTUN(
 	plan.TUNInterface = config.TUN.InterfaceName
 	plan.TUNAddress = address
 	plan.RouteExclusions = exclusions
+	plan.FakeIPPrefixes = fakeIPPrefixes
+	plan.FakeIPConflicts = fakeIPRouteConflicts(fakeIPPrefixes, inventory)
 	plan.LANInterfaces = append([]string{}, inventory.RecommendedLANInterfaces...)
 	return plan, nil
 }
@@ -1148,6 +1140,161 @@ func normalizedPrefixes(values []string) []string {
 			result = append(result, prefix.String())
 		}
 	}
+	return result
+}
+
+func tunRouteExclusions(config subscriptions.TransparentProxyConfig, inventory Inventory, fakeIPPrefixes []string) []string {
+	exclusions := append([]string{}, config.RouteExclusions...)
+	if config.AutoExcludeLocalRoutes {
+		exclusions = append(exclusions, inventory.LocalPrefixes...)
+	}
+	if config.AutoExcludeVPNRoutes {
+		exclusions = append(exclusions, inventory.VPNPrefixes...)
+	}
+	return filterFakeIPRouteExclusions(exclusions, fakeIPPrefixes)
+}
+
+func filterFakeIPRouteExclusions(exclusions, fakeIPPrefixes []string) []string {
+	normalized := normalizedPrefixes(exclusions)
+	fakeIPs := parsePrefixes(fakeIPPrefixes)
+	if len(fakeIPs) == 0 {
+		return normalized
+	}
+	result := make([]string, 0, len(normalized))
+	for _, exclusion := range normalized {
+		prefix, err := netip.ParsePrefix(exclusion)
+		if err != nil || prefixOverlapsAny(prefix.Masked(), fakeIPs) {
+			continue
+		}
+		result = append(result, exclusion)
+	}
+	return result
+}
+
+func fakeIPPrefixesForCore(coreID string, document map[string]any) []string {
+	switch coreID {
+	case "sing-box":
+		return singBoxFakeIPPrefixes(document)
+	case "mihomo", "clash-rs":
+		return mihomoFakeIPPrefixes(document)
+	default:
+		return nil
+	}
+}
+
+func singBoxFakeIPPrefixes(document map[string]any) []string {
+	dns := object(document["dns"])
+	prefixes := []string{}
+	servers, _ := dns["servers"].([]any)
+	for _, value := range servers {
+		server, _ := value.(map[string]any)
+		if server["type"] != "fakeip" {
+			continue
+		}
+		prefixes = append(prefixes, stringValue(server["inet4_range"]), stringValue(server["inet6_range"]))
+	}
+	fakeIP := object(dns["fakeip"])
+	if len(fakeIP) > 0 && fakeIP["enabled"] != false {
+		prefixes = append(prefixes, stringValue(fakeIP["inet4_range"]), stringValue(fakeIP["inet6_range"]))
+	}
+	return normalizedPrefixes(prefixes)
+}
+
+func mihomoFakeIPPrefixes(document map[string]any) []string {
+	dns := object(document["dns"])
+	if dns["enhanced-mode"] != "fake-ip" {
+		return nil
+	}
+	return normalizedPrefixes([]string{
+		stringValue(dns["fake-ip-range"]),
+		stringValue(dns["fake-ip-range6"]),
+	})
+}
+
+func runtimeRouteExclusions(coreID string, document map[string]any) []string {
+	switch coreID {
+	case "sing-box":
+		inbound, err := findInbound(document, "tun-in", "tun")
+		if err != nil {
+			return nil
+		}
+		return normalizedPrefixes(stringValues(inbound["route_exclude_address"]))
+	case "mihomo", "clash-rs":
+		tun := object(document["tun"])
+		return normalizedPrefixes(stringValues(tun["route-exclude-address"]))
+	case "xray":
+		return xrayRuntimeRouteExclusions(document)
+	default:
+		return nil
+	}
+}
+
+func xrayRuntimeRouteExclusions(document map[string]any) []string {
+	routing := object(document["routing"])
+	rules, _ := routing["rules"].([]any)
+	exclusions := []string{}
+	for _, value := range rules {
+		rule, _ := value.(map[string]any)
+		if rule["outboundTag"] == "direct" {
+			exclusions = append(exclusions, stringValues(rule["ip"])...)
+		}
+	}
+	return normalizedPrefixes(exclusions)
+}
+
+func fakeIPDiagnostics(plan Plan) []Diagnostic {
+	if len(plan.FakeIPPrefixes) == 0 {
+		return nil
+	}
+	diagnostics := []Diagnostic{}
+	if conflicts := fakeIPRouteExclusionConflicts(plan.RouteExclusions, plan.FakeIPPrefixes); len(conflicts) > 0 {
+		diagnostics = append(diagnostics, Diagnostic{
+			Name: "Linux fake-ip route capture",
+			Err:  fmt.Errorf("fake-ip ranges must not be excluded from TUN capture: %s", strings.Join(conflicts, ", ")),
+		})
+	}
+	if len(plan.FakeIPConflicts) > 0 {
+		diagnostics = append(diagnostics, Diagnostic{
+			Name:    "Linux fake-ip route overlap",
+			Err:     fmt.Errorf("fake-ip ranges overlap local or VPN routes; Sempre ignores matching TUN exclusions and relies on core auto-redirect/fwmark capture: %s", strings.Join(plan.FakeIPConflicts, ", ")),
+			Warning: true,
+		})
+	}
+	return diagnostics
+}
+
+func fakeIPRouteExclusionConflicts(exclusions, fakeIPPrefixes []string) []string {
+	return overlappingPrefixDetails(fakeIPPrefixes, exclusions, "excluded route")
+}
+
+func fakeIPRouteConflicts(fakeIPPrefixes []string, inventory Inventory) []string {
+	result := overlappingPrefixDetails(fakeIPPrefixes, inventory.LocalPrefixes, "local route")
+	result = append(result, overlappingPrefixDetails(fakeIPPrefixes, inventory.VPNPrefixes, "VPN route")...)
+	sort.Strings(result)
+	return result
+}
+
+func overlappingPrefixDetails(leftPrefixes, rightPrefixes []string, rightLabel string) []string {
+	left := parsePrefixes(leftPrefixes)
+	result := []string{}
+	seen := map[string]bool{}
+	for _, value := range rightPrefixes {
+		right, err := netip.ParsePrefix(value)
+		if err != nil || !prefixOverlapsAny(right.Masked(), left) {
+			continue
+		}
+		for _, fakeIP := range left {
+			if !prefixOverlapsAny(fakeIP, []netip.Prefix{right.Masked()}) {
+				continue
+			}
+			detail := fmt.Sprintf("%s overlaps %s %s", fakeIP, rightLabel, value)
+			if !seen[detail] {
+				result = append(result, detail)
+				seen[detail] = true
+			}
+		}
+	}
+	sort.Strings(result)
 	return result
 }
 

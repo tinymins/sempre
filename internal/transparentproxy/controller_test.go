@@ -119,6 +119,48 @@ func TestPrepareTUNRejectsExplicitCollision(t *testing.T) {
 	}
 }
 
+func TestPrepareTUNKeepsFakeIPOutOfRouteExclusions(t *testing.T) {
+	backend := &fakeBackend{
+		forwarding: true,
+		inventory: Inventory{
+			Interfaces:               []Interface{{Name: "vmbr1", Up: true, Kind: "bridge"}},
+			RecommendedLANInterfaces: []string{"vmbr1"},
+			LocalPrefixes:            []string{"10.10.10.0/24"},
+			VPNPrefixes:              []string{"198.18.0.0/16"},
+			OccupiedPrefixes:         []string{"10.10.10.0/24"},
+		},
+	}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("gateway")
+	profile.TransparentProxy.RouteExclusions = []string{"198.18.10.0/24"}
+	path := writeRuntimeConfig(t, map[string]any{
+		"inbounds": []any{map[string]any{"type": "tun", "tag": "tun-in"}},
+		"dns": map[string]any{"servers": []any{
+			map[string]any{"tag": "fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15"},
+		}},
+		"route": map[string]any{},
+	})
+
+	plan, err := controller.Prepare(context.Background(), "sing-box", profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalStrings(plan.RouteExclusions, []string{"10.10.10.0/24"}) {
+		t.Fatalf("route exclusions = %#v", plan.RouteExclusions)
+	}
+	if !equalStrings(plan.FakeIPPrefixes, []string{"198.18.0.0/15"}) {
+		t.Fatalf("fake-ip prefixes = %#v", plan.FakeIPPrefixes)
+	}
+	if len(plan.FakeIPConflicts) == 0 || !strings.Contains(plan.FakeIPConflicts[0], "VPN route 198.18.0.0/16") {
+		t.Fatalf("fake-ip conflicts = %#v", plan.FakeIPConflicts)
+	}
+	document := readRuntimeConfig(t, path)
+	inbound := document["inbounds"].([]any)[0].(map[string]any)
+	if got := stringValues(inbound["route_exclude_address"]); !equalStrings(got, []string{"10.10.10.0/24"}) {
+		t.Fatalf("runtime route_exclude_address = %#v", got)
+	}
+}
+
 func TestPrepareTProxyUsesRecommendedLANAndMarksCoreOutbounds(t *testing.T) {
 	backend := &fakeBackend{
 		forwarding: true,
@@ -265,6 +307,44 @@ func TestPrepareMihomoTUNAndTProxyRuntime(t *testing.T) {
 	document = readYAMLRuntimeConfig(t, path)
 	if mark, ok := numberAsUint32(document["routing-mark"]); !ok || mark != BypassMark {
 		t.Fatalf("Mihomo routing mark = %#v", document["routing-mark"])
+	}
+}
+
+func TestPrepareMihomoTUNKeepsFakeIPOutOfRouteExclusions(t *testing.T) {
+	backend := &fakeBackend{
+		forwarding: true,
+		inventory: Inventory{
+			Interfaces:               []Interface{{Name: "vmbr1"}},
+			RecommendedLANInterfaces: []string{"vmbr1"},
+			LocalPrefixes:            []string{"10.10.10.0/24"},
+			VPNPrefixes:              []string{"198.18.0.0/16"},
+		},
+	}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("mihomo")
+	path := writeYAMLRuntimeConfig(t, map[string]any{
+		"tun": map[string]any{},
+		"dns": map[string]any{
+			"enhanced-mode":     "fake-ip",
+			"fake-ip-range":     "198.18.0.0/15",
+			"respect-rules":     true,
+			"nameserver":        []string{"tls://dns.google:853#proxy"},
+			"nameserver-policy": map[string]any{"geosite:cn": []string{"127.0.0.1:53"}},
+		},
+		"rules": []string{"GEOIP,CN,DIRECT,no-resolve", "MATCH,proxy"},
+	})
+
+	plan, err := controller.Prepare(context.Background(), "mihomo", profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalStrings(plan.RouteExclusions, []string{"10.10.10.0/24"}) {
+		t.Fatalf("route exclusions = %#v", plan.RouteExclusions)
+	}
+	document := readYAMLRuntimeConfig(t, path)
+	tun := object(document["tun"])
+	if got := stringValues(tun["route-exclude-address"]); !equalStrings(got, []string{"10.10.10.0/24"}) {
+		t.Fatalf("runtime route-exclude-address = %#v", got)
 	}
 }
 
@@ -548,6 +628,77 @@ func TestDiagnosticsValidateLinuxRoutingAndDNSStructure(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsWarnsWhenFakeIPOverlapsLocalRoute(t *testing.T) {
+	backend := &fakeBackend{inventory: Inventory{VPNPrefixes: []string{"198.18.0.0/16"}}}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("gateway")
+	path := writeRuntimeConfig(t, map[string]any{
+		"inbounds": []any{map[string]any{
+			"type": "tun", "tag": "tun-in", "interface_name": "sempre-tun",
+			"address": []string{"172.19.0.1/30"}, "auto_route": true,
+			"auto_redirect": true, "strict_route": true, "stack": "system",
+		}},
+		"dns": map[string]any{
+			"final": "remote",
+			"servers": []any{
+				map[string]any{"tag": "fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15"},
+				map[string]any{"tag": "remote", "detour": "foreign"},
+			},
+			"rules": []any{map[string]any{"rule_set": []string{"geosite-cn"}, "server": "local"}},
+		},
+		"route": map[string]any{
+			"auto_detect_interface": true,
+			"final":                 "foreign",
+			"rules":                 []any{map[string]any{"rule_set": []string{"geosite-cn"}, "outbound": "direct"}},
+		},
+	})
+
+	diagnostics := controller.Diagnostics(context.Background(), "sing-box", profile, path)
+	diagnostic := findDiagnostic(diagnostics, "Linux fake-ip route overlap")
+	if diagnostic == nil || !diagnostic.Warning || diagnostic.Err == nil {
+		t.Fatalf("fake-ip warning diagnostic = %#v", diagnostic)
+	}
+	if !strings.Contains(diagnostic.Err.Error(), "VPN route 198.18.0.0/16") {
+		t.Fatalf("fake-ip warning = %v", diagnostic.Err)
+	}
+}
+
+func TestDiagnosticsRejectsFakeIPRouteExclusion(t *testing.T) {
+	backend := &fakeBackend{}
+	controller := &Controller{backend: backend}
+	profile := subscriptions.NewProfile("gateway")
+	path := writeRuntimeConfig(t, map[string]any{
+		"inbounds": []any{map[string]any{
+			"type": "tun", "tag": "tun-in", "interface_name": "sempre-tun",
+			"address": []string{"172.19.0.1/30"}, "auto_route": true,
+			"auto_redirect": true, "strict_route": true, "stack": "system",
+			"route_exclude_address": []string{"198.18.0.0/16"},
+		}},
+		"dns": map[string]any{
+			"final": "remote",
+			"servers": []any{
+				map[string]any{"tag": "fakeip", "type": "fakeip", "inet4_range": "198.18.0.0/15"},
+				map[string]any{"tag": "remote", "detour": "foreign"},
+			},
+			"rules": []any{map[string]any{"rule_set": []string{"geosite-cn"}, "server": "local"}},
+		},
+		"route": map[string]any{
+			"auto_detect_interface": true,
+			"final":                 "foreign",
+			"rules":                 []any{map[string]any{"rule_set": []string{"geosite-cn"}, "outbound": "direct"}},
+		},
+	})
+
+	diagnostics := controller.Diagnostics(context.Background(), "sing-box", profile, path)
+	diagnostic := findDiagnostic(diagnostics, "Linux fake-ip route capture")
+	if diagnostic == nil || diagnostic.Warning || diagnostic.Err == nil {
+		t.Fatalf("fake-ip error diagnostic = %#v", diagnostic)
+	}
+	if !strings.Contains(diagnostic.Err.Error(), "excluded route 198.18.0.0/16") {
+		t.Fatalf("fake-ip error = %v", diagnostic.Err)
+	}
+}
+
 func writeRuntimeConfig(t *testing.T, value map[string]any) string {
 	t.Helper()
 	data, err := json.Marshal(value)
@@ -641,4 +792,13 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func findDiagnostic(diagnostics []Diagnostic, name string) *Diagnostic {
+	for index := range diagnostics {
+		if diagnostics[index].Name == name {
+			return &diagnostics[index]
+		}
+	}
+	return nil
 }
