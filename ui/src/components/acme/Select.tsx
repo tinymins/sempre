@@ -67,6 +67,8 @@ export interface SelectProps {
   className?: string;
   /** Dropdown class */
   popupClassName?: string;
+  /** Match dropdown width to the select trigger */
+  popupMatchSelectWidth?: boolean;
   /** Option label prop (compatibility) */
   optionFilterProp?: string;
   /** Field names customization */
@@ -101,6 +103,7 @@ export function Select({
   style,
   className,
   popupClassName,
+  popupMatchSelectWidth = false,
   virtual = false,
   children,
 }: SelectProps) {
@@ -172,6 +175,12 @@ export function Select({
         apply({ rects, elements }) {
           Object.assign(elements.floating.style, {
             minWidth: `${rects.reference.width}px`,
+            ...(popupMatchSelectWidth
+              ? {
+                  width: `${rects.reference.width}px`,
+                  maxWidth: `${rects.reference.width}px`,
+                }
+              : {}),
           });
         },
       }),
@@ -418,7 +427,10 @@ export function Select({
               ) : null}
             </div>
           ) : hasValue ? (
-            <span className="truncate text-[var(--text-primary)]">
+            <span
+              className="truncate text-[var(--text-primary)]"
+              title={labelTitle(getLabel(value as string | number))}
+            >
               {getLabel(value as string | number)}
             </span>
           ) : (
@@ -546,7 +558,7 @@ export function Select({
                         },
                       })}
                     >
-                      <span className="flex-1">{opt.label}</span>
+                      <span className="min-w-0 flex-1 truncate" title={labelTitle(opt.label)}>{opt.label}</span>
                       {selected ? <Check className="h-4 w-4 shrink-0" /> : null}
                     </div>
                   );
@@ -558,6 +570,12 @@ export function Select({
       ) : null}
     </>
   );
+}
+
+function labelTitle(label: ReactNode) {
+  return typeof label === "string" || typeof label === "number"
+    ? String(label)
+    : undefined;
 }
 
 function VirtualList({

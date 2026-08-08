@@ -99,7 +99,7 @@ export function Gateway() {
       <Section title="Topology and LAN">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <Field label="Topology"><Select value={config.topology} options={[{ value: 'local-pve', label: 'PVE host local' }, { value: 'remote-pve', label: 'Gateway VM/LXC + PVE SSH/manual' }]} onChange={(value) => update((current) => ({ ...current, topology: value }))} /></Field>
-          <Field label="LAN interface"><Select showSearch allowClear value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
+          <Field label="LAN interface"><Select showSearch allowClear popupMatchSelectWidth className="w-full max-w-full" value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
           <Field label="Gateway CIDR"><Input value={config.lan.gateway_cidr} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, gateway_cidr: event.target.value } }))} /></Field>
           <Field label="WAN interface"><Input value={config.lan.wan_interface} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: event.target.value } }))} /></Field>
           <Field label="NAT masquerade"><Switch checked={config.lan.nat_enabled} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, nat_enabled: value } }))} /></Field>
