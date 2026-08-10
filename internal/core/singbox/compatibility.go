@@ -6,8 +6,6 @@ import (
 )
 
 type PlatformPolicy struct {
-	FakeIP              bool
-	TransparentTUN      bool
 	LegacySniffOverride bool
 	TUNDNSMode          string
 }
@@ -34,16 +32,13 @@ func ResolveCompilerVersion(coreVersion string) (string, []string) {
 }
 
 func ResolvePlatformPolicy(version, platform string) PlatformPolicy {
-	policy := PlatformPolicy{FakeIP: true, TransparentTUN: true}
+	policy := PlatformPolicy{}
 	if platform != "macos" {
 		return policy
 	}
 	switch version {
 	case "11", "12":
-		policy.FakeIP = false
 		policy.LegacySniffOverride = true
-	case "13":
-		policy.FakeIP = false
 	case "14":
 		policy.TUNDNSMode = "hijack"
 	}

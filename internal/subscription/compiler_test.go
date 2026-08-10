@@ -48,9 +48,9 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 		wantFakeIP         bool
 		binaryEnvironment  string
 	}{
-		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
-		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
-		{format: "sing-box-v13-macos", wantTUN: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
+		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
+		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
+		{format: "sing-box-v13-macos", wantTUN: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
 		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
 	}
 	for _, test := range tests {
@@ -89,9 +89,6 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 			shared := updated.DNS["shared"].(map[string]any)
 			if shared["fakeipEnabled"] != true {
 				t.Fatalf("stored FakeIP preference changed: %#v", updated.DNS)
-			}
-			if !test.wantFakeIP && !containsWarning(result.Warnings, "FakeIP is unavailable") {
-				t.Fatalf("missing compatibility warning: %#v", result.Warnings)
 			}
 			if test.format == "sing-box-v13-macos" {
 				rules := config["route"].(map[string]any)["rules"].([]any)

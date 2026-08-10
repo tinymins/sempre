@@ -573,10 +573,6 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	names := make([]string, 0, len(proxies))
 	diffs := []FieldDiff{}
 	warnings := []string{}
-	if shared.FakeIPEnabled && !policy.FakeIP {
-		shared.FakeIPEnabled = false
-		warnings = append(warnings, "FakeIP is unavailable for standalone sing-box before v1.14 on macOS; using the compatible real-IP mode")
-	}
 	for _, proxy := range proxies {
 		if target.Version == "11" && proxy.Type == "anytls" {
 			diffs = append(diffs, FieldDiff{Node: proxy.Name, Consumed: []string{}, Ignored: []string{}, Dropped: sortedKeys(proxy.Extra), Warnings: []string{"anytls requires sing-box v1.12 or newer"}, FieldOrigins: map[string]FieldOrigin{}})
@@ -790,9 +786,6 @@ func singBoxInbounds(target Target, modern bool, policy singboxcore.PlatformPoli
 		}
 	}
 	if target.Platform != "default" {
-		if !policy.TransparentTUN {
-			return inbounds
-		}
 		inbound := map[string]any{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "stack": "mixed"}
 		if target.Platform == "windows" {
 			inbound["interface_name"] = "sing-box"

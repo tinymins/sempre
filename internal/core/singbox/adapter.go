@@ -47,7 +47,6 @@ func (adapter *Adapter) Stability() string {
 
 func (adapter *Adapter) Capabilities(version string, target core.Target) core.Capabilities {
 	compilerTarget, _ := adapter.CompilerTarget(version, target)
-	policy := ResolvePlatformPolicy(compilerTarget.Version, compilerTarget.Platform)
 	features := []string{
 		core.CapabilityLoggingLevel,
 		core.CapabilityDNSLocalUpstream, core.CapabilityDNSRemoteUpstream, core.CapabilityDNSRemotePort,
@@ -55,19 +54,13 @@ func (adapter *Adapter) Capabilities(version string, target core.Target) core.Ca
 		core.CapabilityDNSBootstrapPort, core.CapabilityDNSBootstrapServerName,
 		core.CapabilityDNSRemoteServerName,
 		core.CapabilityDNSRemoteDetour, core.CapabilityDNSRejectHTTPS,
-		core.CapabilityDNSSplit, core.CapabilityDNSNative, core.CapabilityDNSPreferIPv4,
+		core.CapabilityDNSSplit, core.CapabilityDNSNative, core.CapabilityDNSPreferIPv4, core.CapabilityDNSFakeIP,
 		core.CapabilityRoutingRules, core.CapabilityRoutingRuleProviders,
 		core.CapabilityRoutingSelector, core.CapabilityRoutingURLTest,
-		core.CapabilityLocalProxy,
+		core.CapabilityLocalProxy, core.CapabilityTransparentTUN, core.CapabilityTransparentTUNAddress,
 		core.CapabilityManagementConnections, core.CapabilityManagementSelectors,
 		core.CapabilityManagementDelay, core.CapabilityManagementTraffic,
 		core.CapabilityManagementExternalAPI, core.CapabilityNativeOverride,
-	}
-	if policy.FakeIP {
-		features = append(features, core.CapabilityDNSFakeIP)
-	}
-	if policy.TransparentTUN {
-		features = append(features, core.CapabilityTransparentTUN, core.CapabilityTransparentTUNAddress)
 	}
 	if target.OS == "linux" || target.OS == "" {
 		features = append(features, core.CapabilityDNSSystemTakeover, core.CapabilityTransparentTProxy, core.CapabilityTransparentInterfaces)
