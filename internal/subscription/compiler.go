@@ -573,6 +573,13 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	names := make([]string, 0, len(proxies))
 	diffs := []FieldDiff{}
 	warnings := []string{}
+	if shared.FakeIPEnabled && !policy.FakeIP {
+		shared.FakeIPEnabled = false
+		warnings = append(warnings, "FakeIP is unavailable for standalone sing-box on macOS without system DNS integration; using the compatible real-IP mode")
+	}
+	if target.Platform == "macos" && (target.Version == "13" || target.Version == "14") {
+		warnings = append(warnings, "standalone sing-box v1.13 and newer on macOS cannot replace the removed sniff destination override; transparent TUN depends on the existing system resolver")
+	}
 	for _, proxy := range proxies {
 		if target.Version == "11" && proxy.Type == "anytls" {
 			diffs = append(diffs, FieldDiff{Node: proxy.Name, Consumed: []string{}, Ignored: []string{}, Dropped: sortedKeys(proxy.Extra), Warnings: []string{"anytls requires sing-box v1.12 or newer"}, FieldOrigins: map[string]FieldOrigin{}})
@@ -647,11 +654,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 		}
 	}
 	if modern {
-		routeRules = append(routeRules, map[string]any{"action": "sniff"})
-		if policy.ResolveSniffedDestination {
-			routeRules = append(routeRules, map[string]any{"action": "resolve"})
-		}
-		routeRules = append(routeRules, map[string]any{"protocol": "dns", "action": "hijack-dns"})
+		routeRules = append(routeRules, map[string]any{"action": "sniff"}, map[string]any{"protocol": "dns", "action": "hijack-dns"})
 	} else {
 		routeRules = append(routeRules, map[string]any{"protocol": "dns", "outbound": "dns-out"})
 	}

@@ -88,9 +88,9 @@ func TestMacOSCapabilitiesFollowCompilerVersion(t *testing.T) {
 		fakeIP  bool
 		tun     bool
 	}{
-		{version: "1.12.20", fakeIP: true, tun: true},
-		{version: "1.13.18", fakeIP: true, tun: true},
-		{version: "1.14.0-beta.13", fakeIP: true, tun: true},
+		{version: "1.12.20", tun: true},
+		{version: "1.13.18", tun: true},
+		{version: "1.14.0-beta.13", tun: true},
 	}
 	for _, test := range tests {
 		capabilities := New().Capabilities(test.version, core.Target{OS: "darwin", Arch: "arm64"})

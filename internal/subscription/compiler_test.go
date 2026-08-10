@@ -48,10 +48,10 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 		wantFakeIP         bool
 		binaryEnvironment  string
 	}{
-		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
-		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
-		{format: "sing-box-v13-macos", wantTUN: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
-		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
+		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
+		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
+		{format: "sing-box-v13-macos", wantTUN: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
+		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
 	}
 	for _, test := range tests {
 		t.Run(test.format, func(t *testing.T) {
@@ -80,6 +80,9 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 			if singBoxConfigHasFakeIP(config) != test.wantFakeIP {
 				t.Fatalf("FakeIP config = %#v", config["dns"])
 			}
+			if !containsWarning(result.Warnings, "FakeIP is unavailable") {
+				t.Fatalf("missing FakeIP compatibility warning: %#v", result.Warnings)
+			}
 			if test.format == "sing-box-v14-macos" {
 				dnsRules := config["dns"].(map[string]any)["rules"].([]any)
 				if optionalMapByKey(dnsRules, "action", "evaluate") == nil || optionalMapByKey(dnsRules, "action", "respond")["match_response"] != true {
@@ -93,9 +96,8 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 			if test.format == "sing-box-v13-macos" {
 				rules := config["route"].(map[string]any)["rules"].([]any)
 				if !reflect.DeepEqual(rules[0], map[string]any{"action": "sniff"}) ||
-					!reflect.DeepEqual(rules[1], map[string]any{"action": "resolve"}) ||
-					!reflect.DeepEqual(rules[2], map[string]any{"protocol": "dns", "action": "hijack-dns"}) {
-					t.Fatalf("v13 TUN route actions = %#v", rules[:3])
+					!reflect.DeepEqual(rules[1], map[string]any{"protocol": "dns", "action": "hijack-dns"}) {
+					t.Fatalf("v13 TUN route actions = %#v", rules[:2])
 				}
 			}
 			if binary := os.Getenv(test.binaryEnvironment); binary != "" {
