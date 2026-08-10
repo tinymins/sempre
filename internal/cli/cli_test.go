@@ -78,6 +78,8 @@ func TestAdministratorRequirement(t *testing.T) {
 	}{
 		{[]string{"status"}, layout.System, true},
 		{[]string{"status"}, layout.Portable, false},
+		{[]string{"install"}, layout.System, true},
+		{[]string{"install"}, layout.Portable, true},
 		{[]string{"service", "status"}, layout.System, false},
 		{[]string{"service", "install"}, layout.Portable, true},
 		{[]string{"bundle", "install"}, layout.Portable, true},

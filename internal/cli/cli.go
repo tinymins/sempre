@@ -561,6 +561,8 @@ func requiresAdministrator(arguments []string, mode layout.Mode) bool {
 	switch arguments[0] {
 	case "help", "-h", "--help", "version", "open":
 		return false
+	case "install":
+		return true
 	case "portable":
 		return len(arguments) == 2 && arguments[1] == "run"
 	case "service":
