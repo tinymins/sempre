@@ -577,9 +577,6 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 		shared.FakeIPEnabled = false
 		warnings = append(warnings, "FakeIP is unavailable for standalone sing-box before v1.14 on macOS; using the compatible real-IP mode")
 	}
-	if target.Platform == "macos" && target.Version == "13" {
-		warnings = append(warnings, "sing-box v1.13 on macOS supports authenticated local proxies only because this version has neither destination override nor TUN DNS takeover")
-	}
 	for _, proxy := range proxies {
 		if target.Version == "11" && proxy.Type == "anytls" {
 			diffs = append(diffs, FieldDiff{Node: proxy.Name, Consumed: []string{}, Ignored: []string{}, Dropped: sortedKeys(proxy.Extra), Warnings: []string{"anytls requires sing-box v1.12 or newer"}, FieldOrigins: map[string]FieldOrigin{}})

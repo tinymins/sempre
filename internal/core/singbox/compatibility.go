@@ -44,7 +44,6 @@ func ResolvePlatformPolicy(version, platform string) PlatformPolicy {
 		policy.LegacySniffOverride = true
 	case "13":
 		policy.FakeIP = false
-		policy.TransparentTUN = false
 	case "14":
 		policy.TUNDNSMode = "hijack"
 	}

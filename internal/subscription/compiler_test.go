@@ -50,7 +50,7 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 	}{
 		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
 		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
-		{format: "sing-box-v13-macos", binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
+		{format: "sing-box-v13-macos", wantTUN: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
 		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
 	}
 	for _, test := range tests {
@@ -93,8 +93,12 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 			if !test.wantFakeIP && !containsWarning(result.Warnings, "FakeIP is unavailable") {
 				t.Fatalf("missing compatibility warning: %#v", result.Warnings)
 			}
-			if test.format == "sing-box-v13-macos" && !containsWarning(result.Warnings, "authenticated local proxies only") {
-				t.Fatalf("missing v13 compatibility warning: %#v", result.Warnings)
+			if test.format == "sing-box-v13-macos" {
+				rules := config["route"].(map[string]any)["rules"].([]any)
+				if !reflect.DeepEqual(rules[0], map[string]any{"action": "sniff"}) ||
+					!reflect.DeepEqual(rules[1], map[string]any{"protocol": "dns", "action": "hijack-dns"}) {
+					t.Fatalf("v13 TUN route actions = %#v", rules[:2])
+				}
 			}
 			if binary := os.Getenv(test.binaryEnvironment); binary != "" {
 				configPath := filepath.Join(t.TempDir(), "config.json")
