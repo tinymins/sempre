@@ -647,7 +647,11 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 		}
 	}
 	if modern {
-		routeRules = append(routeRules, map[string]any{"action": "sniff"}, map[string]any{"protocol": "dns", "action": "hijack-dns"})
+		routeRules = append(routeRules, map[string]any{"action": "sniff"})
+		if policy.ResolveSniffedDestination {
+			routeRules = append(routeRules, map[string]any{"action": "resolve"})
+		}
+		routeRules = append(routeRules, map[string]any{"protocol": "dns", "action": "hijack-dns"})
 	} else {
 		routeRules = append(routeRules, map[string]any{"protocol": "dns", "outbound": "dns-out"})
 	}
@@ -796,9 +800,6 @@ func singBoxInbounds(target Target, modern bool, policy singboxcore.PlatformPoli
 		}
 		if policy.TUNDNSMode != "" {
 			inbound["dns_mode"] = policy.TUNDNSMode
-		}
-		if policy.TUNStack != "" {
-			inbound["stack"] = policy.TUNStack
 		}
 		return append(inbounds, inbound)
 	}

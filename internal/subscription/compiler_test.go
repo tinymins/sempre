@@ -45,14 +45,13 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 		wantTUN            bool
 		wantLegacyOverride bool
 		wantTUNDNSMode     string
-		wantTUNStack       string
 		wantFakeIP         bool
 		binaryEnvironment  string
 	}{
-		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, wantTUNStack: "gvisor", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
-		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, wantTUNStack: "gvisor", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
-		{format: "sing-box-v13-macos", wantTUN: true, wantTUNStack: "gvisor", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
-		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", wantTUNStack: "mixed", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
+		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
+		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
+		{format: "sing-box-v13-macos", wantTUN: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
+		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
 	}
 	for _, test := range tests {
 		t.Run(test.format, func(t *testing.T) {
@@ -70,7 +69,7 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 				t.Fatalf("TUN inbound = %#v", tun)
 			}
 			if tun != nil {
-				if (tun["sniff_override_destination"] == true) != test.wantLegacyOverride || stringValue(tun["dns_mode"]) != test.wantTUNDNSMode || stringValue(tun["stack"]) != test.wantTUNStack {
+				if (tun["sniff_override_destination"] == true) != test.wantLegacyOverride || stringValue(tun["dns_mode"]) != test.wantTUNDNSMode {
 					t.Fatalf("TUN compatibility = %#v", tun)
 				}
 			}
@@ -94,8 +93,9 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 			if test.format == "sing-box-v13-macos" {
 				rules := config["route"].(map[string]any)["rules"].([]any)
 				if !reflect.DeepEqual(rules[0], map[string]any{"action": "sniff"}) ||
-					!reflect.DeepEqual(rules[1], map[string]any{"protocol": "dns", "action": "hijack-dns"}) {
-					t.Fatalf("v13 TUN route actions = %#v", rules[:2])
+					!reflect.DeepEqual(rules[1], map[string]any{"action": "resolve"}) ||
+					!reflect.DeepEqual(rules[2], map[string]any{"protocol": "dns", "action": "hijack-dns"}) {
+					t.Fatalf("v13 TUN route actions = %#v", rules[:3])
 				}
 			}
 			if binary := os.Getenv(test.binaryEnvironment); binary != "" {

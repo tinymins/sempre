@@ -6,9 +6,9 @@ import (
 )
 
 type PlatformPolicy struct {
-	LegacySniffOverride bool
-	TUNDNSMode          string
-	TUNStack            string
+	LegacySniffOverride       bool
+	ResolveSniffedDestination bool
+	TUNDNSMode                string
 }
 
 func ResolveCompilerVersion(coreVersion string) (string, []string) {
@@ -40,9 +40,8 @@ func ResolvePlatformPolicy(version, platform string) PlatformPolicy {
 	switch version {
 	case "11", "12":
 		policy.LegacySniffOverride = true
-		policy.TUNStack = "gvisor"
 	case "13":
-		policy.TUNStack = "gvisor"
+		policy.ResolveSniffedDestination = true
 	case "14":
 		policy.TUNDNSMode = "hijack"
 	}
