@@ -45,13 +45,14 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 		wantTUN            bool
 		wantLegacyOverride bool
 		wantTUNDNSMode     string
+		wantTUNStack       string
 		wantFakeIP         bool
 		binaryEnvironment  string
 	}{
-		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
-		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
-		{format: "sing-box-v13-macos", wantTUN: true, wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
-		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
+		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, wantTUNStack: "gvisor", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
+		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, wantTUNStack: "gvisor", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
+		{format: "sing-box-v13-macos", wantTUN: true, wantTUNStack: "gvisor", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
+		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", wantTUNStack: "mixed", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
 	}
 	for _, test := range tests {
 		t.Run(test.format, func(t *testing.T) {
@@ -69,7 +70,7 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 				t.Fatalf("TUN inbound = %#v", tun)
 			}
 			if tun != nil {
-				if (tun["sniff_override_destination"] == true) != test.wantLegacyOverride || stringValue(tun["dns_mode"]) != test.wantTUNDNSMode {
+				if (tun["sniff_override_destination"] == true) != test.wantLegacyOverride || stringValue(tun["dns_mode"]) != test.wantTUNDNSMode || stringValue(tun["stack"]) != test.wantTUNStack {
 					t.Fatalf("TUN compatibility = %#v", tun)
 				}
 			}

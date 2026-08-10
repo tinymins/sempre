@@ -797,6 +797,9 @@ func singBoxInbounds(target Target, modern bool, policy singboxcore.PlatformPoli
 		if policy.TUNDNSMode != "" {
 			inbound["dns_mode"] = policy.TUNDNSMode
 		}
+		if policy.TUNStack != "" {
+			inbound["stack"] = policy.TUNStack
+		}
 		return append(inbounds, inbound)
 	}
 	switch transparent.Mode {
