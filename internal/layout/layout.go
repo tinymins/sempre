@@ -49,6 +49,7 @@ type Layout struct {
 	ManagerLog        string
 	InstanceLock      string
 	ServiceExecutable string
+	ServiceRoot       string
 	CommandExecutable string
 	instanceLockMode  Mode
 	test              bool
@@ -175,6 +176,7 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		ManagerLog:        filepath.Join(logs, "sempre.log"),
 		InstanceLock:      filepath.Join(run, "instance.lock"),
 		ServiceExecutable: serviceExecutable,
+		ServiceRoot:       filepath.Dir(serviceExecutable),
 		CommandExecutable: serviceExecutable,
 		instanceLockMode:  mode,
 	}
@@ -254,14 +256,23 @@ func (paths Layout) EnsureServiceExecutableDirectory() error {
 	if paths.Mode != System {
 		return fmt.Errorf("service executable directory is only available in system mode")
 	}
-	directory := filepath.Dir(paths.ServiceExecutable)
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		return fmt.Errorf("create service executable directory: %w", err)
+	directories := []string{paths.ServiceRoot, filepath.Dir(paths.ServiceExecutable)}
+	seen := map[string]bool{}
+	for _, directory := range directories {
+		if seen[directory] {
+			continue
+		}
+		seen[directory] = true
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			return fmt.Errorf("create service executable directory: %w", err)
+		}
+		if !paths.test {
+			if err := secureExecutableDirectory(directory); err != nil {
+				return err
+			}
+		}
 	}
-	if paths.test {
-		return nil
-	}
-	return secureExecutableDirectory(directory)
+	return nil
 }
 
 func (paths Layout) EnsureInstanceLockDirectory() error {

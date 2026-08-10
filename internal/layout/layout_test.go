@@ -91,8 +91,30 @@ func TestSystemLayoutUsesPlatformDirectories(t *testing.T) {
 	case "darwin":
 		if paths.Home != "/Library/Application Support/Sempre/data" ||
 			paths.Logs != "/Library/Logs/Sempre" ||
-			paths.Runtime != "/var/run/sempre" {
+			paths.Runtime != "/var/run/sempre" ||
+			paths.ServiceRoot != "/Library/Application Support/Sempre" {
 			t.Fatalf("layout = %#v", paths)
+		}
+	}
+}
+
+func TestEnsureServiceExecutableDirectoryCreatesTraversableRoot(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	paths := SystemAt(base)
+	paths.ServiceRoot = filepath.Join(base, "application")
+	paths.ServiceExecutable = filepath.Join(paths.ServiceRoot, "bin", executableName("sempre"))
+	paths.test = false
+	if err := paths.EnsureServiceExecutableDirectory(); err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{paths.ServiceRoot, filepath.Dir(paths.ServiceExecutable)} {
+		info, err := os.Stat(directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o755 {
+			t.Fatalf("%s mode = %o", directory, info.Mode().Perm())
 		}
 	}
 }

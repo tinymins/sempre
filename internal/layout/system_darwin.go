@@ -2,6 +2,8 @@
 
 package layout
 
+import "path/filepath"
+
 func systemLayout() (Layout, error) {
 	paths := newLayout(
 		System,
@@ -12,5 +14,6 @@ func systemLayout() (Layout, error) {
 		"/Library/Application Support/Sempre/bin/sempre",
 	)
 	paths.CommandExecutable = "/usr/local/bin/sempre"
+	paths.ServiceRoot = filepath.Dir(paths.Root)
 	return paths, nil
 }
