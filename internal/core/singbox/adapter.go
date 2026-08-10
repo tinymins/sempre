@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/tinymins/sempre/internal/core"
@@ -48,10 +47,11 @@ func (adapter *Adapter) Stability() string {
 
 func (adapter *Adapter) Capabilities(version string, target core.Target) core.Capabilities {
 	compilerTarget, _ := adapter.CompilerTarget(version, target)
+	policy := ResolvePlatformPolicy(compilerTarget.Version, compilerTarget.Platform)
 	features := []string{
 		core.CapabilityLoggingLevel,
 		core.CapabilityDNSLocalUpstream, core.CapabilityDNSRemoteUpstream, core.CapabilityDNSRemotePort,
-		core.CapabilityDNSBootstrapUpstream, core.CapabilityDNSFakeIP,
+		core.CapabilityDNSBootstrapUpstream,
 		core.CapabilityDNSBootstrapPort, core.CapabilityDNSBootstrapServerName,
 		core.CapabilityDNSRemoteServerName,
 		core.CapabilityDNSRemoteDetour, core.CapabilityDNSRejectHTTPS,
@@ -59,10 +59,15 @@ func (adapter *Adapter) Capabilities(version string, target core.Target) core.Ca
 		core.CapabilityRoutingRules, core.CapabilityRoutingRuleProviders,
 		core.CapabilityRoutingSelector, core.CapabilityRoutingURLTest,
 		core.CapabilityLocalProxy,
-		core.CapabilityTransparentTUN, core.CapabilityTransparentTUNAddress,
 		core.CapabilityManagementConnections, core.CapabilityManagementSelectors,
 		core.CapabilityManagementDelay, core.CapabilityManagementTraffic,
 		core.CapabilityManagementExternalAPI, core.CapabilityNativeOverride,
+	}
+	if policy.FakeIP {
+		features = append(features, core.CapabilityDNSFakeIP)
+	}
+	if policy.TransparentTUN {
+		features = append(features, core.CapabilityTransparentTUN, core.CapabilityTransparentTUNAddress)
 	}
 	if target.OS == "linux" || target.OS == "" {
 		features = append(features, core.CapabilityDNSSystemTakeover, core.CapabilityTransparentTProxy, core.CapabilityTransparentInterfaces)
@@ -160,31 +165,7 @@ func (adapter *Adapter) Version(ctx context.Context, binary string) (string, err
 }
 
 func (adapter *Adapter) CompilerTarget(version string, target core.Target) (core.CompilerTarget, error) {
-	parts := strings.Split(strings.TrimPrefix(version, "v"), ".")
-	compilerVersion := "13"
-	warnings := []string{}
-	if len(parts) < 2 {
-		warnings = append(warnings, "unrecognized sing-box version; using the default v13 compiler")
-	} else {
-		major, majorErr := strconv.Atoi(parts[0])
-		minor, minorErr := strconv.Atoi(parts[1])
-		switch {
-		case majorErr != nil || minorErr != nil || major != 1:
-			warnings = append(warnings, "unknown sing-box major version; using the default v13 compiler")
-		case minor < 11:
-			compilerVersion = "11"
-			warnings = append(warnings, "installed sing-box is older than the minimum compiler target; using v11")
-		case minor == 11:
-			compilerVersion = "11"
-		case minor == 12:
-			compilerVersion = "12"
-		default:
-			compilerVersion = "13"
-			if minor > 13 {
-				warnings = append(warnings, "no exact compiler for this sing-box minor version; using the newest compatible v13 compiler")
-			}
-		}
-	}
+	compilerVersion, warnings := ResolveCompilerVersion(version)
 	platform := "default"
 	if target.OS == "windows" {
 		platform = "windows"

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -30,6 +31,121 @@ func TestResolveSingBoxTargetFallback(t *testing.T) {
 	if target.Version != "13" || len(warnings) == 0 {
 		t.Fatalf("unknown major did not fall back: %#v %#v", target, warnings)
 	}
+	target, warnings = ResolveSingBoxTarget("1.14.0-beta.13", "macos")
+	if target.Format != "sing-box-v14-macos" || len(warnings) != 0 {
+		t.Fatalf("v14 target: %#v %#v", target, warnings)
+	}
+}
+
+func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{"fakeipEnabled": true}}
+	tests := []struct {
+		format             string
+		wantTUN            bool
+		wantLegacyOverride bool
+		wantTUNDNSMode     string
+		wantFakeIP         bool
+		binaryEnvironment  string
+	}{
+		{format: "sing-box-macos", wantTUN: true, wantLegacyOverride: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V11"},
+		{format: "sing-box-v12-macos", wantTUN: true, wantLegacyOverride: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V12"},
+		{format: "sing-box-v13-macos", binaryEnvironment: "SEMPRE_TEST_SING_BOX_V13"},
+		{format: "sing-box-v14-macos", wantTUN: true, wantTUNDNSMode: "hijack", wantFakeIP: true, binaryEnvironment: "SEMPRE_TEST_SING_BOX_V14"},
+	}
+	for _, test := range tests {
+		t.Run(test.format, func(t *testing.T) {
+			result, updated, err := compiler.Render(context.Background(), profile, catalog, Target{Format: test.format}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config map[string]any
+			if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+				t.Fatal(err)
+			}
+			inbounds := config["inbounds"].([]any)
+			tun := optionalMapByKey(inbounds, "tag", "tun-in")
+			if (tun != nil) != test.wantTUN {
+				t.Fatalf("TUN inbound = %#v", tun)
+			}
+			if tun != nil {
+				if (tun["sniff_override_destination"] == true) != test.wantLegacyOverride || stringValue(tun["dns_mode"]) != test.wantTUNDNSMode {
+					t.Fatalf("TUN compatibility = %#v", tun)
+				}
+			}
+			httpInbound := mapByKey(t, inbounds, "tag", "sempre-http-in")
+			if _, exists := httpInbound["set_system_proxy"]; exists {
+				t.Fatalf("HTTP inbound = %#v", httpInbound)
+			}
+			if singBoxConfigHasFakeIP(config) != test.wantFakeIP {
+				t.Fatalf("FakeIP config = %#v", config["dns"])
+			}
+			if test.format == "sing-box-v14-macos" {
+				dnsRules := config["dns"].(map[string]any)["rules"].([]any)
+				if optionalMapByKey(dnsRules, "action", "evaluate") == nil || optionalMapByKey(dnsRules, "action", "respond")["match_response"] != true {
+					t.Fatalf("v14 response matching rules = %#v", dnsRules)
+				}
+			}
+			shared := updated.DNS["shared"].(map[string]any)
+			if shared["fakeipEnabled"] != true {
+				t.Fatalf("stored FakeIP preference changed: %#v", updated.DNS)
+			}
+			if !test.wantFakeIP && !containsWarning(result.Warnings, "FakeIP is unavailable") {
+				t.Fatalf("missing compatibility warning: %#v", result.Warnings)
+			}
+			if test.format == "sing-box-v13-macos" && !containsWarning(result.Warnings, "authenticated local proxies only") {
+				t.Fatalf("missing v13 compatibility warning: %#v", result.Warnings)
+			}
+			if binary := os.Getenv(test.binaryEnvironment); binary != "" {
+				configPath := filepath.Join(t.TempDir(), "config.json")
+				if err := os.WriteFile(configPath, []byte(result.Content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				dataDirectory := filepath.Join(t.TempDir(), "data")
+				if err := os.MkdirAll(dataDirectory, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				output, err := exec.Command(binary, "check", "-c", configPath, "-D", dataDirectory, "--disable-color").CombinedOutput()
+				if err != nil {
+					t.Fatalf("%s rejected config: %v\n%s", binary, err, output)
+				}
+			}
+		})
+	}
+}
+
+func optionalMapByKey(values []any, key, expected string) map[string]any {
+	for _, raw := range values {
+		value, ok := raw.(map[string]any)
+		if ok && value[key] == expected {
+			return value
+		}
+	}
+	return nil
+}
+
+func singBoxConfigHasFakeIP(config map[string]any) bool {
+	dns := config["dns"].(map[string]any)
+	if _, exists := dns["fakeip"]; exists {
+		return true
+	}
+	servers, _ := dns["servers"].([]any)
+	for _, raw := range servers {
+		server, ok := raw.(map[string]any)
+		if ok && (server["type"] == "fakeip" || server["address"] == "fakeip") {
+			return true
+		}
+	}
+	return false
+}
+
+func containsWarning(warnings []string, part string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, part) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCompilerRendersRawSourceWithoutNetwork(t *testing.T) {

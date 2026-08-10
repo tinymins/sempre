@@ -53,6 +53,66 @@ func TestResolveUsesCustomRepositoryAndExactPrerelease(t *testing.T) {
 	}
 }
 
+func TestCompilerTargetTracksSupportedMinorVersions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		version string
+		format  string
+		warn    bool
+	}{
+		{version: "1.11.15", format: "sing-box-macos"},
+		{version: "1.12.20", format: "sing-box-v12-macos"},
+		{version: "1.13.18", format: "sing-box-v13-macos"},
+		{version: "1.14.0-beta.13", format: "sing-box-v14-macos"},
+		{version: "1.15.0", format: "sing-box-v14-macos", warn: true},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.version, func(t *testing.T) {
+			t.Parallel()
+			target, err := New().CompilerTarget(test.version, core.Target{OS: "darwin", Arch: "arm64"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target.Format != test.format || (len(target.Warnings) > 0) != test.warn {
+				t.Fatalf("target = %#v", target)
+			}
+		})
+	}
+}
+
+func TestMacOSCapabilitiesFollowCompilerVersion(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		version string
+		fakeIP  bool
+		tun     bool
+	}{
+		{version: "1.12.20", tun: true},
+		{version: "1.13.18"},
+		{version: "1.14.0-beta.13", fakeIP: true, tun: true},
+	}
+	for _, test := range tests {
+		capabilities := New().Capabilities(test.version, core.Target{OS: "darwin", Arch: "arm64"})
+		if hasFeature(capabilities, core.CapabilityDNSFakeIP) != test.fakeIP || hasFeature(capabilities, core.CapabilityTransparentTUN) != test.tun {
+			t.Fatalf("%s capabilities = %#v", test.version, capabilities.Features)
+		}
+	}
+	linux := New().Capabilities("1.13.18", core.Target{OS: "linux", Arch: "arm64"})
+	if !hasFeature(linux, core.CapabilityDNSFakeIP) || !hasFeature(linux, core.CapabilityTransparentTUN) {
+		t.Fatalf("Linux capabilities changed: %#v", linux.Features)
+	}
+}
+
+func hasFeature(capabilities core.Capabilities, feature string) bool {
+	for _, current := range capabilities.Features {
+		if current == feature {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPrepareRuntimeIsolatesControlAPIFromUserConfig(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

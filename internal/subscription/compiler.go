@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	singboxcore "github.com/tinymins/sempre/internal/core/singbox"
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,33 +32,7 @@ func NewCompiler(store *Store) *Compiler {
 }
 
 func ResolveSingBoxTarget(coreVersion, platform string) (Target, []string) {
-	warnings := []string{}
-	version := "13"
-	parts := strings.Split(strings.TrimPrefix(coreVersion, "v"), ".")
-	if len(parts) >= 2 {
-		major, majorErr := strconv.Atoi(parts[0])
-		minor, minorErr := strconv.Atoi(parts[1])
-		if majorErr == nil && minorErr == nil && major == 1 {
-			switch {
-			case minor < 11:
-				version = "11"
-				warnings = append(warnings, "installed sing-box is older than the minimum compiler target; using v11")
-			case minor == 11:
-				version = "11"
-			case minor == 12:
-				version = "12"
-			default:
-				version = "13"
-				if minor > 13 {
-					warnings = append(warnings, "no exact compiler for this sing-box minor version; using the newest compatible v13 compiler")
-				}
-			}
-		} else {
-			warnings = append(warnings, "unknown sing-box major version; using the default v13 compiler")
-		}
-	} else {
-		warnings = append(warnings, "unrecognized sing-box version; using the default v13 compiler")
-	}
+	version, warnings := singboxcore.ResolveCompilerVersion(coreVersion)
 	platform = normalizePlatform(platform)
 	format := "sing-box-v" + version
 	if version == "11" {
@@ -96,6 +71,8 @@ func ParseTarget(format string) (Target, error) {
 		result.Version = "12"
 	case "sing-box-v13":
 		result.Version = "13"
+	case "sing-box-v14":
+		result.Version = "14"
 	default:
 		return Target{}, fmt.Errorf("unsupported output format %q", format)
 	}
@@ -103,7 +80,7 @@ func ParseTarget(format string) (Target, error) {
 }
 
 func AvailableTargets() []Target {
-	formats := []string{"clash", "clash-meta", "sing-box", "sing-box-windows", "sing-box-macos", "sing-box-v12", "sing-box-v12-windows", "sing-box-v12-macos", "sing-box-v13", "sing-box-v13-windows", "sing-box-v13-macos", "xray", "v2ray", "clash-rs", "dae"}
+	formats := []string{"clash", "clash-meta", "sing-box", "sing-box-windows", "sing-box-macos", "sing-box-v12", "sing-box-v12-windows", "sing-box-v12-macos", "sing-box-v13", "sing-box-v13-windows", "sing-box-v13-macos", "sing-box-v14", "sing-box-v14-windows", "sing-box-v14-macos", "xray", "v2ray", "clash-rs", "dae"}
 	result := make([]Target, 0, len(formats))
 	for _, format := range formats {
 		target, _ := ParseTarget(format)
@@ -586,6 +563,7 @@ func mihomoDNS(profile Profile) map[string]any {
 
 func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, proxies []Proxy, target Target, force bool) (map[string]any, []FieldDiff, []string, error) {
 	modern := target.Version != "11"
+	policy := singboxcore.ResolvePlatformPolicy(target.Version, target.Platform)
 	private := resolvePrivateAccess(profile.PrivateAccess, modern, target.Platform != "default")
 	shared := resolveDNSShared(profile.DNS)
 	outbounds := []any{map[string]any{"type": "direct", "tag": "direct"}, map[string]any{"type": "block", "tag": "reject"}}
@@ -595,6 +573,13 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	names := make([]string, 0, len(proxies))
 	diffs := []FieldDiff{}
 	warnings := []string{}
+	if shared.FakeIPEnabled && !policy.FakeIP {
+		shared.FakeIPEnabled = false
+		warnings = append(warnings, "FakeIP is unavailable for standalone sing-box before v1.14 on macOS; using the compatible real-IP mode")
+	}
+	if target.Platform == "macos" && target.Version == "13" {
+		warnings = append(warnings, "sing-box v1.13 on macOS supports authenticated local proxies only because this version has neither destination override nor TUN DNS takeover")
+	}
 	for _, proxy := range proxies {
 		if target.Version == "11" && proxy.Type == "anytls" {
 			diffs = append(diffs, FieldDiff{Node: proxy.Name, Consumed: []string{}, Ignored: []string{}, Dropped: sortedKeys(proxy.Extra), Warnings: []string{"anytls requires sing-box v1.12 or newer"}, FieldOrigins: map[string]FieldOrigin{}})
@@ -705,9 +690,9 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	if err := validateSingBoxSystemDNS(shared, target, profile); err != nil {
 		return nil, diffs, warnings, err
 	}
-	inbounds := singBoxInbounds(target, modern, profile.TransparentProxy, profile.LocalProxy, shared)
+	inbounds := singBoxInbounds(target, modern, policy, profile.TransparentProxy, profile.LocalProxy, shared)
 	remoteOutbound := valueOr(shared.RemoteDetour, foreignOutbound(groups, final))
-	dns := singBoxDNS(profile.DNS, modern, shared, remoteOutbound)
+	dns := singBoxDNS(profile.DNS, target.Version, shared, remoteOutbound)
 	if servers, ok := dns["servers"].([]any); ok {
 		dns["servers"] = append(servers, private.DNSServers...)
 	}
@@ -800,7 +785,7 @@ func (compiler *Compiler) loadRuleProviders(
 	return ruleSets, routes, warnings, nil
 }
 
-func singBoxInbounds(target Target, modern bool, transparent TransparentProxyConfig, localProxy LocalProxyConfig, shared dnsShared) []any {
+func singBoxInbounds(target Target, modern bool, policy singboxcore.PlatformPolicy, transparent TransparentProxyConfig, localProxy LocalProxyConfig, shared dnsShared) []any {
 	inbounds := localProxySingBoxInbounds(localProxy)
 	if target.Platform == "default" && shared.SystemDNSTakeoverEnabled {
 		for index, host := range shared.SystemDNSListenHosts {
@@ -808,9 +793,19 @@ func singBoxInbounds(target Target, modern bool, transparent TransparentProxyCon
 		}
 	}
 	if target.Platform != "default" {
+		if !policy.TransparentTUN {
+			return inbounds
+		}
 		inbound := map[string]any{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "stack": "mixed"}
 		if target.Platform == "windows" {
 			inbound["interface_name"] = "sing-box"
+		}
+		if policy.LegacySniffOverride {
+			inbound["sniff"] = true
+			inbound["sniff_override_destination"] = true
+		}
+		if policy.TUNDNSMode != "" {
+			inbound["dns_mode"] = policy.TUNDNSMode
 		}
 		return append(inbounds, inbound)
 	}
@@ -847,7 +842,8 @@ func localProxySingBoxInbounds(config LocalProxyConfig) []any {
 	}
 }
 
-func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutbound string) map[string]any {
+func singBoxDNS(custom map[string]any, version string, shared dnsShared, remoteOutbound string) map[string]any {
+	modern := version != "11"
 	if override := singBoxDNSOverride(custom, modern); override != nil {
 		return override
 	}
@@ -871,7 +867,7 @@ func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutb
 			bootstrap,
 			remote,
 		)
-		rules := singBoxDNSRules(shared, true, shared.FakeIPEnabled)
+		rules := singBoxDNSRules(shared, true, version == "14", shared.FakeIPEnabled)
 		result := map[string]any{"servers": servers, "rules": rules, "independent_cache": false, "reverse_mapping": true, "final": "remote"}
 		if shared.PreferIPv4 {
 			result["strategy"] = "prefer_ipv4"
@@ -892,7 +888,7 @@ func singBoxDNS(custom map[string]any, modern bool, shared dnsShared, remoteOutb
 		bootstrap,
 		remote,
 	)
-	result := map[string]any{"disable_cache": false, "servers": servers, "rules": singBoxDNSRules(shared, false, shared.FakeIPEnabled), "disable_expire": false, "independent_cache": false, "reverse_mapping": true, "final": "remote"}
+	result := map[string]any{"disable_cache": false, "servers": servers, "rules": singBoxDNSRules(shared, false, false, shared.FakeIPEnabled), "disable_expire": false, "independent_cache": false, "reverse_mapping": true, "final": "remote"}
 	if shared.PreferIPv4 {
 		result["strategy"] = "prefer_ipv4"
 	}
@@ -1095,16 +1091,24 @@ func coreDNSOverride(config map[string]any, key string) map[string]any {
 	return result
 }
 
-func singBoxDNSRules(shared dnsShared, modern, fakeIP bool) []any {
+func singBoxDNSRules(shared dnsShared, modern, responseMatching, fakeIP bool) []any {
 	rules := []any{}
 	if shared.RejectHTTPS {
 		rules = append(rules, map[string]any{"query_type": []string{"HTTPS"}, "action": "reject"})
 	}
-	privateRule := map[string]any{"ip_cidr": []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}, "server": "local"}
-	if modern {
-		privateRule["action"] = "route"
+	privateCIDRs := []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+	if responseMatching {
+		rules = append(rules,
+			map[string]any{"action": "evaluate", "server": "local"},
+			map[string]any{"match_response": true, "ip_cidr": privateCIDRs, "action": "respond"},
+		)
+	} else {
+		privateRule := map[string]any{"ip_cidr": privateCIDRs, "server": "local"}
+		if modern {
+			privateRule["action"] = "route"
+		}
+		rules = append(rules, privateRule)
 	}
-	rules = append(rules, privateRule)
 	if shared.CNDomainLocalDNS {
 		cnRule := map[string]any{"rule_set": []string{"geosite-cn"}, "server": "local"}
 		if modern {
