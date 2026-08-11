@@ -109,4 +109,3 @@ export const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
     bodyStyle: {},
   },
 };
-
