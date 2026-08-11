@@ -118,6 +118,41 @@ func TestMacOSSingBoxCompatibilityModes(t *testing.T) {
 	}
 }
 
+func TestMacOSSingBoxNativeDNSOverrideDropsFakeIP(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{
+		"shared": map[string]any{"fakeipEnabled": true},
+		"modes":  map[string]any{"sing_box_v12": "native"},
+		"overrides": map[string]any{"sing_box_v12": map[string]any{
+			"servers": []any{
+				map[string]any{"tag": "local", "type": "local"},
+				map[string]any{"tag": "fakeip", "type": "fakeip"},
+				map[string]any{"tag": "remote", "type": "tls", "server": "8.8.8.8"},
+			},
+			"rules": []any{
+				map[string]any{"server": "local", "domain_suffix": []any{".cn"}},
+				map[string]any{"server": "fakeip", "query_type": []any{"A", "AAAA"}},
+			},
+			"fakeip": map[string]any{"enabled": true},
+		}},
+	}
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v12-macos"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	if singBoxConfigHasFakeIP(config) {
+		t.Fatalf("native DNS override retained FakeIP: %#v", config["dns"])
+	}
+	dns := config["dns"].(map[string]any)
+	if optionalMapByKey(dns["servers"].([]any), "tag", "remote") == nil || optionalMapByKey(dns["rules"].([]any), "server", "local") == nil {
+		t.Fatalf("native DNS override lost non-FakeIP entries: %#v", dns)
+	}
+}
+
 func optionalMapByKey(values []any, key, expected string) map[string]any {
 	for _, raw := range values {
 		value, ok := raw.(map[string]any)

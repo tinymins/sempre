@@ -693,6 +693,9 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	inbounds := singBoxInbounds(target, modern, policy, profile.TransparentProxy, profile.LocalProxy, shared)
 	remoteOutbound := valueOr(shared.RemoteDetour, foreignOutbound(groups, final))
 	dns := singBoxDNS(profile.DNS, target.Version, shared, remoteOutbound)
+	if !policy.FakeIP {
+		dns = singBoxDNSWithoutFakeIP(dns)
+	}
 	if servers, ok := dns["servers"].([]any); ok {
 		dns["servers"] = append(servers, private.DNSServers...)
 	}
@@ -1076,6 +1079,34 @@ func singBoxDNSOverride(config map[string]any, modern bool) map[string]any {
 		key = "sing_box_v12"
 	}
 	return coreDNSOverride(config, key)
+}
+
+func singBoxDNSWithoutFakeIP(config map[string]any) map[string]any {
+	result := cloneMap(config)
+	delete(result, "fakeip")
+	if servers, ok := result["servers"].([]any); ok {
+		filtered := make([]any, 0, len(servers))
+		for _, raw := range servers {
+			server, _ := raw.(map[string]any)
+			if stringValue(server["tag"]) == "fakeip" || stringValue(server["type"]) == "fakeip" || stringValue(server["address"]) == "fakeip" {
+				continue
+			}
+			filtered = append(filtered, raw)
+		}
+		result["servers"] = filtered
+	}
+	if rules, ok := result["rules"].([]any); ok {
+		filtered := make([]any, 0, len(rules))
+		for _, raw := range rules {
+			rule, _ := raw.(map[string]any)
+			if stringValue(rule["server"]) == "fakeip" {
+				continue
+			}
+			filtered = append(filtered, raw)
+		}
+		result["rules"] = filtered
+	}
+	return result
 }
 
 func coreDNSOverride(config map[string]any, key string) map[string]any {
