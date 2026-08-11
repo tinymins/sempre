@@ -15,10 +15,13 @@ func TestBuildReleaseStateInstallsStableCoresAndSelectsSingBox(t *testing.T) {
 	t.Parallel()
 	installedAt := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
 	document, err := buildReleaseState(installedAt, []releaseCoreInstallation{
-		releaseCore("sing-box", "1.13.0"),
-		releaseCore("mihomo", "1.19.0"),
-		releaseCore("xray", "25.8.3"),
-		releaseCore("v2ray", "5.37.0"),
+		releaseCore("sing-box", "1.11.15", ""),
+		releaseCore("sing-box", "1.12.20", ""),
+		releaseCore("sing-box", "1.13.18", core.Stable),
+		releaseCore("sing-box", "1.14.0-beta.13", ""),
+		releaseCore("mihomo", "1.19.0", core.Stable),
+		releaseCore("xray", "25.8.3", core.Stable),
+		releaseCore("v2ray", "5.37.0", core.Stable),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -30,15 +33,15 @@ func TestBuildReleaseStateInstallsStableCoresAndSelectsSingBox(t *testing.T) {
 		core    string
 		version string
 	}{
-		{"sing-box", "1.13.0"},
+		{"sing-box", "1.11.15"},
+		{"sing-box", "1.12.20"},
+		{"sing-box", "1.13.18"},
+		{"sing-box", "1.14.0-beta.13"},
 		{"mihomo", "1.19.0"},
 		{"xray", "25.8.3"},
 		{"v2ray", "5.37.0"},
 	} {
 		source := document.Cores[item.core].Default
-		if source.Channels[core.Stable] != item.version {
-			t.Fatalf("%s stable channel = %q", item.core, source.Channels[core.Stable])
-		}
 		installation := source.Installed[item.version]
 		if installation == nil {
 			t.Fatalf("%s@%s was not installed", item.core, item.version)
@@ -46,6 +49,45 @@ func TestBuildReleaseStateInstallsStableCoresAndSelectsSingBox(t *testing.T) {
 		if installation.Source == "" || installation.Digest == "" || !installation.InstalledAt.Equal(installedAt) {
 			t.Fatalf("%s@%s installation = %#v", item.core, item.version, installation)
 		}
+	}
+	if got := document.Cores["sing-box"].Default.Channels[core.Stable]; got != "1.13.18" {
+		t.Fatalf("sing-box stable channel = %q", got)
+	}
+	for coreID, version := range map[string]string{"mihomo": "1.19.0", "xray": "25.8.3", "v2ray": "5.37.0"} {
+		if got := document.Cores[coreID].Default.Channels[core.Stable]; got != version {
+			t.Fatalf("%s stable channel = %q", coreID, got)
+		}
+	}
+}
+
+func TestReleaseCoreRequestsBundleSingBoxV11ThroughV14(t *testing.T) {
+	t.Parallel()
+	want := map[string]bool{
+		bundledSingBoxV11: false,
+		bundledSingBoxV12: false,
+		bundledSingBoxV13: false,
+		bundledSingBoxV14: false,
+	}
+	stable := ""
+	for _, request := range releaseCoreRequests() {
+		if request.Adapter.ID() != "sing-box" {
+			continue
+		}
+		if _, exists := want[request.Reference]; !exists {
+			t.Fatalf("unexpected bundled sing-box reference %q", request.Reference)
+		}
+		want[request.Reference] = true
+		if request.Channel == core.Stable {
+			stable = request.Reference
+		}
+	}
+	for version, found := range want {
+		if !found {
+			t.Fatalf("sing-box %s is not registered for release bundles", version)
+		}
+	}
+	if stable != bundledSingBoxV13 {
+		t.Fatalf("sing-box stable channel = %q", stable)
 	}
 }
 
@@ -173,9 +215,10 @@ func TestCleanupBundleWorkRemovesEmptyParent(t *testing.T) {
 	}
 }
 
-func releaseCore(coreID, version string) releaseCoreInstallation {
+func releaseCore(coreID, version, channel string) releaseCoreInstallation {
 	return releaseCoreInstallation{
-		Core: coreID,
+		Core:    coreID,
+		Channel: channel,
 		Package: core.Package{
 			Version: version,
 			URL:     "https://example.com/" + coreID,

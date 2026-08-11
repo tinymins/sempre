@@ -20,10 +20,6 @@ import (
 
 	"github.com/tinymins/sempre/internal/archive"
 	"github.com/tinymins/sempre/internal/core"
-	"github.com/tinymins/sempre/internal/core/mihomo"
-	"github.com/tinymins/sempre/internal/core/singbox"
-	"github.com/tinymins/sempre/internal/core/v2ray"
-	"github.com/tinymins/sempre/internal/core/xray"
 	"github.com/tinymins/sempre/internal/download"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
@@ -276,15 +272,15 @@ func writeReleaseSnapshot(ctx context.Context, packageDir string, item target, i
 		return err
 	}
 	installations := []releaseCoreInstallation{}
-	for _, adapter := range releaseCoreAdapters() {
-		resolved, err := adapter.Resolve(ctx, "", core.Stable, releaseCoreTarget(item))
+	for _, request := range releaseCoreRequests() {
+		resolved, err := request.Adapter.Resolve(ctx, "", request.Reference, releaseCoreTarget(item))
 		if err != nil {
-			return fmt.Errorf("resolve %s for %s/%s: %w", adapter.ID(), item.os, item.arch, err)
+			return fmt.Errorf("resolve %s@%s for %s/%s: %w", request.Adapter.ID(), request.Reference, item.os, item.arch, err)
 		}
-		if err := installReleaseCore(ctx, paths, item, adapter, resolved); err != nil {
-			return fmt.Errorf("install %s %s for %s/%s: %w", adapter.ID(), resolved.Version, item.os, item.arch, err)
+		if err := installReleaseCore(ctx, paths, item, request.Adapter, resolved); err != nil {
+			return fmt.Errorf("install %s %s for %s/%s: %w", request.Adapter.ID(), resolved.Version, item.os, item.arch, err)
 		}
-		installations = append(installations, releaseCoreInstallation{Core: adapter.ID(), Package: resolved})
+		installations = append(installations, releaseCoreInstallation{Core: request.Adapter.ID(), Channel: request.Channel, Package: resolved})
 	}
 	document, err := buildReleaseState(installedAt, installations)
 	if err != nil {
@@ -299,6 +295,7 @@ func writeReleaseSnapshot(ctx context.Context, packageDir string, item target, i
 
 type releaseCoreInstallation struct {
 	Core    string
+	Channel string
 	Package core.Package
 }
 
@@ -307,7 +304,9 @@ func buildReleaseState(installedAt time.Time, installations []releaseCoreInstall
 	document.Selected = &state.Selection{Core: "sing-box", Ref: core.Stable}
 	for _, installation := range installations {
 		source := document.Core(installation.Core).Source("")
-		source.Channels[core.Stable] = installation.Package.Version
+		if installation.Channel != "" {
+			source.Channels[installation.Channel] = installation.Package.Version
+		}
 		source.Installed[installation.Package.Version] = &state.Installation{
 			Digest:      installation.Package.Digest,
 			Source:      installation.Package.URL,
@@ -319,10 +318,6 @@ func buildReleaseState(installedAt time.Time, installations []releaseCoreInstall
 		return state.Document{}, err
 	}
 	return document, nil
-}
-
-func releaseCoreAdapters() []core.Adapter {
-	return []core.Adapter{singbox.New(), mihomo.New(), xray.New(), v2ray.New()}
 }
 
 func releaseCoreTarget(item target) core.Target {
