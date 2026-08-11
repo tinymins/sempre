@@ -10,6 +10,7 @@ import type { Overview as OverviewData, RuntimeEvent, SystemStatus } from '../li
 import { Card, EmptyState, Badge, PageTitle } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
 import { RuntimeControlPanel } from '../components/RuntimeControlPanel'
+import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 
 export function Overview() {
   const { t } = useI18n()
@@ -43,6 +44,7 @@ export function Overview() {
       <PageTitle title={t('overview')} detail={system.data?.active ? `${system.data.active.core} ${system.data.active.version}` : t('noCore')}>
         <Badge tone={system.data?.runtime.state === 'running' ? 'success' : 'warning'}>{system.data?.runtime.state || t('loading')}</Badge>
       </PageTitle>
+      <AutoConfigureCard />
       <RuntimeControlPanel />
       {system.data && system.data.runtime.state !== 'running' ? (
         <EmptyState title={system.data.active ? t('coreNotRunning') : t('noCore')} detail={system.data.active ? t('coreNotRunningDetail') : t('noCoreDetail')} />

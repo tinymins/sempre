@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tinymins/sempre/internal/controlplane"
+	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
@@ -90,6 +91,19 @@ func TestAdminServerAuthenticationBoundary(t *testing.T) {
 	response.Body.Close()
 	if len(networkReport.Results) != 1 || !networkReport.Results[0].OK {
 		t.Fatalf("network report = %#v", networkReport)
+	}
+	manager.registry = core.NewRegistry(singBoxAutoConfigAdapter{})
+	response = testJSONRequest(t, http.MethodPost, server.URL+"/api/v1/cores/auto/diagnose", server.URL, login.Token, nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("automatic core diagnosis = %d", response.StatusCode)
+	}
+	var autoReport AutoConfigReport
+	if err := json.NewDecoder(response.Body).Decode(&autoReport); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if autoReport.Recommendation == nil || autoReport.Recommendation.Reference != "sing-box@stable" {
+		t.Fatalf("automatic core diagnosis = %#v", autoReport)
 	}
 	if err := manager.store.Update(func(document *state.Document) error {
 		document.Cores = map[string]*state.CoreState{}
