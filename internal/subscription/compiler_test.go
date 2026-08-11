@@ -136,6 +136,18 @@ func TestMacOSSingBoxNativeDNSOverrideDropsFakeIP(t *testing.T) {
 			"fakeip": map[string]any{"enabled": true},
 		}},
 	}
+	profile.CoreOverrides["sing-box"] = map[string]any{"dns": map[string]any{
+		"servers": []any{
+			map[string]any{"tag": "local", "type": "local"},
+			map[string]any{"tag": "fakeip", "type": "fakeip"},
+			map[string]any{"tag": "remote", "type": "tls", "server": "8.8.8.8"},
+		},
+		"rules": []any{
+			map[string]any{"server": "local", "domain_suffix": []any{".cn"}},
+			map[string]any{"server": "fakeip", "query_type": []any{"A", "AAAA"}},
+		},
+		"fakeip": map[string]any{"enabled": true},
+	}}
 	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v12-macos"}, false)
 	if err != nil {
 		t.Fatal(err)

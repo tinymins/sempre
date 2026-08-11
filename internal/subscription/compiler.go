@@ -693,9 +693,6 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	inbounds := singBoxInbounds(target, modern, policy, profile.TransparentProxy, profile.LocalProxy, shared)
 	remoteOutbound := valueOr(shared.RemoteDetour, foreignOutbound(groups, final))
 	dns := singBoxDNS(profile.DNS, target.Version, shared, remoteOutbound)
-	if !policy.FakeIP {
-		dns = singBoxDNSWithoutFakeIP(dns)
-	}
 	if servers, ok := dns["servers"].([]any); ok {
 		dns["servers"] = append(servers, private.DNSServers...)
 	}
@@ -718,6 +715,11 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 		config["endpoints"] = private.Endpoints
 	}
 	deepMerge(config, profile.CoreOverrides["sing-box"])
+	if !policy.FakeIP {
+		if mergedDNS, ok := objectValue(config["dns"]); ok {
+			config["dns"] = singBoxDNSWithoutFakeIP(mergedDNS)
+		}
+	}
 	return config, diffs, warnings, nil
 }
 
