@@ -1,0 +1,195 @@
+@media (max-width: 1120px) {
+  .glass-hero {
+    min-height: 940px;
+    height: auto;
+  }
+
+  .glass-hero-inner {
+    grid-template-columns: minmax(390px, 0.9fr) minmax(470px, 1.1fr);
+    padding: 130px 0 105px;
+  }
+
+  .glass-product-stage {
+    width: 130%;
+  }
+
+  .glass-installer-top {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .glass-installer .platform-switch {
+    width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .glass-hero-inner {
+    width: calc(100% - 48px);
+    grid-template-columns: 1fr;
+    gap: 72px;
+  }
+
+  .glass-copy {
+    max-width: 720px;
+  }
+
+  .glass-product-stage {
+    width: 92%;
+    margin-left: auto;
+  }
+
+  .glass-backdrop {
+    right: -50%;
+    width: 140%;
+    opacity: 0.25;
+  }
+
+  .glass-scroll {
+    display: none;
+  }
+
+  .glass-story {
+    min-height: auto;
+    padding: 100px 32px 110px;
+  }
+
+  .glass-story-heading {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .glass-story-heading .eyebrow {
+    grid-row: auto;
+  }
+
+  .glass-story-layout {
+    grid-template-columns: 1fr;
+    gap: 58px;
+  }
+
+  .glass-story-product {
+    position: relative;
+    top: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .glass-hero {
+    min-height: 990px;
+  }
+
+  .glass-hero-inner {
+    width: calc(100% - 32px);
+    gap: 58px;
+    padding: 104px 0 72px;
+  }
+
+  .glass-copy h1 {
+    margin-bottom: 14px;
+  }
+
+  .glass-statement {
+    font-size: 23px;
+  }
+
+  .glass-installer {
+    margin-top: 26px;
+    border-radius: 8px;
+  }
+
+  .glass-installer-top {
+    padding: 14px;
+  }
+
+  .install-options {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .install-field-digest {
+    grid-column: auto;
+  }
+
+  .glass-installer .command-line,
+  .glass-installer .command-meta {
+    padding-right: 12px;
+    padding-left: 14px;
+  }
+
+  .glass-installer .command-meta > span {
+    max-width: 200px;
+  }
+
+  .glass-product-stage {
+    width: 100%;
+    transform: none;
+  }
+
+  .glass-product-window {
+    border-radius: 8px;
+  }
+
+  .window-chrome {
+    height: 28px;
+  }
+
+  .glass-status {
+    min-width: 145px;
+    padding: 9px 10px;
+  }
+
+  .glass-status-runtime {
+    top: -35px;
+    right: 4px;
+  }
+
+  .glass-status-version {
+    bottom: -34px;
+    left: 5px;
+  }
+
+  .glass-status small {
+    font-size: 7px;
+  }
+
+  .glass-status strong {
+    font-size: 9px;
+  }
+
+  .glass-story {
+    padding: 76px 18px 90px;
+  }
+
+  .glass-story-heading {
+    margin-bottom: 54px;
+  }
+
+  .glass-story-heading h2 {
+    font-size: 38px;
+  }
+
+  .glass-story-heading > p:last-child {
+    font-size: 13px;
+  }
+
+  .glass-steps article {
+    grid-template-columns: 27px 27px 1fr;
+    gap: 10px;
+  }
+
+  .glass-story-product figcaption {
+    right: 8px;
+    bottom: 8px;
+    padding: 7px 9px;
+    font-size: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-backdrop,
+  .glass-product-stage,
+  .glass-story-product {
+    transform: none;
+  }
+}
