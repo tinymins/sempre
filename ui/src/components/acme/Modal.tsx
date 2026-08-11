@@ -1,10 +1,8 @@
 import { X } from "lucide-react";
 import {
-  type CSSProperties,
   createContext,
   type ReactNode,
   type RefObject,
-  useCallback,
   useContext,
   useEffect,
   useId,
@@ -18,7 +16,9 @@ import { pushEscapeHandler, removeEscapeHandler } from "./escape-stack";
 import { cn } from "./utils";
 
 /* ─── Modal container context ─── */
-/** When set, Modal portals into this element with absolute positioning instead of fullscreen. */
+import type { ConfirmConfig, ModalProps } from "./Modal.types";
+import { SIZE_CONFIG, THIN_SCROLLBAR } from "./Modal.styles";
+
 export const ModalContainerContext =
   createContext<RefObject<HTMLElement | null> | null>(null);
 
@@ -33,186 +33,6 @@ export function setActiveModalContainer(
 }
 
 /* ─── ScaledModal size presets ─── */
-export type ScaledModalSize =
-  | "full"
-  | "almost-full"
-  | "large"
-  | "default"
-  | "inset"
-  | "form";
-
-export interface ModalProps {
-  /** Whether visible */
-  open?: boolean;
-  /** Title */
-  title?: ReactNode;
-  /** OK text */
-  okText?: string;
-  /** Cancel text */
-  cancelText?: string;
-  /** OK button props */
-  okButtonProps?: {
-    danger?: boolean;
-    loading?: boolean;
-    disabled?: boolean;
-  };
-  /** Cancel button props */
-  cancelButtonProps?: {
-    disabled?: boolean;
-  };
-  /** OK callback */
-  onOk?: () => undefined | Promise<unknown>;
-  /** Cancel / close callback */
-  onCancel?: () => void;
-  /** Custom footer — pass null to hide */
-  footer?: ReactNode | null;
-  /** Width (number or CSS string) */
-  width?: number | string;
-  /** ScaledModal size mode */
-  size?: ScaledModalSize;
-  /** Close on mask click */
-  maskClosable?: boolean;
-  /** Keyboard closable (Esc) */
-  keyboard?: boolean;
-  /** Close icon visible */
-  closable?: boolean;
-  /** Destroy on close */
-  destroyOnClose?: boolean;
-  /** Alias for destroyOnClose (antd compat) */
-  destroyOnHidden?: boolean;
-  /** Confirm loading */
-  confirmLoading?: boolean;
-  /** Z-index */
-  zIndex?: number;
-  /** Body style */
-  bodyStyle?: CSSProperties;
-  /** Styles API (antd v5 compat) */
-  styles?: { body?: CSSProperties; root?: CSSProperties; mask?: CSSProperties };
-  /** Container style */
-  style?: CSSProperties;
-  /** CSS class for wrapper */
-  className?: string;
-  /** CSS class for body */
-  wrapClassName?: string;
-  children?: ReactNode;
-  /** Extra content rendered to the left of the close button in the header */
-  extra?: ReactNode;
-  /** Centered vertically */
-  centered?: boolean;
-  /** After open animation callback */
-  afterOpenChange?: (open: boolean) => void;
-  /** Portal target — when provided the modal renders inside this element with absolute positioning instead of fullscreen */
-  container?: RefObject<HTMLElement | null>;
-}
-
-const THIN_SCROLLBAR: CSSProperties = {
-  scrollbarWidth: "thin",
-  scrollbarColor: "rgba(128,128,128,0.4) transparent",
-};
-
-interface SizeConfig {
-  width: string | number;
-  dialogStyle: CSSProperties;
-  bodyStyle: CSSProperties;
-  containerStyle?: CSSProperties;
-}
-
-const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
-  full: {
-    width: "100%",
-    dialogStyle: {
-      maxWidth: "100%",
-      margin: 0,
-      padding: 0,
-      borderRadius: 0,
-      height: "100%",
-    },
-    bodyStyle: {
-      flex: 1,
-      minHeight: 0,
-      overflowY: "auto",
-      overflowX: "hidden",
-      ...THIN_SCROLLBAR,
-    },
-    containerStyle: {
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-    },
-  },
-  "almost-full": {
-    width: "calc(100% - 48px)",
-    dialogStyle: {
-      maxWidth: "calc(100% - 48px)",
-      height: "calc(100% - 48px)",
-    },
-    bodyStyle: {
-      flex: 1,
-      minHeight: 0,
-      overflowY: "auto",
-      overflowX: "hidden",
-      ...THIN_SCROLLBAR,
-    },
-    containerStyle: {
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-    },
-  },
-  large: {
-    width: "90%",
-    dialogStyle: { maxWidth: 1400 },
-    bodyStyle: {
-      maxHeight: "calc(100% - 200px)",
-      overflowY: "auto",
-      overflowX: "hidden",
-      ...THIN_SCROLLBAR,
-    },
-  },
-  /** 5% margin on all sides — 90% × 90%, no outer scrollbar */
-  inset: {
-    width: "90%",
-    dialogStyle: {
-      maxWidth: "90%",
-      height: "90%",
-    },
-    bodyStyle: {
-      flex: 1,
-      minHeight: 0,
-      overflow: "hidden",
-    },
-    containerStyle: {
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-    },
-  },
-  /** 15% margin top/bottom — 90% × at-most 70%, centered; left-right grid forms pass style={{ height: "70%" }} */
-  form: {
-    width: "90%",
-    dialogStyle: {
-      maxWidth: "90%",
-      maxHeight: "70%",
-    },
-    bodyStyle: {
-      flex: 1,
-      minHeight: 0,
-      overflowY: "auto",
-      overflowX: "hidden",
-      ...THIN_SCROLLBAR,
-    },
-    containerStyle: {
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-    },
-  },
-  default: {
-    width: 520,
-    dialogStyle: {},
-    bodyStyle: {},
-  },
-};
 
 export function Modal({
   open = false,
@@ -479,23 +299,7 @@ export function Modal({
 }
 
 /* ─── Modal.confirm utility ─── */
-export interface ConfirmConfig {
-  title: ReactNode;
-  content?: ReactNode;
-  okText?: string;
-  cancelText?: string;
-  onOk?: () => undefined | Promise<unknown>;
-  onCancel?: () => void;
-  okButtonProps?: ModalProps["okButtonProps"];
-  type?: "confirm" | "info" | "success" | "error" | "warning";
-  /** Icon for confirm dialog */
-  icon?: ReactNode;
-  /** OK button type (antd compat) */
-  okType?: string;
-}
-
 /**
- * Imperative confirm dialog.
  * Creates a temporary React root and renders a Modal.
  * Automatically renders inside the active FloatingWindow when available.
  */
@@ -552,60 +356,5 @@ Modal.confirm = (config: ConfirmConfig) => {
   root.render(<ConfirmDialog />);
 };
 
-/**
- * Hook-based confirm dialog that inherits ModalContainerContext.
- * Unlike Modal.confirm(), the dialog renders inside the current React tree
- * so it appears within FloatingWindow when used in a window context.
- *
- * Usage:
- *   const [confirmHolder, confirm] = useConfirm();
- *   confirm({ title: "Delete?", onOk: () => ... });
- *   return <>{confirmHolder}<div>...</div></>;
- */
-export function useConfirm(): [ReactNode, (config: ConfirmConfig) => void] {
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const configRef = useRef<ConfirmConfig | null>(null);
-  const loadingRef = useRef(false);
-  const [, forceUpdate] = useState(0);
 
-  const confirm = useCallback((config: ConfirmConfig) => {
-    configRef.current = config;
-    loadingRef.current = false;
-    setLoading(false);
-    setOpen(true);
-    forceUpdate((n) => n + 1);
-  }, []);
-
-  const contextHolder = (
-    <Modal
-      open={open}
-      title={configRef.current?.title}
-      okText={configRef.current?.okText ?? "确定"}
-      cancelText={configRef.current?.cancelText ?? "取消"}
-      okButtonProps={configRef.current?.okButtonProps}
-      confirmLoading={loading}
-      maskClosable={!loading}
-      onOk={async () => {
-        loadingRef.current = true;
-        setLoading(true);
-        try {
-          await configRef.current?.onOk?.();
-          setOpen(false);
-        } finally {
-          loadingRef.current = false;
-          setLoading(false);
-        }
-      }}
-      onCancel={() => {
-        if (loadingRef.current) return;
-        configRef.current?.onCancel?.();
-        setOpen(false);
-      }}
-    >
-      {configRef.current?.content}
-    </Modal>
-  );
-
-  return [contextHolder, confirm];
-}
+export type { ConfirmConfig, ModalProps, ScaledModalSize } from "./Modal.types";

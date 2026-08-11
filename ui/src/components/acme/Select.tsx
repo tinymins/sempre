@@ -17,73 +17,14 @@ import React, {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import { FloatingVibrancy } from "./FloatingVibrancy";
 import { cn } from "./utils";
-
-export interface SelectOption {
-  label: ReactNode;
-  value: string | number;
-  disabled?: boolean;
-  /** Label shown in selected tags. Falls back to `label` if not set. */
-  tagLabel?: ReactNode;
-}
-
-export interface SelectProps {
-  /** Options */
-  options?: SelectOption[];
-  /** Value (controlled) */
-  value?: string | number | (string | number)[];
-  /** Default value */
-  defaultValue?: string | number | (string | number)[];
-  /** Change handler */
-  // biome-ignore lint/suspicious/noExplicitAny: antd compat
-  onChange?: (value: any, option?: any) => void;
-  /** Placeholder */
-  placeholder?: string;
-  /** Allow clear */
-  allowClear?: boolean;
-  /** Multiple select */
-  mode?: "multiple" | "tags";
-  /** Disabled */
-  disabled?: boolean;
-  /** Size */
-  size?: "small" | "middle" | "large";
-  /** Status */
-  status?: "error" | "warning";
-  /** Loading */
-  loading?: boolean;
-  /** Show search */
-  showSearch?: boolean;
-  /** Filter option */
-  filterOption?: boolean | ((input: string, option?: SelectOption) => boolean);
-  /** Not found content */
-  notFoundContent?: ReactNode;
-  /** Style */
-  style?: React.CSSProperties;
-  className?: string;
-  /** Dropdown class */
-  popupClassName?: string;
-  /** Match dropdown width to the select trigger */
-  popupMatchSelectWidth?: boolean;
-  /** Option label prop (compatibility) */
-  optionFilterProp?: string;
-  /** Field names customization */
-  fieldNames?: { label?: string; value?: string };
-  /** Enable virtual scrolling for large option lists */
-  virtual?: boolean;
-  /** Children (Select.Option pattern) */
-  children?: ReactNode;
-}
-
-const sizeMap = {
-  small: "min-h-6 py-0 text-xs",
-  middle: "min-h-8 py-0.5 text-sm",
-  large: "min-h-10 py-1 text-base",
-};
+import { labelTitle, selectSizeMap, useSelectOptions, useVirtualActiveScroll } from "./Select.helpers";
+import type { SelectOption, SelectProps } from "./Select.types";
+import { VirtualList } from "./SelectVirtualList";
 
 export function Select({
   options = [],
@@ -125,39 +66,9 @@ export function Select({
   const MAX_HEIGHT = 240; // max-h-60
   const OVERSCAN = 5;
 
-  // Scroll active item into view (for keyboard navigation)
-  useEffect(() => {
-    if (!virtual || activeIndex === null || !scrollContainerRef.current) return;
-    const top = activeIndex * ITEM_HEIGHT;
-    const container = scrollContainerRef.current;
-    if (top < container.scrollTop) {
-      container.scrollTop = top;
-    } else if (top + ITEM_HEIGHT > container.scrollTop + MAX_HEIGHT) {
-      container.scrollTop = top + ITEM_HEIGHT - MAX_HEIGHT;
-    }
-  }, [activeIndex, virtual]);
+  useVirtualActiveScroll(activeIndex, virtual, scrollContainerRef, ITEM_HEIGHT, MAX_HEIGHT);
 
-  const childOptions = useMemo(() => {
-    if (options.length > 0) return options;
-    const result: SelectOption[] = [];
-    React.Children.forEach(children, (child) => {
-      if (React.isValidElement(child) && child.props) {
-        const props = child.props as {
-          value?: string | number;
-          disabled?: boolean;
-          children?: ReactNode;
-        };
-        if (props.value !== undefined) {
-          result.push({
-            value: props.value,
-            label: props.children ?? String(props.value),
-            disabled: props.disabled,
-          });
-        }
-      }
-    });
-    return result;
-  }, [options, children]);
+  const childOptions = useSelectOptions(options, children);
 
   const { refs, floatingStyles, context } = useFloating({
     open,
@@ -370,7 +281,7 @@ export function Select({
                 : "border-black/[0.08] dark:border-white/[0.1]",
           disabled &&
             "opacity-50 cursor-not-allowed bg-black/[0.02] dark:bg-white/[0.02]",
-          sizeMap[size],
+          selectSizeMap[size],
           className,
         )}
         style={{
@@ -572,93 +483,6 @@ export function Select({
   );
 }
 
-function labelTitle(label: ReactNode) {
-  return typeof label === "string" || typeof label === "number"
-    ? String(label)
-    : undefined;
-}
-
-function VirtualList({
-  items,
-  scrollContainerRef,
-  itemHeight,
-  maxHeight,
-  overscan,
-  listRef,
-  activeIndex,
-  isSelected,
-  getItemProps,
-  handleSelect,
-}: {
-  items: SelectOption[];
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
-  itemHeight: number;
-  maxHeight: number;
-  overscan: number;
-  listRef: React.MutableRefObject<Array<HTMLElement | null>>;
-  activeIndex: number | null;
-  isSelected: (v: string | number) => boolean;
-  // biome-ignore lint/suspicious/noExplicitAny: floating-ui compat
-  getItemProps: (props?: any) => Record<string, unknown>;
-  handleSelect: (v: string | number) => void;
-}) {
-  const [scrollTop, setScrollTop] = useState(0);
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    // Read initial DOM scrollTop (0 for fresh mount)
-    setScrollTop(container.scrollTop);
-    const onScroll = () => setScrollTop(container.scrollTop);
-    container.addEventListener("scroll", onScroll, { passive: true });
-    return () => container.removeEventListener("scroll", onScroll);
-  }, [scrollContainerRef]);
-
-  const totalHeight = items.length * itemHeight;
-  const visibleCount = Math.ceil(maxHeight / itemHeight);
-  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
-  const endIndex = Math.min(
-    items.length,
-    startIndex + visibleCount + 2 * overscan,
-  );
-
-  return (
-    <div style={{ height: totalHeight, position: "relative" }}>
-      {items.slice(startIndex, endIndex).map((opt, localIdx) => {
-        const i = startIndex + localIdx;
-        const selected = isSelected(opt.value);
-        return (
-          <div
-            key={String(opt.value)}
-            ref={(node) => {
-              listRef.current[i] = node;
-            }}
-            className={cn(
-              "flex items-center gap-2 px-3 text-sm cursor-pointer transition-colors absolute inset-x-0",
-              selected
-                ? "text-[var(--accent)] bg-[var(--accent-subtle)]"
-                : "text-[var(--text-primary)]",
-              !selected &&
-                activeIndex === i &&
-                "bg-black/[0.04] dark:bg-white/[0.06]",
-              opt.disabled && "opacity-50 cursor-not-allowed",
-            )}
-            style={{ height: itemHeight, top: i * itemHeight }}
-            {...getItemProps({
-              onClick: () => {
-                if (!opt.disabled) handleSelect(opt.value);
-              },
-            })}
-          >
-            <span className="flex-1 truncate">{opt.label}</span>
-            {selected ? <Check className="h-4 w-4 shrink-0" /> : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function SelectOption(_props: {
   value: string | number;
   disabled?: boolean;
@@ -667,3 +491,5 @@ function SelectOption(_props: {
   return null; // Rendered by parent Select
 }
 Select.Option = SelectOption;
+
+export type { SelectOption, SelectProps } from "./Select.types";

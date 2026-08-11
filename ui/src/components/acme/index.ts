@@ -84,8 +84,8 @@ export {
   Modal,
   ModalContainerContext,
   setActiveModalContainer,
-  useConfirm,
 } from "./Modal";
+export { useConfirm } from "./ModalConfirm";
 export type { PaginationProps } from "./Pagination";
 export { Pagination } from "./Pagination";
 export type { PathBarProps } from "./PathBar";
