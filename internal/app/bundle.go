@@ -105,6 +105,11 @@ func (manager *Manager) exportBundleDirectory(ctx context.Context, packageDir st
 		return fail(err)
 	}
 	operations = append(operations, resources)
+	tools, err := stageDirectoryFromSources(paths.Tools, 0o755, manager.paths.Tools)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, tools)
 	cores, err := manager.stageCores(ctx, paths, document, false)
 	if err != nil {
 		return fail(err)
@@ -120,6 +125,11 @@ func (manager *Manager) exportBundleDirectory(ctx context.Context, packageDir st
 		return fail(err)
 	}
 	operations = append(operations, subscriptions)
+	tunnels, err := manager.stageTunnelConfig(paths.TunnelConfig, false)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, tunnels)
 	stateFile, err := stageStateFile(paths.State, deploymentDocument(document))
 	if err != nil {
 		return fail(err)

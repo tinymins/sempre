@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, Globe2, Languages, Library, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun } from 'lucide-react'
+import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, Globe2, Languages, Library, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -38,6 +38,7 @@ export function Shell({ children }: { children: ReactNode }) {
     { path: '/', label: t('overview'), icon: CircleGauge },
     { path: '/custom-nodes', label: t('customNodes'), icon: Library },
     { path: '/subscriptions', label: t('subscriptions'), icon: Rss },
+    { path: '/tunnels', label: t('tunnels'), icon: Waypoints },
     { path: '/proxies', label: t('proxies'), icon: Network },
     { path: '/connections', label: t('connections'), icon: Cable },
     { path: '/rules', label: t('rules'), icon: ListTree },

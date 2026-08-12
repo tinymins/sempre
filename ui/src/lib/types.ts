@@ -362,6 +362,40 @@ export interface GatewayDNSDebugResult {
   detail?: string
 }
 
+export interface TunnelForward {
+  id: string
+  name: string
+  listen_port: number
+  remote_host: string
+  remote_port: number
+  timeout_seconds: number
+}
+
+export interface TunnelInstance {
+  id: string
+  name: string
+  desired_state: 'running' | 'stopped'
+  server_url: string
+  dns_resolvers: string[]
+  prefer_ipv4: boolean
+  websocket_ping: string
+  connection_retry_max_backoff: string
+  upgrade_path_prefix?: string
+  forwards: TunnelForward[]
+}
+
+export interface TunnelConfig {
+  schema: number
+  instances: TunnelInstance[]
+}
+
+export interface TunnelStatus {
+  config: TunnelConfig
+  binary: { version: string; installed: boolean }
+  instances: Array<{ id: string; state: string; restart_count: number; started_at?: string; last_error?: string; log_path: string }>
+  forwards: Array<{ instance_id: string; instance_name: string; forward_id: string; forward_name: string; host: string; port: number }>
+}
+
 export interface RuleProvider { tag: string; url: string; outbound?: string; format?: string; behavior?: string }
 
 export interface SubscriptionDefaults {

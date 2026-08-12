@@ -14,13 +14,14 @@ type privateAccessResolved struct {
 	RouteRules    []any
 	DNSServers    []any
 	DNSRules      []any
+	UsesTunnel    bool
 }
 
-func resolvePrivateAccess(config map[string]any, modern, desktop bool) privateAccessResolved {
+func resolvePrivateAccess(config map[string]any, modern, desktop bool, resolveTunnel TunnelForwardResolver) (privateAccessResolved, error) {
 	result := privateAccessResolved{Endpoints: []any{}, Outbounds: []any{}, DirectDomains: []string{}, RouteRules: []any{}, DNSServers: []any{}, DNSRules: []any{}}
 	enabled, _ := config["enabled"].(bool)
 	if !modern || !enabled {
-		return result
+		return result, nil
 	}
 	connectors, _ := config["connectors"].([]any)
 	for index, item := range connectors {
@@ -36,6 +37,32 @@ func resolvePrivateAccess(config map[string]any, modern, desktop bool) privateAc
 		if endpoint, ok := objectValue(connector["endpoint"]); ok && (kind == "wireguard" || kind == "tailscale") {
 			endpoint = cloneMap(endpoint)
 			normalizePrivateKeys(endpoint)
+			forwardID := valueOr(stringValue(connector["tunnel_forward_id"]), stringValue(connector["tunnelForwardId"]))
+			if forwardID != "" {
+				if kind != "wireguard" {
+					return result, fmt.Errorf("private connector %q only supports tunnel forwards for WireGuard", tag)
+				}
+				if resolveTunnel == nil {
+					return result, fmt.Errorf("private connector %q references unavailable tunnel forward %q", tag, forwardID)
+				}
+				forward, found := resolveTunnel(forwardID)
+				if !found {
+					return result, fmt.Errorf("private connector %q references missing tunnel forward %q", tag, forwardID)
+				}
+				peers, _ := endpoint["peers"].([]any)
+				if len(peers) == 0 {
+					return result, fmt.Errorf("private connector %q requires a WireGuard peer", tag)
+				}
+				peer, ok := objectValue(peers[0])
+				if !ok {
+					return result, fmt.Errorf("private connector %q has an invalid WireGuard peer", tag)
+				}
+				peer["address"] = forward.Host
+				peer["port"] = forward.Port
+				peers[0] = peer
+				endpoint["peers"] = peers
+				result.UsesTunnel = true
+			}
 			endpoint["type"] = kind
 			endpoint["tag"] = tag
 			if domain := firstEndpointDomain(endpoint); domain != "" {
@@ -90,7 +117,7 @@ func resolvePrivateAccess(config map[string]any, modern, desktop bool) privateAc
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
 func privateMatchers(target, source map[string]any) {

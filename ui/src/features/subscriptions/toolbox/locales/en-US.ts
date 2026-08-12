@@ -194,6 +194,8 @@ export default {
     privateWgPrivateKey: "Private key",
     privateWgPeerAddress: "Peer endpoint",
     privateWgPeerPort: "Peer port",
+    privateTunnelForward: "Transport tunnel",
+    privateTunnelDirect: "Direct UDP (without wstunnel)",
     privateWgKeepalive: "Keepalive",
     privateWgPublicKey: "Peer public key",
     privateWgPresharedKey: "Preshared key",

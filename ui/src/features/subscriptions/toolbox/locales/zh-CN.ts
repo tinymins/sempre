@@ -191,6 +191,8 @@ export default {
     privateWgPrivateKey: "私钥",
     privateWgPeerAddress: "对端地址",
     privateWgPeerPort: "对端端口",
+    privateTunnelForward: "传输隧道",
+    privateTunnelDirect: "直接 UDP（不经过 wstunnel）",
     privateWgKeepalive: "保活间隔",
     privateWgPublicKey: "对端公钥",
     privateWgPresharedKey: "预共享密钥",

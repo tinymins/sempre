@@ -28,6 +28,7 @@ import (
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	"github.com/tinymins/sempre/internal/transparentproxy"
+	"github.com/tinymins/sempre/internal/tunnel"
 	uiassets "github.com/tinymins/sempre/internal/ui"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
@@ -73,6 +74,7 @@ type Manager struct {
 	compiler      *subscriptions.Compiler
 	transparent   *transparentproxy.Controller
 	gateway       *gateway.Controller
+	tunnels       *tunnel.Controller
 	externalClash *clashproxy.Server
 	ui            *uiassets.Manager
 	uiReleases    uiassets.ReleaseResolver
@@ -125,6 +127,14 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 	if err != nil {
 		return nil, err
 	}
+	tunnelController, err := tunnel.New(paths)
+	if err != nil {
+		return nil, err
+	}
+	compiler := subscriptions.NewCompiler(subscriptionStore, func(id string) (subscriptions.TunnelForward, bool) {
+		forward, ok := tunnelController.Forward(id)
+		return subscriptions.TunnelForward{Host: forward.Host, Port: forward.Port}, ok
+	})
 	return &Manager{
 		paths:         paths,
 		store:         store,
@@ -135,9 +145,10 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 		commands:      platformCommandRegistrar{},
 		web:           webStore,
 		subscriptions: subscriptionStore,
-		compiler:      subscriptions.NewCompiler(subscriptionStore),
+		compiler:      compiler,
 		transparent:   transparent,
 		gateway:       gatewayController,
+		tunnels:       tunnelController,
 		externalClash: clashproxy.New(),
 		ui:            uiassets.New(paths.UI, paths.UICurrent),
 		uiReleases:    release.NewClient(),

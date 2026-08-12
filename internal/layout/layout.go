@@ -42,6 +42,10 @@ type Layout struct {
 	GatewayDir        string
 	GatewayRules      string
 	GatewayLeases     string
+	TunnelConfig      string
+	Tools             string
+	TunnelRuntime     string
+	TunnelLogs        string
 	Runtime           string
 	Logs              string
 	StdoutLog         string
@@ -169,6 +173,10 @@ func newLayout(mode Mode, root, home, logs, run, serviceExecutable string) Layou
 		GatewayDir:        filepath.Join(home, "gateway"),
 		GatewayRules:      filepath.Join(home, "gateway", "rules"),
 		GatewayLeases:     filepath.Join(home, "gateway", "leases.json"),
+		TunnelConfig:      filepath.Join(home, "tunnels.json"),
+		Tools:             filepath.Join(home, "tools"),
+		TunnelRuntime:     filepath.Join(run, "tunnels"),
+		TunnelLogs:        filepath.Join(logs, "tunnels"),
 		Runtime:           run,
 		Logs:              logs,
 		StdoutLog:         filepath.Join(logs, "core.stdout.log"),
@@ -229,12 +237,20 @@ func (paths Layout) Ensure() error {
 			return err
 		}
 	}
-	for _, directory := range []string{paths.Cores, paths.Configs, paths.Subscriptions, paths.SubscriptionBlobs, paths.SubscriptionCache, paths.GatewayDir, paths.GatewayRules} {
+	for _, directory := range []string{paths.Cores, paths.Configs, paths.Subscriptions, paths.SubscriptionBlobs, paths.SubscriptionCache, paths.GatewayDir, paths.GatewayRules, paths.Tools, paths.TunnelRuntime, paths.TunnelLogs} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", directory, err)
 		}
 	}
 	return nil
+}
+
+func (paths Layout) ToolVersionDir(tool, version string) string {
+	return filepath.Join(paths.Tools, tool, version)
+}
+
+func (paths Layout) ToolBinary(tool, version string) string {
+	return filepath.Join(paths.ToolVersionDir(tool, version), executableName(tool))
 }
 
 func ensureRoot(path string, mode Mode, test bool) error {

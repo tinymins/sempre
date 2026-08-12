@@ -11,7 +11,11 @@ import {
   WarningOutlined,
 } from "@acme/components";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { api } from "@/lib/api";
+import { useOptionalSession } from "@/lib/session";
+import type { TunnelStatus } from "@/lib/types";
 import {
   CONNECTOR_TYPES,
   type ConnectorType,
@@ -31,6 +35,8 @@ interface Props {
 
 const PrivateAccessEditor = ({ value, onChange }: Props) => {
   const { t } = useTranslation();
+  const sessionContext = useOptionalSession();
+  const session = sessionContext?.session;
   const [state, setState] = useState(() => parseConfig(value));
   const lastEmittedValueRef = useRef<string | undefined>(undefined);
   const connectorTypeOptions = useMemo(
@@ -41,7 +47,6 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
       })),
     [t],
   );
-
   useEffect(() => {
     if (value === lastEmittedValueRef.current) return;
     setState(parseConfig(value));
@@ -170,6 +175,7 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
                   <Input
                     size="small"
                     value={connector.peerAddress}
+                    disabled={Boolean(connector.tunnelForwardId)}
                     placeholder="vpn.example.com"
                     onChange={(event) =>
                       updateConnector(index, {
@@ -185,12 +191,14 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
                     min={1}
                     max={65535}
                     value={connector.peerPort}
+                    disabled={Boolean(connector.tunnelForwardId)}
                     onChange={(peerPort) =>
                       updateConnector(index, { peerPort })
                     }
                     className="w-full"
                   />
                 </label>
+                {session ? <TunnelForwardSelect session={session} value={connector.tunnelForwardId} onChange={(tunnelForwardId) => updateConnector(index, { tunnelForwardId })} /> : null}
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgKeepalive")}</FieldLabel>
                   <InputNumber
@@ -405,5 +413,12 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
     </div>
   );
 };
+
+function TunnelForwardSelect({ session, value, onChange }: { session: NonNullable<ReturnType<typeof useOptionalSession>>['session']; value: string; onChange: (value: string) => void }) {
+  const { t } = useTranslation();
+  const tunnels = useQuery({ queryKey: ["tunnels"], queryFn: () => api<TunnelStatus>(session!, "/tunnels") });
+  const options = (tunnels.data?.forwards ?? []).map((forward) => ({ value: forward.forward_id, label: `${forward.instance_name} / ${forward.forward_name} · ${forward.host}:${forward.port}` }));
+  return <label className="space-y-1 md:col-span-3"><FieldLabel>{t("proxy.form.privateTunnelForward")}</FieldLabel><Select size="small" allowClear value={value || undefined} options={options} placeholder={t("proxy.form.privateTunnelDirect")} onChange={(forwardID) => onChange(forwardID || "")} className="w-full" /></label>;
+}
 
 export default PrivateAccessEditor;

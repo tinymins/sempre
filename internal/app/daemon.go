@@ -396,6 +396,10 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 		},
 	}
 	return manager.service.Run(ctx, func(serviceContext context.Context) error {
+		if err := manager.tunnels.Start(serviceContext); err != nil {
+			return fmt.Errorf("start tunnel supervisor: %w", err)
+		}
+		defer manager.tunnels.Stop()
 		return manager.runControlPlane(serviceContext, runner.Run)
 	})
 }

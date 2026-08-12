@@ -10,9 +10,17 @@ import (
 )
 
 type Compiler struct {
-	store   *Store
-	fetcher *Fetcher
+	store                *Store
+	fetcher              *Fetcher
+	resolveTunnelForward TunnelForwardResolver
 }
+
+type TunnelForward struct {
+	Host string
+	Port int
+}
+
+type TunnelForwardResolver func(string) (TunnelForward, bool)
 
 type Target struct {
 	Core     string `json:"core,omitempty"`
@@ -21,8 +29,12 @@ type Target struct {
 	Platform string `json:"platform,omitempty"`
 }
 
-func NewCompiler(store *Store) *Compiler {
-	return &Compiler{store: store, fetcher: NewFetcher(store)}
+func NewCompiler(store *Store, tunnelResolver ...TunnelForwardResolver) *Compiler {
+	compiler := &Compiler{store: store, fetcher: NewFetcher(store)}
+	if len(tunnelResolver) > 0 {
+		compiler.resolveTunnelForward = tunnelResolver[0]
+	}
+	return compiler
 }
 
 func ResolveSingBoxTarget(coreVersion, platform string) (Target, []string) {

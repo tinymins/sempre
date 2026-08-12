@@ -16,6 +16,7 @@ import (
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
+	"github.com/tinymins/sempre/internal/tunnel"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
 
@@ -72,6 +73,12 @@ func writeReleaseSnapshot(ctx context.Context, packageDir string, item target, i
 	}
 	if err := subscriptions.NewStore(paths).Initialize(""); err != nil {
 		return err
+	}
+	if err := tunnel.NewStore(paths).Initialize(); err != nil {
+		return err
+	}
+	if _, _, err := tunnel.InstallPackage(ctx, paths, item.os, item.arch); err != nil {
+		return fmt.Errorf("install wstunnel %s for %s/%s: %w", tunnel.Version, item.os, item.arch, err)
 	}
 	installations := []releaseCoreInstallation{}
 	for _, request := range releaseCoreRequests() {

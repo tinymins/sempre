@@ -18,7 +18,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 }
 
 export function useSession() {
-  const value = useContext(Context)
-  if (!value) throw new Error('SessionProvider is missing')
-  return value
+	const value = useContext(Context)
+	if (!value) throw new Error('SessionProvider is missing')
+	return value
+}
+
+export function useOptionalSession() {
+  return useContext(Context)
 }

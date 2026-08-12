@@ -49,6 +49,11 @@ func (manager *Manager) stageDeployment(
 			return fail(err)
 		}
 		operations = append(operations, resources)
+		tools, err := manager.stageMergedDirectory(manager.paths.Tools, target.Tools, 0o755)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, tools)
 	}
 	if component == DeployAll || component == DeployCore {
 		operation, err := manager.stageCores(ctx, target, document, component == DeployCore)
@@ -77,6 +82,11 @@ func (manager *Manager) stageDeployment(
 			return fail(err)
 		}
 		operations = append(operations, subscriptionData)
+		tunnels, err := manager.stageTunnelConfig(target.TunnelConfig, false)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, tunnels)
 		stateFile, err := stageStateFile(target.State, deploymentDocument(document))
 		if err != nil {
 			return fail(err)
@@ -129,6 +139,11 @@ func (manager *Manager) stageInstallation(
 		return fail(err)
 	}
 	operations = append(operations, resources)
+	tools, err := manager.stageMergedDirectory(manager.paths.Tools, target.Tools, 0o755)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, tools)
 	cores, err := manager.stageCores(ctx, target, source, true)
 	if err != nil {
 		return fail(err)
@@ -153,6 +168,11 @@ func (manager *Manager) stageInstallation(
 		return fail(err)
 	}
 	operations = append(operations, subscriptionData)
+	tunnels, err := manager.stageTunnelConfig(target.TunnelConfig, true)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, tunnels)
 	merged := mergeInstallDocument(source, existing, existingSubscriptionWins)
 	stateFile, err := stageStateFile(target.State, merged)
 	if err != nil {

@@ -68,6 +68,54 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 	}
 }
 
+func TestSingBoxWireGuardUsesManagedTunnelForward(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	compiler.resolveTunnelForward = func(id string) (TunnelForward, bool) {
+		return TunnelForward{Host: "127.0.0.1", Port: 52001}, id == "hz-wg"
+	}
+	profile.PrivateAccess = map[string]any{"enabled": true, "connectors": []any{map[string]any{
+		"enabled": true, "tag": "hz", "type": "wireguard", "tunnel_forward_id": "hz-wg",
+		"endpoint": map[string]any{"address": []any{"10.0.0.2/32"}, "privateKey": "private", "peers": []any{map[string]any{"address": "hz.example.com", "port": float64(31088), "publicKey": "public", "allowedIps": []any{"10.0.0.0/24"}}}},
+	}}}
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	endpoint := mapByKey(t, config["endpoints"].([]any), "tag", "hz")
+	peer := endpoint["peers"].([]any)[0].(map[string]any)
+	if peer["address"] != "127.0.0.1" || peer["port"] != float64(52001) {
+		t.Fatalf("peer = %#v", peer)
+	}
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	first := rules[0].(map[string]any)
+	if first["outbound"] != "direct" {
+		t.Fatalf("wstunnel route must precede DNS hijacking: %#v", first)
+	}
+	foundDirect := false
+	for _, item := range rules {
+		rule := item.(map[string]any)
+		if names, ok := rule["process_name"].([]any); ok && len(names) == 2 && rule["outbound"] == "direct" {
+			foundDirect = true
+		}
+	}
+	if !foundDirect {
+		t.Fatal("missing wstunnel direct route")
+	}
+}
+
+func TestSingBoxRejectsMissingManagedTunnelForward(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.PrivateAccess = map[string]any{"enabled": true, "connectors": []any{map[string]any{"tag": "hz", "type": "wireguard", "tunnel_forward_id": "missing", "endpoint": map[string]any{"peers": []any{map[string]any{}}}}}}
+	_, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
+	if err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestSingBoxManagedDNSUsesExplicitLocalUpstream(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
 	profile.DNS = map[string]any{"shared": map[string]any{

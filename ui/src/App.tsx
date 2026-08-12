@@ -15,6 +15,7 @@ const Rules = lazy(() => import('./pages/Rules').then((module) => ({ default: mo
 const Traffic = lazy(() => import('./pages/Traffic').then((module) => ({ default: module.Traffic })))
 const Logs = lazy(() => import('./pages/Logs').then((module) => ({ default: module.Logs })))
 const Gateway = lazy(() => import('./pages/Gateway').then((module) => ({ default: module.Gateway })))
+const Tunnels = lazy(() => import('./pages/Tunnels').then((module) => ({ default: module.Tunnels })))
 const Management = lazy(() => import('./pages/Management').then((module) => ({ default: module.Management })))
 const AcmeShowcase = import.meta.env.DEV ? lazy(() => import('./pages/AcmeShowcase').then((module) => ({ default: module.AcmeShowcase }))) : null
 
@@ -22,5 +23,5 @@ export function App() {
   const { session } = useSession()
   const isDevShowcase = Boolean(AcmeShowcase) && window.location.hash.startsWith('#/components')
   if (!session && !isDevShowcase) return <Login />
-  return <Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><HashRouter><Shell><Routes><Route path="/" element={<Overview />} /><Route path="/custom-nodes" element={<CustomNodes />} /><Route path="/subscriptions" element={<Subscriptions />} /><Route path="/proxies" element={<Proxies />} /><Route path="/connections" element={<Connections />} /><Route path="/rules" element={<Rules />} /><Route path="/traffic" element={<Traffic />} /><Route path="/logs" element={<Logs />} /><Route path="/network-test" element={<NetworkTest />} /><Route path="/gateway" element={<Gateway />} /><Route path="/management" element={<Management />} />{AcmeShowcase ? <Route path="/components" element={<AcmeShowcase />} /> : null}<Route path="*" element={<Navigate to="/" replace />} /></Routes></Shell></HashRouter></Suspense>
+  return <Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><HashRouter><Shell><Routes><Route path="/" element={<Overview />} /><Route path="/custom-nodes" element={<CustomNodes />} /><Route path="/subscriptions" element={<Subscriptions />} /><Route path="/tunnels" element={<Tunnels />} /><Route path="/proxies" element={<Proxies />} /><Route path="/connections" element={<Connections />} /><Route path="/rules" element={<Rules />} /><Route path="/traffic" element={<Traffic />} /><Route path="/logs" element={<Logs />} /><Route path="/network-test" element={<NetworkTest />} /><Route path="/gateway" element={<Gateway />} /><Route path="/management" element={<Management />} />{AcmeShowcase ? <Route path="/components" element={<AcmeShowcase />} /> : null}<Route path="*" element={<Navigate to="/" replace />} /></Routes></Shell></HashRouter></Suspense>
 }

@@ -13,7 +13,10 @@ import (
 func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, proxies []Proxy, target Target, force bool) (map[string]any, []FieldDiff, []string, error) {
 	modern := target.Version != "11"
 	policy := singboxcore.ResolvePlatformPolicy(target.Version, target.Platform)
-	private := resolvePrivateAccess(profile.PrivateAccess, modern, target.Platform != "default")
+	private, err := resolvePrivateAccess(profile.PrivateAccess, modern, target.Platform != "default", compiler.resolveTunnelForward)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	shared := resolveDNSShared(profile.DNS)
 	outbounds := []any{map[string]any{"type": "direct", "tag": "direct"}, map[string]any{"type": "block", "tag": "reject"}}
 	if !modern {
@@ -97,6 +100,9 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	}
 	final := normalizeOutboundName(clashFinalGroup(groups))
 	routeRules := []any{}
+	if private.UsesTunnel {
+		routeRules = append(routeRules, map[string]any{"process_name": []string{"wstunnel", "wstunnel.exe"}, "action": "route", "outbound": "direct"})
+	}
 	if target.Platform == "default" && shared.SystemDNSTakeoverEnabled {
 		for _, tag := range systemDNSInboundTags(shared.SystemDNSListenHosts) {
 			routeRules = append(routeRules, map[string]any{"inbound": tag, "action": "sniff"}, map[string]any{"inbound": tag, "protocol": "dns", "action": "hijack-dns"})
