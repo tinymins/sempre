@@ -11,6 +11,7 @@ import (
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
+	"github.com/tinymins/sempre/internal/webconfig"
 )
 
 func (manager *Manager) stageDeployment(
@@ -87,12 +88,17 @@ func (manager *Manager) stageDeployment(
 			return fail(err)
 		}
 		operations = append(operations, tunnels)
+		gateway, err := manager.stageGatewayConfig(target.GatewayConfig, false)
+		if err != nil {
+			return fail(err)
+		}
+		operations = append(operations, gateway)
 		stateFile, err := stageStateFile(target.State, deploymentDocument(document))
 		if err != nil {
 			return fail(err)
 		}
 		operations = append(operations, stateFile)
-		web, err := manager.stageWebConfig(target.WebConfig, false)
+		web, err := manager.stageWebConfig(target.WebConfig, false, false)
 		if err != nil {
 			return fail(err)
 		}
@@ -173,13 +179,18 @@ func (manager *Manager) stageInstallation(
 		return fail(err)
 	}
 	operations = append(operations, tunnels)
+	gateway, err := manager.stageGatewayConfig(target.GatewayConfig, true)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, gateway)
 	merged := mergeInstallDocument(source, existing, existingSubscriptionWins)
 	stateFile, err := stageStateFile(target.State, merged)
 	if err != nil {
 		return fail(err)
 	}
 	operations = append(operations, stateFile)
-	web, err := manager.stageWebConfig(target.WebConfig, false)
+	web, err := manager.stageWebConfig(target.WebConfig, false, true)
 	if err != nil {
 		return fail(err)
 	}
@@ -257,10 +268,20 @@ func (manager *Manager) stageSubscriptionInstallation(
 	return operation, nil
 }
 
-func (manager *Manager) stageWebConfig(target string, clearPassword bool) (*swapOperation, error) {
+func (manager *Manager) stageWebConfig(target string, clearPassword, existingWins bool) (*swapOperation, error) {
 	config, err := manager.web.Read()
 	if err != nil {
 		return nil, err
+	}
+	if existingWins {
+		if _, statErr := os.Stat(target); statErr == nil {
+			config, err = webconfig.New(target).Read()
+			if err != nil {
+				return nil, err
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, statErr
+		}
 	}
 	if clearPassword {
 		config.Password = ""

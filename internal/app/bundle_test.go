@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/tinymins/sempre/internal/gateway"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
 	"github.com/tinymins/sempre/internal/webconfig"
@@ -23,6 +24,14 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 		config.Listen = "127.0.0.1:44111"
 		return nil
 	}); err != nil {
+		t.Fatal(err)
+	}
+	gatewayConfig, err := manager.gateway.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gatewayConfig.PVE.Host = "portable.example"
+	if _, err := manager.gateway.Update(gatewayConfig); err != nil {
 		t.Fatal(err)
 	}
 	writeTestUI(t, manager.paths.UICurrent, "Custom Console")
@@ -55,6 +64,13 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 	}
 	if web.Listen != "127.0.0.1:44111" || web.Password != "" {
 		t.Fatalf("exported web config = %#v", web)
+	}
+	exportedGateway, err := gateway.NewStore(packagePaths).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exportedGateway.PVE.Host != "portable.example" {
+		t.Fatalf("exported gateway config = %#v", exportedGateway)
 	}
 	for _, path := range []string{
 		packagePaths.CoreBinary("sing-box", "", "1.2.3"),

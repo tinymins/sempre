@@ -130,12 +130,17 @@ func (manager *Manager) exportBundleDirectory(ctx context.Context, packageDir st
 		return fail(err)
 	}
 	operations = append(operations, tunnels)
+	gateway, err := manager.stageGatewayConfig(paths.GatewayConfig, false)
+	if err != nil {
+		return fail(err)
+	}
+	operations = append(operations, gateway)
 	stateFile, err := stageStateFile(paths.State, deploymentDocument(document))
 	if err != nil {
 		return fail(err)
 	}
 	operations = append(operations, stateFile)
-	web, err := manager.stageWebConfig(paths.WebConfig, true)
+	web, err := manager.stageWebConfig(paths.WebConfig, true, false)
 	if err != nil {
 		return fail(err)
 	}
