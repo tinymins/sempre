@@ -54,4 +54,29 @@ describe('Tunnels', () => {
     expect(saved.instances.flatMap((instance) => instance.forwards.map((forward) => forward.id))).toEqual(['wg-00000003', 'wg-00000004'])
     expect(saved.instances.flatMap((instance) => instance.forwards.map((forward) => forward.listen_port))).toEqual([52001, 52002])
   })
+
+  it('hides generated IDs and keeps advanced parameters collapsed by default', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Tunnels /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    await screen.findByText('尚未配置隧道。每台远端 OpenWrt 添加一个客户端实例。')
+    fireEvent.click(screen.getByRole('button', { name: '新增远端实例' }))
+
+    expect(screen.queryByText('实例 ID')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('tunnel-00000001')).not.toBeInTheDocument()
+    expect(screen.queryByText('DNS resolver')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '高级参数' }))
+    expect(screen.getByText('DNS resolver')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('15s')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '新增转发' }))
+    expect(screen.queryByText('Forward ID')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('wg-00000002')).not.toBeInTheDocument()
+    expect(screen.queryByText('远端主机')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: '高级参数' })[1])
+    expect(screen.getByText('远端主机')).toBeInTheDocument()
+    expect(screen.getByText('UDP 超时秒')).toBeInTheDocument()
+  })
 })
