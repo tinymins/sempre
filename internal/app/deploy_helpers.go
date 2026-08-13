@@ -56,34 +56,6 @@ func (manager *Manager) sameSubscriptionCatalog(target layout.Layout) (bool, err
 	return bytes.Equal(left, right), nil
 }
 
-func deploymentReplacementSummary(document state.Document) string {
-	selected := "none"
-	if document.Selected != nil {
-		selected = selectionRef(*document.Selected).String()
-	}
-	active := "none"
-	if document.Active != nil {
-		active = deploymentLabel(*document.Active)
-	}
-	configured := "no"
-	if document.ActiveProfileID != "" || document.Subscription.URL != "" {
-		configured = "yes"
-	}
-	versions := 0
-	for _, coreState := range document.Cores {
-		for _, source := range coreState.SourceEntries() {
-			versions += len(source.State.Installed)
-		}
-	}
-	return fmt.Sprintf(
-		"Existing system data will be replaced:\n  Selected: %s\n  Active: %s\n  Core versions: %d\n  Subscription configured: %s",
-		selected,
-		active,
-		versions,
-		configured,
-	)
-}
-
 func referencedConfigs(document state.Document) map[string]map[string]bool {
 	result := map[string]map[string]bool{}
 	add := func(coreID, hash string) {

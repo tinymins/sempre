@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tinymins/sempre/internal/archive"
+	"github.com/tinymins/sempre/internal/bundle"
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/download"
 	"github.com/tinymins/sempre/internal/layout"
@@ -63,6 +64,9 @@ func cleanupBundleWork(workDir string) error {
 func writeReleaseSnapshot(ctx context.Context, packageDir string, item target, installedAt time.Time) error {
 	paths := layout.PortableAt(filepath.Join(packageDir, item.executableName()))
 	if err := paths.Ensure(); err != nil {
+		return err
+	}
+	if err := bundle.Write(packageDir, bundle.Release); err != nil {
 		return err
 	}
 	if err := state.WriteAtomic(layout.PortableMarkerPath(paths.ServiceExecutable), []byte{}, 0o600); err != nil {

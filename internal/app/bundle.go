@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 
+	bundleinfo "github.com/tinymins/sempre/internal/bundle"
+	"github.com/tinymins/sempre/internal/installscript"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
 )
@@ -21,14 +23,24 @@ type BundleExportResult struct {
 	Archive   string
 }
 
-func (manager *Manager) InstallBundle(ctx context.Context, allowReplace bool) error {
+func (manager *Manager) RestoreBundle(ctx context.Context, allowReplace bool) error {
 	executable, err := layout.CurrentExecutable()
 	if err != nil {
 		return err
 	}
 	portable := layout.PortableAt(executable)
+	metadata, metadataErr := bundleinfo.Read(portable.Root)
+	if metadataErr == nil && metadata.Kind != bundleinfo.Snapshot {
+		return fmt.Errorf("%s is a release bundle; run 'sempre install' instead", portable.Root)
+	}
+	if metadataErr != nil {
+		if !errors.Is(metadataErr, os.ErrNotExist) {
+			return metadataErr
+		}
+		fmt.Fprintln(manager.errors, "WARNING: bundle metadata is missing; restoring a legacy snapshot")
+	}
 	if portable.State == manager.paths.State {
-		return manager.installBundleService(ctx, allowReplace)
+		return manager.restoreBundleService(ctx, allowReplace)
 	}
 	if _, err := os.Stat(portable.State); errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("bundle snapshot is missing: %s", portable.State)
@@ -39,7 +51,7 @@ func (manager *Manager) InstallBundle(ctx context.Context, allowReplace bool) er
 	if err != nil {
 		return err
 	}
-	return source.installBundleService(ctx, allowReplace)
+	return source.restoreBundleService(ctx, allowReplace)
 }
 
 func (manager *Manager) ExportBundle(ctx context.Context, outputDir string) (BundleExportResult, error) {
@@ -156,6 +168,9 @@ func (manager *Manager) exportBundleDirectory(ctx context.Context, packageDir st
 	if err := commitSwaps(operations); err != nil {
 		return err
 	}
+	if err := bundleinfo.Write(packageDir, bundleinfo.Snapshot); err != nil {
+		return err
+	}
 	if err := state.WriteAtomic(layout.PortableMarkerPath(paths.ServiceExecutable), []byte{}, 0o600); err != nil {
 		return err
 	}
@@ -163,24 +178,7 @@ func (manager *Manager) exportBundleDirectory(ctx context.Context, packageDir st
 }
 
 func writeBundleInstallers(packageDir, executable, goos string) error {
-	executableName := filepath.Base(executable)
-	unix := fmt.Sprintf("#!/bin/sh\nset -eu\ncd -- \"$(dirname -- \"$0\")\"\n./%s bundle install --yes\n", executableName)
-	switch goos {
-	case "windows":
-		windows := fmt.Sprintf("@echo off\r\ncd /d \"%%~dp0\"\r\n\"%%~dp0%s\" bundle install --yes\r\nset EXITCODE=%%ERRORLEVEL%%\r\npause\r\nexit /b %%EXITCODE%%\r\n", executableName)
-		return state.WriteAtomic(filepath.Join(packageDir, "install.cmd"), []byte(windows), 0o755)
-	case "darwin":
-		if err := state.WriteAtomic(filepath.Join(packageDir, "install.command"), []byte(unix), 0o755); err != nil {
-			return err
-		}
-		return state.WriteAtomic(filepath.Join(packageDir, "install.sh"), []byte(unix), 0o755)
-	default:
-		if err := state.WriteAtomic(filepath.Join(packageDir, "install.sh"), []byte(unix), 0o755); err != nil {
-			return err
-		}
-		desktop := "[Desktop Entry]\nType=Application\nName=Install Sempre Bundle\nTerminal=true\nExec=sh -c 'cd \"$(dirname \"$1\")\" && sh install.sh' sh %k\n"
-		return state.WriteAtomic(filepath.Join(packageDir, "install.desktop"), []byte(desktop), 0o755)
-	}
+	return installscript.Write(packageDir, executable, goos, "bundle", "restore")
 }
 
 func zipDirectory(destination, source, prefix string) error {

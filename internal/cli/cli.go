@@ -47,6 +47,10 @@ func Run(ctx context.Context, arguments []string, input io.Reader, output, error
 	if len(arguments) == 0 {
 		return runLauncher(ctx, input, output, errorOutput)
 	}
+	if err := validateCommandOptions(arguments, options); err != nil {
+		fmt.Fprintln(errorOutput, "ERROR:", err)
+		return 1
+	}
 	if handled, code := runStateless(ctx, arguments, executable, output, errorOutput); handled {
 		return code
 	}
@@ -208,24 +212,34 @@ func (command *CLI) bundle(ctx context.Context, arguments []string, options Opti
 		if len(arguments) != 1 {
 			return usageError()
 		}
-		if err := command.installBundle(ctx, options); err != nil {
+		fmt.Fprintln(command.output, "WARNING: 'bundle install' is deprecated; performing a configuration-preserving install.")
+		if options.Yes {
+			fmt.Fprintln(command.output, "WARNING: ignoring --yes so an installed custom UI cannot be replaced without confirmation.")
+			options.Yes = false
+		}
+		return command.install(ctx, nil, options)
+	case "restore":
+		if len(arguments) != 1 {
+			return usageError()
+		}
+		if err := command.restoreBundle(ctx, options); err != nil {
 			return err
 		}
-		fmt.Fprintln(command.output, "Sempre bundle installed, enabled, and started.")
+		fmt.Fprintln(command.output, "Sempre snapshot restored, enabled, and started.")
 		return waitAndOpenSystem(ctx, command.output)
 	default:
 		return usageError()
 	}
 }
 
-func (command *CLI) installBundle(ctx context.Context, options Options) error {
-	err := command.manager.InstallBundleApplication(ctx, options.Yes)
+func (command *CLI) restoreBundle(ctx context.Context, options Options) error {
+	err := command.manager.RestoreBundleApplication(ctx, options.Yes)
 	var confirmation *app.ConfirmationRequired
 	if !errors.As(err, &confirmation) {
 		return err
 	}
 	if !command.confirmReplacement(confirmation.Summary) {
-		return fmt.Errorf("bundle installation cancelled")
+		return fmt.Errorf("bundle restore cancelled")
 	}
-	return command.manager.InstallBundleApplication(ctx, true)
+	return command.manager.RestoreBundleApplication(ctx, true)
 }

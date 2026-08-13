@@ -61,6 +61,22 @@ func invocationArguments(arguments []string, options Options) []string {
 	return result
 }
 
+func validateCommandOptions(arguments []string, options Options) error {
+	if len(arguments) == 0 {
+		return nil
+	}
+	switch arguments[0] {
+	case "install", "bundle", "service":
+		if options.NoRestart {
+			return fmt.Errorf("--no-restart is not supported by %s commands", arguments[0])
+		}
+		if options.JSON {
+			return fmt.Errorf("--json is not supported by %s commands", arguments[0])
+		}
+	}
+	return nil
+}
+
 func requiresAdministrator(arguments []string, mode layout.Mode) bool {
 	if len(arguments) == 0 {
 		return false

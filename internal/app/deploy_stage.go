@@ -11,6 +11,7 @@ import (
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
+	uiassets "github.com/tinymins/sempre/internal/ui"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
 
@@ -116,6 +117,7 @@ func (manager *Manager) stageInstallation(
 	ctx context.Context,
 	target layout.Layout,
 	source, existing state.Document,
+	replaceUI bool,
 ) ([]*swapOperation, error) {
 	var operations []*swapOperation
 	fail := func(err error) ([]*swapOperation, error) {
@@ -195,7 +197,7 @@ func (manager *Manager) stageInstallation(
 		return fail(err)
 	}
 	operations = append(operations, web)
-	ui, err := manager.stageCurrentUI(target.UICurrent)
+	ui, err := manager.stageInstallationUI(target, replaceUI)
 	if err != nil {
 		return fail(err)
 	}
@@ -308,22 +310,37 @@ func (manager *Manager) stageWebConfig(target string, clearPassword, existingWin
 }
 
 func (manager *Manager) stageCurrentUI(target string) (*swapOperation, error) {
+	return stageCurrentUIFrom(manager.paths, target)
+}
+
+func (manager *Manager) stageInstallationUI(target layout.Layout, replace bool) (*swapOperation, error) {
+	if !replace {
+		if _, err := os.Stat(target.UICurrent); err == nil {
+			return stageCurrentUIFrom(target, target.UICurrent)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return manager.stageCurrentUI(target.UICurrent)
+}
+
+func stageCurrentUIFrom(source layout.Layout, target string) (*swapOperation, error) {
 	staging, err := stageDirectory(target)
 	if err != nil {
 		return nil, err
 	}
 	operation := &swapOperation{staged: staging, target: target}
-	if _, err := os.Stat(manager.paths.UICurrent); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(source.UICurrent); errors.Is(err, os.ErrNotExist) {
 		return operation, nil
 	} else if err != nil {
 		operation.cleanup()
 		return nil, err
 	}
-	if _, err := manager.ui.Current(); err != nil {
+	if _, err := uiassets.New(source.UI, source.UICurrent).Current(); err != nil {
 		operation.cleanup()
 		return nil, fmt.Errorf("validate current UI: %w", err)
 	}
-	if err := copyDirectory(manager.paths.UICurrent, staging, 0o600); err != nil {
+	if err := copyDirectory(source.UICurrent, staging, 0o600); err != nil {
 		operation.cleanup()
 		return nil, err
 	}

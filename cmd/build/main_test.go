@@ -4,9 +4,11 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	bundleinfo "github.com/tinymins/sempre/internal/bundle"
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/layout"
 )
@@ -115,6 +117,9 @@ func TestBundleArchiveUsesReleaseDirectoryPrefix(t *testing.T) {
 	if err := stateMarker(packageDir); err != nil {
 		t.Fatal(err)
 	}
+	if err := bundleinfo.Write(packageDir, bundleinfo.Release); err != nil {
+		t.Fatal(err)
+	}
 	if err := writeBundleInstallers(packageDir, "sempre", "linux"); err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +140,7 @@ func TestBundleArchiveUsesReleaseDirectoryPrefix(t *testing.T) {
 		"sempre-linux-amd64/sempre",
 		"sempre-linux-amd64/.sempre-portable",
 		"sempre-linux-amd64/.sempre/state.json",
+		"sempre-linux-amd64/.sempre-bundle.json",
 		"sempre-linux-amd64/install.sh",
 		"sempre-linux-amd64/install.desktop",
 	} {
@@ -180,6 +186,13 @@ func TestWriteBundleInstallersUsesTargetOS(t *testing.T) {
 				if !want[name] && !os.IsNotExist(err) {
 					t.Fatalf("%s should not exist: %v", name, err)
 				}
+			}
+			installer, err := os.ReadFile(filepath.Join(root, test.want[0]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(installer), " install ") || strings.Contains(string(installer), "bundle install") || strings.Contains(string(installer), "--yes") {
+				t.Fatalf("release installer = %q", installer)
 			}
 		})
 	}

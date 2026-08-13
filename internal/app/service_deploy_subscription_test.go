@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/tinymins/sempre/internal/layout"
@@ -204,9 +203,5 @@ func TestMeaningfulSystemStateRequiresConfirmation(t *testing.T) {
 	document.Selected = &state.Selection{Core: "sing-box", Ref: "stable"}
 	if !meaningfulState(document) {
 		t.Fatal("selected system state was treated as empty")
-	}
-	summary := deploymentReplacementSummary(document)
-	if !strings.Contains(summary, "sing-box@stable") {
-		t.Fatalf("summary = %q", summary)
 	}
 }

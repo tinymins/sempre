@@ -98,7 +98,9 @@ sempre install
 `install` can be run repeatedly to install, repair, or upgrade Sempre from the
 current bundle. It copies the binary and bundled UI to protected system storage,
 registers the native service, starts the Web control plane, and opens it in the
-default browser. Without a subscription or existing configuration, the
+default browser. Existing subscriptions, tunnels, gateway settings, Web
+settings, and custom UI are preserved unless an explicit install option asks to
+replace them. Without a subscription or existing configuration, the
 service reports `idle` until one is configured.
 Open a new terminal after installation; `sempre status`, `sempre doctor`, and
 the rest of the CLI are available globally.
@@ -394,9 +396,9 @@ sempre service status
 enables it, and starts it. It also copies Sempre and bundled resources to a
 protected system executable directory, so the original download can be moved
 or deleted afterwards. Core, configuration, and subscription state is merged
-with an existing installation; meaningful system subscription data takes
-precedence over portable defaults. `service uninstall` removes only the
-service registration;
+with an existing installation; system subscriptions, tunnels, gateway
+settings, Web settings, and UI take precedence over portable defaults.
+`service uninstall` removes only the service registration;
 top-level `uninstall` removes the application while retaining configuration,
 subscription, listener, and password unless `--purge` is supplied.
 
@@ -407,8 +409,8 @@ service:
 | --- | --- | --- |
 | `service deploy bin` | Sempre service executable, bundled resources, and service registration | Core, state, configurations, Web settings, UI, logs, runtime |
 | `service deploy core` | Managed core/version directories from portable mode | Extra system core versions, state, configurations, logs, runtime |
-| `service deploy data` | State, subscription catalogs/cache/snapshots, referenced configurations, Web listener/password, and current UI | Sempre binary, cores, logs, runtime |
-| `service deploy all` | Sempre binary/resources, exact managed-core snapshot, state, subscription data, referenced configurations, Web listener/password, and current UI | Logs and runtime |
+| `service deploy data` | State, subscription catalogs/cache/snapshots, referenced configurations, tunnels, gateway settings, Web listener/password, and current UI | Sempre binary, cores, logs, runtime |
+| `service deploy all` | Sempre binary/resources, exact managed-core snapshot, state, subscription data, referenced configurations, tunnels, gateway settings, Web listener/password, and current UI | Logs and runtime |
 
 `service deploy` is available only in portable mode and requires an installed
 system service. A data-only deployment first verifies that every core version
@@ -416,14 +418,15 @@ referenced by the portable state already exists in system storage. `all`
 removes system core versions that are not in the portable snapshot; `core`
 intentionally keeps them.
 
-Portable `service install` is equivalent to deploying `all`, repairing the
-native service registration, and starting the service. An existing meaningful
-system state is summarized and requires confirmation before `data`, `all`, or
-portable installation replaces it; use `--yes` for unattended deployment. An
-initialized but otherwise empty system `state.json` is replaceable without a
-prompt. Deployments stage files on the target volume, stop the service only
-after staging succeeds, and restore both files and prior service state if
-activation fails.
+Portable `service install` merges portable assets into the installed system,
+repairs the native service registration, and starts the service. It is the safe
+repair path and preserves system-owned managed configuration. In contrast,
+`service deploy data` and `service deploy all` are snapshot operations. They
+summarize changes to core state, subscriptions, tunnels, gateway settings, Web
+settings, and UI before replacing meaningful system data; use `--yes` only for
+an explicitly reviewed unattended deployment. Deployments stage files on the
+target volume, stop the service only after staging succeeds, and restore both
+files and prior service state if activation fails.
 
 For repeatable batch deployment, export a platform-specific bundle from the
 configured instance:
@@ -438,23 +441,28 @@ system data, and portable mode exports the `.sempre` directory beside that
 executable. It emits an expanded `sempre-bundle-<os>-<arch>/` directory and a
 matching ZIP. The bundle includes the current Sempre executable, resources,
 all core versions recorded in state, referenced generated configurations,
-subscription catalogs/cache/snapshots, the Web listener, and the current UI.
-The administrator password hash is intentionally cleared in the exported
-`web.json`; installed bundles start with an empty Web password.
+subscription catalogs/cache/snapshots, tunnels, gateway settings, the Web
+listener, and the current UI. Snapshot bundles carry
+`.sempre-bundle.json` with kind `snapshot`. The administrator password hash is
+intentionally cleared in the exported `web.json`; restoring the snapshot clears
+the target password after confirmation.
 
 Each bundle is valid only for the operating system and architecture that
 created it. Install a bundle on a target machine by running the included
 platform installer: Windows uses `install.cmd`, macOS uses `install.command`
-or `install.sh`, and Linux uses `install.sh` or `install.desktop`. Each script
-invokes:
+or `install.sh`, and Linux uses `install.sh` or `install.desktop`. Snapshot
+installers invoke the explicit restore command and forward additional options:
 
 ```text
-sempre bundle install --yes
+sempre bundle restore
 ```
 
-Bundle installation installs or repairs the native system service, replaces
-the system deployment with the packaged snapshot, starts the service, and
-opens the Web UI when available.
+The restore displays the complete replacement summary and requires confirmation
+unless `--yes` is supplied. Official release bundles instead carry kind
+`release`; their installers invoke `sempre install`, which preserves existing
+configuration. The deprecated `sempre bundle install` command also performs the
+safe, configuration-preserving install so historical release scripts cannot
+silently restore a snapshot.
 
 Sempre supervises the core on every platform. Unexpected exits use bounded
 exponential backoff. Unix process groups and Windows Job Objects ensure child

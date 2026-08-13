@@ -3,8 +3,9 @@ package cli
 const usage = `Sempre - cross-platform lifecycle manager for proxy cores
 
 Main entry points:
-  sempre install [--core <reference>] [--subscription <URL>] [--ui <source>] [--ui-sha256 <digest>]
-  sempre bundle <export|install>
+  sempre install [--core <reference>] [--subscription <URL>|--subscription-file <path>] [--ui <source>] [--ui-sha256 <digest>] [--yes]
+  sempre bundle export <directory>
+  sempre bundle restore [--yes]
   sempre uninstall [--purge]
   sempre open
   sempre portable run
@@ -51,4 +52,6 @@ Modes:
 Core mutation commands accept --yes to restart a running managed core without
 prompting, or --no-restart to save the change without restarting it.
 Subscription profile changes are always staged without an interactive restart.
+bundle install remains a deprecated, configuration-preserving alias for
+install; use bundle restore only to replace system data from a snapshot.
 `

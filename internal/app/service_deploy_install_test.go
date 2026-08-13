@@ -15,6 +15,7 @@ import (
 	"github.com/tinymins/sempre/internal/service"
 	"github.com/tinymins/sempre/internal/state"
 	"github.com/tinymins/sempre/internal/tunnel"
+	uiassets "github.com/tinymins/sempre/internal/ui"
 	"github.com/tinymins/sempre/internal/webconfig"
 )
 
@@ -40,12 +41,78 @@ func TestSystemReinstallPreservesInstalledConfigs(t *testing.T) {
 		t.Fatal(err)
 	}
 	configureInstallConfigs(t, targetManager, "system", "127.0.0.1:44222")
+	writeTestUI(t, source.paths.UICurrent, "Portable Console")
+	writeTestUI(t, target.UICurrent, "System Console")
 	source.service = &recordingService{state: service.Running}
 
 	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true, false); err != nil {
 		t.Fatal(err)
 	}
 	assertInstallConfigs(t, target, "system", "127.0.0.1:44222")
+	assertInstalledUI(t, target, "System Console")
+}
+
+func TestSystemInstallReplacesUIWhenRequested(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	writeTestUI(t, source.paths.UICurrent, "Portable Console")
+	writeTestUI(t, target.UICurrent, "System Console")
+	source.service = &recordingService{state: service.Running}
+
+	if err := source.deployToSystemWithUI(context.Background(), target, DeployAll, true, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	assertInstalledUI(t, target, "Portable Console")
+}
+
+func TestSnapshotRestoreConfirmsManagedConfigurationChanges(t *testing.T) {
+	t.Parallel()
+	source := newTestManager(t)
+	target := layout.SystemAt(t.TempDir())
+	targetManager, err := New(target, io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configureInstallConfigs(t, targetManager, "system", "127.0.0.1:44222")
+	writeTestUI(t, target.UICurrent, "System Console")
+	source.service = &recordingService{state: service.Running}
+
+	err = source.deployToSystem(context.Background(), target, DeployAll, false, true, true)
+	var confirmation *ConfirmationRequired
+	if !errors.As(err, &confirmation) {
+		t.Fatalf("restore error = %v", err)
+	}
+	for _, label := range []string{"Tunnels:", "Gateway:", "Web listener:", "UI:"} {
+		if !strings.Contains(confirmation.Summary, label) {
+			t.Errorf("summary missing %q: %s", label, confirmation.Summary)
+		}
+	}
+
+	if err := source.deployToSystem(context.Background(), target, DeployAll, true, true, true); err != nil {
+		t.Fatal(err)
+	}
+	tunnels, err := tunnel.NewStore(target).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tunnels.Instances) != 0 {
+		t.Fatalf("restored tunnels = %#v", tunnels)
+	}
+	gatewayConfig, err := gateway.NewStore(target).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gatewayConfig.PVE.Host != "" {
+		t.Fatalf("restored gateway = %#v", gatewayConfig)
+	}
+	web, err := webconfig.New(target.WebConfig).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if web.Listen != webconfig.DefaultListen {
+		t.Fatalf("restored web config = %#v", web)
+	}
 }
 
 func TestSystemInstallSucceedsWithoutBundledUI(t *testing.T) {
@@ -281,5 +348,16 @@ func assertInstallConfigs(t *testing.T, paths layout.Layout, marker, listen stri
 	}
 	if web.Listen != listen {
 		t.Fatalf("web listen = %q", web.Listen)
+	}
+}
+
+func assertInstalledUI(t *testing.T, paths layout.Layout, name string) {
+	t.Helper()
+	metadata, err := uiassets.New(paths.UI, paths.UICurrent).Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Manifest.Name != name {
+		t.Fatalf("installed UI = %#v", metadata)
 	}
 }

@@ -35,6 +35,21 @@ func TestParseGlobalOptionsRejectsConflictingRestartFlags(t *testing.T) {
 	}
 }
 
+func TestInstallCommandsRejectUnusedGlobalOptions(t *testing.T) {
+	t.Parallel()
+	for _, arguments := range [][]string{{"install"}, {"bundle", "restore"}, {"service", "install"}} {
+		if err := validateCommandOptions(arguments, Options{NoRestart: true}); err == nil {
+			t.Errorf("%v accepted --no-restart", arguments)
+		}
+		if err := validateCommandOptions(arguments, Options{JSON: true}); err == nil {
+			t.Errorf("%v accepted --json", arguments)
+		}
+	}
+	if err := validateCommandOptions([]string{"core", "install", "sing-box@stable"}, Options{NoRestart: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestParseGlobalOptionsSelectsMode(t *testing.T) {
 	t.Parallel()
 	arguments, options, err := parseGlobalOptions([]string{"core", "--portable", "list"})

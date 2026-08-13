@@ -47,11 +47,22 @@ func (manager *Manager) BundledUIReplacement() (*BundledUIReplacement, error) {
 	if err != nil {
 		return nil, err
 	}
-	return manager.bundledUIReplacement(filepath.Join(filepath.Dir(executable), "resources"))
+	systemPaths, err := layout.ForMode(layout.System)
+	if err != nil {
+		return nil, err
+	}
+	return bundledUIReplacementFrom(
+		filepath.Join(filepath.Dir(executable), "resources"),
+		uiassets.New(systemPaths.UI, systemPaths.UICurrent),
+	)
 }
 
 func (manager *Manager) bundledUIReplacement(resources string) (*BundledUIReplacement, error) {
-	metadata, err := manager.ui.Current()
+	return bundledUIReplacementFrom(resources, manager.ui)
+}
+
+func bundledUIReplacementFrom(resources string, current *uiassets.Manager) (*BundledUIReplacement, error) {
+	metadata, err := current.Current()
 	if errors.Is(err, os.ErrNotExist) || (err == nil && metadata.SourceType == "official") {
 		return nil, nil
 	}
@@ -131,7 +142,7 @@ func (manager *Manager) BootstrapApplication(ctx context.Context, options Bootst
 			result.RuntimeTarget = status.Target
 		}
 	}
-	if err := manager.InstallApplication(ctx, true); err != nil {
+	if err := manager.InstallApplication(ctx, true, strings.TrimSpace(options.UI) != ""); err != nil {
 		return result, err
 	}
 	return result, nil

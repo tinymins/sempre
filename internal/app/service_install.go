@@ -40,20 +40,20 @@ func ParseDeployComponent(value string) (DeployComponent, error) {
 	}
 }
 
-func (manager *Manager) installSystemService(ctx context.Context, allowReplace bool) error {
+func (manager *Manager) installSystemService(ctx context.Context, allowReplace, replaceUI bool) error {
 	systemPaths, err := layout.ForMode(layout.System)
 	if err != nil {
 		return err
 	}
-	return manager.deployToSystem(ctx, systemPaths, DeployAll, allowReplace, true, false)
+	return manager.deployToSystemWithUI(ctx, systemPaths, DeployAll, allowReplace, true, false, replaceUI)
 }
 
-func (manager *Manager) installBundleService(ctx context.Context, allowReplace bool) error {
+func (manager *Manager) restoreBundleService(ctx context.Context, allowReplace bool) error {
 	systemPaths, err := layout.ForMode(layout.System)
 	if err != nil {
 		return err
 	}
-	return manager.deployToSystem(ctx, systemPaths, DeployAll, allowReplace, true, true)
+	return manager.deployToSystemWithUI(ctx, systemPaths, DeployAll, allowReplace, true, true, true)
 }
 
 func (manager *Manager) deploySystemService(
@@ -95,6 +95,18 @@ func (manager *Manager) deployToSystem(
 	install bool,
 	snapshot bool,
 ) error {
+	return manager.deployToSystemWithUI(ctx, target, component, allowReplace, install, snapshot, snapshot)
+}
+
+func (manager *Manager) deployToSystemWithUI(
+	ctx context.Context,
+	target layout.Layout,
+	component DeployComponent,
+	allowReplace bool,
+	install bool,
+	snapshot bool,
+	replaceUI bool,
+) error {
 	var configLease *state.Lease
 	if component == DeployAll || component == DeployData {
 		var err error
@@ -122,15 +134,12 @@ func (manager *Manager) deployToSystem(
 		if err != nil {
 			return err
 		}
-		sameData := sameDeploymentData(sourceDocument, targetDocument)
-		if sameData {
-			sameData, err = manager.sameSubscriptionCatalog(target)
-			if err != nil {
-				return err
-			}
+		preview, err := manager.previewReplacement(target, sourceDocument, targetDocument, targetSubscriptions)
+		if err != nil {
+			return err
 		}
-		if (meaningfulState(targetDocument) || targetSubscriptions) && !sameData && !allowReplace {
-			return &ConfirmationRequired{Summary: deploymentReplacementSummary(targetDocument)}
+		if preview.Meaningful && !preview.Same && !allowReplace {
+			return &ConfirmationRequired{Summary: preview.Summary}
 		}
 	}
 
@@ -148,7 +157,7 @@ func (manager *Manager) deployToSystem(
 		if readErr != nil {
 			return readErr
 		}
-		operations, err = manager.stageInstallation(ctx, target, sourceDocument, targetDocument)
+		operations, err = manager.stageInstallation(ctx, target, sourceDocument, targetDocument, replaceUI)
 	} else {
 		operations, err = manager.stageDeployment(ctx, target, component, sourceDocument)
 	}

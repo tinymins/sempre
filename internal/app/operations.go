@@ -34,11 +34,11 @@ func (manager *Manager) RunDirect(ctx context.Context, reference string) error {
 
 func (manager *Manager) InstallService(ctx context.Context, allowReplace bool) error {
 	return manager.withSystemOperation(func() error {
-		return manager.installSystemService(ctx, allowReplace)
+		return manager.installSystemService(ctx, allowReplace, false)
 	})
 }
 
-func (manager *Manager) InstallApplication(ctx context.Context, allowReplace bool) error {
+func (manager *Manager) InstallApplication(ctx context.Context, allowReplace, replaceUI bool) error {
 	executable, err := layout.CurrentExecutable()
 	if err != nil {
 		return err
@@ -50,17 +50,23 @@ func (manager *Manager) InstallApplication(ctx context.Context, allowReplace boo
 			if err != nil {
 				return err
 			}
-			return source.InstallService(ctx, allowReplace)
+			return source.installApplicationService(ctx, allowReplace, replaceUI)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
-	return manager.InstallService(ctx, allowReplace)
+	return manager.installApplicationService(ctx, allowReplace, replaceUI)
 }
 
-func (manager *Manager) InstallBundleApplication(ctx context.Context, allowReplace bool) error {
+func (manager *Manager) installApplicationService(ctx context.Context, allowReplace, replaceUI bool) error {
 	return manager.withSystemOperation(func() error {
-		return manager.InstallBundle(ctx, allowReplace)
+		return manager.installSystemService(ctx, allowReplace, replaceUI)
+	})
+}
+
+func (manager *Manager) RestoreBundleApplication(ctx context.Context, allowReplace bool) error {
+	return manager.withSystemOperation(func() error {
+		return manager.RestoreBundle(ctx, allowReplace)
 	})
 }
 

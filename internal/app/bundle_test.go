@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
+	bundleinfo "github.com/tinymins/sempre/internal/bundle"
 	"github.com/tinymins/sempre/internal/gateway"
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
@@ -58,6 +60,13 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 		t.Fatal(err)
 	}
 	packagePaths := layout.At(result.Directory)
+	metadata, err := bundleinfo.Read(result.Directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Kind != bundleinfo.Snapshot {
+		t.Fatalf("bundle kind = %q", metadata.Kind)
+	}
 	web, err := webconfig.New(packagePaths.WebConfig).Read()
 	if err != nil {
 		t.Fatal(err)
@@ -82,6 +91,17 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 		}
 	}
 	assertBundleInstallers(t, result.Directory, runtime.GOOS)
+	installerName := "install.sh"
+	if runtime.GOOS == "windows" {
+		installerName = "install.cmd"
+	}
+	installer, err := os.ReadFile(filepath.Join(result.Directory, installerName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(installer), "bundle restore") || strings.Contains(string(installer), "--yes") {
+		t.Fatalf("snapshot installer = %q", installer)
+	}
 	archive, err := zip.OpenReader(result.Archive)
 	if err != nil {
 		t.Fatal(err)
@@ -93,14 +113,20 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 	}
 	corePath = filepath.ToSlash(filepath.Join(filepath.Base(result.Directory), corePath))
 	found := false
+	foundMetadata := false
 	for _, file := range archive.File {
 		if filepath.ToSlash(file.Name) == corePath {
 			found = true
-			break
+		}
+		if filepath.ToSlash(file.Name) == filepath.ToSlash(filepath.Join(filepath.Base(result.Directory), bundleinfo.MetadataName)) {
+			foundMetadata = true
 		}
 	}
 	if !found {
 		t.Fatal("custom core binary was not archived")
+	}
+	if !foundMetadata {
+		t.Fatal("bundle metadata was not archived")
 	}
 }
 
