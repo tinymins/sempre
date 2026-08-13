@@ -281,7 +281,7 @@ func NewID(prefix string) string {
 }
 
 func BuildArgs(instance Instance) []string {
-	args := []string{"--no-color", "client", "--tls-verify-certificate", "--websocket-ping-frequency", instance.WebsocketPing, "--connection-retry-max-backoff", instance.ConnectionRetryMaxBackoff}
+	args := []string{"--no-color=true", "client", "--tls-verify-certificate", "--websocket-ping-frequency", instance.WebsocketPing, "--connection-retry-max-backoff", instance.ConnectionRetryMaxBackoff}
 	if instance.PreferIPv4 {
 		args = append(args, "--dns-resolver-prefer-ipv4")
 	}

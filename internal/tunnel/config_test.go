@@ -13,7 +13,7 @@ func TestConfigValidatesPoolAndBuildsMultipleForwards(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := BuildArgs(config.Instances[0])
-	if !slices.Contains(args, "--tls-verify-certificate") || !slices.Contains(args, "dns://192.0.2.53:53") {
+	if !slices.Equal(args[:3], []string{"--no-color=true", "client", "--tls-verify-certificate"}) || !slices.Contains(args, "dns://192.0.2.53:53") {
 		t.Fatalf("args = %#v", args)
 	}
 	joined := strings.Join(args, " ")
