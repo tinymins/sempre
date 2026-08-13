@@ -154,7 +154,7 @@ describe('Subscriptions subscription sets', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage subscription set: Work' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Rename subscription set' }))
-    dialog = screen.getByRole('dialog', { name: 'Rename subscription set' })
+    dialog = await screen.findByRole('dialog', { name: 'Rename subscription set' })
     const nameInput = within(dialog).getByLabelText('Subscription set name')
     expect(nameInput).toHaveValue('Work')
     fireEvent.change(nameInput, { target: { value: 'Personal' } })
