@@ -13,7 +13,7 @@ func (manager *Manager) UpdateTunnels(ctx context.Context, config tunnel.Config)
 	if err != nil {
 		return tunnel.Config{}, false, err
 	}
-	used := referencedTunnelForwards(catalog)
+	used := referencedTransportEndpoints(catalog)
 	for id, profiles := range used {
 		if _, found := config.Forward(id); !found {
 			return tunnel.Config{}, false, fmt.Errorf("tunnel forward %q is referenced by subscription profile %q", id, profiles[0])
@@ -28,7 +28,7 @@ func (manager *Manager) UpdateTunnels(ctx context.Context, config tunnel.Config)
 	}
 	if err := manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
 		for index := range stored.Profiles {
-			if profileUsesTunnel(stored.Profiles[index]) {
+			if profileUsesManagedTransport(stored.Profiles[index]) {
 				stored.Profiles[index].Revision++
 			}
 		}
@@ -37,7 +37,7 @@ func (manager *Manager) UpdateTunnels(ctx context.Context, config tunnel.Config)
 		return saved, false, err
 	}
 	catalog, profile, document, err := manager.activeProfile()
-	if err != nil || !profileUsesTunnel(*profile) || document.Selected == nil {
+	if err != nil || !profileUsesManagedTransport(*profile) || document.Selected == nil {
 		return saved, false, err
 	}
 	change, err := manager.compileActiveProfileForSelectedCore(ctx, catalog, *profile, document)
@@ -50,21 +50,21 @@ func (manager *Manager) UpdateTunnels(ctx context.Context, config tunnel.Config)
 	return saved, change.NeedsRestart, nil
 }
 
-func referencedTunnelForwards(catalog subscriptions.Catalog) map[string][]string {
+func referencedTransportEndpoints(catalog subscriptions.Catalog) map[string][]string {
 	result := map[string][]string{}
 	for _, profile := range catalog.Profiles {
-		for _, id := range profileTunnelForwardIDs(profile) {
+		for _, id := range profileTransportEndpointRefs(profile) {
 			result[id] = append(result[id], profile.Name)
 		}
 	}
 	return result
 }
 
-func profileUsesTunnel(profile subscriptions.Profile) bool {
-	return len(profileTunnelForwardIDs(profile)) > 0
+func profileUsesManagedTransport(profile subscriptions.Profile) bool {
+	return len(profileTransportEndpointRefs(profile)) > 0
 }
 
-func profileTunnelForwardIDs(profile subscriptions.Profile) []string {
+func profileTransportEndpointRefs(profile subscriptions.Profile) []string {
 	connectors, _ := profile.PrivateAccess["connectors"].([]any)
 	result := []string{}
 	for _, item := range connectors {
@@ -72,7 +72,10 @@ func profileTunnelForwardIDs(profile subscriptions.Profile) []string {
 		if !ok {
 			continue
 		}
-		id, _ := connector["tunnel_forward_id"].(string)
+		id, _ := connector["transport_endpoint_ref"].(string)
+		if id == "" {
+			id, _ = connector["tunnel_forward_id"].(string)
+		}
 		if id == "" {
 			id, _ = connector["tunnelForwardId"].(string)
 		}

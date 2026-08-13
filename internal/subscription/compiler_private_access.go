@@ -8,16 +8,16 @@ import (
 )
 
 type privateAccessResolved struct {
-	Endpoints     []any
-	Outbounds     []any
-	DirectDomains []string
-	RouteRules    []any
-	DNSServers    []any
-	DNSRules      []any
-	UsesTunnel    bool
+	Endpoints       []any
+	Outbounds       []any
+	DirectDomains   []string
+	RouteRules      []any
+	DNSServers      []any
+	DNSRules        []any
+	DirectProcesses []string
 }
 
-func resolvePrivateAccess(config map[string]any, modern, desktop bool, resolveTunnel TunnelForwardResolver) (privateAccessResolved, error) {
+func resolvePrivateAccess(config map[string]any, modern, desktop bool, resolveEndpoint ManagedEndpointResolver) (privateAccessResolved, error) {
 	result := privateAccessResolved{Endpoints: []any{}, Outbounds: []any{}, DirectDomains: []string{}, RouteRules: []any{}, DNSServers: []any{}, DNSRules: []any{}}
 	enabled, _ := config["enabled"].(bool)
 	if !modern || !enabled {
@@ -37,17 +37,17 @@ func resolvePrivateAccess(config map[string]any, modern, desktop bool, resolveTu
 		if endpoint, ok := objectValue(connector["endpoint"]); ok && (kind == "wireguard" || kind == "tailscale") {
 			endpoint = cloneMap(endpoint)
 			normalizePrivateKeys(endpoint)
-			forwardID := valueOr(stringValue(connector["tunnel_forward_id"]), stringValue(connector["tunnelForwardId"]))
-			if forwardID != "" {
+			endpointRef := valueOr(stringValue(connector["transport_endpoint_ref"]), valueOr(stringValue(connector["tunnel_forward_id"]), stringValue(connector["tunnelForwardId"])))
+			if endpointRef != "" {
 				if kind != "wireguard" {
-					return result, fmt.Errorf("private connector %q only supports tunnel forwards for WireGuard", tag)
+					return result, fmt.Errorf("private connector %q only supports managed transport endpoints for WireGuard", tag)
 				}
-				if resolveTunnel == nil {
-					return result, fmt.Errorf("private connector %q references unavailable tunnel forward %q", tag, forwardID)
+				if resolveEndpoint == nil {
+					return result, fmt.Errorf("private connector %q references unavailable transport endpoint %q", tag, endpointRef)
 				}
-				forward, found := resolveTunnel(forwardID)
+				managed, found := resolveEndpoint(endpointRef)
 				if !found {
-					return result, fmt.Errorf("private connector %q references missing tunnel forward %q", tag, forwardID)
+					return result, fmt.Errorf("private connector %q references missing transport endpoint %q", tag, endpointRef)
 				}
 				peers, _ := endpoint["peers"].([]any)
 				if len(peers) == 0 {
@@ -57,11 +57,11 @@ func resolvePrivateAccess(config map[string]any, modern, desktop bool, resolveTu
 				if !ok {
 					return result, fmt.Errorf("private connector %q has an invalid WireGuard peer", tag)
 				}
-				peer["address"] = forward.Host
-				peer["port"] = forward.Port
+				peer["address"] = managed.Host
+				peer["port"] = managed.Port
 				peers[0] = peer
 				endpoint["peers"] = peers
-				result.UsesTunnel = true
+				result.DirectProcesses = appendUnique(result.DirectProcesses, managed.DirectProcesses...)
 			}
 			endpoint["type"] = kind
 			endpoint["tag"] = tag

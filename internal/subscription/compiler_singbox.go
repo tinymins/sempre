@@ -13,7 +13,7 @@ import (
 func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, proxies []Proxy, target Target, force bool) (map[string]any, []FieldDiff, []string, error) {
 	modern := target.Version != "11"
 	policy := singboxcore.ResolvePlatformPolicy(target.Version, target.Platform)
-	private, err := resolvePrivateAccess(profile.PrivateAccess, modern, target.Platform != "default", compiler.resolveTunnelForward)
+	private, err := resolvePrivateAccess(profile.PrivateAccess, modern, target.Platform != "default", compiler.resolveManagedEndpoint)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -100,8 +100,8 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	}
 	final := normalizeOutboundName(clashFinalGroup(groups))
 	routeRules := []any{}
-	if private.UsesTunnel {
-		routeRules = append(routeRules, map[string]any{"process_name": []string{"wstunnel", "wstunnel.exe"}, "action": "route", "outbound": "direct"})
+	if len(private.DirectProcesses) > 0 {
+		routeRules = append(routeRules, map[string]any{"process_name": private.DirectProcesses, "action": "route", "outbound": "direct"})
 	}
 	if target.Platform == "default" && shared.SystemDNSTakeoverEnabled {
 		for _, tag := range systemDNSInboundTags(shared.SystemDNSListenHosts) {

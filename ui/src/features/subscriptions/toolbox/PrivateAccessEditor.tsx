@@ -175,7 +175,7 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
                   <Input
                     size="small"
                     value={connector.peerAddress}
-                    disabled={Boolean(connector.tunnelForwardId)}
+                    disabled={Boolean(connector.transportEndpointRef)}
                     placeholder="vpn.example.com"
                     onChange={(event) =>
                       updateConnector(index, {
@@ -191,14 +191,14 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
                     min={1}
                     max={65535}
                     value={connector.peerPort}
-                    disabled={Boolean(connector.tunnelForwardId)}
+                    disabled={Boolean(connector.transportEndpointRef)}
                     onChange={(peerPort) =>
                       updateConnector(index, { peerPort })
                     }
                     className="w-full"
                   />
                 </label>
-                {session ? <TunnelForwardSelect session={session} value={connector.tunnelForwardId} onChange={(tunnelForwardId) => updateConnector(index, { tunnelForwardId })} /> : null}
+                {session ? <TransportTunnelSelect session={session} value={connector.transportEndpointRef} onChange={(transportEndpointRef) => updateConnector(index, { transportEndpointRef })} /> : null}
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgKeepalive")}</FieldLabel>
                   <InputNumber
@@ -414,7 +414,7 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
   );
 };
 
-function TunnelForwardSelect({ session, value, onChange }: { session: NonNullable<ReturnType<typeof useOptionalSession>>['session']; value: string; onChange: (value: string) => void }) {
+function TransportTunnelSelect({ session, value, onChange }: { session: NonNullable<ReturnType<typeof useOptionalSession>>['session']; value: string; onChange: (value: string) => void }) {
   const { t } = useTranslation();
   const tunnels = useQuery({ queryKey: ["tunnels"], queryFn: () => api<TunnelStatus>(session!, "/tunnels") });
   const options = (tunnels.data?.forwards ?? []).map((forward) => ({ value: forward.forward_id, label: `${forward.instance_name} / ${forward.forward_name} · ${forward.host}:${forward.port}` }));

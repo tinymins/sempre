@@ -10,17 +10,18 @@ import (
 )
 
 type Compiler struct {
-	store                *Store
-	fetcher              *Fetcher
-	resolveTunnelForward TunnelForwardResolver
+	store                  *Store
+	fetcher                *Fetcher
+	resolveManagedEndpoint ManagedEndpointResolver
 }
 
-type TunnelForward struct {
-	Host string
-	Port int
+type ManagedEndpoint struct {
+	Host            string
+	Port            int
+	DirectProcesses []string
 }
 
-type TunnelForwardResolver func(string) (TunnelForward, bool)
+type ManagedEndpointResolver func(string) (ManagedEndpoint, bool)
 
 type Target struct {
 	Core     string `json:"core,omitempty"`
@@ -29,10 +30,10 @@ type Target struct {
 	Platform string `json:"platform,omitempty"`
 }
 
-func NewCompiler(store *Store, tunnelResolver ...TunnelForwardResolver) *Compiler {
+func NewCompiler(store *Store, endpointResolver ...ManagedEndpointResolver) *Compiler {
 	compiler := &Compiler{store: store, fetcher: NewFetcher(store)}
-	if len(tunnelResolver) > 0 {
-		compiler.resolveTunnelForward = tunnelResolver[0]
+	if len(endpointResolver) > 0 {
+		compiler.resolveManagedEndpoint = endpointResolver[0]
 	}
 	return compiler
 }

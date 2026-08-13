@@ -131,9 +131,9 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 	if err != nil {
 		return nil, err
 	}
-	compiler := subscriptions.NewCompiler(subscriptionStore, func(id string) (subscriptions.TunnelForward, bool) {
+	compiler := subscriptions.NewCompiler(subscriptionStore, func(id string) (subscriptions.ManagedEndpoint, bool) {
 		forward, ok := tunnelController.Forward(id)
-		return subscriptions.TunnelForward{Host: forward.Host, Port: forward.Port}, ok
+		return subscriptions.ManagedEndpoint{Host: forward.Host, Port: forward.Port, DirectProcesses: []string{"wstunnel", "wstunnel.exe"}}, ok
 	})
 	return &Manager{
 		paths:         paths,

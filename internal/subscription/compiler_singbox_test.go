@@ -68,13 +68,13 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 	}
 }
 
-func TestSingBoxWireGuardUsesManagedTunnelForward(t *testing.T) {
+func TestSingBoxWireGuardUsesManagedTransportEndpoint(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
-	compiler.resolveTunnelForward = func(id string) (TunnelForward, bool) {
-		return TunnelForward{Host: "127.0.0.1", Port: 52001}, id == "hz-wg"
+	compiler.resolveManagedEndpoint = func(id string) (ManagedEndpoint, bool) {
+		return ManagedEndpoint{Host: "127.0.0.1", Port: 52001, DirectProcesses: []string{"wstunnel", "wstunnel.exe"}}, id == "hz-wg"
 	}
 	profile.PrivateAccess = map[string]any{"enabled": true, "connectors": []any{map[string]any{
-		"enabled": true, "tag": "hz", "type": "wireguard", "tunnel_forward_id": "hz-wg",
+		"enabled": true, "tag": "hz", "type": "wireguard", "transport_endpoint_ref": "hz-wg",
 		"endpoint": map[string]any{"address": []any{"10.0.0.2/32"}, "privateKey": "private", "peers": []any{map[string]any{"address": "hz.example.com", "port": float64(31088), "publicKey": "public", "allowedIps": []any{"10.0.0.0/24"}}}},
 	}}}
 	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
@@ -84,6 +84,9 @@ func TestSingBoxWireGuardUsesManagedTunnelForward(t *testing.T) {
 	var config map[string]any
 	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(result.Content, "transport_endpoint_ref") || strings.Contains(result.Content, "hz-wg") {
+		t.Fatalf("managed endpoint reference leaked into sing-box configuration: %s", result.Content)
 	}
 	endpoint := mapByKey(t, config["endpoints"].([]any), "tag", "hz")
 	peer := endpoint["peers"].([]any)[0].(map[string]any)
@@ -107,9 +110,9 @@ func TestSingBoxWireGuardUsesManagedTunnelForward(t *testing.T) {
 	}
 }
 
-func TestSingBoxRejectsMissingManagedTunnelForward(t *testing.T) {
+func TestSingBoxRejectsMissingManagedTransportEndpoint(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
-	profile.PrivateAccess = map[string]any{"enabled": true, "connectors": []any{map[string]any{"tag": "hz", "type": "wireguard", "tunnel_forward_id": "missing", "endpoint": map[string]any{"peers": []any{map[string]any{}}}}}}
+	profile.PrivateAccess = map[string]any{"enabled": true, "connectors": []any{map[string]any{"tag": "hz", "type": "wireguard", "transport_endpoint_ref": "missing", "endpoint": map[string]any{"peers": []any{map[string]any{}}}}}}
 	_, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
 	if err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("error = %v", err)

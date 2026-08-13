@@ -22,7 +22,7 @@ export interface PrivateConnectorForm {
   privateKey: string;
   peerAddress: string;
   peerPort: number | null;
-  tunnelForwardId: string;
+  transportEndpointRef: string;
   publicKey: string;
   preSharedKey: string;
   allowedIps: string;
@@ -94,7 +94,7 @@ export const emptyConnector = (): PrivateConnectorForm => ({
   privateKey: "",
   peerAddress: "",
   peerPort: null,
-  tunnelForwardId: "",
+  transportEndpointRef: "",
   publicKey: "",
   preSharedKey: "",
   allowedIps: "",
@@ -173,12 +173,14 @@ export const parseConfig = (value?: string) => {
           peerAddress:
             typeof peer.address === "string" ? peer.address : "",
           peerPort: typeof peer.port === "number" ? peer.port : null,
-          tunnelForwardId:
-            typeof connector.tunnel_forward_id === "string"
-              ? connector.tunnel_forward_id
-              : typeof connector.tunnelForwardId === "string"
-                ? connector.tunnelForwardId
-                : "",
+          transportEndpointRef:
+            typeof connector.transport_endpoint_ref === "string"
+              ? connector.transport_endpoint_ref
+              : typeof connector.tunnel_forward_id === "string"
+                ? connector.tunnel_forward_id
+                : typeof connector.tunnelForwardId === "string"
+                  ? connector.tunnelForwardId
+                  : "",
           publicKey:
             typeof peer.public_key === "string"
               ? peer.public_key
@@ -281,8 +283,8 @@ export const serializeConfig = (enabled: boolean, connectors: PrivateConnectorFo
     }
 
     if (connector.type === "wireguard") {
-      if (connector.tunnelForwardId.trim()) {
-        base.tunnel_forward_id = connector.tunnelForwardId.trim();
+      if (connector.transportEndpointRef.trim()) {
+        base.transport_endpoint_ref = connector.transportEndpointRef.trim();
       }
       base.endpoint = {
         address: splitCidrList(connector.address),
