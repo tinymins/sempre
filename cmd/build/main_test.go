@@ -120,7 +120,7 @@ func TestBundleArchiveUsesReleaseDirectoryPrefix(t *testing.T) {
 	if err := bundleinfo.Write(packageDir, bundleinfo.Release); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeBundleInstallers(packageDir, "sempre", "linux"); err != nil {
+	if err := writeReleaseInstallers(packageDir, "sempre", "linux"); err != nil {
 		t.Fatal(err)
 	}
 	archivePath := filepath.Join(root, "sempre-bundle-linux-amd64.zip")
@@ -158,7 +158,7 @@ func TestBundleArchiveUsesReleaseDirectoryPrefix(t *testing.T) {
 	}
 }
 
-func TestWriteBundleInstallersUsesTargetOS(t *testing.T) {
+func TestWriteReleaseInstallersUsesTargetOS(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		goos string
@@ -171,7 +171,7 @@ func TestWriteBundleInstallersUsesTargetOS(t *testing.T) {
 		t.Run(test.goos, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
-			if err := writeBundleInstallers(root, "sempre", test.goos); err != nil {
+			if err := writeReleaseInstallers(root, "sempre", test.goos); err != nil {
 				t.Fatal(err)
 			}
 			want := map[string]bool{}

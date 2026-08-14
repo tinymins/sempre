@@ -90,17 +90,17 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 			t.Fatalf("%s: %v", path, err)
 		}
 	}
-	assertBundleInstallers(t, result.Directory, runtime.GOOS)
-	installerName := "install.sh"
+	assertSnapshotRestorers(t, result.Directory, runtime.GOOS)
+	restorerName := "restore.sh"
 	if runtime.GOOS == "windows" {
-		installerName = "install.cmd"
+		restorerName = "restore.cmd"
 	}
-	installer, err := os.ReadFile(filepath.Join(result.Directory, installerName))
+	restorer, err := os.ReadFile(filepath.Join(result.Directory, restorerName))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(installer), "bundle restore") || strings.Contains(string(installer), "--yes") {
-		t.Fatalf("snapshot installer = %q", installer)
+	if !strings.Contains(string(restorer), "bundle restore") || strings.Contains(string(restorer), "--yes") {
+		t.Fatalf("snapshot restorer = %q", restorer)
 	}
 	archive, err := zip.OpenReader(result.Archive)
 	if err != nil {
@@ -130,20 +130,45 @@ func TestExportBundleClearsPasswordAndIncludesRecordedCores(t *testing.T) {
 	}
 }
 
-func assertBundleInstallers(t *testing.T, directory, goos string) {
+func TestRequireSnapshotBundleRejectsMissingAndReleaseMetadata(t *testing.T) {
+	t.Parallel()
+	missing := t.TempDir()
+	if err := requireSnapshotBundle(missing); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("missing metadata error = %v", err)
+	}
+	release := t.TempDir()
+	if err := bundleinfo.Write(release, bundleinfo.Release); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireSnapshotBundle(release); err == nil || !strings.Contains(err.Error(), "run 'sempre install'") {
+		t.Fatalf("release metadata error = %v", err)
+	}
+	snapshot := t.TempDir()
+	if err := bundleinfo.Write(snapshot, bundleinfo.Snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireSnapshotBundle(snapshot); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertSnapshotRestorers(t *testing.T, directory, goos string) {
 	t.Helper()
 	want := map[string]bool{}
 	switch goos {
 	case "windows":
-		want["install.cmd"] = true
+		want["restore.cmd"] = true
 	case "darwin":
-		want["install.command"] = true
-		want["install.sh"] = true
+		want["restore.command"] = true
+		want["restore.sh"] = true
 	default:
-		want["install.sh"] = true
-		want["install.desktop"] = true
+		want["restore.sh"] = true
+		want["restore.desktop"] = true
 	}
-	for _, name := range []string{"install.cmd", "install.sh", "install.command", "install.desktop"} {
+	for _, name := range []string{
+		"restore.cmd", "restore.sh", "restore.command", "restore.desktop",
+		"install.cmd", "install.sh", "install.command", "install.desktop",
+	} {
 		_, err := os.Stat(filepath.Join(directory, name))
 		if want[name] && err != nil {
 			t.Fatalf("%s: %v", name, err)

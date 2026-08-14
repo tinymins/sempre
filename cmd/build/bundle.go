@@ -39,7 +39,7 @@ func writeBundle(ctx context.Context, dist string, item target, installedAt time
 		_ = os.RemoveAll(workDir)
 		return err
 	}
-	if err := writeBundleInstallers(workDir, item.executableName(), item.os); err != nil {
+	if err := writeReleaseInstallers(workDir, item.executableName(), item.os); err != nil {
 		_ = os.RemoveAll(workDir)
 		return err
 	}

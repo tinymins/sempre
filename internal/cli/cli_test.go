@@ -97,7 +97,7 @@ func TestAdministratorRequirement(t *testing.T) {
 		{[]string{"install"}, layout.Portable, true},
 		{[]string{"service", "status"}, layout.System, false},
 		{[]string{"service", "install"}, layout.Portable, true},
-		{[]string{"bundle", "install"}, layout.Portable, true},
+		{[]string{"bundle", "restore"}, layout.Portable, true},
 		{[]string{"bundle", "export", "/tmp/out"}, layout.System, true},
 		{[]string{"bundle", "export", "/tmp/out"}, layout.Portable, false},
 		{[]string{"run"}, layout.Portable, true},
@@ -108,6 +108,14 @@ func TestAdministratorRequirement(t *testing.T) {
 		if got := requiresAdministrator(test.arguments, test.mode); got != test.want {
 			t.Errorf("requiresAdministrator(%v, %s) = %v", test.arguments, test.mode, got)
 		}
+	}
+}
+
+func TestBundleInstallIsNotSupported(t *testing.T) {
+	t.Parallel()
+	command := &CLI{}
+	if err := command.bundle(t.Context(), []string{"install"}, Options{}); err == nil {
+		t.Fatal("bundle install was accepted")
 	}
 }
 

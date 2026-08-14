@@ -208,16 +208,6 @@ func (command *CLI) bundle(ctx context.Context, arguments []string, options Opti
 		fmt.Fprintln(command.output, "Bundle directory:", result.Directory)
 		fmt.Fprintln(command.output, "Bundle archive:", result.Archive)
 		return nil
-	case "install":
-		if len(arguments) != 1 {
-			return usageError()
-		}
-		fmt.Fprintln(command.output, "WARNING: 'bundle install' is deprecated; performing a configuration-preserving install.")
-		if options.Yes {
-			fmt.Fprintln(command.output, "WARNING: ignoring --yes so an installed custom UI cannot be replaced without confirmation.")
-			options.Yes = false
-		}
-		return command.install(ctx, nil, options)
 	case "restore":
 		if len(arguments) != 1 {
 			return usageError()

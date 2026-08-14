@@ -29,15 +29,8 @@ func (manager *Manager) RestoreBundle(ctx context.Context, allowReplace bool) er
 		return err
 	}
 	portable := layout.PortableAt(executable)
-	metadata, metadataErr := bundleinfo.Read(portable.Root)
-	if metadataErr == nil && metadata.Kind != bundleinfo.Snapshot {
-		return fmt.Errorf("%s is a release bundle; run 'sempre install' instead", portable.Root)
-	}
-	if metadataErr != nil {
-		if !errors.Is(metadataErr, os.ErrNotExist) {
-			return metadataErr
-		}
-		fmt.Fprintln(manager.errors, "WARNING: bundle metadata is missing; restoring a legacy snapshot")
+	if err := requireSnapshotBundle(portable.Root); err != nil {
+		return err
 	}
 	if portable.State == manager.paths.State {
 		return manager.restoreBundleService(ctx, allowReplace)
@@ -174,11 +167,25 @@ func (manager *Manager) exportBundleDirectory(ctx context.Context, packageDir st
 	if err := state.WriteAtomic(layout.PortableMarkerPath(paths.ServiceExecutable), []byte{}, 0o600); err != nil {
 		return err
 	}
-	return writeBundleInstallers(packageDir, paths.ServiceExecutable, runtime.GOOS)
+	return writeSnapshotRestorers(packageDir, paths.ServiceExecutable, runtime.GOOS)
 }
 
-func writeBundleInstallers(packageDir, executable, goos string) error {
-	return installscript.Write(packageDir, executable, goos, "bundle", "restore")
+func requireSnapshotBundle(root string) error {
+	metadata, err := bundleinfo.Read(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%s is not a snapshot bundle: missing %s", root, bundleinfo.MetadataName)
+	}
+	if err != nil {
+		return fmt.Errorf("validate snapshot bundle metadata: %w", err)
+	}
+	if metadata.Kind != bundleinfo.Snapshot {
+		return fmt.Errorf("%s is a %s bundle; run 'sempre install' instead", root, metadata.Kind)
+	}
+	return nil
+}
+
+func writeSnapshotRestorers(packageDir, executable, goos string) error {
+	return installscript.Write(packageDir, executable, goos, "restore", "bundle", "restore")
 }
 
 func zipDirectory(destination, source, prefix string) error {

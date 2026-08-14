@@ -448,10 +448,11 @@ intentionally cleared in the exported `web.json`; restoring the snapshot clears
 the target password after confirmation.
 
 Each bundle is valid only for the operating system and architecture that
-created it. Install a bundle on a target machine by running the included
-platform installer: Windows uses `install.cmd`, macOS uses `install.command`
-or `install.sh`, and Linux uses `install.sh` or `install.desktop`. Snapshot
-installers invoke the explicit restore command and forward additional options:
+created it. Restore a snapshot on a target machine through its dedicated
+interactive entry point: Windows uses `restore.cmd`, macOS uses
+`restore.command` or `restore.sh`, and Linux uses `restore.sh` or
+`restore.desktop`. These entry points invoke the explicit restore command and
+forward additional options:
 
 ```text
 sempre bundle restore
@@ -459,10 +460,9 @@ sempre bundle restore
 
 The restore displays the complete replacement summary and requires confirmation
 unless `--yes` is supplied. Official release bundles instead carry kind
-`release`; their installers invoke `sempre install`, which preserves existing
-configuration. The deprecated `sempre bundle install` command also performs the
-safe, configuration-preserving install so historical release scripts cannot
-silently restore a snapshot.
+`release`; their `install.*` entry points invoke `sempre install`, which
+preserves existing configuration. `bundle restore` rejects release bundles and
+directories without snapshot metadata.
 
 Sempre supervises the core on every platform. Unexpected exits use bounded
 exponential backoff. Unix process groups and Windows Job Objects ensure child

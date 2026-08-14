@@ -11,8 +11,8 @@ import (
 	"github.com/tinymins/sempre/internal/installscript"
 )
 
-func writeBundleInstallers(packageDir, executableName, goos string) error {
-	return installscript.Write(packageDir, executableName, goos, "install")
+func writeReleaseInstallers(packageDir, executableName, goos string) error {
+	return installscript.Write(packageDir, executableName, goos, "install", "install")
 }
 
 func zipDirectory(destination, source string) error {

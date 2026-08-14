@@ -52,6 +52,4 @@ Modes:
 Core mutation commands accept --yes to restart a running managed core without
 prompting, or --no-restart to save the change without restarting it.
 Subscription profile changes are always staged without an interactive restart.
-bundle install remains a deprecated, configuration-preserving alias for
-install; use bundle restore only to replace system data from a snapshot.
 `
