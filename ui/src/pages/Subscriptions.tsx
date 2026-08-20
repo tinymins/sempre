@@ -16,6 +16,7 @@ import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribe
 type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
 type Notice = { message: string; tone: 'success' | 'error' }
+type Confirmation = 'refresh' | 'restart'
 
 export function Subscriptions() {
   const { t } = useI18n()
@@ -29,6 +30,7 @@ export function Subscriptions() {
   const [nameError, setNameError] = useState('')
   const [deleteProfile, setDeleteProfile] = useState<SubscriptionProfile | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [format, setFormat] = useState<ProxyDebugFormat>('sing-box-v13')
   const previewRef = useRef<ProxyPreviewModalRef>(null)
@@ -120,7 +122,8 @@ export function Subscriptions() {
 
   const action = useMutation({
     mutationFn: ({ id, operation }: { id: string; operation: 'activate' | 'refresh' }) => api<SaveResponse>(session!, `/subscriptions/${id}/${operation}`, { method: 'POST' }),
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
+      if (variables.operation === 'refresh') setConfirmation(null)
       setNotice({ message: result.change.Message, tone: 'success' })
       await invalidate()
     },
@@ -130,6 +133,7 @@ export function Subscriptions() {
   const restart = useMutation({
     mutationFn: () => api(session!, '/runtime/restart', { method: 'POST' }),
     onSuccess: async () => {
+      setConfirmation(null)
       setNotice({ message: t('operationAccepted'), tone: 'success' })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['system'] }),
@@ -194,11 +198,11 @@ export function Subscriptions() {
           <Button variant="primary" disabled={!currentProfile || !currentEditorSaveState.dirty || currentEditorSaveState.saving} onClick={() => editorRef.current?.saveNow()}>
             {currentEditorSaveState.saving ? <Spinner /> : <SaveIcon size={16} />}{t('save')}
           </Button>
-          <Button disabled={!currentProfile || action.isPending} onClick={() => currentProfile && action.mutate({ id: currentProfile.id, operation: 'refresh' })}>
+          <Button disabled={!currentProfile || action.isPending} onClick={() => setConfirmation('refresh')}>
             {action.isPending && action.variables?.operation === 'refresh' ? <Spinner /> : <RefreshCw size={16} />}{t('updateNow')}
           </Button>
           <Tooltip title={needsCoreRestart ? t('configurationRestartRequired') : undefined}>
-            <Button disabled={restart.isPending} onClick={() => restart.mutate()}>
+            <Button disabled={restart.isPending} onClick={() => setConfirmation('restart')}>
               {restart.isPending ? <Spinner /> : needsCoreRestart ? <CircleAlert className="text-amber-500" size={16} /> : <RotateCw size={16} />}{t('restartNow')}
             </Button>
           </Tooltip>
@@ -322,6 +326,26 @@ export function Subscriptions() {
           afterOpenChange={finishDeleteDialogClose}
         />
       ) : null}
+      <ConfirmDialog
+        open={confirmation !== null}
+        title={t(confirmation === 'refresh' ? 'subscriptionUpdateConfirmTitle' : 'coreRestartConfirmTitle')}
+        detail={confirmation === 'refresh'
+          ? t('subscriptionUpdateConfirmDetail').replace('{profile}', currentProfile?.name || t('defaultSubscriptionSet'))
+          : t('coreRestartConfirmDetail')}
+        confirmLabel={t(confirmation === 'refresh' ? 'updateNow' : 'restartNow')}
+        cancelLabel={t('cancel')}
+        pending={confirmation === 'refresh' ? action.isPending : restart.isPending}
+        onCancel={() => {
+          if (!action.isPending && !restart.isPending) setConfirmation(null)
+        }}
+        onConfirm={() => {
+          if (confirmation === 'refresh' && currentProfile) {
+            action.mutate({ id: currentProfile.id, operation: 'refresh' })
+          } else if (confirmation === 'restart') {
+            restart.mutate()
+          }
+        }}
+      />
     </div>
   )
 }

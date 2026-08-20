@@ -227,7 +227,7 @@ describe('Subscriptions subscription sets', () => {
     expect(screen.getByText('The active subscription set cannot be deleted')).toBeInTheDocument()
   })
 
-  it('shows the editor directly and runs update and restart from the page header', async () => {
+  it('shows the editor directly and confirms update and restart from the page header', async () => {
     profiles = [
       { ...profile('primary', 'Primary'), last_compiler_target: 'sing-box-v13', last_result: 'source response contains no proxy nodes' },
       profile('secondary', 'Secondary'),
@@ -269,12 +269,35 @@ describe('Subscriptions subscription sets', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Secondary' }))
     fireEvent.click(screen.getByRole('button', { name: 'Update subscription' }))
+    let actionDialog = screen.getByRole('dialog', { name: 'Update this subscription?' })
+    expect(within(actionDialog).getByText('Fetch the enabled sources in Secondary, then regenerate and validate its configuration. If this is the active subscription, changes are staged until the core next restarts. This update does not restart the core or interrupt current proxy traffic.')).toBeInTheDocument()
+    expect(requests).not.toContainEqual(expect.objectContaining({
+      method: 'POST',
+      url: 'http://sempre.test/api/v1/subscriptions/secondary/refresh',
+    }))
+    fireEvent.click(within(actionDialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Update this subscription?' })).not.toBeInTheDocument())
+    expect(requests).not.toContainEqual(expect.objectContaining({
+      method: 'POST',
+      url: 'http://sempre.test/api/v1/subscriptions/secondary/refresh',
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Update subscription' }))
+    actionDialog = screen.getByRole('dialog', { name: 'Update this subscription?' })
+    fireEvent.click(within(actionDialog).getByRole('button', { name: 'Update subscription' }))
     await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
       method: 'POST',
       url: 'http://sempre.test/api/v1/subscriptions/secondary/refresh',
     })))
 
     fireEvent.click(restart)
+    actionDialog = screen.getByRole('dialog', { name: 'Restart the core?' })
+    expect(within(actionDialog).getByText('Stop and start the managed core, applying any staged configuration. Existing proxy connections and traffic will be interrupted briefly; Sempre Service, the Web console, and the API will remain online.')).toBeInTheDocument()
+    expect(requests).not.toContainEqual(expect.objectContaining({
+      method: 'POST',
+      url: 'http://sempre.test/api/v1/runtime/restart',
+    }))
+    fireEvent.click(within(actionDialog).getByRole('button', { name: 'Restart core' }))
     await waitFor(() => expect(restart).toBeDisabled())
     await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
       method: 'POST',
@@ -292,6 +315,8 @@ describe('Subscriptions subscription sets', () => {
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Restart core' }))
+    const dialog = screen.getByRole('dialog', { name: 'Restart the core?' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Restart core' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Managed core is unavailable')
   })
 })
