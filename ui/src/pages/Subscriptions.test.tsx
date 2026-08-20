@@ -32,6 +32,7 @@ let profiles: SubscriptionProfile[]
 let activeProfileID: string
 let requests: RecordedRequest[]
 let restartResponse: Promise<Response> | undefined
+let runtimePending: boolean
 
 function profile(id: string, name: string): SubscriptionProfile {
   return {
@@ -90,6 +91,7 @@ describe('Subscriptions subscription sets', () => {
     activeProfileID = 'primary'
     requests = []
     restartResponse = undefined
+    runtimePending = false
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
       const method = init.method || 'GET'
@@ -98,7 +100,12 @@ describe('Subscriptions subscription sets', () => {
 
       if (url.endsWith('/api/v1/custom-nodes')) return jsonResponse({ nodes: [] })
       if (url.endsWith('/api/v1/subscriptions') && method === 'GET') return jsonResponse(catalog())
-      if (url.endsWith('/api/v1/runtime/restart') && method === 'POST') return restartResponse ?? jsonResponse({ action: 'restart', status: {} }, 202)
+      if (url.endsWith('/api/v1/runtime/status') && method === 'GET') return jsonResponse({ pending: runtimePending })
+      if (url.endsWith('/api/v1/runtime/restart') && method === 'POST') {
+        const response = await (restartResponse ?? Promise.resolve(jsonResponse({ action: 'restart', status: {} }, 202)))
+        if (response.ok) runtimePending = false
+        return response
+      }
       if (url.endsWith('/api/v1/subscriptions') && method === 'POST') {
         const created = profile(`set-${profiles.length + 1}`, body?.name || '')
         profiles = [...profiles, created]
@@ -110,7 +117,8 @@ describe('Subscriptions subscription sets', () => {
         const id = decodeURIComponent(match[1])
         if (method === 'PUT') {
           profiles = profiles.map((item) => item.id === id ? { ...item, ...body } : item)
-          return jsonResponse({ change: { changed: true, message: 'Subscription set saved.' } })
+          runtimePending = true
+          return jsonResponse({ change: { Changed: true, NeedsRestart: true, Message: 'Subscription set saved.' } })
         }
         if (method === 'PATCH') {
           const renamed = { ...profiles.find((item) => item.id === id)!, name: body?.name || '' }
@@ -119,10 +127,10 @@ describe('Subscriptions subscription sets', () => {
         }
         if (method === 'POST' && match[2] === 'activate') {
           activeProfileID = id
-          return jsonResponse({ change: { changed: true, message: 'Subscription set activated.' } })
+          return jsonResponse({ change: { Changed: true, NeedsRestart: false, Message: 'Subscription set activated.' } })
         }
         if (method === 'POST' && match[2] === 'refresh') {
-          return jsonResponse({ change: { changed: true, message: 'Subscription set refreshed.' } })
+          return jsonResponse({ change: { Changed: true, NeedsRestart: false, Message: 'Subscription set refreshed.' } })
         }
         if (method === 'DELETE') {
           profiles = profiles.filter((item) => item.id !== id)
@@ -237,8 +245,8 @@ describe('Subscriptions subscription sets', () => {
     const headerActions = screen.getByRole('heading', { name: 'Subscriptions' }).parentElement?.nextElementSibling
     expect(within(headerActions as HTMLElement).getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Save',
-      'Update now',
-      'Restart core now',
+      'Update subscription',
+      'Restart core',
     ])
     const saveButton = screen.getByRole('button', { name: 'Save' })
     expect(saveButton).toBeDisabled()
@@ -251,18 +259,21 @@ describe('Subscriptions subscription sets', () => {
       body: expect.objectContaining({ remark: 'Edited profile' }),
     })))
     await waitFor(() => expect(saveButton).toBeDisabled())
+    const restart = screen.getByRole('button', { name: 'Restart core' })
+    await waitFor(() => expect(restart.querySelector('svg.lucide-circle-alert')).toBeInTheDocument())
+    fireEvent.mouseEnter(restart)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Configuration changed. Restart the core to apply it.')
 
     fireEvent.click(screen.getByRole('button', { name: 'Open diagnostics' }))
     expect(screen.getByText('source response contains no proxy nodes')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Secondary' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Update now' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Update subscription' }))
     await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
       method: 'POST',
       url: 'http://sempre.test/api/v1/subscriptions/secondary/refresh',
     })))
 
-    const restart = screen.getByRole('button', { name: 'Restart core now' })
     fireEvent.click(restart)
     await waitFor(() => expect(restart).toBeDisabled())
     await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
@@ -273,13 +284,14 @@ describe('Subscriptions subscription sets', () => {
     resolveRestart?.(jsonResponse({ action: 'restart', status: {} }, 202))
     expect(await screen.findByRole('status')).toHaveTextContent('Operation accepted')
     await waitFor(() => expect(restart).toBeEnabled())
+    await waitFor(() => expect(restart.querySelector('svg.lucide-rotate-cw')).toBeInTheDocument())
   })
 
   it('shows restart failures as an error notice', async () => {
     restartResponse = Promise.resolve(jsonResponse({ error: { code: 'RUNTIME_ERROR', message: 'Managed core is unavailable' } }, 503))
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Restart core now' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart core' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Managed core is unavailable')
   })
 })

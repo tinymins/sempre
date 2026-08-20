@@ -1,19 +1,19 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Save as SaveIcon, Trash2 } from 'lucide-react'
-import { Dropdown, Modal, Select } from '@acme/components'
+import { Activity, CheckCircle2, CircleAlert, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Save as SaveIcon, Trash2 } from 'lucide-react'
+import { Dropdown, Modal, Select, Tooltip } from '@acme/components'
 import type { ProxyDebugFormat } from '@acme/types'
 import { Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { CustomNode, LinuxNetworkInventory, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
+import type { CustomNode, LinuxNetworkInventory, ManagedRuntimeStatus, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
 import { MessageBridge } from '../features/subscriptions/toolbox/MessageBridge'
 import ProxyDebugModal, { type ProxyDebugModalRef } from '../features/subscriptions/toolbox/ProxyDebugModal'
 import ProxyPreviewModal, { type ProxyPreviewModalRef } from '../features/subscriptions/toolbox/ProxyPreviewModal'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../features/subscriptions/toolbox/ProxySubscribeEditor'
 
-type SaveResponse = { change: { changed: boolean; message: string }; render?: { warnings?: string[] } }
+type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
 type Notice = { message: string; tone: 'success' | 'error' }
 
@@ -39,6 +39,11 @@ export function Subscriptions() {
   const catalog = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<SubscriptionCatalogResponse>(session!, '/subscriptions') })
   const customNodes = useQuery({ queryKey: ['custom-nodes'], queryFn: () => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes') })
 	const networkInventory = useQuery({ queryKey: ['system', 'network'], queryFn: () => api<LinuxNetworkInventory>(session!, '/system/network') })
+  const runtimeStatus = useQuery({
+    queryKey: ['runtime', 'status'],
+    queryFn: () => api<ManagedRuntimeStatus>(session!, '/runtime/status'),
+    refetchInterval: (query) => query.state.data?.pending ? 1000 : false,
+  })
   const profiles = useMemo(() => catalog.data?.profiles ?? [], [catalog.data?.profiles])
   const effectiveSelectedID = selectedID || catalog.data?.active_profile_id || profiles[0]?.id || ''
   const storedProfile = profiles.find((item) => item.id === effectiveSelectedID) ?? null
@@ -46,6 +51,7 @@ export function Subscriptions() {
   const currentEditorSaveState = editorSaveState.profileID === currentProfile?.id
     ? editorSaveState
     : { profileID: currentProfile?.id ?? '', dirty: false, saving: false }
+  const needsCoreRestart = Boolean(runtimeStatus.data?.pending)
 
   const invalidate = async () => {
     await Promise.all([
@@ -115,7 +121,7 @@ export function Subscriptions() {
   const action = useMutation({
     mutationFn: ({ id, operation }: { id: string; operation: 'activate' | 'refresh' }) => api<SaveResponse>(session!, `/subscriptions/${id}/${operation}`, { method: 'POST' }),
     onSuccess: async (result) => {
-      setNotice({ message: result.change.message, tone: 'success' })
+      setNotice({ message: result.change.Message, tone: 'success' })
       await invalidate()
     },
     onError: (error) => setNotice({ message: error.message, tone: 'error' }),
@@ -191,9 +197,11 @@ export function Subscriptions() {
           <Button disabled={!currentProfile || action.isPending} onClick={() => currentProfile && action.mutate({ id: currentProfile.id, operation: 'refresh' })}>
             {action.isPending && action.variables?.operation === 'refresh' ? <Spinner /> : <RefreshCw size={16} />}{t('updateNow')}
           </Button>
-          <Button disabled={restart.isPending} onClick={() => restart.mutate()}>
-            {restart.isPending ? <Spinner /> : <RotateCw size={16} />}{t('restartNow')}
-          </Button>
+          <Tooltip title={needsCoreRestart ? t('configurationRestartRequired') : undefined}>
+            <Button disabled={restart.isPending} onClick={() => restart.mutate()}>
+              {restart.isPending ? <Spinner /> : needsCoreRestart ? <CircleAlert className="text-amber-500" size={16} /> : <RotateCw size={16} />}{t('restartNow')}
+            </Button>
+          </Tooltip>
         </div>
       </PageTitle>
 
