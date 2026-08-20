@@ -52,10 +52,12 @@ Sempre is a cross-platform Go service and CLI that manages proxy cores, generate
 
 ## Git Workflow
 
-- Every completed, independently verifiable user-requested change must end with a local Git commit. Keep separate requests or fixes in separate commits.
+- Every completed user-requested task must end with a local Git commit containing all changes produced by that task. Do not report a task complete while leaving its finished work uncommitted for another agent or a later turn.
+- Split multiple requests or independently verifiable changes into separate commits. Never combine unrelated tasks in one commit, even when they were implemented in the same run.
+- In a shared worktree, stage and commit only files owned by the current task. If parallel-task changes appear, identify them from the diff and recent history, leave them untouched, and require the owning task to commit them before it reports completion.
 - Validate before committing. If validation fails, do not commit; report the failure and leave the changes available for correction.
 - Stage only in-scope files and preserve unrelated worktree changes.
-- Use English Conventional Commit titles in the form `<type>(<scope>): <outcome>`, with a concise lowercase scope and a specific outcome. Supported types are `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, and `revert`.
+- Use English Conventional Commit titles in the form `<type>(<scope>): <outcome>`, for example `feat(core): add runtime reload support`. Use a concise lowercase scope and a specific English outcome. Supported types are `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, and `revert`.
 - Never push unless explicitly requested.
 
 ## Development Servers
