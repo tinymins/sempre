@@ -18,6 +18,7 @@ export const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
     width: "100%",
     dialogStyle: {
       maxWidth: "100%",
+      maxHeight: "100%",
       margin: 0,
       padding: 0,
       borderRadius: 0,
@@ -40,6 +41,7 @@ export const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
     width: "calc(100% - 48px)",
     dialogStyle: {
       maxWidth: "calc(100% - 48px)",
+      maxHeight: "calc(100% - 48px)",
       height: "calc(100% - 48px)",
     },
     bodyStyle: {
@@ -70,6 +72,7 @@ export const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
     width: "90%",
     dialogStyle: {
       maxWidth: "90%",
+      maxHeight: "90%",
       height: "90%",
     },
     bodyStyle: {

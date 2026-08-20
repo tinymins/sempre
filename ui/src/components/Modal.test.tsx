@@ -47,6 +47,16 @@ describe('Modal', () => {
     expect(almostFull.parentElement).toHaveClass('items-center', 'overflow-hidden')
   })
 
+  it('keeps default modal content scrollable inside the viewport', async () => {
+    render(<Modal open title="Long content" centered>Modal body</Modal>)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Long content' })
+    const body = within(dialog).getByText('Modal body')
+
+    expect(dialog).toHaveStyle({ maxHeight: 'calc(100dvh - 32px)' })
+    expect(body).toHaveStyle({ minHeight: 0, overflowY: 'auto', overflowX: 'hidden' })
+  })
+
   it('reports closing only after a visible modal completes its exit transition', async () => {
     const afterOpenChange = vi.fn()
     const rendered = render(<Modal open title="Animated" afterOpenChange={afterOpenChange}>Animated body</Modal>)

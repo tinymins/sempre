@@ -235,6 +235,9 @@ export function Modal({
         )}
         style={{
           width: resolvedWidth,
+          maxHeight: isInline
+            ? "calc(100% - 32px)"
+            : "calc(100dvh - 32px)",
           maxWidth:
             size === "default"
               ? isInline
@@ -280,6 +283,10 @@ export function Modal({
         <div
           className="px-6 py-4"
           style={{
+            minHeight: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            ...THIN_SCROLLBAR,
             ...config.bodyStyle,
             ...bodyStyle,
             ...styles?.body,
