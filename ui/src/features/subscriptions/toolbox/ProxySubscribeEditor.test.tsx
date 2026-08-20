@@ -1,9 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { createRef, type Ref } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AcmeContentBoundary } from '@/components/AcmeContentBoundary'
 import { I18nProvider } from '@/lib/i18n'
 import type { SubscriptionConfigurationContext, SubscriptionProfile } from '@/lib/types'
-import ProxySubscribeEditor from './ProxySubscribeEditor'
+import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from './ProxySubscribeEditor'
 
 vi.mock('@monaco-editor/react', () => ({
   default: ({ value = '', onChange, options }: { value?: string; onChange?: (value: string) => void; options?: { readOnly?: boolean } }) => (
@@ -80,13 +81,14 @@ describe('ProxySubscribeEditor', () => {
     vi.useRealTimers()
   })
 
-  function renderEditor(overrides: { profile?: SubscriptionProfile; onSave?: (candidate: SubscriptionProfile) => Promise<void> | void; onScheduleSave?: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void; configurationContext?: SubscriptionConfigurationContext } = {}) {
+  function renderEditor(overrides: { profile?: SubscriptionProfile; onSave?: (candidate: SubscriptionProfile) => Promise<void> | void; onScheduleSave?: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void; configurationContext?: SubscriptionConfigurationContext; editorRef?: Ref<ProxySubscribeEditorRef>; onSaveStateChange?: (state: ProxySubscribeSaveState) => void } = {}) {
     const onSave = vi.fn(overrides.onSave ?? (() => undefined))
     const onScheduleSave = vi.fn(overrides.onScheduleSave ?? (() => undefined))
     const rendered = render(
       <I18nProvider>
         <AcmeContentBoundary>
           <ProxySubscribeEditor
+            ref={overrides.editorRef}
             profile={overrides.profile ?? profile}
             defaults={defaults}
             customNodes={[{ id: 'custom-1', name: 'Local node', proxy: { name: 'Local node', type: 'socks5', server: '127.0.0.1', port: 1080 } }]}
@@ -106,6 +108,7 @@ describe('ProxySubscribeEditor', () => {
             schedule={{ interval: '24h', autoRestart: true }}
             onScheduleSave={onScheduleSave}
             onSave={onSave}
+            onSaveStateChange={overrides.onSaveStateChange}
             diagnostics={<div>Diagnostic tools</div>}
           />
         </AcmeContentBoundary>
@@ -222,6 +225,41 @@ describe('ProxySubscribeEditor', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Restart after scheduled updates' }))
     await act(async () => Promise.resolve())
     expect(onScheduleSave).toHaveBeenCalledWith({ auto_restart: false })
+  })
+
+  it('saves a dirty profile immediately through the editor handle', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('sempre.locale', 'en')
+    const editorRef = createRef<ProxySubscribeEditorRef>()
+    const onSaveStateChange = vi.fn()
+    const { onSave } = renderEditor({ editorRef, onSaveStateChange })
+
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({ profileID: 'profile-1', dirty: false, saving: false })
+    fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'Save now' } })
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({ profileID: 'profile-1', dirty: true, saving: false })
+
+    act(() => editorRef.current?.saveNow())
+    await act(async () => Promise.resolve())
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toMatchObject({ remark: 'Save now' })
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({ profileID: 'profile-1', dirty: false, saving: false })
+  })
+
+  it('reports loading during autosave and becomes clean after it succeeds', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('sempre.locale', 'en')
+    let resolveSave: (() => void) | undefined
+    const pendingSave = new Promise<void>((resolve) => { resolveSave = resolve })
+    const onSaveStateChange = vi.fn()
+    renderEditor({ onSave: () => pendingSave, onSaveStateChange })
+
+    fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'Autosaving' } })
+    await act(async () => vi.advanceTimersByTime(800))
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({ profileID: 'profile-1', dirty: true, saving: true })
+
+    await act(async () => resolveSave?.())
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({ profileID: 'profile-1', dirty: false, saving: false })
   })
 
 	it('persists Linux TProxy and directly available authenticated management settings', async () => {

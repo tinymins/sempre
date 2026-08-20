@@ -10,6 +10,7 @@ import {
   Tag,
   TextArea,
 } from "@acme/components";
+import { forwardRef, useImperativeHandle } from "react";
 import { useTranslation } from "react-i18next";
 import type { CustomNode, SubscriptionSource } from "@/lib/types";
 import PrivateAccessEditor from "./PrivateAccessEditor";
@@ -20,7 +21,13 @@ import { type Props, type SaveFeedback } from "./ProxySubscribeModel";
 import { ProxyRuntimeFields } from "./ProxyRuntimeFields";
 import { useProxySubscribeEditor } from "./useProxySubscribeEditor";
 
-const ProxySubscribeEditor = (props: Props) => {
+export type { ProxySubscribeSaveState } from "./ProxySubscribeModel";
+
+export interface ProxySubscribeEditorRef {
+  saveNow: () => void;
+}
+
+const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, ref) => {
   const {
     t,
     setActiveTab,
@@ -31,6 +38,7 @@ const ProxySubscribeEditor = (props: Props) => {
     configurationContext,
     form,
     queueAutosave,
+    saveNow,
     features,
     scheduleInterval,
     setScheduleInterval,
@@ -59,6 +67,8 @@ const ProxySubscribeEditor = (props: Props) => {
     setManualServersDraft,
     manualServersError,
   } = useProxySubscribeEditor(props);
+
+  useImperativeHandle(ref, () => ({ saveNow }), [saveNow]);
 
     return (
       <div className="min-h-0 rounded-lg border border-black/[0.08] bg-white/50 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
@@ -379,7 +389,9 @@ const ProxySubscribeEditor = (props: Props) => {
         </Modal>
       </div>
     );
-};
+});
+
+ProxySubscribeEditor.displayName = "ProxySubscribeEditor";
 
 function SaveStatus({ profile, schedule }: { profile: SaveFeedback; schedule: SaveFeedback }) {
   const { t } = useTranslation();

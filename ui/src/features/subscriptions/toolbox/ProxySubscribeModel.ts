@@ -12,10 +12,17 @@ export interface Props {
 	networkInventory?: LinuxNetworkInventory;
 	configurationContext: SubscriptionConfigurationContext;
   onSave: (profile: SubscriptionProfile) => Promise<void> | void;
+  onSaveStateChange?: (state: ProxySubscribeSaveState) => void;
   schedule: { interval: string; autoRestart: boolean };
   onScheduleSave: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void;
   diagnostics: ReactNode;
 }
+
+export type ProxySubscribeSaveState = {
+	profileID: string;
+	dirty: boolean;
+	saving: boolean;
+};
 
 export const BASE_TABS = [
   { label: "basic", value: "basic" },

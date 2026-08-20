@@ -11,11 +11,18 @@ vi.mock('../features/subscriptions/toolbox/MessageBridge', () => ({ MessageBridg
 vi.mock('../features/subscriptions/toolbox/ProxyDebugModal', () => ({ default: () => null }))
 vi.mock('../features/subscriptions/toolbox/ProxyPreviewModal', () => ({ default: () => null }))
 vi.mock('../features/subscriptions/toolbox/ProxySubscribeEditor', async () => {
-  const { useState } = await import('react')
-  function MockSubscriptionEditor({ diagnostics }: { diagnostics: ReactNode }) {
+  const { forwardRef, useImperativeHandle, useState } = await import('react')
+  const MockSubscriptionEditor = forwardRef(function MockSubscriptionEditor({ diagnostics, profile, onSave, onSaveStateChange }: { diagnostics: ReactNode; profile: SubscriptionProfile; onSave: (candidate: SubscriptionProfile) => Promise<void>; onSaveStateChange?: (state: { profileID: string; dirty: boolean; saving: boolean }) => void }, ref) {
     const [showDiagnostics, setShowDiagnostics] = useState(false)
-    return <div data-testid="subscription-editor"><button type="button" onClick={() => setShowDiagnostics(true)}>Open diagnostics</button>{showDiagnostics ? diagnostics : null}</div>
-  }
+    const [remark, setRemark] = useState(profile.remark ?? '')
+    useImperativeHandle(ref, () => ({
+      saveNow: () => {
+        onSaveStateChange?.({ profileID: profile.id, dirty: true, saving: true })
+        void onSave({ ...profile, remark }).then(() => onSaveStateChange?.({ profileID: profile.id, dirty: false, saving: false }))
+      },
+    }))
+    return <div data-testid="subscription-editor"><button type="button" onClick={() => setShowDiagnostics(true)}>Open diagnostics</button><button type="button" onClick={() => { setRemark('Edited profile'); onSaveStateChange?.({ profileID: profile.id, dirty: true, saving: false }) }}>Edit profile</button>{showDiagnostics ? diagnostics : null}</div>
+  })
   return { default: MockSubscriptionEditor }
 })
 
@@ -101,6 +108,10 @@ describe('Subscriptions subscription sets', () => {
       const match = url.match(/\/api\/v1\/subscriptions\/([^/]+)(?:\/(activate|refresh))?$/)
       if (match) {
         const id = decodeURIComponent(match[1])
+        if (method === 'PUT') {
+          profiles = profiles.map((item) => item.id === id ? { ...item, ...body } : item)
+          return jsonResponse({ change: { changed: true, message: 'Subscription set saved.' } })
+        }
         if (method === 'PATCH') {
           const renamed = { ...profiles.find((item) => item.id === id)!, name: body?.name || '' }
           profiles = profiles.map((item) => item.id === id ? renamed : item)
@@ -222,6 +233,24 @@ describe('Subscriptions subscription sets', () => {
     expect(screen.queryByText('Active subscription set')).not.toBeInTheDocument()
     expect(screen.queryByText(/sing-box-v13.*source response contains no proxy nodes/)).not.toBeInTheDocument()
     expect(screen.queryByText('source response contains no proxy nodes')).not.toBeInTheDocument()
+
+    const headerActions = screen.getByRole('heading', { name: 'Subscriptions' }).parentElement?.nextElementSibling
+    expect(within(headerActions as HTMLElement).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Save',
+      'Update now',
+      'Restart core now',
+    ])
+    const saveButton = screen.getByRole('button', { name: 'Save' })
+    expect(saveButton).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
+    expect(saveButton).toBeEnabled()
+    fireEvent.click(saveButton)
+    await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
+      method: 'PUT',
+      url: 'http://sempre.test/api/v1/subscriptions/primary',
+      body: expect.objectContaining({ remark: 'Edited profile' }),
+    })))
+    await waitFor(() => expect(saveButton).toBeDisabled())
 
     fireEvent.click(screen.getByRole('button', { name: 'Open diagnostics' }))
     expect(screen.getByText('source response contains no proxy nodes')).toBeInTheDocument()

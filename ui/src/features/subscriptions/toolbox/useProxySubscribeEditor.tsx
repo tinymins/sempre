@@ -20,6 +20,7 @@ export function useProxySubscribeEditor({
 	networkInventory,
 	configurationContext,
   onSave,
+  onSaveStateChange,
   schedule,
   onScheduleSave,
   diagnostics,
@@ -36,6 +37,7 @@ export function useProxySubscribeEditor({
     const [scheduleInterval, setScheduleInterval] = useState(schedule.interval);
     const [autoRestart, setAutoRestart] = useState(schedule.autoRestart);
     const [profileFeedback, setProfileFeedback] = useState<SaveFeedback>({ state: "idle" });
+    const [profileDirty, setProfileDirty] = useState(false);
     const [scheduleFeedback, setScheduleFeedback] = useState<SaveFeedback>({ state: "idle" });
 		const features = useMemo(() => new Set(configurationContext.capabilities.features), [configurationContext.capabilities.features]);
 		const supportsTransparent = features.has("transparent.tun") || features.has("transparent.tproxy") || features.has("transparent.ebpf");
@@ -70,6 +72,7 @@ export function useProxySubscribeEditor({
     const runScheduleSaveRef = useRef<() => Promise<void>>(async () => undefined);
     const profileTimerRef = useRef<number | undefined>(undefined);
     const profileRevisionRef = useRef(0);
+    const profileDirtyRef = useRef(false);
     const profileSaveRequestedRef = useRef(false);
     const profileSaveInFlightRef = useRef(false);
     const scheduleTimerRef = useRef<number | undefined>(undefined);
@@ -82,6 +85,14 @@ export function useProxySubscribeEditor({
       onSaveRef.current = onSave;
       onScheduleSaveRef.current = onScheduleSave;
     }, [profile, rawSources, onSave, onScheduleSave]);
+
+    useEffect(() => {
+      onSaveStateChange?.({
+        profileID: profile.id,
+        dirty: profileDirty,
+        saving: profileFeedback.state === "saving",
+      });
+    }, [onSaveStateChange, profile.id, profileDirty, profileFeedback.state]);
 
     useEffect(() => {
       mountedRef.current = true;
@@ -218,6 +229,8 @@ export function useProxySubscribeEditor({
       try {
         await onSaveRef.current(candidate);
         if (mountedRef.current && revision === profileRevisionRef.current && !profileSaveRequestedRef.current) {
+          profileDirtyRef.current = false;
+          setProfileDirty(false);
           setProfileFeedback({ state: "saved" });
         }
       } catch (error) {
@@ -236,10 +249,20 @@ export function useProxySubscribeEditor({
 
     const queueAutosave = useCallback(() => {
       profileRevisionRef.current += 1;
+      profileDirtyRef.current = true;
       profileSaveRequestedRef.current = true;
       window.clearTimeout(profileTimerRef.current);
-      if (mountedRef.current) setProfileFeedback({ state: "waiting" });
+      if (mountedRef.current) {
+        setProfileDirty(true);
+        setProfileFeedback({ state: "waiting" });
+      }
       profileTimerRef.current = window.setTimeout(() => void runAutosaveRef.current(), AUTOSAVE_DELAY);
+    }, []);
+
+    const saveNow = useCallback(() => {
+      if (!profileDirtyRef.current || profileSaveInFlightRef.current) return;
+      profileSaveRequestedRef.current = true;
+      void runAutosaveRef.current();
     }, []);
 
     const runScheduleSave = useCallback(async () => {
@@ -343,6 +366,7 @@ export function useProxySubscribeEditor({
     configurationContext,
     form,
     queueAutosave,
+    saveNow,
     features,
     scheduleInterval,
     setScheduleInterval,
