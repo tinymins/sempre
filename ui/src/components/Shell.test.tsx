@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
@@ -76,6 +76,22 @@ describe('Shell sidebar', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Subscriptions' }))
     expect(screen.queryByRole('button', { name: 'Close navigation' })).not.toBeInTheDocument()
     expect(localStorage.getItem('sempre.sidebar.collapsed')).toBe('true')
+  })
+
+  it('dismisses the password warning only for the current shell mount', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...systemStatus,
+      web: { ...systemStatus.web, password_set: false, password_warning: true },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    const rendered = renderShell()
+
+    const warning = await screen.findByText('The administrator password is empty. Set one as soon as possible.')
+    fireEvent.click(within(warning).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByText('The administrator password is empty. Set one as soon as possible.')).not.toBeInTheDocument()
+
+    rendered.unmount()
+    renderShell()
+    expect(await screen.findByText('The administrator password is empty. Set one as soon as possible.')).toBeInTheDocument()
   })
 })
 

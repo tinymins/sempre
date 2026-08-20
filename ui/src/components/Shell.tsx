@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, Globe2, Languages, Library, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints } from 'lucide-react'
+import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, Globe2, Languages, Library, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -18,6 +18,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const { t, locale, setLocale } = useI18n()
   const { session, setSession } = useSession()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [passwordWarningDismissed, setPasswordWarningDismissed] = useState(false)
   const [desktopCollapsed, setDesktopCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true')
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('sempre.theme') as Theme) || 'system')
   const system = useQuery({
@@ -91,7 +92,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <Button size="icon" variant="ghost" title={t('logout')} aria-label={t('logout')} onClick={() => setSession(null)}><LogOut size={18} /></Button>
           </div>
         </header>
-        {system.data?.web.password_warning || session?.warning === 'PASSWORD_EMPTY' ? <div className="border-b border-amber-400/40 bg-amber-400/12 px-4 py-2 text-center text-xs font-medium text-amber-800 dark:text-amber-300">{t('emptyPassword')}</div> : null}
+        {!passwordWarningDismissed && (system.data?.web.password_warning || session?.warning === 'PASSWORD_EMPTY') ? <div className="relative border-b border-amber-400/40 bg-amber-400/12 px-10 py-2 text-center text-xs font-medium text-amber-800 dark:text-amber-300">{t('emptyPassword')}<Button className="absolute right-2 top-1/2 size-6 -translate-y-1/2 text-amber-800 hover:bg-amber-400/15 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200" size="icon" variant="ghost" title={t('close')} aria-label={t('close')} onClick={() => setPasswordWarningDismissed(true)}><X size={15} /></Button></div> : null}
         <main className="mx-auto w-full max-w-[1600px] p-4 md:p-6"><AcmeContentBoundary>{children}</AcmeContentBoundary></main>
       </div>
     </div>
