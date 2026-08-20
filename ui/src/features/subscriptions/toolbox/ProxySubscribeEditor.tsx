@@ -93,7 +93,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
 						/>
 					) : null}
 
-          <Form form={form} layout="vertical" onValuesChange={queueAutosave}>
+          <Form form={form} layout="vertical" autoComplete="off" onValuesChange={queueAutosave}>
             {/* 基础信息 */}
             <div style={{ display: visibleActiveTab === "basic" ? "block" : "none" }}>
               <Form.Item label={t("proxy.form.remark")} name="remark">
@@ -320,17 +320,18 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
               </Form.Item>
             </div>
 
-      <ProxyRuntimeFields
-        visible={visibleActiveTab === "runtime"}
-        supportsLocalProxy={supportsLocalProxy}
-        supportsTransparent={supportsTransparent}
-        supportsManagement={supportsManagement}
-        features={features}
-        form={form}
-        transparentMode={transparentMode}
-        tunInterfaceMode={tunInterfaceMode}
-        networkInventory={networkInventory}
-      />
+            {visibleActiveTab === "runtime" ? (
+              <ProxyRuntimeFields
+                supportsLocalProxy={supportsLocalProxy}
+                supportsTransparent={supportsTransparent}
+                supportsManagement={supportsManagement}
+                features={features}
+                form={form}
+                transparentMode={transparentMode}
+                tunInterfaceMode={tunInterfaceMode}
+                networkInventory={networkInventory}
+              />
+            ) : null}
             {/* 额外服务器 */}
             <div className={visibleActiveTab === "servers" ? "" : "hidden"}>
               <Form.Item

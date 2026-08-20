@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import type { LinuxNetworkInventory } from "@/lib/types";
 
 interface Props {
-  visible: boolean;
   supportsLocalProxy: boolean;
   supportsTransparent: boolean;
   supportsManagement: boolean;
@@ -15,7 +14,6 @@ interface Props {
 }
 
 export function ProxyRuntimeFields({
-  visible,
   supportsLocalProxy,
   supportsTransparent,
   supportsManagement,
@@ -26,7 +24,7 @@ export function ProxyRuntimeFields({
   networkInventory,
 }: Props) {
   const { t } = useTranslation();
-  return 			<div className={visible ? "space-y-5" : "hidden"}>
+  return 			<div className="space-y-5">
 				{supportsLocalProxy ? <section className="space-y-4">
 					<div className="grid gap-4 md:grid-cols-2">
 						<Form.Item label={t("proxy.form.localProxySOCKSPort")} name="localProxySOCKSPort">
@@ -36,10 +34,10 @@ export function ProxyRuntimeFields({
 							<InputNumber min={1} max={65535} className="w-full" />
 						</Form.Item>
 						<Form.Item label={t("proxy.form.localProxyUsername")} name="localProxyUsername">
-							<Input autoComplete="username" />
+							<Input autoComplete="off" />
 						</Form.Item>
 						<Form.Item label={t("proxy.form.localProxyPassword")} name="localProxyPassword">
-							<Password autoComplete="new-password" />
+							<Password autoComplete="off" />
 						</Form.Item>
 					</div>
 				</section> : null}
@@ -160,7 +158,7 @@ export function ProxyRuntimeFields({
 							<Input />
 						</Form.Item>
 						<Form.Item label={t("proxy.form.managementAPISecret")} name="managementAPISecret">
-							<Password autoComplete="new-password" />
+							<Password autoComplete="off" />
 						</Form.Item>
 					</div>
 					<Form.Item label={t("proxy.form.managementAPIUI")} name="managementAPIUI">

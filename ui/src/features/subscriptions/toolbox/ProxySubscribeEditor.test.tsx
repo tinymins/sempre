@@ -153,6 +153,30 @@ describe('ProxySubscribeEditor', () => {
 	  expect(screen.getByText('Diagnostic tools')).toBeInTheDocument()
 	})
 
+	it('does not expose runtime credentials as browser login fields while saving rules', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('sempre.locale', 'en')
+		const { container, onSave } = renderEditor()
+		expect(container.querySelector('form')).toHaveAttribute('autocomplete', 'off')
+		expect(container.querySelector('input[type="password"]')).not.toBeInTheDocument()
+		fireEvent.click(screen.getByRole('button', { name: 'Runtime' }))
+		expect(screen.getByLabelText('Local proxy username')).toHaveAttribute('autocomplete', 'off')
+		expect(screen.getByLabelText('Local proxy password')).toHaveAttribute('autocomplete', 'off')
+		expect(screen.getByLabelText('Fixed secret')).toHaveAttribute('autocomplete', 'off')
+
+		fireEvent.click(screen.getByRole('button', { name: 'Rule List' }))
+		expect(screen.queryByLabelText('Local proxy password')).not.toBeInTheDocument()
+		fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use System Config' })[0])
+		fireEvent.change(screen.getAllByLabelText('JSONC editor')[0], { target: { value: '{"geoip-cn": {}}' } })
+		await act(async () => vi.advanceTimersByTime(800))
+		expect(onSave).toHaveBeenCalledTimes(1)
+		expect(onSave.mock.calls[0][0]).toMatchObject({
+			local_proxy: { username: 'sempre', password: 'local-secret' },
+			management_api: { secret: 'management-secret' },
+			editor: { rule_list: '{"geoip-cn": {}}' },
+		})
+	})
+
 	it('uses system DNS as the managed local DNS default', async () => {
 		localStorage.setItem('sempre.locale', 'en')
 		renderEditor()
