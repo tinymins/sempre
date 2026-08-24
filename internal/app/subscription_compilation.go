@@ -256,7 +256,7 @@ func (manager *Manager) prepareActiveProfileForRuntime(ctx context.Context) (Cha
 	if subscriptionProfileHasInputs(*profile) {
 		return manager.compileActiveProfileForSelectedCore(ctx, catalog, *profile, document)
 	}
-	if profile.Revision == 1 && document.ConfigBuilds[deployment.Core].ProfileID == "" {
+	if initialConfigurationWithoutProfileBuild(*profile, document.ConfigBuilds[deployment.Core]) {
 		return Change{}, nil
 	}
 	if deployment.ConfigHash == "" {
@@ -304,6 +304,10 @@ func subscriptionProfileHasInputs(profile subscriptions.Profile) bool {
 		}
 	}
 	return false
+}
+
+func initialConfigurationWithoutProfileBuild(profile subscriptions.Profile, build state.ConfigBuild) bool {
+	return !subscriptionProfileHasInputs(profile) && profile.Revision == 1 && build.ProfileID == ""
 }
 
 func subscriptionProfileHasScheduledSources(profile subscriptions.Profile) bool {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 	uiassets "github.com/tinymins/sempre/internal/ui"
 )
 
@@ -51,6 +52,10 @@ func setup(root, coreBinary string) error {
 	if err := setupUI(paths); err != nil {
 		return err
 	}
+	profileID, err := setupSubscription(paths)
+	if err != nil {
+		return err
+	}
 	return store.Update(func(document *state.Document) error {
 		source := document.Core("sing-box").Source("")
 		source.Channels["stable"] = "1.2.3"
@@ -70,10 +75,32 @@ func setup(root, coreBinary string) error {
 		}
 		document.Previous = nil
 		document.Pending = false
+		document.ActiveProfileID = profileID
 		document.Subscription.Interval = "off"
 		document.Runtime = state.Runtime{}
 		return nil
 	})
+}
+
+func setupSubscription(paths layout.Layout) (string, error) {
+	store := subscriptions.NewStore(paths)
+	if err := store.Initialize(""); err != nil {
+		return "", err
+	}
+	catalog, err := store.Read()
+	if err != nil {
+		return "", err
+	}
+	profileID := catalog.Profiles[0].ID
+	err = store.Update(func(candidate *subscriptions.Catalog) error {
+		profile, findErr := subscriptions.FindProfile(candidate, profileID)
+		if findErr != nil {
+			return findErr
+		}
+		profile.TransparentProxy.Mode = subscriptions.TransparentProxyDisabled
+		return nil
+	})
+	return profileID, err
 }
 
 func setupUI(paths layout.Layout) error {

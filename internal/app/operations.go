@@ -270,9 +270,12 @@ func (manager *Manager) Doctor(ctx context.Context) (string, error) {
 			))
 		}
 		adapter, adapterErr := manager.registry.Get(document.Active.Core)
-		if adapterErr == nil {
+		build := document.ConfigBuilds[document.Active.Core]
+		if initialConfigurationWithoutProfileBuild(*profile, build) {
+			fmt.Fprintln(&builder, "[INFO] profile settings survive recompilation: not applicable to the initial manually imported configuration")
+		} else if adapterErr == nil {
 			expected, expectedErr := expectedConfigBuild(*profile, adapter, document.Active.Version)
-			if expectedErr == nil && document.ConfigBuilds[document.Active.Core] != expected {
+			if expectedErr == nil && build != expected {
 				expectedErr = fmt.Errorf("active configuration was not built from profile revision %d", profile.Revision)
 			}
 			check("profile settings survive recompilation", expectedErr)

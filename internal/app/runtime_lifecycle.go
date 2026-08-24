@@ -262,7 +262,7 @@ func (manager *Manager) runtimeConfigurationPending(document state.Document) boo
 	if err != nil {
 		return false
 	}
-	if !subscriptionProfileHasInputs(*profile) && profile.Revision == 1 && document.ConfigBuilds[document.Selected.Core].ProfileID == "" {
+	if initialConfigurationWithoutProfileBuild(*profile, document.ConfigBuilds[document.Selected.Core]) {
 		return false
 	}
 	deployment, adapter, err := manager.configurationTarget(document)

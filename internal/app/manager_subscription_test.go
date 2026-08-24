@@ -191,6 +191,17 @@ func TestDoctorReturnsFailureWhenChecksFail(t *testing.T) {
 	}
 }
 
+func TestInitialManualConfigurationDoesNotRequireProfileBuildMetadata(t *testing.T) {
+	profile := subscriptions.NewProfile("")
+	if !initialConfigurationWithoutProfileBuild(profile, state.ConfigBuild{}) {
+		t.Fatal("initial manual configuration was treated as a subscription build")
+	}
+	profile.Editor.Servers = `[{"name":"edge"}]`
+	if initialConfigurationWithoutProfileBuild(profile, state.ConfigBuild{}) {
+		t.Fatal("profile with inputs was treated as an initial manual configuration")
+	}
+}
+
 func TestLogDeltaHandlesRotationAndLongLines(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
