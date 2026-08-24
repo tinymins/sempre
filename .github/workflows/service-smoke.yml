@@ -43,31 +43,30 @@ jobs:
             sleep 0.2
           done
           sudo ./smoke/sempre --system doctor
-          runtime_status=""
-          for ((attempt = 0; attempt < 100; attempt++)); do
-            if runtime_status=$(sudo ./smoke/sempre --system runtime status 2>/dev/null) && grep -q "State: running" <<<"$runtime_status"; then
-              break
-            fi
-            sleep 0.2
-          done
-          grep -q "Desired: running" <<<"$runtime_status"
-          grep -q "State: running" <<<"$runtime_status"
-          sudo ./smoke/sempre --system runtime stop | grep -q "State: stopped"
+          wait_runtime() {
+            local desired="$1" state="$2" runtime_status=""
+            for ((attempt = 0; attempt < 100; attempt++)); do
+              runtime_status=$(sudo ./smoke/sempre --system runtime status 2>/dev/null || true)
+              if grep -q "Desired: $desired" <<<"$runtime_status" && grep -q "State: $state" <<<"$runtime_status"; then
+                return 0
+              fi
+              sleep 0.2
+            done
+            printf 'managed core did not reach %s/%s:\n%s\n' "$desired" "$state" "$runtime_status" >&2
+            return 1
+          }
+          wait_runtime running running
+          sudo ./smoke/sempre --system runtime stop >/dev/null
+          wait_runtime stopped stopped
           sudo ./smoke/sempre --portable service restart
-          runtime_status=""
-          for ((attempt = 0; attempt < 100; attempt++)); do
-            if runtime_status=$(sudo ./smoke/sempre --system runtime status 2>/dev/null) && grep -q "State: stopped" <<<"$runtime_status"; then
-              break
-            fi
-            sleep 0.2
-          done
-          grep -q "Desired: stopped" <<<"$runtime_status"
-          grep -q "State: stopped" <<<"$runtime_status"
+          wait_runtime stopped stopped
           printf '%s\n' '{"proxies":[{"name":"smoke-updated","type":"socks5","server":"127.0.0.1","port":1080}]}' > smoke/config-updated.json
-          sudo ./smoke/sempre --system config import smoke/config-updated.json | grep -q "subscription profile saved, validated, and staged"
-          sudo ./smoke/sempre --system runtime status | grep -q "State: stopped"
-          sudo ./smoke/sempre --system runtime start | grep -q "State: running"
-          sudo ./smoke/sempre --system runtime restart | grep -q "State: running"
+          sudo ./smoke/sempre --system config import smoke/config-updated.json | grep -q "active profile compiled for sing-box"
+          wait_runtime stopped stopped
+          sudo ./smoke/sempre --system runtime start >/dev/null
+          wait_runtime running running
+          sudo ./smoke/sempre --system runtime restart >/dev/null
+          wait_runtime running running
           sudo ./smoke/sempre --portable service stop
           sudo ./smoke/sempre --portable service start
           sudo ./smoke/sempre --portable service restart
@@ -93,36 +92,30 @@ jobs:
             Start-Sleep -Milliseconds 200
           }
           ./smoke/sempre.exe --system doctor
-          $runtimeStatus = ''
-          for ($attempt = 0; $attempt -lt 100; $attempt++) {
-            try {
-              $runtimeStatus = ./smoke/sempre.exe --system runtime status 2>$null | Out-String
-              if ($runtimeStatus -match 'State: running') { break }
-            } catch {}
-            Start-Sleep -Milliseconds 200
+          function Wait-RuntimeState([string]$Desired, [string]$State) {
+            $runtimeStatus = ''
+            for ($attempt = 0; $attempt -lt 100; $attempt++) {
+              try {
+                $runtimeStatus = ./smoke/sempre.exe --system runtime status 2>$null | Out-String
+                if ($runtimeStatus -match "Desired: $Desired" -and $runtimeStatus -match "State: $State") { return }
+              } catch {}
+              Start-Sleep -Milliseconds 200
+            }
+            throw "managed core did not reach ${Desired}/${State}: $runtimeStatus"
           }
-          if ($runtimeStatus -notmatch 'Desired: running' -or $runtimeStatus -notmatch 'State: running') { throw "managed core did not reach running: $runtimeStatus" }
-          $runtimeStatus = ./smoke/sempre.exe --system runtime stop | Out-String
-          if ($runtimeStatus -notmatch 'State: stopped') { throw "managed core did not stop: $runtimeStatus" }
+          Wait-RuntimeState running running
+          ./smoke/sempre.exe --system runtime stop | Out-Null
+          Wait-RuntimeState stopped stopped
           ./smoke/sempre.exe --portable service restart
-          $runtimeStatus = ''
-          for ($attempt = 0; $attempt -lt 100; $attempt++) {
-            try {
-              $runtimeStatus = ./smoke/sempre.exe --system runtime status 2>$null | Out-String
-              if ($runtimeStatus -match 'State: stopped') { break }
-            } catch {}
-            Start-Sleep -Milliseconds 200
-          }
-          if ($runtimeStatus -notmatch 'Desired: stopped' -or $runtimeStatus -notmatch 'State: stopped') { throw "stopped intent was not preserved: $runtimeStatus" }
+          Wait-RuntimeState stopped stopped
           Set-Content -Path smoke/config-updated.json -NoNewline -Value '{"proxies":[{"name":"smoke-updated","type":"socks5","server":"127.0.0.1","port":1080}]}'
           $configResult = ./smoke/sempre.exe --system config import smoke/config-updated.json | Out-String
-          if ($configResult -notmatch 'subscription profile saved, validated, and staged') { throw "stopped config import was not staged: $configResult" }
-          $runtimeStatus = ./smoke/sempre.exe --system runtime status | Out-String
-          if ($runtimeStatus -notmatch 'State: stopped') { throw "config import started the managed core: $runtimeStatus" }
-          $runtimeStatus = ./smoke/sempre.exe --system runtime start | Out-String
-          if ($runtimeStatus -notmatch 'State: running') { throw "managed core did not start: $runtimeStatus" }
-          $runtimeStatus = ./smoke/sempre.exe --system runtime restart | Out-String
-          if ($runtimeStatus -notmatch 'State: running') { throw "managed core did not restart: $runtimeStatus" }
+          if ($configResult -notmatch 'active profile compiled for sing-box') { throw "stopped config import was not compiled: $configResult" }
+          Wait-RuntimeState stopped stopped
+          ./smoke/sempre.exe --system runtime start | Out-Null
+          Wait-RuntimeState running running
+          ./smoke/sempre.exe --system runtime restart | Out-Null
+          Wait-RuntimeState running running
           ./smoke/sempre.exe --portable service stop
           ./smoke/sempre.exe --portable service start
           ./smoke/sempre.exe --portable service restart

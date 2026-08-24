@@ -357,6 +357,21 @@ func TestMarkRuntimeHealthyClearsTopLevelAndRuntimeErrors(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatusDoesNotFailWhileStoppedProcessIsExiting(t *testing.T) {
+	manager := readyRuntimeManager(t)
+	document, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.DesiredState = state.DesiredStopped
+	document.Runtime.State = "stopping"
+	document.Runtime.PID = 1 << 30
+	status := manager.runtimeStatusValue(document)
+	if status.RuntimeState != "stopping" || status.LastError != "" {
+		t.Fatalf("status = %#v", status)
+	}
+}
+
 func readyRuntimeManager(t *testing.T) *Manager {
 	t.Helper()
 	manager := newTestManager(t)

@@ -216,7 +216,7 @@ func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatu
 	if runtimeState == "idle" && document.DesiredState == state.DesiredRunning && lastError != "" && readyErr == nil {
 		runtimeState = "failed"
 	}
-	if document.Runtime.PID > 0 && !processAlive(document.Runtime.PID) {
+	if document.Runtime.PID > 0 && runtimeState != "stopping" && !processAlive(document.Runtime.PID) {
 		runtimeState = "failed"
 		lastError = fmt.Sprintf("recorded PID %d is not running", document.Runtime.PID)
 	}
