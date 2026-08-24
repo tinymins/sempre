@@ -1,3 +1,4 @@
+mod editor;
 mod model;
 mod parser;
 mod renderer;
@@ -27,11 +28,14 @@ pub enum CompileError {
     EmptyProfile,
     #[error("invalid custom node {0:?}")]
     InvalidCustomNode(String),
+    #[error("invalid editor field {field:?}: {detail}")]
+    InvalidEditor { field: &'static str, detail: String },
     #[error("render output failed: {0}")]
     Render(String),
 }
 
 pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> {
+    let profile = editor::apply(&request.profile)?;
     let mut target = Target::parse(&request.target.format)?;
     if !request.target.core.trim().is_empty() {
         target.core.clone_from(&request.target.core);
@@ -44,17 +48,12 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
     let mut nodes = Vec::new();
     let mut diagnostics = Vec::new();
 
-    for value in &request.profile.manual_servers {
+    for value in &profile.manual_servers {
         let proxy = Proxy::from_value(value.clone())
             .map_err(|_| CompileError::InvalidCustomNode("manual server".into()))?;
         nodes.push((proxy, "manual-server".into()));
     }
-    for source in request
-        .profile
-        .sources
-        .iter()
-        .filter(|source| source.enabled)
-    {
+    for source in profile.sources.iter().filter(|source| source.enabled) {
         let snapshot = snapshots
             .get(source.id.as_str())
             .ok_or_else(|| CompileError::MissingSnapshot(source.id.clone()))?;
@@ -78,12 +77,7 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
         }
     }
 
-    let selected: HashSet<&str> = request
-        .profile
-        .custom_node_ids
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let selected: HashSet<&str> = profile.custom_node_ids.iter().map(String::as_str).collect();
     for node in request
         .custom_nodes
         .iter()
@@ -94,7 +88,7 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
         nodes.push((proxy, format!("custom-node:{}", node.id)));
     }
 
-    apply_filters(&mut nodes, &request.profile.filters);
+    apply_filters(&mut nodes, &profile.filters);
     make_names_unique(&mut nodes);
     if nodes.is_empty() {
         return Err(CompileError::EmptyProfile);
@@ -108,7 +102,7 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
         })
         .collect();
 
-    let (content, field_diffs, warnings) = renderer::render(&request.profile, &proxies, &target)?;
+    let (content, field_diffs, warnings) = renderer::render(&profile, &proxies, &target)?;
     diagnostics.extend(warnings.into_iter().map(|message| Diagnostic {
         level: "warning".into(),
         source_id: None,

@@ -32,6 +32,8 @@ pub struct Profile {
     #[serde(default = "default_log_level")]
     pub log_level: String,
     #[serde(default)]
+    pub editor: EditorConfig,
+    #[serde(default)]
     pub sources: Vec<Source>,
     #[serde(default)]
     pub custom_node_ids: Vec<String>,
@@ -57,6 +59,8 @@ pub struct Profile {
     pub transparent_proxy: TransparentProxy,
     #[serde(default)]
     pub management_api: ManagementApi,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 fn default_log_level() -> String {
@@ -66,6 +70,8 @@ fn default_log_level() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     pub id: String,
+    #[serde(rename = "type", default = "default_source_type")]
+    pub kind: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]
@@ -74,6 +80,12 @@ pub struct Source {
     pub remark: String,
     #[serde(default)]
     pub prefix: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub user_agent: String,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 impl Source {
@@ -90,6 +102,28 @@ impl Source {
 
 const fn default_true() -> bool {
     true
+}
+
+fn default_source_type() -> String {
+    "url".into()
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EditorConfig {
+    #[serde(default)]
+    pub rule_list: String,
+    #[serde(default)]
+    pub group: String,
+    #[serde(default)]
+    pub filter: String,
+    #[serde(default)]
+    pub custom_config: String,
+    #[serde(default)]
+    pub dns_config: String,
+    #[serde(default)]
+    pub private_access_config: String,
+    #[serde(default)]
+    pub servers: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -81,3 +81,49 @@ fn filters_only_remove_source_nodes_and_origins_follow_unique_names() {
         Some("source:source-1")
     );
 }
+
+#[test]
+fn profile_round_trip_preserves_forward_compatible_fields() {
+    let input = json!({
+        "id": "profile-1",
+        "name": "Preserved",
+        "use_system_groups": true,
+        "editor": { "servers": "[]" },
+        "sources": [{
+            "id": "source-1", "type": "url", "enabled": true,
+            "url": "https://example.com/sub", "fetch_mode": "domestic-direct",
+            "snapshot_hash": "abc"
+        }]
+    });
+    let profile: Profile = serde_json::from_value(input).expect("profile decodes");
+    let output = serde_json::to_value(profile).expect("profile encodes");
+    assert_eq!(output["use_system_groups"], true);
+    assert_eq!(output["sources"][0]["fetch_mode"], "domestic-direct");
+    assert_eq!(output["sources"][0]["snapshot_hash"], "abc");
+}
+
+#[test]
+fn editor_manual_servers_are_compiled_by_the_shared_core() {
+    let profile: Profile = serde_json::from_value(json!({
+        "name": "Editor",
+        "editor": {
+            "group": "[{\"name\":\"proxy\",\"type\":\"select\"}]",
+            "servers": "[{\"name\":\"manual\",\"type\":\"socks5\",\"server\":\"manual.example.com\",\"port\":1080}]"
+        }
+    })).expect("profile");
+    let result = compile(&CompileRequest {
+        protocol: 1,
+        profile,
+        snapshots: vec![],
+        custom_nodes: vec![],
+        target: Target {
+            core: String::new(),
+            format: "sing-box-v13".into(),
+            version: String::new(),
+            platform: String::new(),
+        },
+    })
+    .expect("compile editor server");
+    assert_eq!(result.node_count, 1);
+    assert!(result.content.contains("manual.example.com"));
+}

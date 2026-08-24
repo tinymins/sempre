@@ -8,11 +8,15 @@
     "dev:api": "go tool air -c .air.toml",
     "dev:ui": "bun --cwd=ui run dev",
     "dev:site": "bun --cwd=site run dev",
+    "server": "cargo run --manifest-path=rust/Cargo.toml -p sempre-server",
+    "rust:lint": "cargo fmt --manifest-path=rust/Cargo.toml --all -- --check && cargo clippy --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings",
+    "rust:test": "cargo test --manifest-path=rust/Cargo.toml --workspace",
     "lint": "bun --cwd=ui run lint && bun --cwd=site run lint && shellcheck installer/install.sh installer/install_test.sh",
     "tsc": "bun --cwd=ui run tsc && bun --cwd=site run tsc",
     "test": "bun --cwd=ui run test && bun --cwd=site run test && sh installer/install_test.sh",
     "build:ui": "bun --cwd=ui run build",
     "build:site": "bun --cwd=site run build",
-    "build": "go run ./cmd/build"
+    "build": "go run ./cmd/build",
+    "build:server": "cargo build --manifest-path=rust/Cargo.toml --release -p sempre-server"
   }
 }

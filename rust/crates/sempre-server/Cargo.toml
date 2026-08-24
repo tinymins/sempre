@@ -1,0 +1,35 @@
+[package]
+name = "sempre-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Multi-user Sempre subscription conversion server"
+
+[[bin]]
+name = "sempre-server"
+path = "src/main.rs"
+
+[dependencies]
+argon2.workspace = true
+axum.workspace = true
+base64.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+sempre-converter = { path = "../sempre-converter" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
