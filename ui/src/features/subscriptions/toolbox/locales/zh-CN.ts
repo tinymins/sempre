@@ -107,7 +107,7 @@ export default {
     subscribeItemEnabled: "已启用",
     subscribeItemDisabled: "已禁用",
     subscribeItemCacheTtlPlaceholder: "缓存时间（分钟）",
-    useSystemConfig: "使用系统配置",
+    useSystemConfig: "使用推荐配置",
     ruleListLabel: "规则列表 (JSONC，支持注释)",
     ruleListPlaceholder: "规则列表 JSONC 配置",
     groupLabel: "代理组 (JSONC，支持注释)",

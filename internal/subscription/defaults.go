@@ -79,8 +79,23 @@ func SystemDefaults() Defaults {
 	}
 }
 
-func EffectiveProfile(profile Profile) Profile {
+func RecommendedDefaults(core string) Defaults {
 	defaults := SystemDefaults()
+	if core == "sing-box" {
+		shared := defaults.DNS["shared"].(map[string]any)
+		shared["localDnsTransport"] = "tls"
+		shared["localDnsPort"] = 853
+		shared["localServerName"] = "dns.alidns.com"
+	}
+	return defaults
+}
+
+func EffectiveProfile(profile Profile) Profile {
+	return EffectiveProfileForTarget(profile, Target{})
+}
+
+func EffectiveProfileForTarget(profile Profile, target Target) Profile {
+	defaults := RecommendedDefaults(target.Core)
 	if profile.UseSystemGroups {
 		profile.Groups = defaults.Groups
 	}

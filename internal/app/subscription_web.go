@@ -19,7 +19,7 @@ func (admin *adminServer) subscriptionsGet(writer http.ResponseWriter, _ *http.R
 		admin.internalError(writer, err)
 		return
 	}
-	apiWriteJSON(writer, http.StatusOK, map[string]any{"profiles": catalog.Profiles, "active_profile_id": active, "schedule": schedule, "auto_restart": autoRestart, "targets": subscriptions.AvailableTargets(), "defaults": subscriptions.SystemDefaults(), "editor_defaults": subscriptions.SystemEditorDefaults(), "configuration_context": configurationContext})
+	apiWriteJSON(writer, http.StatusOK, map[string]any{"profiles": catalog.Profiles, "active_profile_id": active, "schedule": schedule, "auto_restart": autoRestart, "targets": subscriptions.AvailableTargets(), "defaults": subscriptions.SystemDefaults(), "editor_defaults": subscriptions.RecommendedEditorDefaults(), "configuration_context": configurationContext})
 }
 
 func (admin *adminServer) subscriptionsCreate(writer http.ResponseWriter, request *http.Request) {
@@ -342,7 +342,7 @@ func (admin *adminServer) subscriptionProfileDebug(writer http.ResponseWriter, r
 
 func (admin *adminServer) subscriptionDefaults(writer http.ResponseWriter, _ *http.Request) {
 	profile := subscriptions.NewProfile("")
-	apiWriteJSON(writer, http.StatusOK, map[string]any{"profile": profile, "defaults": subscriptions.SystemDefaults(), "editor_defaults": subscriptions.SystemEditorDefaults(), "targets": subscriptions.AvailableTargets(), "source_defaults": subscriptions.Source{Type: subscriptions.SourceURL, Enabled: true, UserAgent: subscriptions.DefaultUserAgent, FetchMode: subscriptions.FetchAuto}})
+	apiWriteJSON(writer, http.StatusOK, map[string]any{"profile": profile, "defaults": subscriptions.SystemDefaults(), "editor_defaults": subscriptions.RecommendedEditorDefaults(), "targets": subscriptions.AvailableTargets(), "source_defaults": subscriptions.Source{Type: subscriptions.SourceURL, Enabled: true, UserAgent: subscriptions.DefaultUserAgent, FetchMode: subscriptions.FetchAuto}})
 }
 func (admin *adminServer) subscriptionCacheClear(writer http.ResponseWriter, _ *http.Request) {
 	change, err := admin.manager.ClearSubscriptionCache()

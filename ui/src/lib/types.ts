@@ -474,7 +474,7 @@ export interface SubscriptionCatalogResponse {
   auto_restart: boolean
   targets: SubscriptionTarget[]
   defaults: SubscriptionDefaults
-  editor_defaults: SubscriptionEditorConfig
+  editor_defaults: SubscriptionEditorConfig & { by_core?: Record<string, SubscriptionEditorConfig> }
 	configuration_context: SubscriptionConfigurationContext
 }
 

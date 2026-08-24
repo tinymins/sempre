@@ -17,7 +17,7 @@ import PrivateAccessEditor from "./PrivateAccessEditor";
 import SubscribeItemsEditor from "./SubscribeItemsEditor";
 
 import { ConfigFieldEditor, DnsConfigEditorField, JsoncEditor, NodeFilterField } from "./ProxySubscribeFields";
-import { type Props, type SaveFeedback } from "./ProxySubscribeModel";
+import { type Props, type SaveFeedback, recommendedEditorDefaults } from "./ProxySubscribeModel";
 import { ProxyRuntimeFields } from "./ProxyRuntimeFields";
 import { useProxySubscribeEditor } from "./useProxySubscribeEditor";
 
@@ -67,6 +67,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
     setManualServersDraft,
     manualServersError,
   } = useProxySubscribeEditor(props);
+	const recommendedDefaults = recommendedEditorDefaults(defaults, configurationContext);
 
   useImperativeHandle(ref, () => ({ saveNow }), [saveNow]);
 
@@ -238,7 +239,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                 </div>
                 <NodeFilterField
                   form={form}
-                  defaultValue={defaults.filter || "[]"}
+                  defaultValue={recommendedDefaults.filter || "[]"}
                 />
               </div>
             </div>
@@ -265,7 +266,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                     <ConfigFieldEditor
                       form={form}
                       useSystemField={useSystemField}
-                      defaultValue={field === "ruleList" ? defaults.rule_list : field === "group" ? defaults.group : defaults.custom_config}
+                      defaultValue={field === "ruleList" ? recommendedDefaults.rule_list : field === "group" ? recommendedDefaults.group : recommendedDefaults.custom_config}
                       placeholder={t(placeholderKey)}
                     />
                   </Form.Item>
@@ -292,7 +293,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
               >
                 <DnsConfigEditorField
                   form={form}
-                  defaultValue={defaults.dns_config}
+                  defaultValue={recommendedDefaults.dns_config}
 								configurationContext={configurationContext}
 								networkInventory={networkInventory}
                 />

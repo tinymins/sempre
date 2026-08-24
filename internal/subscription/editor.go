@@ -228,8 +228,23 @@ func cleanJSONC(input string) (string, error) {
 	return output.String(), nil
 }
 
-func SystemEditorDefaults() EditorConfig {
-	defaults := SystemDefaults()
+type EditorDefaults struct {
+	EditorConfig
+	ByCore map[string]EditorConfig `json:"by_core"`
+}
+
+func RecommendedEditorDefaults() EditorDefaults {
+	result := EditorDefaults{
+		EditorConfig: editorConfigFromDefaults(SystemDefaults()),
+		ByCore:       map[string]EditorConfig{},
+	}
+	for _, core := range []string{"sing-box", "mihomo", "clash-rs", "xray", "v2ray", "dae"} {
+		result.ByCore[core] = editorConfigFromDefaults(RecommendedDefaults(core))
+	}
+	return result
+}
+
+func editorConfigFromDefaults(defaults Defaults) EditorConfig {
 	return editorConfigFromProfile(Profile{Groups: defaults.Groups, RuleProviders: defaults.RuleProviders, Filters: defaults.Filters, Rules: defaults.Rules, DNS: defaults.DNS})
 }
 

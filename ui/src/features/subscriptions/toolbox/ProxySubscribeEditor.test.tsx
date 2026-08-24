@@ -166,7 +166,7 @@ describe('ProxySubscribeEditor', () => {
 
 		fireEvent.click(screen.getByRole('button', { name: 'Rule List' }))
 		expect(screen.queryByLabelText('Local proxy password')).not.toBeInTheDocument()
-		fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use System Config' })[0])
+		fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use Recommended Config' })[0])
 		fireEvent.change(screen.getAllByLabelText('JSONC editor')[0], { target: { value: '{"geoip-cn": {}}' } })
 		await act(async () => vi.advanceTimersByTime(800))
 		expect(onSave).toHaveBeenCalledTimes(1)
@@ -362,7 +362,7 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     const { onSave } = renderEditor()
     fireEvent.click(screen.getByRole('button', { name: 'Custom Rules' }))
-    fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use System Config' })[2])
+    fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use Recommended Config' })[2])
 
     const customRules = screen.getAllByLabelText('JSONC editor')[2]
     fireEvent.change(customRules, { target: { value: '{ temporarily invalid JSONC' } })

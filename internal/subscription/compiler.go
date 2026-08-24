@@ -61,7 +61,7 @@ func ParseTarget(format string) (Target, error) {
 	case "xray", "v2ray", "clash-rs", "dae":
 		return Target{Core: format, Format: format, Platform: "default"}, nil
 	}
-	result := Target{Format: format, Version: "11", Platform: "default"}
+	result := Target{Core: "sing-box", Format: format, Version: "11", Platform: "default"}
 	value := format
 	if strings.HasSuffix(value, "-windows") {
 		result.Platform = "windows"
@@ -112,7 +112,7 @@ func (compiler *Compiler) render(ctx context.Context, profile Profile, catalog C
 	if target.Core != "" {
 		parsedTarget.Core = target.Core
 	}
-	effective := EffectiveProfile(profile)
+	effective := EffectiveProfileForTarget(profile, parsedTarget)
 	nodes, sources, updatedEffective, warnings, origins, err := compiler.collectNodes(ctx, effective, catalog, force, cacheOnly)
 	if err != nil {
 		return RenderResult{}, profile, err

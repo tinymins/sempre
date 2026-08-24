@@ -7,7 +7,7 @@ import type { CustomNode, LinuxNetworkInventory, SubscriptionConfigurationContex
 
 export interface Props {
   profile: SubscriptionProfile;
-  defaults: SubscriptionEditorConfig;
+  defaults: SubscriptionEditorConfig & { by_core?: Record<string, SubscriptionEditorConfig> };
   customNodes: CustomNode[];
 	networkInventory?: LinuxNetworkInventory;
 	configurationContext: SubscriptionConfigurationContext;
@@ -35,6 +35,10 @@ export type SaveFeedback = {
   state: "idle" | "waiting" | "saving" | "saved" | "error";
   message?: string;
 };
+
+export function recommendedEditorDefaults(defaults: Props["defaults"], configurationContext: SubscriptionConfigurationContext): SubscriptionEditorConfig {
+	return defaults.by_core?.[configurationContext.target?.core ?? ""] ?? defaults;
+}
 
 export function profileFormValues(profile: SubscriptionProfile, configurationContext: SubscriptionConfigurationContext): FormFieldValues {
 	const transparent = profile.transparent_proxy ?? {

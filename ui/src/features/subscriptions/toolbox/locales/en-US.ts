@@ -109,7 +109,7 @@ export default {
     subscribeItemEnabled: "Enabled",
     subscribeItemDisabled: "Disabled",
     subscribeItemCacheTtlPlaceholder: "Cache TTL (minutes)",
-    useSystemConfig: "Use System Config",
+    useSystemConfig: "Use Recommended Config",
     ruleListLabel: "Rule List (JSONC, comments supported)",
     ruleListPlaceholder: "Rule list JSONC configuration",
     groupLabel: "Proxy Groups (JSONC, comments supported)",
