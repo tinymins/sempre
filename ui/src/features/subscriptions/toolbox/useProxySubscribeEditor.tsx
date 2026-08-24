@@ -117,17 +117,7 @@ export function useProxySubscribeEditor({
     }));
 
     const buildCandidate = async (): Promise<SubscriptionProfile> => {
-      const values = await form.validateFields();
-			const fields = ["ruleList", "group", "customConfig", "dnsConfig", "privateAccessConfig", "servers"];
-      for (const field of fields) {
-        if (values[field] && !isValidJsonc(values[field])) {
-          throw new Error(`${t(`proxy.tabs.${field === "customConfig" ? "customRules" : field}`)}: ${t("proxy.form.jsonFormatError")}`);
-        }
-      }
-      const customRules = parseJsonc(values.customConfig || "[]") as unknown;
-      if (!Array.isArray(customRules) || customRules.some((rule) => typeof rule !== "string")) {
-        throw new Error(t("proxy.form.customRulesArrayError"));
-      }
+      const values = form.getFieldsValue();
       const cleanedItems = ((values.subscribeItems as SubscribeItem[]) || [])
         .filter((item: SubscribeItem) => item.url?.trim());
       const sources: SubscriptionSource[] = cleanedItems.map((item: SubscribeItem) => ({
@@ -163,7 +153,7 @@ export function useProxySubscribeEditor({
 				auto_exclude_local_routes: values.tunAutoExcludeLocal ?? true,
 				auto_exclude_vpn_routes: values.tunAutoExcludeVPN ?? true,
 				tun: {
-					interface_name: String(values.tunInterfaceName ?? "").trim(),
+					interface_name: String(values.tunInterfaceName ?? ""),
 					address: values.tunAddress?.trim() || undefined,
 				},
 				tproxy: {

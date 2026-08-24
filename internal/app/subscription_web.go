@@ -83,7 +83,17 @@ func (admin *adminServer) subscriptionProfilePut(writer http.ResponseWriter, req
 		admin.operationError(writer, err)
 		return
 	}
-	apiWriteJSON(writer, http.StatusOK, map[string]any{"change": change, "render": result})
+	catalog, _, _, _, err := admin.manager.SubscriptionCatalog()
+	if err != nil {
+		admin.internalError(writer, err)
+		return
+	}
+	saved, err := subscriptions.FindProfile(&catalog, request.PathValue("id"))
+	if err != nil {
+		admin.internalError(writer, err)
+		return
+	}
+	apiWriteJSON(writer, http.StatusOK, map[string]any{"change": change, "profile": saved, "render": result})
 }
 
 func (admin *adminServer) subscriptionProfileDelete(writer http.ResponseWriter, request *http.Request) {

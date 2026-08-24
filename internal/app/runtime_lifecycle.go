@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/state"
+	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
 
 const (
@@ -78,6 +80,10 @@ func (manager *Manager) ManagedRuntimeStatus() (RuntimeStatus, error) {
 }
 
 func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, error) {
+	return manager.ManagedRuntimeActionContext(context.Background(), action)
+}
+
+func (manager *Manager) ManagedRuntimeActionContext(ctx context.Context, action string) (RuntimeStatus, error) {
 	manager.lifecycleMu.Lock()
 	defer manager.lifecycleMu.Unlock()
 
@@ -86,16 +92,46 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 		return RuntimeStatus{}, err
 	}
 	current := manager.runtimeStatusValue(document)
+	if action == RuntimeStart && document.DesiredState == state.DesiredRunning &&
+		(current.RuntimeState == "running" || current.RuntimeState == "starting" || current.RuntimeState == "restarting") &&
+		!manager.runtimeConfigurationPending(document) {
+		return current, nil
+	}
+	if action == RuntimeRestart && document.DesiredState == state.DesiredRunning && isRuntimeTransition(current.RuntimeState) &&
+		!manager.runtimeConfigurationPending(document) {
+		return current, nil
+	}
+	if action != RuntimeStart && action != RuntimeStop && action != RuntimeRestart {
+		return current, runtimeActionFailure("INVALID_RUNTIME_ACTION", fmt.Errorf("runtime action must be start, stop, or restart"))
+	}
+	if action == RuntimeStart || action == RuntimeRestart {
+		var prepareErr error
+		err := manager.withOperation(func() error {
+			_, prepareErr = manager.prepareActiveProfileForRuntime(ctx)
+			return prepareErr
+		})
+		if err != nil {
+			if recordErr := manager.recordRuntimePreparationFailure(err); recordErr != nil {
+				return RuntimeStatus{}, fmt.Errorf("%w (record runtime preparation failure: %v)", err, recordErr)
+			}
+			failed, statusErr := manager.ManagedRuntimeStatus()
+			if statusErr != nil {
+				return RuntimeStatus{}, statusErr
+			}
+			return failed, runtimeActionFailure("RUNTIME_PREPARATION_FAILED", err)
+		}
+		document, err = manager.store.Read()
+		if err != nil {
+			return RuntimeStatus{}, err
+		}
+		current = manager.runtimeStatusValue(document)
+	}
 	deployment, readyErr := manager.runtimeDeployment(document)
 
 	switch action {
 	case RuntimeStart:
 		if readyErr != nil {
 			return current, runtimeActionFailure("RUNTIME_NOT_READY", readyErr)
-		}
-		if document.DesiredState == state.DesiredRunning &&
-			(current.RuntimeState == "running" || current.RuntimeState == "starting" || current.RuntimeState == "restarting") {
-			return current, nil
 		}
 		err = manager.store.Update(func(document *state.Document) error {
 			if err := manager.ensureRuntimeDeployment(document, deployment); err != nil {
@@ -137,9 +173,6 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 		if readyErr != nil {
 			return current, runtimeActionFailure("RUNTIME_NOT_READY", readyErr)
 		}
-		if document.DesiredState == state.DesiredRunning && isRuntimeTransition(current.RuntimeState) {
-			return current, nil
-		}
 		err = manager.store.Update(func(document *state.Document) error {
 			if err := manager.ensureRuntimeDeployment(document, deployment); err != nil {
 				return err
@@ -156,8 +189,6 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 			document.Runtime.LastTransition = time.Now().UTC()
 			return nil
 		})
-	default:
-		return current, runtimeActionFailure("INVALID_RUNTIME_ACTION", fmt.Errorf("runtime action must be start, stop, or restart"))
 	}
 	if err != nil {
 		return RuntimeStatus{}, err
@@ -194,7 +225,7 @@ func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatu
 		RuntimeState: runtimeState,
 		PID:          document.Runtime.PID,
 		RestartCount: document.Runtime.RestartCount,
-		Pending:      document.Pending,
+		Pending:      document.Pending || manager.runtimeConfigurationPending(document),
 		LastExit:     document.Runtime.LastExit,
 		LastError:    lastError,
 		LastFailure:  runtimeFailureValue(document.Runtime.LastFailure),
@@ -217,6 +248,45 @@ func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatu
 		status.LastTransition = &transition
 	}
 	return status
+}
+
+func (manager *Manager) runtimeConfigurationPending(document state.Document) bool {
+	if document.Selected == nil {
+		return false
+	}
+	catalog, err := manager.subscriptions.Read()
+	if err != nil {
+		return false
+	}
+	profile, err := subscriptions.FindProfile(&catalog, document.ActiveProfileID)
+	if err != nil {
+		return false
+	}
+	if !subscriptionProfileHasInputs(*profile) && profile.Revision == 1 && document.ConfigBuilds[document.Selected.Core].ProfileID == "" {
+		return false
+	}
+	deployment, adapter, err := manager.configurationTarget(document)
+	if err != nil {
+		return false
+	}
+	expected, err := expectedConfigBuild(*profile, adapter, deployment.Version)
+	return err == nil && document.ConfigBuilds[deployment.Core] != expected
+}
+
+func (manager *Manager) recordRuntimePreparationFailure(failure error) error {
+	return manager.store.Update(func(document *state.Document) error {
+		now := time.Now().UTC()
+		record := &state.RuntimeFailure{Stage: "prepare runtime configuration", Error: failure.Error(), OccurredAt: now}
+		if document.Active != nil {
+			active := *document.Active
+			record.RolledBackTo = &active
+		}
+		document.LastError = "prepare runtime configuration: " + failure.Error()
+		document.Runtime.LastError = failure.Error()
+		document.Runtime.LastFailure = record
+		document.Runtime.LastTransition = now
+		return nil
+	})
 }
 
 func (manager *Manager) runtimeActions(document state.Document, runtimeState string, readyErr error) RuntimeActions {

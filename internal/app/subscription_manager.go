@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/tinymins/sempre/internal/core"
 	"github.com/tinymins/sempre/internal/state"
@@ -102,38 +101,9 @@ func (manager *Manager) SaveSubscriptionProfileForContext(ctx context.Context, i
 	return manager.saveSubscriptionProfile(ctx, id, candidate, expectedContext)
 }
 
-func (manager *Manager) saveSubscriptionProfile(ctx context.Context, id string, candidate subscriptions.Profile, expectedContext string) (Change, subscriptions.RenderResult, error) {
+func (manager *Manager) saveSubscriptionProfile(_ context.Context, id string, candidate subscriptions.Profile, expectedContext string) (Change, subscriptions.RenderResult, error) {
 	var change Change
-	var rendered subscriptions.RenderResult
 	err := manager.withOperation(func() error {
-		catalog, err := manager.subscriptions.Read()
-		if err != nil {
-			return err
-		}
-		current, err := subscriptions.FindProfile(&catalog, id)
-		if err != nil {
-			return err
-		}
-		previousConfigHash := current.LastConfigHash
-		candidate.ID = id
-		candidate.Revision = current.Revision
-		if err := subscriptions.ApplyEditorConfig(&candidate); err != nil {
-			return err
-		}
-		if err := normalizeSavedTransparentProxy(&candidate); err != nil {
-			return err
-		}
-		candidate.LastCheck = current.LastCheck
-		candidate.LastChange = current.LastChange
-		candidate.LastResult = current.LastResult
-		candidate.LastConfigHash = current.LastConfigHash
-		candidate.LastRuntimeValidated = current.LastRuntimeValidated
-		candidate.LastCompilerTarget = current.LastCompilerTarget
-		candidate.LastCompilerWarnings = current.LastCompilerWarnings
-		*current = candidate
-		if err := subscriptions.ValidateCatalog(catalog); err != nil {
-			return err
-		}
 		document, err := manager.store.Read()
 		if err != nil {
 			return err
@@ -147,92 +117,75 @@ func (manager *Manager) saveSubscriptionProfile(ctx context.Context, id string, 
 				return errSubscriptionConfigurationContextChanged
 			}
 		}
-		if !subscriptionProfileHasInputs(candidate) {
-			candidate.LastResult = "profile saved without enabled nodes; active configuration retained"
-			change = Change{Changed: true, Message: candidate.LastResult}
-			return manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
-				profile, err := subscriptions.FindProfile(stored, id)
-				if err != nil {
-					return err
-				}
-				*profile = candidate
-				return nil
-			})
-		}
-		candidate.Revision++
-		*current = candidate
-		if document.Selected == nil {
-			candidate.LastResult = "profile saved; select a core to compile a runtime configuration"
-			change = Change{Changed: true, Message: candidate.LastResult}
-			return manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
-				profile, err := subscriptions.FindProfile(stored, id)
-				if err != nil {
-					return err
-				}
-				*profile = candidate
-				return nil
-			})
-		}
-		target, runtimeValidation, targetWarnings, err := manager.subscriptionTarget(document)
-		if err != nil {
-			return err
-		}
-		rendered, candidate, err = manager.compiler.Render(ctx, candidate, catalog, target, true)
-		if err != nil {
-			return err
-		}
-		rendered.Warnings = append(targetWarnings, rendered.Warnings...)
-		if runtimeValidation {
-			if err := manager.ValidateConfigContent(ctx, []byte(rendered.Content)); err != nil {
-				return fmt.Errorf("compiled subscription was rejected by the selected core: %w", err)
-			}
-			rendered.RuntimeValidated = true
-		}
-		configHash, err := manager.subscriptions.SaveBlob([]byte(rendered.Content))
-		if err != nil {
-			return fmt.Errorf("persist compiled subscription: %w", err)
-		}
-		now := time.Now().UTC()
-		candidate.LastCheck = now
-		candidate.LastResult = "configuration compiled"
-		candidate.LastConfigHash = configHash
-		if previousConfigHash != configHash {
-			candidate.LastChange = now
-		}
-		candidate.LastRuntimeValidated = runtimeValidation
-		candidate.LastCompilerTarget = target.Format
-		candidate.LastCompilerWarnings = append([]string{}, rendered.Warnings...)
-		active := document.ActiveProfileID == id
-		if active && runtimeValidation {
-			change, err = manager.activateConfig(ctx, []byte(rendered.Content), configBuild(candidate, target), func(document *state.Document, changed bool) {
-				document.Subscription.LastCheck = now
-				if changed {
-					document.Subscription.LastChange = now
-					document.Subscription.LastResult = "configuration updated"
-					candidate.LastChange = now
-				} else {
-					document.Subscription.LastResult = "no change"
-				}
-			})
-			if err != nil {
-				return err
-			}
-			change.Message = "subscription profile saved, validated, and staged"
-		} else if active {
-			change = Change{Changed: true, Message: "subscription profile saved and compiled; select a core to validate and stage it"}
-		} else {
-			change = Change{Changed: true, Message: "subscription profile saved and compiled"}
-		}
 		return manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
-			profile, err := subscriptions.FindProfile(stored, id)
+			current, err := subscriptions.FindProfile(stored, id)
 			if err != nil {
 				return err
 			}
-			*profile = candidate
+			candidate.ID = id
+			candidate.Name = current.Name
+			candidate.Revision = current.Revision + 1
+			candidate.Sources = preserveSubscriptionSnapshots(current.Sources, candidate.Sources)
+			candidate.LastCheck = current.LastCheck
+			candidate.LastChange = current.LastChange
+			candidate.LastResult = "profile saved; runtime configuration needs regeneration"
+			candidate.LastConfigHash = current.LastConfigHash
+			candidate.LastRuntimeValidated = false
+			candidate.LastCompilerTarget = current.LastCompilerTarget
+			candidate.LastCompilerWarnings = append([]string{}, current.LastCompilerWarnings...)
+			*current = candidate
 			return nil
 		})
 	})
-	return change, rendered, err
+	if err == nil {
+		change = Change{
+			Changed:      true,
+			NeedsRestart: manager.activeProfileNeedsRuntimePreparation(id),
+			Message:      "subscription profile saved locally; runtime configuration needs regeneration",
+		}
+	}
+	return change, subscriptions.RenderResult{}, err
+}
+
+func preserveSubscriptionSnapshots(previous, candidate []subscriptions.Source) []subscriptions.Source {
+	byID := make(map[string]subscriptions.Source, len(previous))
+	for _, source := range previous {
+		byID[source.ID] = source
+	}
+	for index := range candidate {
+		before, found := byID[candidate[index].ID]
+		if !found || !sameSubscriptionFetchIdentity(before, candidate[index]) {
+			continue
+		}
+		candidate[index].SnapshotHash = before.SnapshotHash
+		candidate[index].FetchedAt = before.FetchedAt
+		candidate[index].LastStatus = before.LastStatus
+		candidate[index].LastError = before.LastError
+	}
+	return candidate
+}
+
+func sameSubscriptionFetchIdentity(left, right subscriptions.Source) bool {
+	userAgent := func(value string) string {
+		if value == "" {
+			return subscriptions.DefaultUserAgent
+		}
+		return value
+	}
+	fetchMode := func(value string) string {
+		if value == "" {
+			return subscriptions.FetchAuto
+		}
+		return value
+	}
+	return left.Type == right.Type && left.URL == right.URL &&
+		userAgent(left.UserAgent) == userAgent(right.UserAgent) &&
+		fetchMode(left.FetchMode) == fetchMode(right.FetchMode)
+}
+
+func (manager *Manager) activeProfileNeedsRuntimePreparation(id string) bool {
+	document, err := manager.store.Read()
+	return err == nil && document.Selected != nil && document.ActiveProfileID == id
 }
 
 func normalizeSavedTransparentProxy(profile *subscriptions.Profile) error {

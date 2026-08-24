@@ -83,6 +83,11 @@ func (manager *Manager) RunDaemon(ctx context.Context) error {
 				if err != nil {
 					return supervisor.Plan{}, err
 				}
+				_, preparedProfile, err := prepareSubscriptionProfile(catalog, *profile)
+				if err != nil {
+					return supervisor.Plan{}, err
+				}
+				profile = &preparedProfile
 				externalClashPlan = clashproxy.Config{}
 				if runtimeSpec.Control.Protocol == core.ControlProtocolClashREST {
 					externalClashPlan = clashproxy.Config{External: profile.ManagementAPI, Upstream: runtimeSpec.Control}

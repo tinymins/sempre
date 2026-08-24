@@ -187,7 +187,7 @@ func (store *Store) readUnlocked() (Catalog, error) {
 			normalizeProfile(&catalog.Profiles[index])
 		}
 	}
-	if err := validateCatalog(catalog); err != nil {
+	if err := validateStoredCatalog(catalog); err != nil {
 		return Catalog{}, fmt.Errorf("validate subscription catalog: %w", err)
 	}
 	return catalog, nil
@@ -199,10 +199,7 @@ func (store *Store) writeUnlocked(catalog Catalog) error {
 	if catalog.CustomNodes == nil {
 		catalog.CustomNodes = []CustomNode{}
 	}
-	for index := range catalog.Profiles {
-		normalizeProfile(&catalog.Profiles[index])
-	}
-	if err := validateCatalog(catalog); err != nil {
+	if err := validateStoredCatalog(catalog); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(catalog, "", "  ")

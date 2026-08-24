@@ -45,6 +45,32 @@ func (fetcher *Fetcher) LoadValidated(
 	return fetcher.load(ctx, source, force, validate)
 }
 
+func (fetcher *Fetcher) LoadCachedValidated(source Source, validate func([]byte) error) ([]byte, Source, error) {
+	if source.Type == SourceRaw {
+		data := []byte(source.Content)
+		if err := validate(data); err != nil {
+			return nil, source, err
+		}
+		return data, source, nil
+	}
+	if err := ValidateSource(source); err != nil {
+		return nil, source, err
+	}
+	if source.SnapshotHash == "" {
+		return nil, source, fmt.Errorf("no local subscription snapshot; update the subscription first")
+	}
+	data, err := fetcher.store.ReadBlob(source.SnapshotHash)
+	if err != nil {
+		return nil, source, err
+	}
+	if err := validate(data); err != nil {
+		return nil, source, err
+	}
+	source.LastStatus = "local snapshot"
+	source.LastError = ""
+	return data, source, nil
+}
+
 func (fetcher *Fetcher) load(
 	ctx context.Context,
 	source Source,

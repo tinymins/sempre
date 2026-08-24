@@ -274,7 +274,7 @@ func TestFiltersDoNotRemoveManualServers(t *testing.T) {
 	if err := ApplyEditorConfig(&profile); err != nil {
 		t.Fatal(err)
 	}
-	nodes, _, _, _, _, err := (&Compiler{}).collectNodes(context.Background(), profile, Catalog{}, false)
+	nodes, _, _, _, _, err := (&Compiler{}).collectNodes(context.Background(), profile, Catalog{}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -97,6 +97,14 @@ func AvailableTargets() []Target {
 }
 
 func (compiler *Compiler) Render(ctx context.Context, profile Profile, catalog Catalog, target Target, force bool) (RenderResult, Profile, error) {
+	return compiler.render(ctx, profile, catalog, target, force, false)
+}
+
+func (compiler *Compiler) RenderCached(ctx context.Context, profile Profile, catalog Catalog, target Target) (RenderResult, Profile, error) {
+	return compiler.render(ctx, profile, catalog, target, false, true)
+}
+
+func (compiler *Compiler) render(ctx context.Context, profile Profile, catalog Catalog, target Target, force, cacheOnly bool) (RenderResult, Profile, error) {
 	parsedTarget, err := ParseTarget(target.Format)
 	if err != nil {
 		return RenderResult{}, profile, err
@@ -105,7 +113,7 @@ func (compiler *Compiler) Render(ctx context.Context, profile Profile, catalog C
 		parsedTarget.Core = target.Core
 	}
 	effective := EffectiveProfile(profile)
-	nodes, sources, updatedEffective, warnings, origins, err := compiler.collectNodes(ctx, effective, catalog, force)
+	nodes, sources, updatedEffective, warnings, origins, err := compiler.collectNodes(ctx, effective, catalog, force, cacheOnly)
 	if err != nil {
 		return RenderResult{}, profile, err
 	}
@@ -209,7 +217,7 @@ func representedNodeCount(diffs []FieldDiff) int {
 	return count
 }
 
-func (compiler *Compiler) collectNodes(ctx context.Context, profile Profile, catalog Catalog, force bool) ([]Proxy, []SourceResult, Profile, []string, map[string]string, error) {
+func (compiler *Compiler) collectNodes(ctx context.Context, profile Profile, catalog Catalog, force, cacheOnly bool) ([]Proxy, []SourceResult, Profile, []string, map[string]string, error) {
 	nodes, err := ManualServers(profile)
 	if err != nil {
 		return nil, nil, profile, nil, nil, err
@@ -225,7 +233,15 @@ func (compiler *Compiler) collectNodes(ctx context.Context, profile Profile, cat
 		if !source.Enabled {
 			continue
 		}
-		data, fetched, fromCache, err := compiler.fetcher.LoadValidated(ctx, source, force, validateSubscriptionContent)
+		var data []byte
+		var fetched Source
+		fromCache := cacheOnly
+		var err error
+		if cacheOnly {
+			data, fetched, err = compiler.fetcher.LoadCachedValidated(source, validateSubscriptionContent)
+		} else {
+			data, fetched, fromCache, err = compiler.fetcher.LoadValidated(ctx, source, force, validateSubscriptionContent)
+		}
 		if err != nil {
 			return nil, nil, profile, warnings, nil, fmt.Errorf("source %q: %w", sourceLabel(source), err)
 		}

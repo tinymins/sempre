@@ -12,7 +12,7 @@ import (
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
 
-func TestSaveSubscriptionProfileRejectsEmptyTUNInterface(t *testing.T) {
+func TestSaveSubscriptionProfileDefersEmptyTUNInterfaceValidation(t *testing.T) {
 	manager := newTestManager(t)
 	catalog, active, _, _, err := manager.SubscriptionCatalog()
 	if err != nil {
@@ -26,16 +26,15 @@ func TestSaveSubscriptionProfileRejectsEmptyTUNInterface(t *testing.T) {
 	candidate.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true, Content: testSubscription}}
 	candidate.TransparentProxy.TUN.InterfaceName = " "
 
-	_, _, err = manager.SaveSubscriptionProfile(context.Background(), active, candidate)
-	if err == nil {
-		t.Fatal("empty TUN interface was accepted")
+	if _, _, err = manager.SaveSubscriptionProfile(context.Background(), active, candidate); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "TUN interface name") {
-		t.Fatalf("error = %v", err)
+	if _, err := manager.ManagedRuntimeAction(RuntimeRestart); err == nil || !strings.Contains(err.Error(), "TUN interface name") {
+		t.Fatalf("restart error = %v", err)
 	}
 }
 
-func TestSaveSubscriptionProfileTrimsCustomTUNInterface(t *testing.T) {
+func TestSaveSubscriptionProfilePreservesCustomTUNInterfaceUntilRuntimePreparation(t *testing.T) {
 	manager := newTestManager(t)
 	catalog, active, _, _, err := manager.SubscriptionCatalog()
 	if err != nil {
@@ -60,8 +59,11 @@ func TestSaveSubscriptionProfileTrimsCustomTUNInterface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.TransparentProxy.TUN.InterfaceName != "sing-box" {
+	if updated.TransparentProxy.TUN.InterfaceName != " sing-box " {
 		t.Fatalf("TUN interface = %q", updated.TransparentProxy.TUN.InterfaceName)
+	}
+	if _, err := manager.ManagedRuntimeAction(RuntimeRestart); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -135,6 +137,9 @@ func TestSharedActiveProfileRecompilesStalePerCoreConfigurations(t *testing.T) {
 	if _, _, err := manager.SaveSubscriptionProfile(context.Background(), active, candidate); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := manager.ManagedRuntimeAction(RuntimeRestart); err != nil {
+		t.Fatal(err)
+	}
 	afterSingBox, err := manager.store.Read()
 	if err != nil {
 		t.Fatal(err)
@@ -176,12 +181,17 @@ func TestSharedActiveProfileRecompilesStalePerCoreConfigurations(t *testing.T) {
 	if _, _, err := manager.SaveSubscriptionProfile(context.Background(), active, edited); err != nil {
 		t.Fatal(err)
 	}
+	latestCatalog, _, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	latestProfile, _ := subscriptions.FindProfile(&latestCatalog, active)
 	staleSingBox, err := manager.store.Read()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if staleSingBox.ConfigBuilds["mihomo"].ProfileRevision <= staleSingBox.ConfigBuilds["sing-box"].ProfileRevision {
-		t.Fatalf("build revisions were not separated: %#v", staleSingBox.ConfigBuilds)
+	if staleSingBox.ConfigBuilds["mihomo"].ProfileRevision >= latestProfile.Revision || staleSingBox.ConfigBuilds["sing-box"].ProfileRevision >= latestProfile.Revision {
+		t.Fatalf("save unexpectedly rebuilt a per-core configuration: profile=%d builds=%#v", latestProfile.Revision, staleSingBox.ConfigBuilds)
 	}
 
 	if _, err := manager.UseCore(context.Background(), "sing-box@stable"); err != nil {
@@ -191,7 +201,9 @@ func TestSharedActiveProfileRecompilesStalePerCoreConfigurations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if final.ConfigBuilds["sing-box"].ProfileRevision != final.ConfigBuilds["mihomo"].ProfileRevision || final.ConfigBuilds["sing-box"].TargetKey != "sing-box-v13|13|default" {
+	if final.ConfigBuilds["sing-box"].ProfileRevision != latestProfile.Revision ||
+		final.ConfigBuilds["mihomo"].ProfileRevision >= latestProfile.Revision ||
+		final.ConfigBuilds["sing-box"].TargetKey != "sing-box-v13|13|default" {
 		t.Fatalf("final builds = %#v", final.ConfigBuilds)
 	}
 	if filepath.Base(coreBinaryPath(manager.paths, mihomo, "", "1.2.3")) == "mihomo" {

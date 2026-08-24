@@ -226,20 +226,20 @@ func (admin *adminServer) runtimeStatus(writer http.ResponseWriter, _ *http.Requ
 	apiWriteJSON(writer, http.StatusOK, status)
 }
 
-func (admin *adminServer) runtimeStart(writer http.ResponseWriter, _ *http.Request) {
-	admin.runtimeAction(writer, RuntimeStart)
+func (admin *adminServer) runtimeStart(writer http.ResponseWriter, request *http.Request) {
+	admin.runtimeAction(writer, request, RuntimeStart)
 }
 
-func (admin *adminServer) runtimeStop(writer http.ResponseWriter, _ *http.Request) {
-	admin.runtimeAction(writer, RuntimeStop)
+func (admin *adminServer) runtimeStop(writer http.ResponseWriter, request *http.Request) {
+	admin.runtimeAction(writer, request, RuntimeStop)
 }
 
-func (admin *adminServer) runtimeRestart(writer http.ResponseWriter, _ *http.Request) {
-	admin.runtimeAction(writer, RuntimeRestart)
+func (admin *adminServer) runtimeRestart(writer http.ResponseWriter, request *http.Request) {
+	admin.runtimeAction(writer, request, RuntimeRestart)
 }
 
-func (admin *adminServer) runtimeAction(writer http.ResponseWriter, action string) {
-	status, err := admin.manager.ManagedRuntimeAction(action)
+func (admin *adminServer) runtimeAction(writer http.ResponseWriter, request *http.Request, action string) {
+	status, err := admin.manager.ManagedRuntimeActionContext(request.Context(), action)
 	if err != nil {
 		var actionError *RuntimeActionError
 		if errors.As(err, &actionError) {

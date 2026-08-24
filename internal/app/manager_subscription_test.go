@@ -77,7 +77,7 @@ func TestClearSubscriptionRetainsConfiguration(t *testing.T) {
 	}
 }
 
-func TestNewSubscriptionFailureDoesNotOverwriteSavedMetadata(t *testing.T) {
+func TestNewSubscriptionSaveDoesNotFetchOrOverwriteRuntimeMetadata(t *testing.T) {
 	manager := newTestManager(t)
 	oldCheck := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	if err := manager.store.Update(func(document *state.Document) error {
@@ -90,8 +90,8 @@ func TestNewSubscriptionFailureDoesNotOverwriteSavedMetadata(t *testing.T) {
 	}
 	server := httptest.NewTLSServer(nil)
 	server.Close()
-	if _, err := manager.SetSubscription(context.Background(), server.URL); err == nil {
-		t.Fatal("new subscription unexpectedly succeeded")
+	if _, err := manager.SetSubscription(context.Background(), server.URL); err != nil {
+		t.Fatal(err)
 	}
 	document, err := manager.store.Read()
 	if err != nil {
@@ -101,6 +101,14 @@ func TestNewSubscriptionFailureDoesNotOverwriteSavedMetadata(t *testing.T) {
 		!document.Subscription.LastCheck.Equal(oldCheck) ||
 		document.Subscription.LastResult != "no change" {
 		t.Fatalf("subscription metadata changed: %#v", document.Subscription)
+	}
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, _ := subscriptions.FindProfile(&catalog, active)
+	if len(profile.Sources) != 1 || profile.Sources[0].URL != server.URL {
+		t.Fatalf("source was not saved: %#v", profile.Sources)
 	}
 }
 

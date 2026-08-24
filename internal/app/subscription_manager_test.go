@@ -74,7 +74,7 @@ func TestProfileRuntimeKeyTracksOnlyRuntimePlan(t *testing.T) {
 	}
 }
 
-func TestManagementAPIChangeStagesRuntimeWithoutChangingCoreConfig(t *testing.T) {
+func TestManagementAPIChangeStagesOnlyDuringRuntimePreparation(t *testing.T) {
 	manager := newTestManager(t)
 	catalog, active, _, _, err := manager.SubscriptionCatalog()
 	if err != nil {
@@ -86,6 +86,9 @@ func TestManagementAPIChangeStagesRuntimeWithoutChangingCoreConfig(t *testing.T)
 	}
 	profile.Sources = []subscriptions.Source{{ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true, Content: testSubscription}}
 	if _, _, err := manager.SaveSubscriptionProfile(context.Background(), active, *profile); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.ManagedRuntimeAction(RuntimeRestart); err != nil {
 		t.Fatal(err)
 	}
 	before, err := manager.store.Read()
@@ -113,13 +116,23 @@ func TestManagementAPIChangeStagesRuntimeWithoutChangingCoreConfig(t *testing.T)
 		t.Fatal(err)
 	}
 	if !change.Changed || !change.NeedsRestart {
-		t.Fatalf("management API change was not staged: %#v", change)
+		t.Fatalf("management API change was not marked for preparation: %#v", change)
 	}
 	if before.Configs["sing-box"] != after.Configs["sing-box"] {
 		t.Fatalf("management API changed core config hash: before=%q after=%q", before.Configs["sing-box"], after.Configs["sing-box"])
 	}
-	if before.ConfigBuilds["sing-box"].RuntimeKey == after.ConfigBuilds["sing-box"].RuntimeKey {
-		t.Fatal("management API did not change the runtime key")
+	if before.ConfigBuilds["sing-box"].RuntimeKey != after.ConfigBuilds["sing-box"].RuntimeKey || !state.SameDeployment(before.Active, after.Active) {
+		t.Fatalf("save staged runtime state: before=%#v after=%#v", before, after)
+	}
+	if _, err := manager.ManagedRuntimeAction(RuntimeRestart); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := manager.store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.ConfigBuilds["sing-box"].RuntimeKey == before.ConfigBuilds["sing-box"].RuntimeKey {
+		t.Fatal("runtime preparation did not stage the management API change")
 	}
 }
 
@@ -250,7 +263,7 @@ func TestActiveProfileCanBeSavedBeforeCoreSelection(t *testing.T) {
 	if saved.LastConfigHash != "" || result.Content != "" {
 		t.Fatalf("profile was compiled without a selected core: profile = %#v, render = %#v", saved, result)
 	}
-	if len(saved.Sources) != 1 || saved.LastResult != "profile saved; select a core to compile a runtime configuration" {
+	if len(saved.Sources) != 1 || saved.LastResult != "profile saved; runtime configuration needs regeneration" {
 		t.Fatalf("profile was not persisted before core selection: %#v", saved)
 	}
 }

@@ -32,6 +32,8 @@ let profiles: SubscriptionProfile[]
 let activeProfileID: string
 let requests: RecordedRequest[]
 let restartResponse: Promise<Response> | undefined
+let catalogRefreshResponse: Promise<Response> | undefined
+let catalogReads: number
 let runtimePending: boolean
 let runtimeStatusResponse: Record<string, unknown>
 let restartFinalStatus: Record<string, unknown> | undefined
@@ -93,6 +95,8 @@ describe('Subscriptions subscription sets', () => {
     activeProfileID = 'primary'
     requests = []
     restartResponse = undefined
+	catalogRefreshResponse = undefined
+	catalogReads = 0
     runtimePending = false
     runtimeStatusResponse = {}
     restartFinalStatus = undefined
@@ -103,7 +107,11 @@ describe('Subscriptions subscription sets', () => {
       requests.push({ url, method, body })
 
       if (url.endsWith('/api/v1/custom-nodes')) return jsonResponse({ nodes: [] })
-      if (url.endsWith('/api/v1/subscriptions') && method === 'GET') return jsonResponse(catalog())
+      if (url.endsWith('/api/v1/subscriptions') && method === 'GET') {
+		catalogReads += 1
+		if (catalogReads > 1 && catalogRefreshResponse) return await catalogRefreshResponse
+		return jsonResponse(catalog())
+	  }
       if (url.endsWith('/api/v1/runtime/status') && method === 'GET') return jsonResponse({ ...runtimeStatusResponse, pending: runtimePending })
       if (url.endsWith('/api/v1/runtime/restart') && method === 'POST') {
         const response = await (restartResponse ?? Promise.resolve(jsonResponse({ action: 'restart', status: {} }, 202)))
@@ -259,13 +267,14 @@ describe('Subscriptions subscription sets', () => {
     expect(saveButton).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
     expect(saveButton).toBeEnabled()
+	catalogRefreshResponse = new Promise<Response>(() => undefined)
     fireEvent.click(saveButton)
     await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
       method: 'PUT',
       url: 'http://sempre.test/api/v1/subscriptions/primary',
       body: expect.objectContaining({ remark: 'Edited profile' }),
     })))
-    await waitFor(() => expect(saveButton).toBeDisabled())
+	await waitFor(() => expect(saveButton).toBeDisabled())
     const restart = screen.getByRole('button', { name: 'Restart core' })
     await waitFor(() => expect(restart.querySelector('svg.lucide-circle-alert')).toBeInTheDocument())
     fireEvent.mouseEnter(restart)

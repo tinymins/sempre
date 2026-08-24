@@ -312,7 +312,7 @@ describe('ProxySubscribeEditor', () => {
 		})
 	})
 
-	it('requires and trims the Linux TUN interface name', async () => {
+	it('saves an invalid Linux TUN interface draft for runtime validation later', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('sempre.locale', 'en')
 		const { onSave } = renderEditor()
@@ -320,14 +320,9 @@ describe('ProxySubscribeEditor', () => {
 
 		fireEvent.change(screen.getByLabelText('TUN interface'), { target: { value: '   ' } })
 		await act(async () => vi.advanceTimersByTime(800))
-		expect(onSave).not.toHaveBeenCalled()
-		expect(screen.getByText('TUN interface is required.')).toBeInTheDocument()
-
-		fireEvent.change(screen.getByLabelText('TUN interface'), { target: { value: ' sing-box ' } })
-		await act(async () => vi.advanceTimersByTime(800))
 		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({
-			transparent_proxy: { tun: { interface_name: 'sing-box' } },
+			transparent_proxy: { tun: { interface_name: '   ' } },
 		})
 	})
 
@@ -362,7 +357,7 @@ describe('ProxySubscribeEditor', () => {
 		expect(onSave.mock.calls[0][0]).toMatchObject({ core_overrides: { 'sing-box': { route: { final: 'proxy' } } } })
   })
 
-  it('validates Custom Rules as a string array and keeps it in the editor field', async () => {
+  it('saves temporarily invalid Custom Rules for runtime validation later', async () => {
     vi.useFakeTimers()
     localStorage.setItem('sempre.locale', 'en')
     const { onSave } = renderEditor()
@@ -370,16 +365,11 @@ describe('ProxySubscribeEditor', () => {
     fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use System Config' })[2])
 
     const customRules = screen.getAllByLabelText('JSONC editor')[2]
-    fireEvent.change(customRules, { target: { value: '{}' } })
+    fireEvent.change(customRules, { target: { value: '{ temporarily invalid JSONC' } })
     await act(async () => vi.advanceTimersByTime(800))
-    expect(onSave).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert')).toHaveTextContent('Custom Rules must be a JSONC array of strings.')
-
-    fireEvent.change(customRules, { target: { value: '["domain_suffix:example.com"]' } })
-    await act(async () => vi.advanceTimersByTime(800))
-    expect(onSave).toHaveBeenCalledTimes(1)
+		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({
-		  editor: { custom_config: '["domain_suffix:example.com"]' },
+		  editor: { custom_config: '{ temporarily invalid JSONC' },
 		  core_overrides: {},
 		})
 	  })

@@ -14,7 +14,7 @@ import ProxyDebugModal, { type ProxyDebugModalRef } from '../features/subscripti
 import ProxyPreviewModal, { type ProxyPreviewModalRef } from '../features/subscriptions/toolbox/ProxyPreviewModal'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../features/subscriptions/toolbox/ProxySubscribeEditor'
 
-type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; render?: { warnings?: string[] } }
+type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; profile?: SubscriptionProfile; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
 type Notice = RuntimeActionNotice
 type Confirmation = 'refresh' | 'restart'
@@ -71,8 +71,12 @@ export function Subscriptions() {
 		headers: { 'X-Sempre-Configuration-Context': contextKey },
 		body: JSON.stringify(candidate),
 	}),
-	onSuccess: async (_result, { candidate }) => {
-      await invalidate()
+	onSuccess: (result, { candidate }) => {
+	  const persisted = result.profile ?? candidate
+	  queryClient.setQueryData<SubscriptionCatalogResponse>(['subscriptions'], (value) => value ? {
+		...value,
+		profiles: value.profiles.map((item) => item.id === persisted.id ? persisted : item),
+	  } : value)
       setDrafts((current) => {
         const draft = current[candidate.id]
         if (!draft || editorRevision(draft) !== editorRevision(candidate)) return current
@@ -80,6 +84,7 @@ export function Subscriptions() {
         delete next[candidate.id]
         return next
       })
+	  void invalidate()
     },
   })
 

@@ -10,15 +10,14 @@ import (
 )
 
 func (manager *Manager) RefreshSubscriptionProfile(ctx context.Context, id string) (Change, subscriptions.RenderResult, error) {
-	catalog, err := manager.subscriptions.Read()
-	if err != nil {
-		return Change{}, subscriptions.RenderResult{}, err
-	}
-	profile, err := subscriptions.FindProfile(&catalog, id)
-	if err != nil {
-		return Change{}, subscriptions.RenderResult{}, err
-	}
-	return manager.SaveSubscriptionProfile(ctx, id, *profile)
+	var change Change
+	var rendered subscriptions.RenderResult
+	err := manager.withOperation(func() error {
+		var err error
+		change, rendered, err = manager.refreshSubscriptionProfile(ctx, id, false)
+		return err
+	})
+	return change, rendered, err
 }
 
 func (manager *Manager) UseSubscriptionProfile(ctx context.Context, id string) (Change, subscriptions.RenderResult, error) {
@@ -29,24 +28,26 @@ func (manager *Manager) UseSubscriptionProfile(ctx context.Context, id string) (
 	if document.ActiveProfileID == id {
 		return manager.RefreshSubscriptionProfile(ctx, id)
 	}
-	catalog, err := manager.subscriptions.Read()
-	if err != nil {
-		return Change{}, subscriptions.RenderResult{}, err
-	}
-	if _, err := subscriptions.FindProfile(&catalog, id); err != nil {
-		return Change{}, subscriptions.RenderResult{}, err
-	}
 	var change Change
 	var rendered subscriptions.RenderResult
 	err = manager.withOperation(func() error {
-		var refreshErr error
-		change, rendered, refreshErr = manager.RefreshSubscriptionProfileAsActive(ctx, id, catalog)
-		return refreshErr
+		var err error
+		change, rendered, err = manager.refreshSubscriptionProfile(ctx, id, true)
+		return err
 	})
 	return change, rendered, err
 }
 
 func (manager *Manager) RefreshSubscriptionProfileAsActive(ctx context.Context, id string, catalog subscriptions.Catalog) (Change, subscriptions.RenderResult, error) {
+	_ = catalog
+	return manager.refreshSubscriptionProfile(ctx, id, true)
+}
+
+func (manager *Manager) refreshSubscriptionProfile(ctx context.Context, id string, activate bool) (Change, subscriptions.RenderResult, error) {
+	catalog, err := manager.subscriptions.Read()
+	if err != nil {
+		return Change{}, subscriptions.RenderResult{}, err
+	}
 	profile, err := subscriptions.FindProfile(&catalog, id)
 	if err != nil {
 		return Change{}, subscriptions.RenderResult{}, err
@@ -55,62 +56,42 @@ func (manager *Manager) RefreshSubscriptionProfileAsActive(ctx context.Context, 
 	if err != nil {
 		return Change{}, subscriptions.RenderResult{}, err
 	}
-	target, runtimeValidation, warnings, err := manager.subscriptionTarget(document)
+	rendered, updated, target, err := manager.renderSubscriptionForRuntime(ctx, catalog, *profile, document, true)
 	if err != nil {
 		return Change{}, subscriptions.RenderResult{}, err
-	}
-	if !runtimeValidation {
-		return Change{}, subscriptions.RenderResult{}, fmt.Errorf("select and install a core before activating a subscription profile")
-	}
-	rendered, updated, err := manager.compiler.Render(ctx, *profile, catalog, target, true)
-	if err != nil {
-		return Change{}, subscriptions.RenderResult{}, err
-	}
-	rendered.Warnings = append(warnings, rendered.Warnings...)
-	if err := manager.ValidateConfigContent(ctx, []byte(rendered.Content)); err != nil {
-		return Change{}, subscriptions.RenderResult{}, err
-	}
-	rendered.RuntimeValidated = true
-	updated.Revision = profile.Revision + 1
-	previousConfigHash := updated.LastConfigHash
-	configHash, err := manager.subscriptions.SaveBlob([]byte(rendered.Content))
-	if err != nil {
-		return Change{}, subscriptions.RenderResult{}, fmt.Errorf("persist compiled subscription: %w", err)
 	}
 	now := time.Now().UTC()
-	change, err := manager.activateConfig(ctx, []byte(rendered.Content), configBuild(updated, target), func(document *state.Document, changed bool) {
-		document.ActiveProfileID = id
-		document.Subscription.LastCheck = now
-		if changed {
-			document.Subscription.LastChange = now
-			document.Subscription.LastResult = "configuration updated"
-		} else {
-			document.Subscription.LastResult = "no change"
-		}
-	})
-	if err != nil {
-		return Change{}, subscriptions.RenderResult{}, err
-	}
-	updated.LastCheck = now
-	updated.LastResult = "configuration compiled"
-	updated.LastConfigHash = configHash
-	updated.LastRuntimeValidated = true
-	updated.LastCompilerTarget = target.Format
-	updated.LastCompilerWarnings = append([]string{}, rendered.Warnings...)
-	if previousConfigHash != configHash {
-		updated.LastChange = now
-	}
-	if err := manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
-		item, err := subscriptions.FindProfile(stored, id)
+	configHash := configContentHash(rendered.Content)
+	active := activate || document.ActiveProfileID == id
+	change := Change{Changed: true, Message: "subscription profile refreshed, compiled, and validated"}
+	if active {
+		change, err = manager.activateConfig(ctx, []byte(rendered.Content), configBuild(*profile, target), func(document *state.Document, changed bool) {
+			if activate {
+				document.ActiveProfileID = id
+			}
+			document.Subscription.LastCheck = now
+			if changed {
+				document.Subscription.LastChange = now
+				document.Subscription.LastResult = "configuration updated"
+			} else {
+				document.Subscription.LastResult = "no change"
+			}
+		})
 		if err != nil {
-			return err
+			return Change{}, subscriptions.RenderResult{}, err
 		}
-		*item = updated
-		return nil
-	}); err != nil {
+		change.Message = "subscription profile refreshed, validated, and staged"
+	} else {
+		if err := manager.ValidateConfigContent(ctx, []byte(rendered.Content)); err != nil {
+			return Change{}, subscriptions.RenderResult{}, err
+		}
+		if _, err := manager.subscriptions.SaveBlob([]byte(rendered.Content)); err != nil {
+			return Change{}, subscriptions.RenderResult{}, fmt.Errorf("persist compiled subscription: %w", err)
+		}
+	}
+	if err := manager.recordSubscriptionCompilation(*profile, updated, rendered, configHash, now); err != nil {
 		return Change{}, subscriptions.RenderResult{}, err
 	}
-	change.Message = "subscription profile activated and staged"
 	return change, rendered, nil
 }
 

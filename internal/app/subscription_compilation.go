@@ -131,52 +131,149 @@ func (manager *Manager) compileActiveProfileForSelectedCore(
 	profile subscriptions.Profile,
 	document state.Document,
 ) (Change, error) {
-	target, runtimeValidation, warnings, err := manager.subscriptionTarget(document)
+	rendered, updated, target, err := manager.renderSubscriptionForRuntime(ctx, catalog, profile, document, false)
 	if err != nil {
-		return Change{}, err
-	}
-	if !runtimeValidation {
-		return Change{}, fmt.Errorf("select and install a core before compiling the active subscription profile")
-	}
-	rendered, updated, err := manager.compiler.Render(ctx, profile, catalog, target, false)
-	if err != nil {
-		return Change{}, err
-	}
-	rendered.Warnings = append(warnings, rendered.Warnings...)
-	configHash, err := manager.subscriptions.SaveBlob([]byte(rendered.Content))
-	if err != nil {
-		return Change{}, fmt.Errorf("persist compiled subscription: %w", err)
-	}
-	now := time.Now().UTC()
-	updated.Revision = profile.Revision
-	updated.LastCheck = profile.LastCheck
-	updated.LastResult = "configuration compiled"
-	updated.LastConfigHash = configHash
-	updated.LastRuntimeValidated = true
-	updated.LastCompilerTarget = target.Format
-	updated.LastCompilerWarnings = append([]string{}, rendered.Warnings...)
-	if profile.LastConfigHash != configHash {
-		updated.LastChange = now
-	}
-	if err := manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
-		item, findErr := subscriptions.FindProfile(stored, profile.ID)
-		if findErr != nil {
-			return findErr
-		}
-		if item.Revision != profile.Revision {
-			return fmt.Errorf("subscription profile changed while compiling; retry the command")
-		}
-		*item = updated
-		return nil
-	}); err != nil {
 		return Change{}, err
 	}
 	change, err := manager.activateConfig(ctx, []byte(rendered.Content), configBuild(profile, target), nil)
 	if err != nil {
 		return Change{}, err
 	}
+	if err := manager.recordSubscriptionCompilation(profile, updated, rendered, configContentHash(rendered.Content), time.Now().UTC()); err != nil {
+		return Change{}, err
+	}
 	change.Message = "active profile compiled for " + document.Selected.Core
 	return change, nil
+}
+
+func (manager *Manager) renderSubscriptionForRuntime(
+	ctx context.Context,
+	catalog subscriptions.Catalog,
+	profile subscriptions.Profile,
+	document state.Document,
+	refresh bool,
+) (subscriptions.RenderResult, subscriptions.Profile, subscriptions.Target, error) {
+	preparedCatalog, prepared, err := prepareSubscriptionProfile(catalog, profile)
+	if err != nil {
+		return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, err
+	}
+	target, runtimeValidation, warnings, err := manager.subscriptionTarget(document)
+	if err != nil {
+		return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, err
+	}
+	if !runtimeValidation {
+		return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, fmt.Errorf("select and install a core before compiling the active subscription profile")
+	}
+	var rendered subscriptions.RenderResult
+	var updated subscriptions.Profile
+	if refresh {
+		rendered, updated, err = manager.compiler.Render(ctx, prepared, preparedCatalog, target, true)
+	} else {
+		rendered, updated, err = manager.compiler.RenderCached(ctx, prepared, preparedCatalog, target)
+	}
+	if err != nil {
+		return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, err
+	}
+	rendered.Warnings = append(warnings, rendered.Warnings...)
+	rendered.RuntimeValidated = true
+	return rendered, updated, target, nil
+}
+
+func prepareSubscriptionProfile(catalog subscriptions.Catalog, profile subscriptions.Profile) (subscriptions.Catalog, subscriptions.Profile, error) {
+	prepared := profile
+	if err := subscriptions.ApplyEditorConfig(&prepared); err != nil {
+		return subscriptions.Catalog{}, subscriptions.Profile{}, err
+	}
+	if err := normalizeSavedTransparentProxy(&prepared); err != nil {
+		return subscriptions.Catalog{}, subscriptions.Profile{}, err
+	}
+	preparedCatalog := catalog
+	preparedCatalog.Profiles = append([]subscriptions.Profile{}, catalog.Profiles...)
+	item, err := subscriptions.FindProfile(&preparedCatalog, profile.ID)
+	if err != nil {
+		return subscriptions.Catalog{}, subscriptions.Profile{}, err
+	}
+	*item = prepared
+	if err := subscriptions.ValidateCatalog(preparedCatalog); err != nil {
+		return subscriptions.Catalog{}, subscriptions.Profile{}, err
+	}
+	return preparedCatalog, prepared, nil
+}
+
+func configContentHash(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+func (manager *Manager) recordSubscriptionCompilation(
+	profile subscriptions.Profile,
+	updated subscriptions.Profile,
+	rendered subscriptions.RenderResult,
+	configHash string,
+	now time.Time,
+) error {
+	return manager.subscriptions.Update(func(stored *subscriptions.Catalog) error {
+		item, err := subscriptions.FindProfile(stored, profile.ID)
+		if err != nil {
+			return err
+		}
+		if item.Revision != profile.Revision {
+			return fmt.Errorf("subscription profile changed while compiling; retry the command")
+		}
+		item.Sources = preserveSubscriptionSnapshots(updated.Sources, item.Sources)
+		item.LastCheck = now
+		item.LastResult = "configuration compiled and runtime validated"
+		if item.LastConfigHash != configHash {
+			item.LastChange = now
+		}
+		item.LastConfigHash = configHash
+		item.LastRuntimeValidated = true
+		item.LastCompilerTarget = rendered.Format
+		item.LastCompilerWarnings = append([]string{}, rendered.Warnings...)
+		return nil
+	})
+}
+
+func (manager *Manager) prepareActiveProfileForRuntime(ctx context.Context) (Change, error) {
+	catalog, profile, document, err := manager.activeProfile()
+	if err != nil {
+		return Change{}, err
+	}
+	if document.Selected == nil {
+		return Change{}, nil
+	}
+	deployment, adapter, err := manager.configurationTarget(document)
+	if err != nil {
+		return Change{}, err
+	}
+	expected, err := expectedConfigBuild(*profile, adapter, deployment.Version)
+	if err != nil {
+		return Change{}, err
+	}
+	if document.Configs[deployment.Core] != "" && document.ConfigBuilds[deployment.Core] == expected {
+		return Change{}, nil
+	}
+	if subscriptionProfileHasInputs(*profile) {
+		return manager.compileActiveProfileForSelectedCore(ctx, catalog, *profile, document)
+	}
+	if profile.Revision == 1 && document.ConfigBuilds[deployment.Core].ProfileID == "" {
+		return Change{}, nil
+	}
+	if deployment.ConfigHash == "" {
+		return Change{}, nil
+	}
+	if _, _, err := prepareSubscriptionProfile(catalog, *profile); err != nil {
+		return Change{}, err
+	}
+	data, err := os.ReadFile(manager.paths.Config(deployment.Core, deployment.ConfigHash))
+	if err != nil {
+		return Change{}, fmt.Errorf("read active configuration: %w", err)
+	}
+	target, _, _, err := manager.subscriptionTarget(document)
+	if err != nil {
+		return Change{}, err
+	}
+	return manager.activateConfig(ctx, data, configBuild(*profile, target), nil)
 }
 
 func (manager *Manager) activeProfile() (subscriptions.Catalog, *subscriptions.Profile, state.Document, error) {
@@ -234,6 +331,20 @@ func (manager *Manager) importSubscriptionSource(ctx context.Context, path strin
 	candidate := *profile
 	candidate.Sources = append(candidate.Sources, subscriptions.Source{ID: subscriptions.NewID(), Type: subscriptions.SourceRaw, Enabled: true, Content: string(data), Remark: filepathBase(path)})
 	change, _, err := manager.SaveSubscriptionProfile(ctx, candidate.ID, candidate)
+	if err != nil {
+		return Change{}, err
+	}
+	var prepared Change
+	err = manager.withOperation(func() error {
+		var prepareErr error
+		prepared, prepareErr = manager.prepareActiveProfileForRuntime(ctx)
+		return prepareErr
+	})
+	if err == nil {
+		change.Changed = change.Changed || prepared.Changed
+		change.NeedsRestart = change.NeedsRestart || prepared.NeedsRestart
+		change.Message = prepared.Message
+	}
 	return change, err
 }
 
