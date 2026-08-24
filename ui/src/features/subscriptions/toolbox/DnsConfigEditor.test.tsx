@@ -63,4 +63,28 @@ describe('DnsConfigEditor', () => {
       shared: { systemDnsTakeoverEnabled: true, systemDnsListenHosts: ['0.0.0.0'] },
     }, null, 2))
   })
+
+  it('edits managed GEO sources and drops legacy native DNS overrides', () => {
+    localStorage.setItem('sempre.locale', 'en')
+    const onChange = vi.fn()
+
+    render(
+      <I18nProvider>
+        <DnsConfigEditor
+          features={['dns.local_upstream', 'dns.local_transport', 'dns.geo_sources']}
+          value={JSON.stringify({ modes: { sing_box_v12: 'native' }, overrides: { sing_box_v12: { final: 'remote' } } })}
+          onChange={onChange}
+        />
+      </I18nProvider>,
+    )
+
+    expect(screen.getByText('GEO Rule Sets')).toBeInTheDocument()
+    const cnDomainUrl = screen.getByDisplayValue('https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs')
+    fireEvent.change(cnDomainUrl, { target: { value: 'https://rules.example/geosite-cn.srs' } })
+
+    const saved = JSON.parse(onChange.mock.calls.at(-1)?.[0] as string)
+    expect(saved).toEqual({ shared: { cnDomainRuleSetUrl: 'https://rules.example/geosite-cn.srs' } })
+    expect(saved.modes).toBeUndefined()
+    expect(saved.overrides).toBeUndefined()
+  })
 })

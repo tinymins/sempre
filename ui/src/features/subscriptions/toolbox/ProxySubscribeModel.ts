@@ -36,16 +36,6 @@ export type SaveFeedback = {
   message?: string;
 };
 
-export function dnsNativeTarget(context: SubscriptionConfigurationContext) {
-	if (!context.target || !context.capabilities.features.includes("dns.native")) return undefined;
-	if (context.target.core === "mihomo") return { key: "mihomo", label: "Mihomo" };
-	if (context.target.core === "sing-box") {
-		const key = context.target.compiler_target.version === "11" ? "sing_box_v11" : "sing_box_v12";
-		return { key, label: context.target.compiler_target.version === "11" ? "sing-box 1.11" : "sing-box 1.12+" };
-	}
-	return { key: context.target.core, label: context.target.core };
-}
-
 export function profileFormValues(profile: SubscriptionProfile, configurationContext: SubscriptionConfigurationContext): FormFieldValues {
 	const transparent = profile.transparent_proxy ?? {
 			mode: "tun-router" as const,
@@ -64,7 +54,6 @@ export function profileFormValues(profile: SubscriptionProfile, configurationCon
 		};
 	const localProxy = profile.local_proxy ?? { socks_port: 1080, http_port: 1081, username: "sempre", password: "" };
 	const managementAPI = profile.management_api ?? { external_controller: "0.0.0.0:9090", secret: "", allow_origins: [], allow_private_network: false };
-	const targetCore = configurationContext.target?.core;
 	const features = new Set(configurationContext.capabilities.features);
 	const transparentMode = (
 		transparent.mode === "tun-router" && features.has("transparent.tun") ||
@@ -100,7 +89,6 @@ export function profileFormValues(profile: SubscriptionProfile, configurationCon
     useSystemDnsConfig: profile.use_system_dns,
     privateAccessConfig: profile.editor.private_access_config ?? "",
     servers: profile.editor.servers || "[]",
-		advancedConfig: JSON.stringify(targetCore ? profile.core_overrides?.[targetCore] ?? {} : {}, null, 2),
     selectedCustomNodeIds: profile.custom_node_ids ?? [],
 		transparentMode,
 		tunInterfaceName: transparent.tun.interface_name,

@@ -41,8 +41,8 @@ func TestLinuxSingBoxTUNAndRemoteDNS(t *testing.T) {
 	}
 	servers := dns["servers"].([]any)
 	local := mapByKey(t, servers, "tag", "local")
-	if local["type"] != "local" {
-		t.Fatalf("default local DNS should use system resolver: %#v", local)
+	if local["type"] != "udp" || local["server"] != "223.5.5.5" || local["server_port"] != float64(53) {
+		t.Fatalf("default local DNS should use an explicit UDP upstream: %#v", local)
 	}
 	bootstrap := mapByKey(t, servers, "tag", "bootstrap")
 	if _, ok := bootstrap["detour"]; ok {
@@ -294,11 +294,46 @@ func TestSingBoxSystemDNSTakeoverRequiresLoopbackOrWildcard(t *testing.T) {
 
 func TestSingBoxSystemDNSTakeoverRequiresExplicitLocalDNS(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
-	profile.DNS = map[string]any{"shared": map[string]any{"systemDnsTakeoverEnabled": true}}
+	profile.DNS = map[string]any{"shared": map[string]any{"localDns": "local", "systemDnsTakeoverEnabled": true}}
 
 	_, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13"}, false)
 	if err == nil || !strings.Contains(err.Error(), "explicit local DNS") {
 		t.Fatalf("system DNS takeover error = %v", err)
+	}
+}
+
+func TestSingBoxManagedTLSLocalDNSAndGeoRuleSets(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{"shared": map[string]any{
+		"localDnsTransport": "tls", "localDns": "223.5.5.5", "localDnsPort": 853, "localServerName": "dns.alidns.com",
+		"cnDomainRuleSetUrl": "https://rules.example/geosite-cn.srs", "cnDomainRuleSetDetour": "direct",
+		"cnIpRuleSetUrl": "https://rules.example/geoip-cn.srs", "cnIpRuleSetDetour": "direct",
+		"hkIpRuleSetUrl": "https://rules.example/geoip-hk.srs", "hkIpRuleSetDetour": "foreign",
+	}}
+
+	result, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13", Platform: "windows"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	dns := config["dns"].(map[string]any)
+	local := mapByKey(t, dns["servers"].([]any), "tag", "local")
+	if local["type"] != "tls" || local["server_port"] != float64(853) || local["tls"].(map[string]any)["server_name"] != "dns.alidns.com" {
+		t.Fatalf("managed local TLS DNS = %#v", local)
+	}
+	bootstrapRule := dns["rules"].([]any)[0].(map[string]any)
+	if bootstrapRule["server"] != "bootstrap" || bootstrapRule["domain"].([]any)[0] != "edge.example.com" {
+		t.Fatalf("proxy bootstrap DNS rule = %#v", bootstrapRule)
+	}
+	ruleSets := config["route"].(map[string]any)["rule_set"].([]any)
+	if mapByKey(t, ruleSets, "tag", "geosite-cn")["url"] != "https://rules.example/geosite-cn.srs" {
+		t.Fatalf("CN domain rule-set = %#v", ruleSets)
+	}
+	if mapByKey(t, ruleSets, "tag", "geoip-hk")["download_detour"] != "foreign" {
+		t.Fatalf("HK IP rule-set = %#v", ruleSets)
 	}
 }
 

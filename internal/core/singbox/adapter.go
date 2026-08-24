@@ -49,18 +49,19 @@ func (adapter *Adapter) Capabilities(version string, target core.Target) core.Ca
 	compilerTarget, _ := adapter.CompilerTarget(version, target)
 	features := []string{
 		core.CapabilityLoggingLevel,
-		core.CapabilityDNSLocalUpstream, core.CapabilityDNSRemoteUpstream, core.CapabilityDNSRemotePort,
+		core.CapabilityDNSLocalUpstream, core.CapabilityDNSLocalTransport, core.CapabilityDNSGeoSources,
+		core.CapabilityDNSRemoteUpstream, core.CapabilityDNSRemotePort,
 		core.CapabilityDNSBootstrapUpstream,
 		core.CapabilityDNSBootstrapPort, core.CapabilityDNSBootstrapServerName,
 		core.CapabilityDNSRemoteServerName,
 		core.CapabilityDNSRemoteDetour, core.CapabilityDNSRejectHTTPS,
-		core.CapabilityDNSSplit, core.CapabilityDNSNative, core.CapabilityDNSPreferIPv4,
+		core.CapabilityDNSSplit, core.CapabilityDNSPreferIPv4,
 		core.CapabilityRoutingRules, core.CapabilityRoutingRuleProviders,
 		core.CapabilityRoutingSelector, core.CapabilityRoutingURLTest,
 		core.CapabilityLocalProxy, core.CapabilityTransparentTUN, core.CapabilityTransparentTUNAddress,
 		core.CapabilityManagementConnections, core.CapabilityManagementSelectors,
 		core.CapabilityManagementDelay, core.CapabilityManagementTraffic,
-		core.CapabilityManagementExternalAPI, core.CapabilityNativeOverride,
+		core.CapabilityManagementExternalAPI,
 	}
 	if policy := ResolvePlatformPolicy(compilerTarget.Version, compilerTarget.Platform); policy.FakeIP {
 		features = append(features, core.CapabilityDNSFakeIP)

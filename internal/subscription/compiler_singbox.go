@@ -125,13 +125,10 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 			warnings = append(warnings, "unsupported rule: "+line)
 		}
 	}
-	ruleSets := []any{
-		officialRuleSet("geoip-cn", "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs"),
-		officialRuleSet("geoip-hk", "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-hk.srs"),
-		officialRuleSet("geosite-openai", "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-openai.srs"),
-		officialRuleSet("geosite-cn", "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs"),
+	ruleSets, directRuleSets := singBoxGeoRuleSets(shared)
+	if len(directRuleSets) > 0 {
+		routeRules = append(routeRules, map[string]any{"rule_set": directRuleSets, "outbound": "direct"})
 	}
-	routeRules = append(routeRules, map[string]any{"rule_set": []string{"geoip-cn", "geosite-cn"}, "outbound": "direct"})
 	providerSets, providerRoutes, providerWarnings, err := compiler.loadRuleProviders(ctx, profile.RuleProviders, final, force, profile.UseSystemRules)
 	if err != nil {
 		return nil, diffs, warnings, err
@@ -147,7 +144,7 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 	}
 	inbounds := singBoxInbounds(target, modern, policy, profile.TransparentProxy, profile.LocalProxy, shared)
 	remoteOutbound := valueOr(shared.RemoteDetour, foreignOutbound(groups, final))
-	dns := singBoxDNS(profile.DNS, target.Version, shared, remoteOutbound)
+	dns := singBoxDNS(profile.DNS, target.Version, shared, remoteOutbound, proxyServerDomains(proxies))
 	if servers, ok := dns["servers"].([]any); ok {
 		dns["servers"] = append(servers, private.DNSServers...)
 	}
@@ -176,6 +173,36 @@ func (compiler *Compiler) buildSingBox(ctx context.Context, profile Profile, pro
 		}
 	}
 	return config, diffs, warnings, nil
+}
+
+func singBoxGeoRuleSets(shared dnsShared) ([]any, []string) {
+	ruleSets := []any{}
+	directRuleSets := []string{}
+	appendRuleSet := func(enabled, direct bool, tag, url, detour string) {
+		if !enabled {
+			return
+		}
+		ruleSets = append(ruleSets, remoteRuleSet(tag, url, detour))
+		if direct {
+			directRuleSets = append(directRuleSets, tag)
+		}
+	}
+	appendRuleSet(shared.CNIPRuleSetEnabled, true, "geoip-cn", shared.CNIPRuleSetURL, shared.CNIPRuleSetDetour)
+	appendRuleSet(shared.HKIPRuleSetEnabled, false, "geoip-hk", shared.HKIPRuleSetURL, shared.HKIPRuleSetDetour)
+	appendRuleSet(shared.CNDomainRuleSetEnabled, true, "geosite-cn", shared.CNDomainRuleSetURL, shared.CNDomainRuleSetDetour)
+	return ruleSets, directRuleSets
+}
+
+func proxyServerDomains(proxies []Proxy) []string {
+	domains := []string{}
+	for _, proxy := range proxies {
+		server := strings.TrimSpace(proxy.Server)
+		if server == "" || net.ParseIP(server) != nil {
+			continue
+		}
+		domains = appendUnique(domains, server)
+	}
+	return domains
 }
 
 type ruleProviderLoad struct {

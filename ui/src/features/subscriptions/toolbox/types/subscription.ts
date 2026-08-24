@@ -6,10 +6,13 @@ import { z } from "zod";
 
 /** 表单级别的通用 DNS 设置，用于自动生成各格式的 DNS 段 */
 export const DnsSharedConfigSchema = z.object({
-  /** 本地 DNS 服务器地址（用于 CN 域名解析），默认 "local" */
+  /** 本地 DNS 传输方式，默认 UDP */
+  localDnsTransport: z.enum(["system", "udp", "tls"]).optional(),
+  /** 本地 DNS 服务器地址（用于 CN 域名解析），默认 223.5.5.5 */
   localDns: z.string().optional(),
   /** 本地 DNS 端口，默认 53 */
   localDnsPort: z.number().int().min(1).max(65535).optional(),
+  localServerName: z.string().optional(),
   /** FakeIP IPv4 范围，默认 "198.18.0.0/15" */
   fakeipIpv4Range: z.string().optional(),
   /** FakeIP IPv6 范围，默认 "fc00::/18" */
@@ -30,6 +33,17 @@ export const DnsSharedConfigSchema = z.object({
   rejectHttps: z.boolean().optional(),
   /** CN 域名走本地 DNS，默认 true */
   cnDomainLocalDns: z.boolean().optional(),
+  cnIpLocalDns: z.boolean().optional(),
+  excludeHkFromCnIp: z.boolean().optional(),
+  cnDomainRuleSetEnabled: z.boolean().optional(),
+  cnDomainRuleSetUrl: z.string().optional(),
+  cnDomainRuleSetDetour: z.string().optional(),
+  cnIpRuleSetEnabled: z.boolean().optional(),
+  cnIpRuleSetUrl: z.string().optional(),
+  cnIpRuleSetDetour: z.string().optional(),
+  hkIpRuleSetEnabled: z.boolean().optional(),
+  hkIpRuleSetUrl: z.string().optional(),
+  hkIpRuleSetDetour: z.string().optional(),
   /** Linux system daemon: point /etc/resolv.conf at Sempre's local DNS listener */
   systemDnsTakeoverEnabled: z.boolean().optional(),
   /** Linux system daemon DNS listener port, default 53 */

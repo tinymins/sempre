@@ -50,13 +50,12 @@ export function useProxySubscribeEditor({
 				...(features.has("routing.rule_providers") ? [{ label: "ruleList", value: "ruleList" }] : []),
 				...(features.has("routing.selector") || features.has("routing.url_test") ? [{ label: "group", value: "group" }] : []),
 				...(features.has("routing.rules") ? [{ label: "customRules", value: "customConfig" }] : []),
-				...(configurationContext.target && features.has("native_override") ? [{ label: "advancedConfig", value: "advancedConfig" }] : []),
 				...(supportsDNS ? [{ label: "dnsConfig", value: "dnsConfig" }] : []),
 				...(features.has("private_access") ? [{ label: "privateAccessConfig", value: "privateAccessConfig" }] : []),
 				...(runtimeVisible ? [{ label: "runtime", value: "runtime" }] : []),
 				...(configurationContext.capabilities.protocols.length > 0 ? [{ label: "servers", value: "servers" }] : []),
 				{ label: "diagnostics", value: "diagnostics" },
-			], [configurationContext.capabilities.protocols.length, configurationContext.target, features, runtimeVisible, supportsDNS]);
+			], [configurationContext.capabilities.protocols.length, features, runtimeVisible, supportsDNS]);
 		const [form] = Form.useForm(profileFormValues(profile, configurationContext));
     const manualServers = Form.useWatch("servers", form) as string | undefined;
 		const transparentMode = Form.useWatch("transparentMode", form) as string | undefined;
@@ -119,19 +118,15 @@ export function useProxySubscribeEditor({
 
     const buildCandidate = async (): Promise<SubscriptionProfile> => {
       const values = await form.validateFields();
-			const fields = ["ruleList", "group", "customConfig", "dnsConfig", "privateAccessConfig", "servers", ...(configurationContext.target ? ["advancedConfig"] : [])];
+			const fields = ["ruleList", "group", "customConfig", "dnsConfig", "privateAccessConfig", "servers"];
       for (const field of fields) {
         if (values[field] && !isValidJsonc(values[field])) {
           throw new Error(`${t(`proxy.tabs.${field === "customConfig" ? "customRules" : field}`)}: ${t("proxy.form.jsonFormatError")}`);
         }
       }
-			const advancedConfig = parseJsonc(values.advancedConfig || "{}") as unknown;
       const customRules = parseJsonc(values.customConfig || "[]") as unknown;
       if (!Array.isArray(customRules) || customRules.some((rule) => typeof rule !== "string")) {
         throw new Error(t("proxy.form.customRulesArrayError"));
-      }
-			if (configurationContext.target && (!advancedConfig || Array.isArray(advancedConfig) || typeof advancedConfig !== "object")) {
-        throw new Error(t("proxy.form.advancedConfigObjectError"));
       }
       const cleanedItems = ((values.subscribeItems as SubscribeItem[]) || [])
         .filter((item: SubscribeItem) => item.url?.trim());
@@ -146,17 +141,12 @@ export function useProxySubscribeEditor({
         fetch_mode: item.fetchMode ?? "auto",
         cache_ttl_minutes: item.cacheTtlMinutes,
       }));
-			const currentOverrides = { ...(profileRef.current.core_overrides ?? {}) };
-			if (configurationContext.target) {
-				currentOverrides[configurationContext.target.core] = advancedConfig as Record<string, unknown>;
-			}
 			return {
         ...profileRef.current,
         remark: values.remark || "",
         log_level: values.logLevel ?? "info",
         sources: [...sources, ...rawSourcesRef.current],
         custom_node_ids: values.selectedCustomNodeIds ?? [],
-			core_overrides: currentOverrides,
 			local_proxy: {
 				socks_port: values.localProxySOCKSPort ?? 1080,
 				http_port: values.localProxyHTTPPort ?? 1081,

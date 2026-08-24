@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 import "@/lib/monaco";
 import type { LinuxNetworkInventory, SubscriptionConfigurationContext } from "@/lib/types";
 import DnsConfigEditor from "./DnsConfigEditor";
-import { dnsNativeTarget } from "./ProxySubscribeModel";
 import TagListEditor from "./TagListEditor";
 
 
@@ -152,7 +151,6 @@ export const DnsConfigEditorField = ({
 		onChange={onChange}
 		features={configurationContext.capabilities.features}
 		systemDnsListenHostOptions={systemDnsListenHostOptions}
-		nativeTarget={dnsNativeTarget(configurationContext)}
 	/>
   );
 };

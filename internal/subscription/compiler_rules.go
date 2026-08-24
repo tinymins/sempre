@@ -128,7 +128,10 @@ func validateRuleProviderContent(data []byte) error {
 	return err
 }
 func officialRuleSet(tag, url string) map[string]any {
-	return map[string]any{"tag": tag, "type": "remote", "format": "binary", "url": url, "download_detour": "direct"}
+	return remoteRuleSet(tag, url, "direct")
+}
+func remoteRuleSet(tag, url, detour string) map[string]any {
+	return map[string]any{"tag": tag, "type": "remote", "format": "binary", "url": url, "download_detour": valueOr(detour, "direct")}
 }
 func normalizePlatform(value string) string {
 	switch value {

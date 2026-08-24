@@ -66,12 +66,15 @@ func SystemDefaults() Defaults {
 		Filters: []string{"官网", "客服", "qq群"},
 		Rules:   []string{},
 		DNS: map[string]any{"shared": map[string]any{
-			"localDns": "local", "localDnsPort": 53,
+			"localDnsTransport": "udp", "localDns": "223.5.5.5", "localDnsPort": 53, "localServerName": "",
 			"bootstrapDns": "223.5.5.5", "bootstrapDnsPort": 853, "bootstrapServerName": "dns.alidns.com",
 			"remoteDns": "8.8.8.8", "remoteDnsPort": 853, "remoteServerName": "dns.google",
 			"fakeipIpv4Range": "198.18.0.0/15", "fakeipIpv6Range": "fc00::/18",
 			"fakeipEnabled": true, "fakeipTtl": 300,
-			"rejectHttps": true, "cnDomainLocalDns": true, "preferIpv4": true,
+			"rejectHttps": true, "cnDomainLocalDns": true, "cnIpLocalDns": true, "excludeHkFromCnIp": true, "preferIpv4": true,
+			"cnDomainRuleSetEnabled": true, "cnDomainRuleSetUrl": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs", "cnDomainRuleSetDetour": "direct",
+			"cnIpRuleSetEnabled": true, "cnIpRuleSetUrl": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs", "cnIpRuleSetDetour": "direct",
+			"hkIpRuleSetEnabled": true, "hkIpRuleSetUrl": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-hk.srs", "hkIpRuleSetDetour": "direct",
 		}},
 	}
 }

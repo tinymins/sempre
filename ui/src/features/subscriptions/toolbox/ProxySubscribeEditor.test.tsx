@@ -121,7 +121,7 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     const rendered = renderEditor()
 
-    const labels = ['Basic', 'Subscribe URL', 'Rule List', 'Proxy Groups', 'Custom Rules', 'Advanced Config', 'DNS Config', 'Private Access', 'Runtime', 'Manual Servers', 'Diagnostics']
+    const labels = ['Basic', 'Subscribe URL', 'Rule List', 'Proxy Groups', 'Custom Rules', 'DNS Config', 'Private Access', 'Runtime', 'Manual Servers', 'Diagnostics']
     for (const label of labels) {
       expect(await screen.findByRole('button', { name: label })).toBeInTheDocument()
     }
@@ -177,12 +177,12 @@ describe('ProxySubscribeEditor', () => {
 		})
 	})
 
-	it('uses system DNS as the managed local DNS default', async () => {
+	it('uses an explicit UDP upstream as the managed local DNS default', async () => {
 		localStorage.setItem('sempre.locale', 'en')
 		renderEditor()
 
 		fireEvent.click(await screen.findByRole('button', { name: 'DNS Config' }))
-		expect(screen.getByDisplayValue('local')).toBeInTheDocument()
+		expect(screen.getAllByDisplayValue('223.5.5.5')).toHaveLength(2)
 	})
 
 	it('offers network inventory addresses for system DNS listen hosts', async () => {
@@ -350,23 +350,16 @@ describe('ProxySubscribeEditor', () => {
     expect(onSave.mock.calls[1][0]).toMatchObject({ remark: 'Newest' })
   })
 
-  it('keeps invalid advanced JSON inline and saves it after correction', async () => {
-    vi.useFakeTimers()
-    localStorage.setItem('sempre.locale', 'en')
-    const { onSave } = renderEditor()
-    fireEvent.click(screen.getByRole('button', { name: 'Advanced Config' }))
+  it('does not expose JSON overrides and preserves legacy override data on save', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('sempre.locale', 'en')
+		const { onSave } = renderEditor({ profile: { ...profile, core_overrides: { 'sing-box': { route: { final: 'proxy' } } } } })
+		expect(screen.queryByRole('button', { name: 'Advanced Config' })).not.toBeInTheDocument()
 
-    const advanced = screen.getAllByLabelText('JSONC editor')[3]
-    fireEvent.change(advanced, { target: { value: '[]' } })
-    await act(async () => vi.advanceTimersByTime(800))
-    expect(onSave).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert')).toHaveTextContent('Advanced Config must be a JSONC object.')
-
-    fireEvent.change(advanced, { target: { value: '{"route":{"final":"proxy"}}' } })
-    await act(async () => vi.advanceTimersByTime(800))
-    expect(onSave).toHaveBeenCalledTimes(1)
+		fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'Updated' } })
+		await act(async () => vi.advanceTimersByTime(800))
+		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({ core_overrides: { 'sing-box': { route: { final: 'proxy' } } } })
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('validates Custom Rules as a string array and keeps it in the editor field', async () => {
@@ -387,7 +380,7 @@ describe('ProxySubscribeEditor', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({
 		  editor: { custom_config: '["domain_suffix:example.com"]' },
-		  core_overrides: { 'sing-box': {} },
+		  core_overrides: {},
 		})
 	  })
 

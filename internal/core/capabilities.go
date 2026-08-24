@@ -5,6 +5,8 @@ import "sort"
 const (
 	CapabilityLoggingLevel           = "logging.level"
 	CapabilityDNSLocalUpstream       = "dns.local_upstream"
+	CapabilityDNSLocalTransport      = "dns.local_transport"
+	CapabilityDNSGeoSources          = "dns.geo_sources"
 	CapabilityDNSRemoteUpstream      = "dns.remote_upstream"
 	CapabilityDNSRemotePort          = "dns.remote_port"
 	CapabilityDNSBootstrapUpstream   = "dns.bootstrap_upstream"

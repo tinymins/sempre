@@ -273,15 +273,6 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
               ),
             )}
 
-            <div className={visibleActiveTab === "advancedConfig" ? "" : "hidden"}>
-              <Form.Item
-                label={t("proxy.form.advancedConfigLabel")}
-                name="advancedConfig"
-              >
-                <JsoncEditor placeholder={t("proxy.form.advancedConfigPlaceholder")} />
-              </Form.Item>
-            </div>
-
             {/* DNS 配置 */}
             <div className={visibleActiveTab === "dnsConfig" ? "" : "hidden"}>
               <div className="flex items-center justify-between mb-2">

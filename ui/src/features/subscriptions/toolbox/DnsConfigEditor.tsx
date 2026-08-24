@@ -1,17 +1,15 @@
-import { Checkbox, Input, InputNumber, Select, Switch, Tabs } from "@acme/components";
+import { Checkbox, Input, InputNumber, Select, Switch } from "@acme/components";
 import type { DnsConfig, DnsSharedConfig } from "@acme/types";
-import Editor, { type Monaco } from "@monaco-editor/react";
 import { parse as parseJsonc } from "jsonc-parser";
 import type React from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import "@/lib/monaco";
-
-type TopTab = "shared" | "native";
 
 const CLIENT_DEFAULT_SHARED: Required<DnsSharedConfig> = {
-  localDns: "local",
+  localDnsTransport: "udp",
+  localDns: "223.5.5.5",
   localDnsPort: 53,
+  localServerName: "",
   bootstrapDns: "223.5.5.5",
   bootstrapDnsPort: 853,
   bootstrapServerName: "dns.alidns.com",
@@ -25,6 +23,17 @@ const CLIENT_DEFAULT_SHARED: Required<DnsSharedConfig> = {
   fakeipTtl: 300,
   rejectHttps: true,
   cnDomainLocalDns: true,
+  cnIpLocalDns: true,
+  excludeHkFromCnIp: true,
+  cnDomainRuleSetEnabled: true,
+  cnDomainRuleSetUrl: "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs",
+  cnDomainRuleSetDetour: "direct",
+  cnIpRuleSetEnabled: true,
+  cnIpRuleSetUrl: "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs",
+  cnIpRuleSetDetour: "direct",
+  hkIpRuleSetEnabled: true,
+  hkIpRuleSetUrl: "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-hk.srs",
+  hkIpRuleSetDetour: "direct",
   preferIpv4: true,
   systemDnsTakeoverEnabled: false,
   systemDnsListenPort: 53,
@@ -40,7 +49,6 @@ interface DnsConfigEditorProps {
   value?: string;
   onChange?: (value: string) => void;
   readOnly?: boolean;
-  nativeTarget?: { key: string; label: string };
   features?: string[];
   systemDnsListenHostOptions?: SystemDnsListenHostOption[];
 }
@@ -65,17 +73,12 @@ const serializeDnsConfig = (config: DnsConfig): string => {
     }
     if (Object.keys(diff).length > 0) result.shared = diff as DnsSharedConfig;
   }
-  if (config.modes && Object.keys(config.modes).length > 0) result.modes = config.modes;
-  if (config.overrides && Object.keys(config.overrides).length > 0) result.overrides = config.overrides;
   return Object.keys(result).length > 0 ? JSON.stringify(result, null, 2) : "";
 };
 
-const DnsConfigEditor = ({ value, onChange, readOnly, nativeTarget, features = [], systemDnsListenHostOptions = [] }: DnsConfigEditorProps) => {
-  const { t } = useTranslation();
-  const [tab, setTab] = useState<TopTab>("shared");
+const DnsConfigEditor = ({ value, onChange, readOnly, features = [], systemDnsListenHostOptions = [] }: DnsConfigEditorProps) => {
   const parsed = useMemo(() => parseDnsConfig(value), [value]);
   const mergedShared = useMemo(() => ({ ...CLIENT_DEFAULT_SHARED, ...(parsed.shared ?? {}) }), [parsed]);
-  const visibleTab: TopTab = nativeTarget ? tab : "shared";
 
   const update = useCallback((next: DnsConfig) => onChange?.(serializeDnsConfig(next)), [onChange]);
 
@@ -85,68 +88,8 @@ const DnsConfigEditor = ({ value, onChange, readOnly, nativeTarget, features = [
     update({ ...current, shared: { ...CLIENT_DEFAULT_SHARED, ...(current.shared ?? {}), [field]: fieldValue } });
   }, [readOnly, update, value]);
 
-  const mode = nativeTarget ? parsed.modes?.[nativeTarget.key] ?? "managed" : "managed";
-  const overrideValue = nativeTarget && parsed.overrides?.[nativeTarget.key]
-    ? JSON.stringify(parsed.overrides[nativeTarget.key], null, 2)
-    : "";
-
-  const handleModeChange = (nextMode: string) => {
-    if (!nativeTarget || readOnly) return;
-    const current = parseDnsConfig(value);
-    update({ ...current, modes: { ...(current.modes ?? {}), [nativeTarget.key]: nextMode as "managed" | "native" } });
-  };
-
-  const handleOverrideChange = (json: string) => {
-    if (!nativeTarget || readOnly) return;
-    const current = parseDnsConfig(value);
-    const overrides = { ...(current.overrides ?? {}) };
-    if (!json.trim()) {
-      delete overrides[nativeTarget.key];
-    } else {
-      const document = parseJsonc(json) as Record<string, unknown> | undefined;
-      if (!document || Array.isArray(document) || typeof document !== "object") return;
-      overrides[nativeTarget.key] = document;
-    }
-    update({ ...current, overrides });
-  };
-
-  const tabs = [
-    { key: "shared", label: t("proxy.form.dnsTabShared") },
-    ...(nativeTarget ? [{ key: "native", label: nativeTarget.label }] : []),
-  ];
-
   return (
-    <div className="space-y-3">
-      {!readOnly && tabs.length > 1 ? (
-        <Tabs
-          type="segment"
-          size="small"
-          activeKey={visibleTab}
-          onChange={(key) => setTab(key as TopTab)}
-          items={tabs.map((item) => ({ ...item, label: <span className={visibleTab === item.key ? "font-medium" : "font-normal"}>{item.label}</span> }))}
-        />
-      ) : null}
-
-      {visibleTab === "shared" || readOnly ? (
-        <SharedForm merged={mergedShared} readOnly={readOnly} features={features} systemDnsListenHostOptions={systemDnsListenHostOptions} onFieldChange={handleSharedChange} />
-      ) : null}
-
-      {visibleTab === "native" && nativeTarget && !readOnly ? (
-        <div className="space-y-3">
-          <FieldRow label={t("proxy.form.dnsConfigurationMode")}>
-            <Select
-              value={mode}
-              options={[
-                { value: "managed", label: t("proxy.form.dnsModeManaged") },
-                { value: "native", label: t("proxy.form.dnsModeNative") },
-              ]}
-              onChange={handleModeChange}
-            />
-          </FieldRow>
-          {mode === "native" ? <JsoncEditor value={overrideValue} onChange={handleOverrideChange} /> : null}
-        </div>
-      ) : null}
-    </div>
+    <SharedForm merged={mergedShared} readOnly={readOnly} features={features} systemDnsListenHostOptions={systemDnsListenHostOptions} onFieldChange={handleSharedChange} />
   );
 };
 
@@ -190,8 +133,10 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
         <>
           <SectionTitle title={t("proxy.form.dnsLocalSection")} />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <FieldRow label={t("proxy.form.dnsLocalDns")}><Input size="small" value={merged.localDns} disabled={disabled} onChange={(event) => onFieldChange("localDns", event.target.value)} /></FieldRow>
-            <FieldRow label={t("proxy.form.dnsLocalDnsPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.localDnsPort} disabled={disabled} onChange={(next) => onFieldChange("localDnsPort", next)} /></FieldRow>
+            {supported.has("dns.local_transport") ? <FieldRow label={t("proxy.form.dnsLocalTransport")}><Select size="small" value={merged.localDnsTransport} disabled={disabled} options={[{ value: "udp", label: "UDP" }, { value: "tls", label: "TLS" }, { value: "system", label: t("proxy.form.dnsLocalTransportSystem") }]} onChange={(next) => onFieldChange("localDnsTransport", next)} /></FieldRow> : null}
+            {merged.localDnsTransport !== "system" ? <FieldRow label={t("proxy.form.dnsLocalDns")}><Input size="small" value={merged.localDns} disabled={disabled} onChange={(event) => onFieldChange("localDns", event.target.value)} /></FieldRow> : null}
+            {merged.localDnsTransport !== "system" ? <FieldRow label={t("proxy.form.dnsLocalDnsPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.localDnsPort} disabled={disabled} onChange={(next) => onFieldChange("localDnsPort", next)} /></FieldRow> : null}
+            {merged.localDnsTransport === "tls" ? <FieldRow label={t("proxy.form.dnsServerName")}><Input size="small" value={merged.localServerName} disabled={disabled} onChange={(event) => onFieldChange("localServerName", event.target.value)} /></FieldRow> : null}
           </div>
         </>
       ) : null}
@@ -237,8 +182,19 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {supported.has("dns.reject_https") ? <FieldRow label={t("proxy.form.dnsRejectHttps")}><Switch size="small" checked={merged.rejectHttps} disabled={disabled} onChange={(next) => onFieldChange("rejectHttps", next)} /></FieldRow> : null}
             {supported.has("dns.split") ? <FieldRow label={t("proxy.form.dnsCnDomainLocalDns")}><Switch size="small" checked={merged.cnDomainLocalDns} disabled={disabled} onChange={(next) => onFieldChange("cnDomainLocalDns", next)} /></FieldRow> : null}
+            {supported.has("dns.geo_sources") ? <FieldRow label={t("proxy.form.dnsCnIpLocalDns")}><Switch size="small" checked={merged.cnIpLocalDns} disabled={disabled} onChange={(next) => onFieldChange("cnIpLocalDns", next)} /></FieldRow> : null}
+            {supported.has("dns.geo_sources") ? <FieldRow label={t("proxy.form.dnsExcludeHkFromCnIp")}><Switch size="small" checked={merged.excludeHkFromCnIp} disabled={disabled || !merged.cnIpLocalDns} onChange={(next) => onFieldChange("excludeHkFromCnIp", next)} /></FieldRow> : null}
             {supported.has("dns.prefer_ipv4") ? <FieldRow label={t("proxy.form.dnsPreferIpv4")}><Switch size="small" checked={merged.preferIpv4} disabled={disabled} onChange={(next) => onFieldChange("preferIpv4", next)} /></FieldRow> : null}
           </div>
+        </>
+      ) : null}
+
+      {supported.has("dns.geo_sources") ? (
+        <>
+          <SectionTitle title={t("proxy.form.dnsGeoSourcesSection")} />
+          <GeoSourceFields label={t("proxy.form.dnsCnDomainRuleSet")} enabled={merged.cnDomainRuleSetEnabled} url={merged.cnDomainRuleSetUrl} detour={merged.cnDomainRuleSetDetour} disabled={disabled} onEnabledChange={(next) => onFieldChange("cnDomainRuleSetEnabled", next)} onUrlChange={(next) => onFieldChange("cnDomainRuleSetUrl", next)} onDetourChange={(next) => onFieldChange("cnDomainRuleSetDetour", next)} />
+          <GeoSourceFields label={t("proxy.form.dnsCnIpRuleSet")} enabled={merged.cnIpRuleSetEnabled} url={merged.cnIpRuleSetUrl} detour={merged.cnIpRuleSetDetour} disabled={disabled} onEnabledChange={(next) => onFieldChange("cnIpRuleSetEnabled", next)} onUrlChange={(next) => onFieldChange("cnIpRuleSetUrl", next)} onDetourChange={(next) => onFieldChange("cnIpRuleSetDetour", next)} />
+          <GeoSourceFields label={t("proxy.form.dnsHkIpRuleSet")} enabled={merged.hkIpRuleSetEnabled} url={merged.hkIpRuleSetUrl} detour={merged.hkIpRuleSetDetour} disabled={disabled} onEnabledChange={(next) => onFieldChange("hkIpRuleSetEnabled", next)} onUrlChange={(next) => onFieldChange("hkIpRuleSetUrl", next)} onDetourChange={(next) => onFieldChange("hkIpRuleSetDetour", next)} />
         </>
       ) : null}
 
@@ -256,22 +212,16 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
   );
 };
 
-const JsoncEditor = ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
-  <div className="overflow-hidden rounded border border-gray-300 dark:border-gray-600">
-    <Editor
-      height={300}
-      language="json"
-      value={value}
-      theme="vs-dark"
-      onChange={(next) => onChange(next || "")}
-      options={{ automaticLayout: true, fontSize: 14, fontFamily: "Menlo, Monaco, 'Courier New', monospace", wordWrap: "on", scrollBeyondLastLine: false, minimap: { enabled: false }, tabSize: 2 }}
-      beforeMount={(monaco: Monaco) => {
-        monaco.languages.json.jsonDefaults.setDiagnosticsOptions({ validate: true, allowComments: true, trailingCommas: "ignore" });
-        monaco.editor.defineTheme("vs-dark", { base: "vs-dark", inherit: true, rules: [], colors: { "editor.background": "#141414" } });
-      }}
-    />
-  </div>
-);
+const GeoSourceFields = ({ label, enabled, url, detour, disabled, onEnabledChange, onUrlChange, onDetourChange }: { label: string; enabled: boolean; url: string; detour: string; disabled: boolean; onEnabledChange: (value: boolean) => void; onUrlChange: (value: string) => void; onDetourChange: (value: string) => void }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-3 rounded border border-gray-200 p-3 dark:border-gray-700">
+      <FieldRow label={label}><Switch size="small" checked={enabled} disabled={disabled} onChange={onEnabledChange} /></FieldRow>
+      <FieldRow label={t("proxy.form.dnsGeoSourceUrl")}><Input size="small" value={url} disabled={disabled || !enabled} onChange={(event) => onUrlChange(event.target.value)} /></FieldRow>
+      <FieldRow label={t("proxy.form.dnsGeoSourceDetour")}><Input size="small" value={detour} disabled={disabled || !enabled} onChange={(event) => onDetourChange(event.target.value)} /></FieldRow>
+    </div>
+  );
+};
 
 const SectionTitle = ({ title }: { title: string }) => <span className="block pt-1 text-xs font-semibold text-gray-500 dark:text-gray-400">{title}</span>;
 
