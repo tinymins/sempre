@@ -29,6 +29,12 @@ func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (
 	retry := false
 	changed := false
 	err := manager.store.Update(func(document *state.Document) error {
+		now := time.Now().UTC()
+		lastFailure := &state.RuntimeFailure{Stage: stage, Error: failure.Error(), OccurredAt: now}
+		if document.Active != nil {
+			failed := *document.Active
+			lastFailure.Failed = &failed
+		}
 		document.LastError = fmt.Sprintf("%s: %v", stage, failure)
 		if document.Pending {
 			changed = true
@@ -38,6 +44,7 @@ func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (
 			}
 			if document.Previous != nil {
 				restored := *document.Previous
+				lastFailure.RolledBackTo = &restored
 				document.Active = &restored
 				document.Configs[restored.Core] = restored.ConfigHash
 				if failedCore == restored.Core {
@@ -54,7 +61,8 @@ func (manager *Manager) rollbackPendingDeployment(stage string, failure error) (
 		document.Runtime.PID = 0
 		document.Runtime.LastExit = fmt.Sprint(failure)
 		document.Runtime.LastError = fmt.Sprint(failure)
-		document.Runtime.LastTransition = time.Now().UTC()
+		document.Runtime.LastFailure = lastFailure
+		document.Runtime.LastTransition = now
 		return nil
 	})
 	if err != nil {

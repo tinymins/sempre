@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 6
+const SchemaVersion = 7
 
 const (
 	DesiredRunning = "running"
@@ -95,20 +95,29 @@ type Subscription struct {
 }
 
 type Runtime struct {
-	State          string    `json:"state,omitempty"`
-	PID            int       `json:"pid,omitempty"`
-	Core           string    `json:"core,omitempty"`
-	Repository     string    `json:"repository,omitempty"`
-	Ref            string    `json:"ref,omitempty"`
-	Version        string    `json:"version,omitempty"`
-	ConfigHash     string    `json:"config_hash,omitempty"`
-	RuntimeConfig  string    `json:"runtime_config,omitempty"`
-	RuntimeHash    string    `json:"runtime_config_hash,omitempty"`
-	StartedAt      time.Time `json:"started_at,omitempty"`
-	RestartCount   int       `json:"restart_count,omitempty"`
-	LastExit       string    `json:"last_exit,omitempty"`
-	LastError      string    `json:"last_error,omitempty"`
-	LastTransition time.Time `json:"last_transition,omitempty"`
+	State          string          `json:"state,omitempty"`
+	PID            int             `json:"pid,omitempty"`
+	Core           string          `json:"core,omitempty"`
+	Repository     string          `json:"repository,omitempty"`
+	Ref            string          `json:"ref,omitempty"`
+	Version        string          `json:"version,omitempty"`
+	ConfigHash     string          `json:"config_hash,omitempty"`
+	RuntimeConfig  string          `json:"runtime_config,omitempty"`
+	RuntimeHash    string          `json:"runtime_config_hash,omitempty"`
+	StartedAt      time.Time       `json:"started_at,omitempty"`
+	RestartCount   int             `json:"restart_count,omitempty"`
+	LastExit       string          `json:"last_exit,omitempty"`
+	LastError      string          `json:"last_error,omitempty"`
+	LastFailure    *RuntimeFailure `json:"last_failure,omitempty"`
+	LastTransition time.Time       `json:"last_transition,omitempty"`
+}
+
+type RuntimeFailure struct {
+	Stage        string      `json:"stage"`
+	Error        string      `json:"error"`
+	OccurredAt   time.Time   `json:"occurred_at"`
+	Failed       *Deployment `json:"failed,omitempty"`
+	RolledBackTo *Deployment `json:"rolled_back_to,omitempty"`
 }
 
 func NewDocument() Document {
@@ -436,6 +445,7 @@ func (document *Document) Stage(deployment Deployment) {
 	document.Active = &active
 	document.Pending = true
 	document.LastError = ""
+	document.Runtime.LastFailure = nil
 }
 
 func SameDeployment(left, right *Deployment) bool {

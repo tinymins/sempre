@@ -71,6 +71,20 @@ func TestResolveFailureRollsBackPendingDeploymentAndCollectsConfigs(t *testing.T
 	if document.Configs["sing-box"] != testHashA {
 		t.Fatalf("active config = %q", document.Configs["sing-box"])
 	}
+	failure := document.Runtime.LastFailure
+	if failure == nil || failure.Stage != "resolve failed" || failure.Error != "missing binary" ||
+		failure.Failed == nil || failure.Failed.ConfigHash != testHashB ||
+		failure.RolledBackTo == nil || failure.RolledBackTo.ConfigHash != testHashA || failure.OccurredAt.IsZero() {
+		t.Fatalf("last runtime failure = %#v", failure)
+	}
+	status, err := manager.ManagedRuntimeStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastFailure == nil || status.LastFailure.Failed == nil || status.LastFailure.Failed.ConfigHash != testHashB ||
+		status.LastFailure.RolledBackTo == nil || status.LastFailure.RolledBackTo.ConfigHash != testHashA {
+		t.Fatalf("runtime status failure = %#v", status.LastFailure)
+	}
 	if _, err := os.Stat(manager.paths.Config("sing-box", testHashA)); err != nil {
 		t.Fatal(err)
 	}

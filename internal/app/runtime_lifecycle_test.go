@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tinymins/sempre/internal/controlplane"
 	"github.com/tinymins/sempre/internal/state"
@@ -48,6 +49,12 @@ func TestManagedRuntimeActionsRecoverInitialFailure(t *testing.T) {
 		t.Run(action, func(t *testing.T) {
 			t.Parallel()
 			manager := failedInitialRuntimeManager(t)
+			if err := manager.store.Update(func(document *state.Document) error {
+				document.Runtime.LastFailure = &state.RuntimeFailure{Stage: "old failure", Error: "old error", OccurredAt: time.Now().UTC()}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
 			before, err := manager.ManagedRuntimeStatus()
 			if err != nil {
 				t.Fatal(err)
@@ -76,6 +83,9 @@ func TestManagedRuntimeActionsRecoverInitialFailure(t *testing.T) {
 			}
 			if document.Active == nil || document.Active.ConfigHash != testHashA || !document.Pending {
 				t.Fatalf("%s document = %#v", action, document)
+			}
+			if document.Runtime.LastFailure != nil {
+				t.Fatalf("%s retained previous runtime failure: %#v", action, document.Runtime.LastFailure)
 			}
 		})
 	}

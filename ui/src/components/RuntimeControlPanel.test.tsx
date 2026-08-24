@@ -117,6 +117,41 @@ describe('RuntimeControlPanel', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/restart', expect.objectContaining({ method: 'POST' })))
   })
 
+  it('replaces the accepted restart notice with rollback details after startup fails', async () => {
+    const failed = { ...runningStatus.active!, config_hash: 'b'.repeat(64) }
+    const failure = {
+      stage: 'startup failed for sing-box@1.2.3',
+      error: 'exit status 1',
+      occurred_at: '2026-08-03T10:01:00Z',
+      failed,
+      rolled_back_to: runningStatus.active!,
+    }
+    let current = runningStatus
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/runtime/restart') && init?.method === 'POST') {
+        current = { ...runningStatus, restart_count: 1, last_exit: 'exit status 1', last_failure: failure }
+        return new Response(JSON.stringify({
+          action: 'restart',
+          status: { ...runningStatus, runtime_state: 'stopping', active: failed, pending: true },
+        }), { status: 202, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify(current), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetch)
+    renderRuntimePanel()
+
+    const restart = await screen.findByRole('button', { name: 'Restart managed core' })
+    await waitFor(() => expect(restart).toBeEnabled())
+    fireEvent.click(restart)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Managed core startup failed. The last working configuration was restored.')
+    expect(alert).toHaveTextContent('Failure stage: startup failed for sing-box@1.2.3')
+    expect(alert).toHaveTextContent('Error: exit status 1')
+    expect(alert).toHaveTextContent('Rollback: sing-box@1.2.3 · bbbbbbbb...bbbbbb → sing-box@1.2.3 · aaaaaaaa...aaaaaa')
+  })
+
   it('describes a starting pending deployment as health-checking', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       ...runningStatus,

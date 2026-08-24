@@ -33,6 +33,8 @@ let activeProfileID: string
 let requests: RecordedRequest[]
 let restartResponse: Promise<Response> | undefined
 let runtimePending: boolean
+let runtimeStatusResponse: Record<string, unknown>
+let restartFinalStatus: Record<string, unknown> | undefined
 
 function profile(id: string, name: string): SubscriptionProfile {
   return {
@@ -92,6 +94,8 @@ describe('Subscriptions subscription sets', () => {
     requests = []
     restartResponse = undefined
     runtimePending = false
+    runtimeStatusResponse = {}
+    restartFinalStatus = undefined
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
       const method = init.method || 'GET'
@@ -100,10 +104,13 @@ describe('Subscriptions subscription sets', () => {
 
       if (url.endsWith('/api/v1/custom-nodes')) return jsonResponse({ nodes: [] })
       if (url.endsWith('/api/v1/subscriptions') && method === 'GET') return jsonResponse(catalog())
-      if (url.endsWith('/api/v1/runtime/status') && method === 'GET') return jsonResponse({ pending: runtimePending })
+      if (url.endsWith('/api/v1/runtime/status') && method === 'GET') return jsonResponse({ ...runtimeStatusResponse, pending: runtimePending })
       if (url.endsWith('/api/v1/runtime/restart') && method === 'POST') {
         const response = await (restartResponse ?? Promise.resolve(jsonResponse({ action: 'restart', status: {} }, 202)))
-        if (response.ok) runtimePending = false
+        if (response.ok) {
+          runtimePending = false
+          if (restartFinalStatus) runtimeStatusResponse = restartFinalStatus
+        }
         return response
       }
       if (url.endsWith('/api/v1/subscriptions') && method === 'POST') {
@@ -318,5 +325,25 @@ describe('Subscriptions subscription sets', () => {
     const dialog = screen.getByRole('dialog', { name: 'Restart the core?' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Restart core' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Managed core is unavailable')
+  })
+
+  it('replaces the accepted restart notice with the asynchronous rollback result', async () => {
+    const restored = { core: 'sing-box', ref: 'stable', version: '1.13.18', exact_reference: 'sing-box@1.13.18', config_hash: 'a'.repeat(64) }
+    const failed = { ...restored, config_hash: 'b'.repeat(64) }
+    runtimeStatusResponse = { runtime_state: 'running', active: restored }
+    restartResponse = Promise.resolve(jsonResponse({ action: 'restart', status: { runtime_state: 'stopping', active: failed, pending: true } }, 202))
+    restartFinalStatus = {
+      runtime_state: 'running', active: restored, last_exit: 'exit status 1',
+      last_failure: { stage: 'startup failed for sing-box@1.13.18', error: 'exit status 1', occurred_at: '2026-08-24T03:10:56Z', failed, rolled_back_to: restored },
+    }
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart core' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Managed core startup failed. The last working configuration was restored.')
+    expect(alert).toHaveTextContent('Error: exit status 1')
+    expect(alert).toHaveTextContent('Rollback: sing-box@1.13.18 · bbbbbbbb...bbbbbb → sing-box@1.13.18 · aaaaaaaa...aaaaaa')
   })
 })

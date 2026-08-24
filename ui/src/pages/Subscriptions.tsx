@@ -7,6 +7,7 @@ import { Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '.
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
+import { useRuntimeActionFeedback, type RuntimeActionNotice } from '../lib/useRuntimeActionFeedback'
 import type { CustomNode, LinuxNetworkInventory, ManagedRuntimeStatus, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
 import { MessageBridge } from '../features/subscriptions/toolbox/MessageBridge'
 import ProxyDebugModal, { type ProxyDebugModalRef } from '../features/subscriptions/toolbox/ProxyDebugModal'
@@ -15,7 +16,7 @@ import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribe
 
 type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
-type Notice = { message: string; tone: 'success' | 'error' }
+type Notice = RuntimeActionNotice
 type Confirmation = 'refresh' | 'restart'
 
 export function Subscriptions() {
@@ -44,8 +45,9 @@ export function Subscriptions() {
   const runtimeStatus = useQuery({
     queryKey: ['runtime', 'status'],
     queryFn: () => api<ManagedRuntimeStatus>(session!, '/runtime/status'),
-    refetchInterval: (query) => query.state.data?.pending ? 1000 : false,
+    refetchInterval: (query) => query.state.data?.pending || ['starting', 'stopping', 'restarting'].includes(query.state.data?.runtime_state || '') ? 1000 : false,
   })
+  const acceptRuntimeAction = useRuntimeActionFeedback(runtimeStatus.data, setNotice)
   const profiles = useMemo(() => catalog.data?.profiles ?? [], [catalog.data?.profiles])
   const effectiveSelectedID = selectedID || catalog.data?.active_profile_id || profiles[0]?.id || ''
   const storedProfile = profiles.find((item) => item.id === effectiveSelectedID) ?? null
@@ -131,10 +133,11 @@ export function Subscriptions() {
   })
 
   const restart = useMutation({
-    mutationFn: () => api(session!, '/runtime/restart', { method: 'POST' }),
-    onSuccess: async () => {
+    mutationFn: () => api<{ action: string; status: ManagedRuntimeStatus }>(session!, '/runtime/restart', { method: 'POST' }),
+    onSuccess: async (result) => {
       setConfirmation(null)
-      setNotice({ message: t('operationAccepted'), tone: 'success' })
+      queryClient.setQueryData(['runtime', 'status'], result.status)
+      acceptRuntimeAction(result.status)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['system'] }),
         queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }),
@@ -248,7 +251,7 @@ export function Subscriptions() {
         </button>
       </div>
 
-      {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`border-l-2 px-3 py-2 text-sm break-words ${notice.tone === 'error' ? 'border-red-500 bg-red-500/8 text-red-700 dark:text-red-300' : 'border-emerald-500 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}
+      {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`whitespace-pre-line border-l-2 px-3 py-2 text-sm break-words ${notice.tone === 'error' ? 'border-red-500 bg-red-500/8 text-red-700 dark:text-red-300' : 'border-emerald-500 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}
 
       {currentProfile ? (
         <>

@@ -35,6 +35,14 @@ type RuntimeDeployment struct {
 	ConfigHash     string `json:"config_hash"`
 }
 
+type RuntimeFailure struct {
+	Stage        string             `json:"stage"`
+	Error        string             `json:"error"`
+	OccurredAt   time.Time          `json:"occurred_at"`
+	Failed       *RuntimeDeployment `json:"failed,omitempty"`
+	RolledBackTo *RuntimeDeployment `json:"rolled_back_to,omitempty"`
+}
+
 type RuntimeStatus struct {
 	DesiredState   string             `json:"desired_state"`
 	RuntimeState   string             `json:"runtime_state"`
@@ -48,6 +56,7 @@ type RuntimeStatus struct {
 	LastTransition *time.Time         `json:"last_transition"`
 	LastExit       string             `json:"last_exit,omitempty"`
 	LastError      string             `json:"last_error,omitempty"`
+	LastFailure    *RuntimeFailure    `json:"last_failure,omitempty"`
 	Actions        RuntimeActions     `json:"actions"`
 }
 
@@ -100,6 +109,7 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 			}
 			document.Runtime.PID = 0
 			document.Runtime.LastError = ""
+			document.Runtime.LastFailure = nil
 			document.Runtime.LastTransition = time.Now().UTC()
 			return nil
 		})
@@ -142,6 +152,7 @@ func (manager *Manager) ManagedRuntimeAction(action string) (RuntimeStatus, erro
 				document.Runtime.PID = 0
 			}
 			document.Runtime.LastError = ""
+			document.Runtime.LastFailure = nil
 			document.Runtime.LastTransition = time.Now().UTC()
 			return nil
 		})
@@ -186,6 +197,7 @@ func (manager *Manager) runtimeStatusValue(document state.Document) RuntimeStatu
 		Pending:      document.Pending,
 		LastExit:     document.Runtime.LastExit,
 		LastError:    lastError,
+		LastFailure:  runtimeFailureValue(document.Runtime.LastFailure),
 		Actions:      manager.runtimeActions(document, runtimeState, readyErr),
 	}
 	if document.Active != nil {
@@ -298,6 +310,20 @@ func runtimeDeploymentValue(deployment state.Deployment) *RuntimeDeployment {
 		ExactReference: exactRef(core.Ref{Core: deployment.Core, Repository: deployment.Repository}, deployment.Version).String(),
 		ConfigHash:     deployment.ConfigHash,
 	}
+}
+
+func runtimeFailureValue(failure *state.RuntimeFailure) *RuntimeFailure {
+	if failure == nil {
+		return nil
+	}
+	result := &RuntimeFailure{Stage: failure.Stage, Error: failure.Error, OccurredAt: failure.OccurredAt}
+	if failure.Failed != nil {
+		result.Failed = runtimeDeploymentValue(*failure.Failed)
+	}
+	if failure.RolledBackTo != nil {
+		result.RolledBackTo = runtimeDeploymentValue(*failure.RolledBackTo)
+	}
+	return result
 }
 
 func runtimeActionFailure(code string, err error) *RuntimeActionError {

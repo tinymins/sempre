@@ -38,6 +38,14 @@ export interface ManagedRuntimeDeployment {
   config_hash: string
 }
 
+export interface ManagedRuntimeFailure {
+  stage: string
+  error: string
+  occurred_at: string
+  failed?: ManagedRuntimeDeployment
+  rolled_back_to?: ManagedRuntimeDeployment
+}
+
 export interface ManagedRuntimeStatus {
   desired_state: 'running' | 'stopped'
   runtime_state: 'idle' | 'stopped' | 'starting' | 'running' | 'stopping' | 'restarting' | 'failed'
@@ -51,6 +59,7 @@ export interface ManagedRuntimeStatus {
   last_transition: string | null
   last_exit?: string
   last_error?: string
+  last_failure?: ManagedRuntimeFailure
   actions: {
     start: RuntimeActionAvailability
     stop: RuntimeActionAvailability
