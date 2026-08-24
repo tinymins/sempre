@@ -163,6 +163,9 @@ describe('ProxySubscribeEditor', () => {
 		expect(screen.getByLabelText('Local proxy username')).toHaveAttribute('autocomplete', 'off')
 		expect(screen.getByLabelText('Local proxy password')).toHaveAttribute('autocomplete', 'off')
 		expect(screen.getByLabelText('Fixed secret')).toHaveAttribute('autocomplete', 'off')
+		expect(screen.getByLabelText('Local proxy username')).toHaveAttribute('data-bwignore', 'true')
+		expect(screen.getByLabelText('Local proxy password')).toHaveAttribute('data-bwignore', 'true')
+		expect(screen.getByLabelText('Fixed secret')).toHaveAttribute('data-bwignore', 'true')
 
 		fireEvent.click(screen.getByRole('button', { name: 'Rule List' }))
 		expect(screen.queryByLabelText('Local proxy password')).not.toBeInTheDocument()

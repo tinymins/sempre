@@ -34,10 +34,10 @@ export function ProxyRuntimeFields({
 							<InputNumber min={1} max={65535} className="w-full" />
 						</Form.Item>
 						<Form.Item label={t("proxy.form.localProxyUsername")} name="localProxyUsername">
-							<Input autoComplete="off" />
+							<Input autoComplete="off" data-bwignore="true" />
 						</Form.Item>
 						<Form.Item label={t("proxy.form.localProxyPassword")} name="localProxyPassword">
-							<Password autoComplete="off" />
+							<Password autoComplete="off" data-bwignore="true" />
 						</Form.Item>
 					</div>
 				</section> : null}
@@ -158,7 +158,7 @@ export function ProxyRuntimeFields({
 							<Input />
 						</Form.Item>
 						<Form.Item label={t("proxy.form.managementAPISecret")} name="managementAPISecret">
-							<Password autoComplete="off" />
+							<Password autoComplete="off" data-bwignore="true" />
 						</Form.Item>
 					</div>
 					<Form.Item label={t("proxy.form.managementAPIUI")} name="managementAPIUI">
