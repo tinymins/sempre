@@ -24,12 +24,24 @@ func (admin *adminServer) subscriptionsGet(writer http.ResponseWriter, _ *http.R
 
 func (admin *adminServer) subscriptionsCreate(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		Mode        string `json:"mode"`
+		ManifestURL string `json:"manifest_url"`
 	}
 	if !admin.decode(writer, request, &input) {
 		return
 	}
-	profile, err := admin.manager.CreateSubscriptionProfile(input.Name)
+	var profile subscriptions.Profile
+	var err error
+	switch input.Mode {
+	case "", subscriptions.ProfileLocal:
+		profile, err = admin.manager.CreateSubscriptionProfile(input.Name)
+	case subscriptions.ProfileRemote:
+		profile, err = admin.manager.CreateRemoteSubscriptionProfile(input.Name, input.ManifestURL)
+	default:
+		apiWriteError(writer, http.StatusBadRequest, "INVALID_SUBSCRIPTION_MODE", "subscription mode must be local or remote", nil)
+		return
+	}
 	if err != nil {
 		admin.operationError(writer, err)
 		return

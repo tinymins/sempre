@@ -7,6 +7,9 @@ import (
 
 func normalizeProfile(profile *Profile) {
 	migrateLegacyDNSFields(profile)
+	if profile.Mode == "" {
+		profile.Mode = ProfileLocal
+	}
 	if profile.Revision == 0 {
 		profile.Revision = 1
 	}
@@ -126,6 +129,18 @@ func validateStoredCatalog(catalog Catalog) error {
 		customIDs[node.ID] = true
 	}
 	for index, profile := range catalog.Profiles {
+		switch profile.Mode {
+		case ProfileLocal:
+			if profile.Remote != nil {
+				return fmt.Errorf("local profile %q cannot have remote settings", profile.Name)
+			}
+		case ProfileRemote:
+			if profile.Remote == nil || strings.TrimSpace(profile.Remote.ManifestURL) == "" {
+				return fmt.Errorf("remote profile %q requires a manifest URL", profile.Name)
+			}
+		default:
+			return fmt.Errorf("profile %q has unsupported mode %q", profile.Name, profile.Mode)
+		}
 		if profile.ID == "" {
 			return fmt.Errorf("profile ID is required")
 		}

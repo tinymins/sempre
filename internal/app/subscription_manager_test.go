@@ -2,7 +2,11 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,6 +14,57 @@ import (
 	"github.com/tinymins/sempre/internal/state"
 	subscriptions "github.com/tinymins/sempre/internal/subscription"
 )
+
+func TestRemoteSubscriptionActivatesVerifiedArtifactAndRemainsReadOnly(t *testing.T) {
+	manager := newTestManager(t)
+	content := `{"log":{"level":"info"}}`
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/share":
+			fmt.Fprintf(writer, `{"schema":1,"service":"sempre","profile":{"name":"Team profile","revision":9,"updated_at":"2026-08-24T00:00:00Z"},"target":{"format":"sing-box-v13","version":"13","platform":"default"},"artifact":{"url":"/artifact","sha256":"%s","content_type":"application/json","node_count":2,"created_at":"2026-08-24T00:01:00Z"},"runtime":{"local_proxy":{"socks_port":2080,"http_port":2081,"username":"remote","password":"secret"},"transparent_proxy":{"mode":"tun-router","capture_host":false,"lan_interfaces":[],"route_exclusions":[],"interface_mode":"all","interfaces":[],"auto_exclude_local_routes":true,"auto_exclude_vpn_routes":true,"tun":{"interface_name":"remote-tun"},"tproxy":{"listen_port":7893,"dns_listen_port":1053},"ebpf":{"wan_interface":"auto"}},"management_api":{"external_controller":"127.0.0.1:9090","secret":"remote-secret","allow_origins":[],"allow_private_network":false}},"edit_url":"http://%s/subscriptions/team","read_only":true}`, hash, request.Host)
+		case "/artifact":
+			fmt.Fprint(writer, content)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	manager.remote = subscriptions.NewRemoteClient(server.Client())
+
+	remote, err := manager.CreateRemoteSubscriptionProfile("Team", server.URL+"/share")
+	if err != nil {
+		t.Fatal(err)
+	}
+	change, rendered, err := manager.UseSubscriptionProfile(context.Background(), remote.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !change.Changed || rendered.Content != content || !rendered.RuntimeValidated {
+		t.Fatalf("unexpected activation: change=%+v render=%+v", change, rendered)
+	}
+	catalog, active, _, _, err := manager.SubscriptionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != remote.ID {
+		t.Fatalf("active profile = %q", active)
+	}
+	stored, err := subscriptions.FindProfile(&catalog, remote.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Remote == nil || stored.Remote.ServerProfile != "Team profile" || stored.Remote.ServerRevision != 9 || stored.Remote.ArtifactSHA256 != hash {
+		t.Fatalf("remote metadata = %+v", stored.Remote)
+	}
+	if stored.LocalProxy.SOCKSPort != 2080 || stored.TransparentProxy.TUN.InterfaceName != "remote-tun" || stored.ManagementAPI.Secret != "remote-secret" {
+		t.Fatalf("remote runtime settings were not synchronized: %+v", stored)
+	}
+	stored.Remark = "local edit"
+	if _, _, err := manager.SaveSubscriptionProfile(context.Background(), stored.ID, *stored); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("expected read-only error, got %v", err)
+	}
+}
 
 func TestRenameSubscriptionProfileOnlyChangesName(t *testing.T) {
 	manager := newTestManager(t)

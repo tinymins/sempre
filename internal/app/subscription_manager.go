@@ -64,6 +64,20 @@ func (manager *Manager) SubscriptionConfigurationContext() (subscriptions.Config
 
 func (manager *Manager) CreateSubscriptionProfile(name string) (subscriptions.Profile, error) {
 	profile := subscriptions.NewProfile(name)
+	return manager.createSubscriptionProfile(profile)
+}
+
+func (manager *Manager) CreateRemoteSubscriptionProfile(name, manifestURL string) (subscriptions.Profile, error) {
+	if err := subscriptions.ValidateRemoteManifestURL(manifestURL); err != nil {
+		return subscriptions.Profile{}, err
+	}
+	profile := subscriptions.NewProfile(name)
+	profile.Mode = subscriptions.ProfileRemote
+	profile.Remote = &subscriptions.RemoteProfile{ManifestURL: strings.TrimSpace(manifestURL)}
+	return manager.createSubscriptionProfile(profile)
+}
+
+func (manager *Manager) createSubscriptionProfile(profile subscriptions.Profile) (subscriptions.Profile, error) {
 	err := manager.withOperation(func() error {
 		return manager.subscriptions.Update(func(catalog *subscriptions.Catalog) error {
 			catalog.Profiles = append(catalog.Profiles, profile)
@@ -121,6 +135,15 @@ func (manager *Manager) saveSubscriptionProfile(_ context.Context, id string, ca
 			current, err := subscriptions.FindProfile(stored, id)
 			if err != nil {
 				return err
+			}
+			if current.Mode == subscriptions.ProfileRemote {
+				return fmt.Errorf("remote subscription profiles are read-only; edit the profile on its Sempre server")
+			}
+			if candidate.Mode == "" {
+				candidate.Mode = current.Mode
+			}
+			if candidate.Mode != current.Mode || candidate.Remote != nil {
+				return fmt.Errorf("subscription profile mode cannot be changed through profile editing")
 			}
 			candidate.ID = id
 			candidate.Name = current.Name

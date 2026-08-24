@@ -11,13 +11,15 @@ import (
 )
 
 const (
-	CatalogSchema       = 7
+	CatalogSchema       = 8
 	DefaultUserAgent    = "clash.meta"
 	MaxSourceSize       = int64(32 << 20)
 	SourceURL           = "url"
 	SourceRaw           = "raw"
 	FetchAuto           = "auto"
 	FetchDomesticDirect = "domestic-direct"
+	ProfileLocal        = "local"
+	ProfileRemote       = "remote"
 )
 
 type Catalog struct {
@@ -31,6 +33,8 @@ type Profile struct {
 	ID                    string                    `json:"id"`
 	Revision              uint64                    `json:"revision"`
 	Name                  string                    `json:"name"`
+	Mode                  string                    `json:"mode"`
+	Remote                *RemoteProfile            `json:"remote,omitempty"`
 	Remark                string                    `json:"remark,omitempty"`
 	LogLevel              string                    `json:"log_level"`
 	Editor                EditorConfig              `json:"editor"`
@@ -58,6 +62,19 @@ type Profile struct {
 	LastRuntimeValidated  bool                      `json:"last_runtime_validated"`
 	LastCompilerTarget    string                    `json:"last_compiler_target,omitempty"`
 	LastCompilerWarnings  []string                  `json:"last_compiler_warnings,omitempty"`
+}
+
+type RemoteProfile struct {
+	ManifestURL       string    `json:"manifest_url"`
+	EditURL           string    `json:"edit_url,omitempty"`
+	ServerProfile     string    `json:"server_profile,omitempty"`
+	ServerRevision    int64     `json:"server_revision,omitempty"`
+	ArtifactSHA256    string    `json:"artifact_sha256,omitempty"`
+	Target            string    `json:"target,omitempty"`
+	NodeCount         int       `json:"node_count,omitempty"`
+	ServerUpdatedAt   time.Time `json:"server_updated_at,omitempty"`
+	ArtifactCreatedAt time.Time `json:"artifact_created_at,omitempty"`
+	LastSyncedAt      time.Time `json:"last_synced_at,omitempty"`
 }
 
 type EditorConfig struct {
@@ -247,7 +264,7 @@ func NewCatalog(legacyURL string) Catalog {
 
 func NewProfile(name string) Profile {
 	return Profile{
-		ID: NewID(), Revision: 1, Name: strings.TrimSpace(name), LogLevel: "info", Editor: EditorConfig{Servers: "[]"}, Sources: []Source{}, CustomNodeIDs: []string{},
+		ID: NewID(), Revision: 1, Name: strings.TrimSpace(name), Mode: ProfileLocal, LogLevel: "info", Editor: EditorConfig{Servers: "[]"}, Sources: []Source{}, CustomNodeIDs: []string{},
 		Groups: []ProxyGroup{}, Rules: []string{}, RuleProviders: []RuleProvider{}, Filters: []string{},
 		UseSystemGroups: true, UseSystemRules: true, UseSystemFilters: true,
 		UseSystemDNS: true, UseSystemCustomConfig: true,

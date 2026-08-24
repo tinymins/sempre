@@ -18,6 +18,7 @@ const profile: SubscriptionProfile = {
   id: 'profile-1',
 	revision: 1,
   name: 'Local subscription',
+  mode: 'local',
   remark: 'Home network',
   log_level: 'info',
   editor: {

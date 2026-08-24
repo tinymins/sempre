@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, CheckCircle2, CircleAlert, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Save as SaveIcon, Trash2 } from 'lucide-react'
-import { Dropdown, Modal, Select, Tooltip } from '@acme/components'
+import { Dropdown, Select, Tooltip } from '@acme/components'
 import type { ProxyDebugFormat } from '@acme/types'
-import { Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
+import { Button, Card, ConfirmDialog, Field, PageTitle, Spinner } from '../components/ui'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -13,6 +13,8 @@ import { MessageBridge } from '../features/subscriptions/toolbox/MessageBridge'
 import ProxyDebugModal, { type ProxyDebugModalRef } from '../features/subscriptions/toolbox/ProxyDebugModal'
 import ProxyPreviewModal, { type ProxyPreviewModalRef } from '../features/subscriptions/toolbox/ProxyPreviewModal'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../features/subscriptions/toolbox/ProxySubscribeEditor'
+import { RemoteSubscriptionPanel } from '../features/subscriptions/RemoteSubscriptionPanel'
+import { SubscriptionProfileDialog, type SubscriptionMode } from '../features/subscriptions/SubscriptionProfileDialog'
 
 type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; profile?: SubscriptionProfile; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
@@ -29,6 +31,8 @@ export function Subscriptions() {
   const [nameDialogOpen, setNameDialogOpen] = useState(false)
   const [nameValue, setNameValue] = useState('')
   const [nameError, setNameError] = useState('')
+  const [createMode, setCreateMode] = useState<SubscriptionMode>('local')
+  const [manifestURL, setManifestURL] = useState('')
   const [deleteProfile, setDeleteProfile] = useState<SubscriptionProfile | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
@@ -89,7 +93,10 @@ export function Subscriptions() {
   })
 
   const create = useMutation({
-    mutationFn: (name: string) => api<SubscriptionProfile>(session!, '/subscriptions', { method: 'POST', body: JSON.stringify({ name }) }),
+    mutationFn: ({ name, mode, manifestURL }: { name: string; mode: SubscriptionMode; manifestURL: string }) => api<SubscriptionProfile>(session!, '/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify(mode === 'remote' ? { name, mode, manifest_url: manifestURL } : { name }),
+    }),
     onSuccess: async (profile) => {
       await invalidate()
       setSelectedID(profile.id)
@@ -160,6 +167,8 @@ export function Subscriptions() {
     setNameDialog(state)
     setNameValue(state.mode === 'rename' ? state.profile.name : '')
     setNameError('')
+    setCreateMode('local')
+    setManifestURL('')
     setNameDialogOpen(true)
   }
   const closeNameDialog = () => {
@@ -171,6 +180,8 @@ export function Subscriptions() {
     setNameDialog(null)
     setNameValue('')
     setNameError('')
+    setCreateMode('local')
+    setManifestURL('')
   }
   const openDeleteDialog = (profile: SubscriptionProfile) => {
     setDeleteProfile(profile)
@@ -193,7 +204,16 @@ export function Subscriptions() {
     }
     setNameError('')
     if (nameDialog.mode === 'create') {
-      create.mutate(name)
+      if (createMode === 'remote') {
+        try {
+          const parsed = new URL(manifestURL.trim())
+          if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error()
+        } catch {
+          setNameError(t('remoteManifestInvalid'))
+          return
+        }
+      }
+      create.mutate({ name, mode: createMode, manifestURL: manifestURL.trim() })
     } else {
       rename.mutate({ id: nameDialog.profile.id, name })
     }
@@ -203,7 +223,7 @@ export function Subscriptions() {
     <div className="space-y-5">
       <PageTitle title={t('subscriptions')}>
         <div className="flex min-w-0 flex-wrap justify-end gap-2">
-          <Button variant="primary" disabled={!currentProfile || !currentEditorSaveState.dirty || currentEditorSaveState.saving} onClick={() => editorRef.current?.saveNow()}>
+          <Button variant="primary" disabled={!currentProfile || currentProfile.mode === 'remote' || !currentEditorSaveState.dirty || currentEditorSaveState.saving} onClick={() => editorRef.current?.saveNow()}>
             {currentEditorSaveState.saving ? <Spinner /> : <SaveIcon size={16} />}{t('save')}
           </Button>
           <Button disabled={!currentProfile || action.isPending} onClick={() => setConfirmation('refresh')}>
@@ -260,10 +280,14 @@ export function Subscriptions() {
 
       {currentProfile ? (
         <>
-          <MessageBridge />
-          <ProxyPreviewModal ref={previewRef} />
-          <ProxyDebugModal ref={debugRef} />
-          <ProxySubscribeEditor
+			{currentProfile.mode === 'remote' ? (
+				<RemoteSubscriptionPanel profile={currentProfile} />
+			) : (
+				<>
+					<MessageBridge />
+					<ProxyPreviewModal ref={previewRef} />
+					<ProxyDebugModal ref={debugRef} />
+					<ProxySubscribeEditor
 				ref={editorRef}
 			key={`${currentProfile.id}:${catalog.data?.configuration_context.key ?? 'common'}`}
             profile={currentProfile}
@@ -304,18 +328,24 @@ export function Subscriptions() {
                 {currentProfile.last_compiler_warnings?.length ? <div className="space-y-1 text-xs text-amber-700 dark:text-amber-400">{currentProfile.last_compiler_warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : null}
               </div>
             )}
-          />
+					/>
+				</>
+			)}
         </>
       ) : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
 
       {nameDialog ? (
-        <SubscriptionSetNameDialog
+        <SubscriptionProfileDialog
           open={nameDialogOpen}
-          state={nameDialog}
-          value={nameValue}
+          creating={nameDialog.mode === 'create'}
+          name={nameValue}
+          mode={createMode}
+          manifestURL={manifestURL}
           error={nameError}
           pending={create.isPending || rename.isPending}
-          onChange={(value) => { setNameValue(value); setNameError('') }}
+          onNameChange={(value) => { setNameValue(value); setNameError('') }}
+			onModeChange={(value) => { setCreateMode(value); setNameError('') }}
+			onManifestURLChange={(value) => { setManifestURL(value); setNameError('') }}
           onCancel={closeNameDialog}
           onSubmit={submitName}
           afterOpenChange={finishNameDialogClose}
@@ -338,7 +368,7 @@ export function Subscriptions() {
         open={confirmation !== null}
         title={t(confirmation === 'refresh' ? 'subscriptionUpdateConfirmTitle' : 'coreRestartConfirmTitle')}
         detail={confirmation === 'refresh'
-          ? t('subscriptionUpdateConfirmDetail').replace('{profile}', currentProfile?.name || t('defaultSubscriptionSet'))
+          ? t(currentProfile?.mode === 'remote' ? 'remoteSubscriptionUpdateConfirmDetail' : 'subscriptionUpdateConfirmDetail').replace('{profile}', currentProfile?.name || t('defaultSubscriptionSet'))
           : t('coreRestartConfirmDetail')}
         confirmLabel={t(confirmation === 'refresh' ? 'updateNow' : 'restartNow')}
         cancelLabel={t('cancel')}
@@ -423,47 +453,6 @@ function SubscriptionSetMenuLabel({ label, reason = '' }: { label: string; reaso
       <span className="block">{label}</span>
       {reason ? <span className="mt-0.5 block text-xs text-[var(--muted)]">{reason}</span> : null}
     </span>
-  )
-}
-
-function SubscriptionSetNameDialog({ open, state, value, error, pending, onChange, onCancel, onSubmit, afterOpenChange }: { open: boolean; state: NameDialogState; value: string; error: string; pending: boolean; onChange: (value: string) => void; onCancel: () => void; onSubmit: () => void; afterOpenChange: (open: boolean) => void }) {
-  const { t } = useI18n()
-  const creating = state.mode === 'create'
-  const title = creating ? t('newSubscriptionSet') : t('renameSubscriptionSet')
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (!pending) onSubmit()
-  }
-  return (
-    <Modal
-      open={open}
-      title={title}
-      okText={creating ? t('createSubscriptionSet') : t('renameSubscriptionSet')}
-      cancelText={t('cancel')}
-      onOk={() => {
-        onSubmit()
-        return undefined
-      }}
-      onCancel={onCancel}
-      afterOpenChange={afterOpenChange}
-      okButtonProps={{ disabled: !value.trim() }}
-      cancelButtonProps={{ disabled: pending }}
-      confirmLoading={pending}
-      maskClosable={!pending}
-      keyboard={!pending}
-      closable={!pending}
-      destroyOnClose
-      centered
-    >
-      <form onSubmit={submit}>
-        <div>
-          <Field label={t('subscriptionSetName')}>
-            <Input autoFocus aria-invalid={Boolean(error)} aria-describedby={error ? 'subscription-set-name-error' : undefined} value={value} onChange={(event) => onChange(event.target.value)} />
-          </Field>
-          {error ? <p id="subscription-set-name-error" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-        </div>
-      </form>
-    </Modal>
   )
 }
 

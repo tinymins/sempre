@@ -137,7 +137,11 @@ func (manager *Manager) RenderSubscriptionProfile(ctx context.Context, id, forma
 		if err != nil {
 			return err
 		}
-		result, _, err = manager.compiler.Render(ctx, *profile, catalog, target, force)
+		if profile.Mode == subscriptions.ProfileRemote {
+			result, _, err = manager.remote.Render(ctx, *profile, target)
+		} else {
+			result, _, err = manager.compiler.Render(ctx, *profile, catalog, target, force)
+		}
 		return err
 	})
 	return result, err

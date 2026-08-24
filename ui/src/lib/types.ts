@@ -429,6 +429,19 @@ export interface SubscriptionProfile {
   id: string
   revision: number
   name: string
+  mode: 'local' | 'remote'
+  remote?: {
+    manifest_url: string
+    edit_url?: string
+    server_profile?: string
+    server_revision?: number
+    artifact_sha256?: string
+    target?: string
+    node_count?: number
+    server_updated_at?: string
+    artifact_created_at?: string
+    last_synced_at?: string
+  }
   remark?: string
   log_level: 'off' | 'error' | 'warn' | 'info' | 'debug'
   editor: SubscriptionEditorConfig

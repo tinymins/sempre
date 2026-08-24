@@ -43,6 +43,7 @@ function profile(id: string, name: string): SubscriptionProfile {
     id,
 	revision: 1,
     name,
+    mode: 'local',
     log_level: 'info',
     editor: { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' },
     sources: [],
@@ -122,7 +123,20 @@ describe('Subscriptions subscription sets', () => {
         return response
       }
       if (url.endsWith('/api/v1/subscriptions') && method === 'POST') {
-        const created = profile(`set-${profiles.length + 1}`, body?.name || '')
+        const created = {
+          ...profile(`set-${profiles.length + 1}`, body?.name || ''),
+          mode: body?.mode === 'remote' ? 'remote' as const : 'local' as const,
+          remote: body?.mode === 'remote' ? {
+            manifest_url: body.manifest_url,
+            edit_url: 'https://server.example/subscriptions/team',
+            server_profile: 'Team profile',
+            server_revision: 4,
+            artifact_sha256: 'a'.repeat(64),
+            target: 'sing-box-v13',
+            node_count: 12,
+            last_synced_at: '2026-08-24T00:00:00Z',
+          } : undefined,
+        }
         profiles = [...profiles, created]
         return jsonResponse(created, 201)
       }
@@ -240,6 +254,31 @@ describe('Subscriptions subscription sets', () => {
     expect(screen.getByText('Already the active subscription set')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Delete subscription set/ })).toBeDisabled()
     expect(screen.getByText('The active subscription set cannot be deleted')).toBeInTheDocument()
+  })
+
+  it('creates a remote read-only subscription and links back to its server editor', async () => {
+    renderPage()
+    await screen.findByRole('tab', { name: 'Primary' })
+    fireEvent.click(screen.getByRole('button', { name: 'New subscription set' }))
+    const dialog = await screen.findByRole('dialog', { name: 'New subscription set' })
+    fireEvent.change(within(dialog).getByLabelText('Subscription set name'), { target: { value: 'Team' } })
+    fireEvent.click(within(dialog).getByRole('combobox'))
+    fireEvent.click(await screen.findByText('Remote read-only'))
+    fireEvent.change(within(dialog).getByLabelText('Remote manifest URL'), { target: { value: 'https://server.example/api/v1/public/subscriptions/token' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByRole('tab', { name: 'Team' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Remote subscription configuration')).toBeInTheDocument()
+    expect(screen.getByText('Read-only')).toBeInTheDocument()
+    expect(screen.queryByTestId('subscription-editor')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Edit on server' })).toBeEnabled()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New subscription set' })).not.toBeInTheDocument())
+    expect(screen.getByDisplayValue('https://server.example/api/v1/public/subscriptions/token')).toHaveAttribute('readonly')
+    expect(requests).toContainEqual(expect.objectContaining({
+      method: 'POST',
+      body: { name: 'Team', mode: 'remote', manifest_url: 'https://server.example/api/v1/public/subscriptions/token' },
+    }))
   })
 
   it('shows the editor directly and confirms update and restart from the page header', async () => {

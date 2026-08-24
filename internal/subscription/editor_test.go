@@ -101,6 +101,9 @@ func TestStoreReadsSchemaOneProfilesWithEditorConfig(t *testing.T) {
 	if migrated.Revision != 1 {
 		t.Fatalf("revision = %d", migrated.Revision)
 	}
+	if migrated.Mode != ProfileLocal || migrated.Remote != nil {
+		t.Fatalf("profile mode = %q, remote = %#v", migrated.Mode, migrated.Remote)
+	}
 	if migrated.Editor.Group == "" || migrated.Editor.RuleList == "" || migrated.Editor.Filter == "" || migrated.Editor.CustomConfig == "" || migrated.Editor.Servers != "[]" {
 		t.Fatalf("editor config = %#v", migrated.Editor)
 	}

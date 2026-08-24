@@ -72,6 +72,7 @@ type Manager struct {
 	web           *webconfig.Store
 	subscriptions *subscriptions.Store
 	compiler      *subscriptions.Compiler
+	remote        *subscriptions.RemoteClient
 	transparent   *transparentproxy.Controller
 	gateway       *gateway.Controller
 	tunnels       *tunnel.Controller
@@ -146,6 +147,7 @@ func newManager(paths layout.Layout, output, errorOutput io.Writer, controller s
 		web:           webStore,
 		subscriptions: subscriptionStore,
 		compiler:      compiler,
+		remote:        subscriptions.NewRemoteClient(nil),
 		transparent:   transparent,
 		gateway:       gatewayController,
 		tunnels:       tunnelController,

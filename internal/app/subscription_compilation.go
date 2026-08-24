@@ -153,16 +153,28 @@ func (manager *Manager) renderSubscriptionForRuntime(
 	document state.Document,
 	refresh bool,
 ) (subscriptions.RenderResult, subscriptions.Profile, subscriptions.Target, error) {
-	preparedCatalog, prepared, err := prepareSubscriptionProfile(catalog, profile)
-	if err != nil {
-		return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, err
-	}
 	target, runtimeValidation, warnings, err := manager.subscriptionTarget(document)
 	if err != nil {
 		return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, err
 	}
 	if !runtimeValidation {
 		return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, fmt.Errorf("select and install a core before compiling the active subscription profile")
+	}
+	if profile.Mode == subscriptions.ProfileRemote {
+		rendered, updated, remoteErr := manager.remote.Render(ctx, profile, target)
+		if remoteErr != nil {
+			return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, remoteErr
+		}
+		if _, _, remoteErr = prepareSubscriptionProfile(catalog, updated); remoteErr != nil {
+			return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, fmt.Errorf("validate remote runtime settings: %w", remoteErr)
+		}
+		rendered.Warnings = append(warnings, rendered.Warnings...)
+		rendered.RuntimeValidated = true
+		return rendered, updated, target, nil
+	}
+	preparedCatalog, prepared, err := prepareSubscriptionProfile(catalog, profile)
+	if err != nil {
+		return subscriptions.RenderResult{}, subscriptions.Profile{}, subscriptions.Target{}, err
 	}
 	var rendered subscriptions.RenderResult
 	var updated subscriptions.Profile
@@ -221,6 +233,12 @@ func (manager *Manager) recordSubscriptionCompilation(
 			return fmt.Errorf("subscription profile changed while compiling; retry the command")
 		}
 		item.Sources = preserveSubscriptionSnapshots(updated.Sources, item.Sources)
+		if profile.Mode == subscriptions.ProfileRemote {
+			item.Remote = updated.Remote
+			item.LocalProxy = updated.LocalProxy
+			item.TransparentProxy = updated.TransparentProxy
+			item.ManagementAPI = updated.ManagementAPI
+		}
 		item.LastCheck = now
 		item.LastResult = "configuration compiled and runtime validated"
 		if item.LastConfigHash != configHash {
@@ -292,6 +310,9 @@ func (manager *Manager) activeProfile() (subscriptions.Catalog, *subscriptions.P
 func stringValue(value any) string { result, _ := value.(string); return result }
 
 func subscriptionProfileHasInputs(profile subscriptions.Profile) bool {
+	if profile.Mode == subscriptions.ProfileRemote {
+		return true
+	}
 	if strings.TrimSpace(profile.Editor.Servers) != "" && strings.TrimSpace(profile.Editor.Servers) != "[]" {
 		return true
 	}
