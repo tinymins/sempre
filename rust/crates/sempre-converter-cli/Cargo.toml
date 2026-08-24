@@ -1,0 +1,18 @@
+[package]
+name = "sempre-converter-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sempre-converter"
+path = "src/main.rs"
+
+[dependencies]
+sempre-converter = { path = "../sempre-converter" }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
