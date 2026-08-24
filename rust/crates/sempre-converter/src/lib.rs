@@ -1,7 +1,9 @@
 mod editor;
+mod icons;
 mod model;
 mod parser;
 mod renderer;
+mod rule_set;
 mod target;
 
 pub use model::{
@@ -9,6 +11,7 @@ pub use model::{
     SourceSnapshot,
 };
 pub use parser::{ParseResult, parse_subscription};
+pub use rule_set::convert_clash_rule_set;
 pub use target::{Target, available_targets};
 
 use std::collections::{HashMap, HashSet};
@@ -89,6 +92,9 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
     }
 
     apply_filters(&mut nodes, &profile.filters);
+    for (proxy, _) in &mut nodes {
+        proxy.name = icons::append_icon(&proxy.name);
+    }
     make_names_unique(&mut nodes);
     if nodes.is_empty() {
         return Err(CompileError::EmptyProfile);

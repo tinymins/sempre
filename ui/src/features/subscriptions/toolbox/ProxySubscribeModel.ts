@@ -16,6 +16,7 @@ export interface Props {
   schedule: { interval: string; autoRestart: boolean };
   onScheduleSave: (change: { interval?: string; auto_restart?: boolean }) => Promise<void> | void;
   diagnostics: ReactNode;
+  sourceDebug?: boolean;
 }
 
 export type ProxySubscribeSaveState = {

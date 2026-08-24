@@ -60,6 +60,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
     manualServerCount,
     openManualServersEditor,
     diagnostics,
+    sourceDebug,
     manualServersEditorOpen,
     setManualServersEditorOpen,
     saveManualServers,
@@ -169,7 +170,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                 label={t("proxy.form.subscribeUrlLabel")}
                 name="subscribeItems"
               >
-                <SubscribeItemsEditor />
+                <SubscribeItemsEditor allowDebug={sourceDebug} />
               </Form.Item>
 
               {rawSources.map((source, index) => (

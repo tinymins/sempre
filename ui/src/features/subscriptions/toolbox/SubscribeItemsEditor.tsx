@@ -34,6 +34,7 @@ import SourceDebugModal from "./SourceDebugModal";
 interface Props {
   value?: SubscribeItem[];
   onChange?: (items: SubscribeItem[]) => void;
+  allowDebug?: boolean;
 }
 
 const UA_PRESETS = [
@@ -84,11 +85,13 @@ const SortableCard = ({
   sortId,
   onUpdate,
   onRemove,
+  allowDebug,
 }: {
   item: SubscribeItem;
   sortId: string;
   onUpdate: (patch: Partial<SubscribeItem>) => void;
   onRemove: () => void;
+  allowDebug: boolean;
 }) => {
   const { t } = useTranslation();
   const [showTestModal, setShowTestModal] = useState(false);
@@ -255,7 +258,7 @@ const SortableCard = ({
                     />
                   </div>
                 </Tooltip>
-                <Tooltip title={t("proxy.form.testSourceBtn")}>
+                {allowDebug ? <Tooltip title={t("proxy.form.testSourceBtn")}>
                   <Button
                     size="small"
                     variant="text"
@@ -264,23 +267,23 @@ const SortableCard = ({
                     disabled={!item.url?.trim()}
                     className="cursor-pointer shrink-0"
                   />
-                </Tooltip>
+                </Tooltip> : null}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <SourceDebugModal
+      {allowDebug ? <SourceDebugModal
         open={showTestModal}
         item={item}
         onClose={() => setShowTestModal(false)}
-      />
+      /> : null}
     </>
   );
 };
 
-const SubscribeItemsEditor = ({ value = [], onChange }: Props) => {
+const SubscribeItemsEditor = ({ value = [], onChange, allowDebug = true }: Props) => {
   const { t } = useTranslation();
   const items = useMemo(() => value, [value]);
 
@@ -367,6 +370,7 @@ const SubscribeItemsEditor = ({ value = [], onChange }: Props) => {
               item={item}
               onUpdate={(patch) => update(index, patch)}
               onRemove={() => remove(index)}
+              allowDebug={allowDebug}
             />
           ))}
         </div>

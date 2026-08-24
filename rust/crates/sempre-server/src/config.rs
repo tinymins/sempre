@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr};
+use std::{env, net::SocketAddr, path::PathBuf};
 
 use thiserror::Error;
 use url::Url;
@@ -10,6 +10,8 @@ pub(crate) struct Config {
     pub public_url: Url,
     pub allow_registration: bool,
     pub session_days: i64,
+    pub web_root: PathBuf,
+    pub direct_proxy_url: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -44,12 +46,26 @@ impl Config {
         if !(1..=365).contains(&session_days) {
             return Err(invalid("SEMPRE_SESSION_DAYS", &"must be between 1 and 365"));
         }
+        let direct_proxy_url = env::var("DIRECT_PROXY_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        if let Some(proxy) = &direct_proxy_url {
+            let proxy: Url = proxy
+                .parse()
+                .map_err(|error| invalid("DIRECT_PROXY_URL", &error))?;
+            if !matches!(proxy.scheme(), "http" | "https") {
+                return Err(invalid("DIRECT_PROXY_URL", &"must be an HTTP(S) proxy URL"));
+            }
+        }
         Ok(Self {
             database_url,
             bind_address,
             public_url,
             allow_registration,
             session_days,
+            web_root: env::var("SEMPRE_WEB_ROOT")
+                .map_or_else(|_| PathBuf::from("ui/dist"), PathBuf::from),
+            direct_proxy_url,
         })
     }
 }

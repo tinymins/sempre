@@ -18,9 +18,11 @@ const Gateway = lazy(() => import('./pages/Gateway').then((module) => ({ default
 const Tunnels = lazy(() => import('./pages/Tunnels').then((module) => ({ default: module.Tunnels })))
 const Management = lazy(() => import('./pages/Management').then((module) => ({ default: module.Management })))
 const AcmeShowcase = import.meta.env.DEV ? lazy(() => import('./pages/AcmeShowcase').then((module) => ({ default: module.AcmeShowcase }))) : null
+const ServerApp = lazy(() => import('./features/server/ServerApp').then((module) => ({ default: module.ServerApp })))
 
 export function App() {
   const { session } = useSession()
+  if (window.location.hash.startsWith('#/server')) return <Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><ServerApp /></Suspense>
   const isDevShowcase = Boolean(AcmeShowcase) && window.location.hash.startsWith('#/components')
   if (!session && !isDevShowcase) return <Login />
   return <Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><HashRouter><Shell><Routes><Route path="/" element={<Overview />} /><Route path="/custom-nodes" element={<CustomNodes />} /><Route path="/subscriptions" element={<Subscriptions />} /><Route path="/tunnels" element={<Tunnels />} /><Route path="/proxies" element={<Proxies />} /><Route path="/connections" element={<Connections />} /><Route path="/rules" element={<Rules />} /><Route path="/traffic" element={<Traffic />} /><Route path="/logs" element={<Logs />} /><Route path="/network-test" element={<NetworkTest />} /><Route path="/gateway" element={<Gateway />} /><Route path="/management" element={<Management />} />{AcmeShowcase ? <Route path="/components" element={<AcmeShowcase />} /> : null}<Route path="*" element={<Navigate to="/" replace />} /></Routes></Shell></HashRouter></Suspense>

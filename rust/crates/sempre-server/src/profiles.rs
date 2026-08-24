@@ -16,6 +16,7 @@ use sempre_converter::{CompileRequest, CompileResult, Profile, Target, compile};
 use crate::{
     AppState,
     auth::{AuthUser, CurrentUser, random_token, token_hash},
+    custom_nodes,
     error::ApiError,
     fetch,
 };
@@ -180,11 +181,14 @@ async fn compile_profile(
     let document: Value = row.try_get("document").map_err(ApiError::internal)?;
     let profile: Profile = serde_json::from_value(document).map_err(ApiError::internal)?;
     let snapshots = fetch::load_snapshots(&state, id, &profile).await?;
+    let owner_id: Uuid = row.try_get("owner_id").map_err(ApiError::internal)?;
+    let custom_nodes =
+        custom_nodes::load_selected(&state, owner_id, &profile.custom_node_ids).await?;
     let request = CompileRequest {
         protocol: 1,
         profile,
         snapshots,
-        custom_nodes: vec![],
+        custom_nodes,
         target: input.target,
     };
     let result = compile(&request).map_err(|error| ApiError::bad_request(error.to_string()))?;

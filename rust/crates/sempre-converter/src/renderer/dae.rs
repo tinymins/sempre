@@ -55,6 +55,10 @@ pub(super) fn render(
         "  domain(geosite:cn) -> direct".into(),
     ];
     for rule in &profile.rules {
+        let Some(rule) = rule.as_str() else {
+            warnings.push("native sing-box custom rule is not representable by dae".into());
+            continue;
+        };
         if let Some(converted) = rule_line(rule, &group_tags) {
             routing.push(format!("  {converted}"));
         } else {

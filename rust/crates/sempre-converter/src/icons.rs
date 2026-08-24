@@ -1,0 +1,332 @@
+/// Country flag emoji mapping table (Chinese names, 2-letter codes, English names).
+static FLAG_MAP: std::sync::LazyLock<Vec<(&'static str, &'static str)>> =
+    std::sync::LazyLock::new(|| {
+        vec![
+            // ── 东亚 ──
+            ("中国", "🇨🇳"),
+            ("香港", "🇭🇰"),
+            ("台湾", "🇹🇼"),
+            ("澳门", "🇲🇴"),
+            ("日本", "🇯🇵"),
+            ("韩国", "🇰🇷"),
+            ("朝鲜", "🇰🇵"),
+            ("蒙古", "🇲🇳"),
+            // ── 东南亚 ──
+            ("新加坡", "🇸🇬"),
+            ("泰国", "🇹🇭"),
+            ("越南", "🇻🇳"),
+            ("马来西亚", "🇲🇾"),
+            ("印度尼西亚", "🇮🇩"),
+            ("菲律宾", "🇵🇭"),
+            ("柬埔寨", "🇰🇭"),
+            ("缅甸", "🇲🇲"),
+            ("老挝", "🇱🇦"),
+            ("文莱", "🇧🇳"),
+            ("东帝汶", "🇹🇱"),
+            // ── 南亚 ──
+            ("印度", "🇮🇳"),
+            ("巴基斯坦", "🇵🇰"),
+            ("孟加拉", "🇧🇩"),
+            ("斯里兰卡", "🇱🇰"),
+            ("尼泊尔", "🇳🇵"),
+            ("马尔代夫", "🇲🇻"),
+            // ── 中亚 / 西亚 ──
+            ("哈萨克斯坦", "🇰🇿"),
+            ("乌兹别克斯坦", "🇺🇿"),
+            ("土库曼斯坦", "🇹🇲"),
+            ("吉尔吉斯斯坦", "🇰🇬"),
+            ("塔吉克斯坦", "🇹🇯"),
+            ("阿富汗", "🇦🇫"),
+            ("伊朗", "🇮🇷"),
+            ("伊拉克", "🇮🇶"),
+            ("沙特阿拉伯", "🇸🇦"),
+            ("沙特", "🇸🇦"),
+            ("阿联酋", "🇦🇪"),
+            ("迪拜", "🇦🇪"),
+            ("卡塔尔", "🇶🇦"),
+            ("科威特", "🇰🇼"),
+            ("巴林", "🇧🇭"),
+            ("阿曼", "🇴🇲"),
+            ("也门", "🇾🇪"),
+            ("以色列", "🇮🇱"),
+            ("黎巴嫩", "🇱🇧"),
+            ("约旦", "🇯🇴"),
+            ("叙利亚", "🇸🇾"),
+            ("格鲁吉亚", "🇬🇪"),
+            ("亚美尼亚", "🇦🇲"),
+            ("阿塞拜疆", "🇦🇿"),
+            ("塞浦路斯", "🇨🇾"),
+            ("土耳其", "🇹🇷"),
+            // ── 欧洲 ──
+            ("英国", "🇬🇧"),
+            ("法国", "🇫🇷"),
+            ("德国", "🇩🇪"),
+            ("意大利", "🇮🇹"),
+            ("西班牙", "🇪🇸"),
+            ("葡萄牙", "🇵🇹"),
+            ("荷兰", "🇳🇱"),
+            ("比利时", "🇧🇪"),
+            ("卢森堡", "🇱🇺"),
+            ("瑞士", "🇨🇭"),
+            ("奥地利", "🇦🇹"),
+            ("爱尔兰", "🇮🇪"),
+            ("冰岛", "🇮🇸"),
+            ("丹麦", "🇩🇰"),
+            ("挪威", "🇳🇴"),
+            ("瑞典", "🇸🇪"),
+            ("芬兰", "🇫🇮"),
+            ("波兰", "🇵🇱"),
+            ("捷克", "🇨🇿"),
+            ("斯洛伐克", "🇸🇰"),
+            ("匈牙利", "🇭🇺"),
+            ("罗马尼亚", "🇷🇴"),
+            ("保加利亚", "🇧🇬"),
+            ("希腊", "🇬🇷"),
+            ("克罗地亚", "🇭🇷"),
+            ("塞尔维亚", "🇷🇸"),
+            ("斯洛文尼亚", "🇸🇮"),
+            ("波黑", "🇧🇦"),
+            ("北马其顿", "🇲🇰"),
+            ("黑山", "🇲🇪"),
+            ("阿尔巴尼亚", "🇦🇱"),
+            ("爱沙尼亚", "🇪🇪"),
+            ("拉脱维亚", "🇱🇻"),
+            ("立陶宛", "🇱🇹"),
+            ("乌克兰", "🇺🇦"),
+            ("白俄罗斯", "🇧🇾"),
+            ("摩尔多瓦", "🇲🇩"),
+            ("俄罗斯", "🇷🇺"),
+            ("马耳他", "🇲🇹"),
+            ("梵蒂冈", "🇻🇦"),
+            ("摩纳哥", "🇲🇨"),
+            ("列支敦士登", "🇱🇮"),
+            ("安道尔", "🇦🇩"),
+            ("圣马力诺", "🇸🇲"),
+            // ── 北美洲 ──
+            ("美国", "🇺🇸"),
+            ("加拿大", "🇨🇦"),
+            ("墨西哥", "🇲🇽"),
+            ("古巴", "🇨🇺"),
+            ("巴拿马", "🇵🇦"),
+            ("哥斯达黎加", "🇨🇷"),
+            ("危地马拉", "🇬🇹"),
+            ("牙买加", "🇯🇲"),
+            ("波多黎各", "🇵🇷"),
+            ("多米尼加", "🇩🇴"),
+            ("巴哈马", "🇧🇸"),
+            // ── 南美洲 ──
+            ("巴西", "🇧🇷"),
+            ("阿根廷", "🇦🇷"),
+            ("智利", "🇨🇱"),
+            ("哥伦比亚", "🇨🇴"),
+            ("秘鲁", "🇵🇪"),
+            ("委内瑞拉", "🇻🇪"),
+            ("厄瓜多尔", "🇪🇨"),
+            ("乌拉圭", "🇺🇾"),
+            ("巴拉圭", "🇵🇾"),
+            ("玻利维亚", "🇧🇴"),
+            // ── 非洲 ──
+            ("南非", "🇿🇦"),
+            ("埃及", "🇪🇬"),
+            ("尼日利亚", "🇳🇬"),
+            ("肯尼亚", "🇰🇪"),
+            ("摩洛哥", "🇲🇦"),
+            ("突尼斯", "🇹🇳"),
+            ("阿尔及利亚", "🇩🇿"),
+            ("利比亚", "🇱🇾"),
+            ("埃塞俄比亚", "🇪🇹"),
+            ("坦桑尼亚", "🇹🇿"),
+            ("加纳", "🇬🇭"),
+            ("索马里", "🇸🇴"),
+            ("马达加斯加", "🇲🇬"),
+            ("毛里求斯", "🇲🇺"),
+            ("塞舌尔", "🇸🇨"),
+            // ── 大洋洲 ──
+            ("澳大利亚", "🇦🇺"),
+            ("新西兰", "🇳🇿"),
+            ("斐济", "🇫🇯"),
+            ("关岛", "🇬🇺"),
+            // ── 其他 / 特殊地区 ──
+            ("南极", "🇦🇶"),
+            // ── 2-letter codes ──
+            ("US", "🇺🇸"),
+            ("JP", "🇯🇵"),
+            ("KR", "🇰🇷"),
+            ("SG", "🇸🇬"),
+            ("HK", "🇭🇰"),
+            ("TW", "🇹🇼"),
+            ("UK", "🇬🇧"),
+            ("GB", "🇬🇧"),
+            ("DE", "🇩🇪"),
+            ("FR", "🇫🇷"),
+            ("RU", "🇷🇺"),
+            ("CA", "🇨🇦"),
+            ("AU", "🇦🇺"),
+            ("IN", "🇮🇳"),
+            ("BR", "🇧🇷"),
+            ("NL", "🇳🇱"),
+            ("CH", "🇨🇭"),
+            ("TR", "🇹🇷"),
+            ("AR", "🇦🇷"),
+            ("MX", "🇲🇽"),
+            ("TH", "🇹🇭"),
+            ("VN", "🇻🇳"),
+            ("MY", "🇲🇾"),
+            ("ID", "🇮🇩"),
+            ("PH", "🇵🇭"),
+            ("IT", "🇮🇹"),
+            ("ES", "🇪🇸"),
+            ("PT", "🇵🇹"),
+            ("SE", "🇸🇪"),
+            ("NO", "🇳🇴"),
+            ("FI", "🇫🇮"),
+            ("DK", "🇩🇰"),
+            ("PL", "🇵🇱"),
+            ("IE", "🇮🇪"),
+            ("AT", "🇦🇹"),
+            ("BE", "🇧🇪"),
+            ("CZ", "🇨🇿"),
+            ("RO", "🇷🇴"),
+            ("HU", "🇭🇺"),
+            ("GR", "🇬🇷"),
+            ("UA", "🇺🇦"),
+            ("IL", "🇮🇱"),
+            ("AE", "🇦🇪"),
+            ("SA", "🇸🇦"),
+            ("ZA", "🇿🇦"),
+            ("EG", "🇪🇬"),
+            ("NZ", "🇳🇿"),
+            ("CL", "🇨🇱"),
+            ("CO", "🇨🇴"),
+            ("PE", "🇵🇪"),
+            ("CN", "🇨🇳"),
+            ("MO", "🇲🇴"),
+            ("MN", "🇲🇳"),
+            ("KP", "🇰🇵"),
+            ("KH", "🇰🇭"),
+            ("PK", "🇵🇰"),
+            ("BD", "🇧🇩"),
+            ("LK", "🇱🇰"),
+            ("KZ", "🇰🇿"),
+            ("GE", "🇬🇪"),
+            // ── English names ──
+            ("United States", "🇺🇸"),
+            ("Japan", "🇯🇵"),
+            ("South Korea", "🇰🇷"),
+            ("Korea", "🇰🇷"),
+            ("Singapore", "🇸🇬"),
+            ("Hong Kong", "🇭🇰"),
+            ("Taiwan", "🇹🇼"),
+            ("United Kingdom", "🇬🇧"),
+            ("Germany", "🇩🇪"),
+            ("France", "🇫🇷"),
+            ("Russia", "🇷🇺"),
+            ("Canada", "🇨🇦"),
+            ("Australia", "🇦🇺"),
+            ("India", "🇮🇳"),
+            ("Brazil", "🇧🇷"),
+            ("Netherlands", "🇳🇱"),
+            ("Switzerland", "🇨🇭"),
+            ("Turkey", "🇹🇷"),
+            ("Argentina", "🇦🇷"),
+            ("Mexico", "🇲🇽"),
+            ("Thailand", "🇹🇭"),
+            ("Vietnam", "🇻🇳"),
+            ("Malaysia", "🇲🇾"),
+            ("Indonesia", "🇮🇩"),
+            ("Philippines", "🇵🇭"),
+            ("Italy", "🇮🇹"),
+            ("Spain", "🇪🇸"),
+            ("Portugal", "🇵🇹"),
+            ("Sweden", "🇸🇪"),
+            ("Norway", "🇳🇴"),
+            ("Finland", "🇫🇮"),
+            ("Denmark", "🇩🇰"),
+            ("Poland", "🇵🇱"),
+            ("Ireland", "🇮🇪"),
+            ("Austria", "🇦🇹"),
+            ("Belgium", "🇧🇪"),
+            ("Czech", "🇨🇿"),
+            ("Romania", "🇷🇴"),
+            ("Hungary", "🇭🇺"),
+            ("Greece", "🇬🇷"),
+            ("Ukraine", "🇺🇦"),
+            ("Israel", "🇮🇱"),
+            ("South Africa", "🇿🇦"),
+            ("Egypt", "🇪🇬"),
+            ("New Zealand", "🇳🇿"),
+            ("Chile", "🇨🇱"),
+            ("Colombia", "🇨🇴"),
+            ("Peru", "🇵🇪"),
+            ("China", "🇨🇳"),
+        ]
+    });
+
+/// Check if a character is a Regional Indicator Symbol (U+1F1E6..U+1F1FF).
+fn is_regional_indicator(c: char) -> bool {
+    ('\u{1F1E6}'..='\u{1F1FF}').contains(&c)
+}
+
+/// Extract all flag emojis (pairs of Regional Indicator chars) from a string.
+fn extract_flags(name: &str) -> Vec<String> {
+    let chars: Vec<char> = name.chars().collect();
+    let mut flags = Vec::new();
+    let mut i = 0;
+    while i + 1 < chars.len() {
+        if is_regional_indicator(chars[i]) && is_regional_indicator(chars[i + 1]) {
+            let mut s = String::new();
+            s.push(chars[i]);
+            s.push(chars[i + 1]);
+            flags.push(s);
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    flags
+}
+
+/// Strip all flag emojis and trailing spaces from a string.
+fn strip_flags(name: &str) -> String {
+    let chars: Vec<char> = name.chars().collect();
+    let mut result = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if i + 1 < chars.len()
+            && is_regional_indicator(chars[i])
+            && is_regional_indicator(chars[i + 1])
+        {
+            // Skip the flag pair
+            i += 2;
+            // Skip trailing space
+            if i < chars.len() && chars[i] == ' ' {
+                i += 1;
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result.trim().to_string()
+}
+
+/// Prepend country flag emoji to proxy name.
+/// - If flags already exist, keep the first one and remove the rest.
+/// - If no flags, try to match from `FLAG_MAP` and prepend.
+pub fn append_icon(name: &str) -> String {
+    let existing_flags = extract_flags(name);
+
+    if !existing_flags.is_empty() {
+        let stripped = strip_flags(name);
+        return format!("{} {}", existing_flags[0], stripped);
+    }
+
+    // No flags found: look up in FLAG_MAP
+    for &(keyword, flag) in FLAG_MAP.iter() {
+        if name.contains(keyword) {
+            return format!("{flag} {name}");
+        }
+    }
+
+    name.to_string()
+}

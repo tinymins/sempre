@@ -13,7 +13,19 @@ pub(super) fn render(
         .first()
         .and_then(|value| value["name"].as_str())
         .unwrap_or("proxy");
-    let mut rules = profile.rules.clone();
+    let mut warnings = Vec::new();
+    let mut rules = profile
+        .rules
+        .iter()
+        .filter_map(|rule| {
+            if let Some(rule) = rule.as_str() {
+                Some(rule.to_owned())
+            } else {
+                warnings.push("native sing-box custom rule is not representable by Clash".into());
+                None
+            }
+        })
+        .collect::<Vec<_>>();
     let mut providers = Map::new();
     for provider in &profile.rule_providers {
         let behavior = if provider.behavior.is_empty() {
@@ -79,7 +91,7 @@ pub(super) fn render(
             outbound: Some(proxy.as_value()),
         })
         .collect();
-    Ok((content, diffs, vec![]))
+    Ok((content, diffs, warnings))
 }
 
 fn groups(configured: &[ProxyGroup], names: &[String]) -> Vec<Value> {

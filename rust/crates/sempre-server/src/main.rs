@@ -1,9 +1,11 @@
 mod auth;
 mod config;
+mod custom_nodes;
 mod error;
 mod fetch;
 mod profiles;
 mod public;
+mod stats;
 
 use std::sync::Arc;
 
@@ -14,6 +16,7 @@ use axum::{
 use sqlx::PgPool;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
 use tracing::info;
@@ -40,8 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = PgPool::connect(&config.database_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     let address = config.bind_address;
+    let web_root = config.web_root.clone();
     let state = Arc::new(AppState { pool, config });
     let protected = profiles::router()
+        .merge(custom_nodes::router())
+        .merge(stats::router())
         .merge(auth::protected_router())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -49,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     let app = Router::new()
         .route("/api/v1/health", get(health))
+        .route("/api/v1/targets", get(targets))
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
         .merge(public::router())
@@ -59,6 +66,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             MakeRequestUuid,
         ))
         .layer(TraceLayer::new_for_http())
+        .fallback_service(
+            ServeDir::new(&web_root).fallback(ServeFile::new(web_root.join("index.html"))),
+        )
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(address).await?;
     info!(%address, "Sempre multi-user server listening");
@@ -66,6 +76,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_graceful_shutdown(shutdown())
         .await?;
     Ok(())
+}
+
+async fn targets() -> axum::Json<Vec<sempre_converter::Target>> {
+    axum::Json(sempre_converter::available_targets())
 }
 
 async fn health() -> Result<&'static str, ApiError> {

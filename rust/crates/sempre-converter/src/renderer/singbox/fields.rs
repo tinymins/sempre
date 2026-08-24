@@ -52,6 +52,9 @@ pub(super) fn consumed_keys(proxy_type: &str) -> HashSet<&'static str> {
             "skip-cert-verify",
             "udp-relay-mode",
             "congestion-controller",
+            "heartbeat-interval",
+            "reduce-rtt",
+            "udp-over-stream",
         ],
         "http" | "socks5" => &["username", "password", "tls", "sni", "skip-cert-verify"],
         "anytls" => &[

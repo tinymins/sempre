@@ -24,6 +24,7 @@ export function useProxySubscribeEditor({
   schedule,
   onScheduleSave,
   diagnostics,
+	sourceDebug = true,
 }: Props) {
     const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState("basic");
@@ -367,7 +368,8 @@ export function useProxySubscribeEditor({
     customNodes,
     manualServerCount,
     openManualServersEditor,
-    diagnostics,
+		diagnostics,
+		sourceDebug,
     manualServersEditorOpen,
     setManualServersEditorOpen,
     saveManualServers,

@@ -1,7 +1,10 @@
-use serde_json::{Value, json};
+use std::fmt::Write as _;
+
+use serde_json::{Map, Value, json};
 
 use crate::{CompileError, FieldDiff, Profile, Proxy, ProxyGroup, Target};
 
+mod config;
 mod fields;
 use fields::{consumed_keys, deep_merge};
 
@@ -34,11 +37,11 @@ pub(super) fn render(
         json!({ "type": "block", "tag": "block" }),
     ]);
     let mut config = json!({
-        "log": log_config(&profile.log_level),
-        "inbounds": local_inbounds(profile),
+        "log": config::log(&profile.log_level),
+        "inbounds": config::local_inbounds(profile),
         "outbounds": outbounds,
-        "route": route_config(profile),
-        "experimental": management_api(profile)
+        "route": config::route(profile, &mut warnings),
+        "experimental": config::management_api(profile)
     });
     if profile.dns.is_object() {
         config["dns"] = profile.dns.clone();
@@ -46,7 +49,7 @@ pub(super) fn render(
     if let Some(override_value) = profile.core_overrides.get("sing-box") {
         deep_merge(&mut config, override_value);
     }
-    normalize_for_version(&mut config, target);
+    config::normalize_for_version(&mut config, target);
     let mut content = serde_json::to_string_pretty(&config)
         .map_err(|error| CompileError::Render(error.to_string()))?;
     content.push('\n');
@@ -124,16 +127,23 @@ fn protocol_outbound(proxy: &Proxy) -> Option<Value> {
             outbound["type"] = json!("shadowsocks");
             outbound["method"] = default_string(field(proxy, "cipher"), "aes-256-gcm");
             outbound["password"] = field(proxy, "password").clone();
+            if !boolean_default(field(proxy, "udp"), true) {
+                outbound["network"] = json!("tcp");
+            }
+            add_shadowsocks_plugin(&mut outbound, proxy);
         }
         "hysteria2" => {
             outbound["type"] = json!("hysteria2");
             outbound["password"] = field(proxy, "password").clone();
             outbound["tls"] = tls(proxy, true);
-            copy_aliases(
-                &mut outbound,
-                proxy,
-                &[("up", "up_mbps"), ("down", "down_mbps")],
-            );
+            if let Some(ports) = string_value(field(proxy, "ports")) {
+                outbound["server_ports"] = json!([ports.replace('-', ":")]);
+            }
+            for (source, target) in [("up", "up_mbps"), ("down", "down_mbps")] {
+                if let Some(value) = string_value(field(proxy, source)).and_then(parse_mbps) {
+                    outbound[target] = json!(value);
+                }
+            }
         }
         "hysteria" => {
             outbound["type"] = json!("hysteria");
@@ -153,6 +163,15 @@ fn protocol_outbound(proxy: &Proxy) -> Option<Value> {
                     ("congestion-controller", "congestion_control"),
                 ],
             );
+            if let Some(milliseconds) = unsigned(field(proxy, "heartbeat-interval")) {
+                outbound["heartbeat"] = json!(format!("{}s", milliseconds / 1000));
+            }
+            if boolean(field(proxy, "reduce-rtt")) {
+                outbound["zero_rtt_handshake"] = json!(true);
+            }
+            if boolean(field(proxy, "udp-over-stream")) {
+                outbound["udp_over_stream"] = json!(true);
+            }
         }
         "http" => {
             outbound["type"] = json!("http");
@@ -164,6 +183,9 @@ fn protocol_outbound(proxy: &Proxy) -> Option<Value> {
         "socks5" => {
             outbound["type"] = json!("socks");
             copy(&mut outbound, proxy, &["username", "password"]);
+            if !boolean_default(field(proxy, "udp"), true) {
+                outbound["network"] = json!("tcp");
+            }
         }
         "anytls" => {
             outbound["type"] = json!("anytls");
@@ -173,6 +195,80 @@ fn protocol_outbound(proxy: &Proxy) -> Option<Value> {
         _ => return None,
     }
     Some(outbound)
+}
+
+fn add_shadowsocks_plugin(outbound: &mut Value, proxy: &Proxy) {
+    let Some(plugin) = string_value(field(proxy, "plugin")) else {
+        return;
+    };
+    let Some(options) = field(proxy, "plugin-opts").as_object() else {
+        outbound["plugin"] = json!(if plugin == "obfs" {
+            "obfs-local"
+        } else {
+            plugin
+        });
+        return;
+    };
+    if plugin == "shadow-tls" {
+        outbound["type"] = json!("shadowtls");
+        outbound
+            .as_object_mut()
+            .expect("outbound object")
+            .remove("method");
+        copy_from_object(outbound, options, &["password", "version"]);
+        if let Some(host) = options.get("host").and_then(Value::as_str) {
+            outbound["tls"] = json!({ "enabled": true, "server_name": host });
+        }
+        return;
+    }
+    outbound["plugin"] = json!(if plugin == "obfs" {
+        "obfs-local"
+    } else {
+        plugin
+    });
+    let mut plugin_options = String::new();
+    if let Some(mode) = options.get("mode").and_then(Value::as_str) {
+        let _ = write!(plugin_options, "mode={mode}");
+    }
+    if let Some(host) = options.get("host").and_then(Value::as_str) {
+        append_plugin_option(&mut plugin_options, &format!("host={host}"));
+    }
+    if plugin == "v2ray-plugin" {
+        if options.get("tls").and_then(Value::as_bool) == Some(true) {
+            append_plugin_option(&mut plugin_options, "tls");
+        }
+        if let Some(path) = options.get("path").and_then(Value::as_str) {
+            append_plugin_option(&mut plugin_options, &format!("path={path}"));
+        }
+        if let Some(mux) = options.get("mux") {
+            append_plugin_option(&mut plugin_options, &format!("mux={mux}"));
+        }
+    }
+    outbound["plugin_opts"] = json!(plugin_options);
+}
+
+fn append_plugin_option(options: &mut String, value: &str) {
+    if !options.is_empty() {
+        options.push(';');
+    }
+    options.push_str(value);
+}
+
+fn copy_from_object(target: &mut Value, source: &Map<String, Value>, keys: &[&str]) {
+    for key in keys {
+        if let Some(value) = source.get(*key) {
+            target[*key] = value.clone();
+        }
+    }
+}
+
+fn parse_mbps(value: &str) -> Option<u64> {
+    value
+        .trim()
+        .trim_end_matches(|character: char| character.is_alphabetic() || character == ' ')
+        .trim()
+        .parse()
+        .ok()
 }
 
 fn add_transport_tls(outbound: &mut Value, proxy: &Proxy, force_tls: bool) {
@@ -188,10 +284,47 @@ fn add_transport_tls(outbound: &mut Value, proxy: &Proxy, force_tls: bool) {
 }
 
 fn transport(proxy: &Proxy) -> Option<Value> {
+    if let Some(options) = field(proxy, "http-opts").as_object() {
+        let mut result = json!({ "type": "http" });
+        if let Some(path) = options
+            .get("path")
+            .and_then(Value::as_array)
+            .and_then(|paths| paths.first())
+            .and_then(Value::as_str)
+        {
+            result["path"] = json!(path);
+        }
+        if let Some(method) = options.get("method").and_then(Value::as_str) {
+            result["method"] = json!(method);
+        }
+        if let Some(headers) = options.get("headers").and_then(Value::as_object) {
+            let values = headers
+                .iter()
+                .filter_map(|(key, value)| {
+                    value
+                        .as_array()?
+                        .first()?
+                        .as_str()
+                        .map(|value| (key.clone(), json!(value)))
+                })
+                .collect::<Map<_, _>>();
+            if !values.is_empty() {
+                result["headers"] = Value::Object(values);
+            }
+        }
+        return Some(result);
+    }
     if let Some(options) = field(proxy, "ws-opts").as_object() {
-        return Some(
-            json!({ "type": "ws", "path": options.get("path").cloned().unwrap_or(json!("/")), "headers": options.get("headers").cloned().unwrap_or(json!({})) }),
+        let mut result = json!({ "type": "ws", "path": options.get("path").cloned().unwrap_or(json!("/")), "headers": options.get("headers").cloned().unwrap_or(json!({})) });
+        copy_aliases_from_object(
+            &mut result,
+            options,
+            &[
+                ("max-early-data", "max_early_data"),
+                ("early-data-header-name", "early_data_header_name"),
+            ],
         );
+        return Some(result);
     }
     if let Some(options) = field(proxy, "grpc-opts").as_object() {
         return Some(
@@ -204,6 +337,18 @@ fn transport(proxy: &Proxy) -> Option<Value> {
         );
     }
     None
+}
+
+fn copy_aliases_from_object(
+    target: &mut Value,
+    source: &Map<String, Value>,
+    keys: &[(&str, &str)],
+) {
+    for (source_key, target_key) in keys {
+        if let Some(value) = source.get(*source_key) {
+            target[*target_key] = value.clone();
+        }
+    }
 }
 
 fn tls(proxy: &Proxy, protocol: bool) -> Value {
@@ -306,71 +451,22 @@ fn selector_outbounds(groups: &[ProxyGroup], names: &[String]) -> Vec<Value> {
         .collect()
 }
 
-fn local_inbounds(profile: &Profile) -> Vec<Value> {
-    let users = if profile.local_proxy.username.is_empty() {
-        vec![]
-    } else {
-        vec![
-            json!({ "username": profile.local_proxy.username, "password": profile.local_proxy.password }),
-        ]
-    };
-    vec![
-        json!({ "type": "socks", "tag": "sempre-socks-in", "listen": "127.0.0.1", "listen_port": profile.local_proxy.socks_port, "users": users }),
-        json!({ "type": "http", "tag": "sempre-http-in", "listen": "127.0.0.1", "listen_port": profile.local_proxy.http_port, "users": users }),
-    ]
-}
-
-fn route_config(profile: &Profile) -> Value {
-    let final_outbound = profile
-        .groups
-        .first()
-        .map_or("proxy", |group| group.name.as_str());
-    let mut rule_sets = Vec::new();
-    let mut rules = Vec::new();
-    for provider in &profile.rule_providers {
-        let format = if provider.format.is_empty() {
-            "source"
-        } else {
-            &provider.format
-        };
-        rule_sets.push(json!({ "type": "remote", "tag": provider.tag, "format": format, "url": provider.url, "download_detour": "direct" }));
-        rules.push(json!({ "rule_set": [provider.tag], "outbound": if provider.outbound.is_empty() { final_outbound } else { &provider.outbound } }));
-    }
-    json!({ "rules": rules, "rule_set": rule_sets, "final": final_outbound, "auto_detect_interface": true })
-}
-
-fn management_api(profile: &Profile) -> Value {
-    if profile.management_api.external_controller.is_empty() {
-        return json!({});
-    }
-    json!({ "clash_api": { "external_controller": profile.management_api.external_controller, "secret": profile.management_api.secret, "external_ui": profile.management_api.external_ui } })
-}
-
-fn log_config(level: &str) -> Value {
-    let disabled = level == "off";
-    let level = if matches!(level, "error" | "warn" | "info" | "debug") {
-        level
-    } else {
-        "info"
-    };
-    json!({ "disabled": disabled, "level": level, "timestamp": true })
-}
-
-fn normalize_for_version(config: &mut Value, target: &Target) {
-    if target.version == "11" {
-        return;
-    }
-    if let Some(route) = config.get_mut("route").and_then(Value::as_object_mut) {
-        route.remove("geoip");
-        route.remove("geosite");
-    }
-}
-
 fn field<'a>(proxy: &'a Proxy, key: &str) -> &'a Value {
     proxy.extra.get(key).unwrap_or(&Value::Null)
 }
 fn boolean(value: &Value) -> bool {
     value.as_bool().unwrap_or(false)
+}
+fn boolean_default(value: &Value, default: bool) -> bool {
+    value.as_bool().unwrap_or(default)
+}
+fn string_value(value: &Value) -> Option<&str> {
+    value.as_str().filter(|value| !value.is_empty())
+}
+fn unsigned(value: &Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
 }
 fn number(value: &Value) -> u64 {
     value

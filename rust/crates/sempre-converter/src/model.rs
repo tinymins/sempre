@@ -42,7 +42,7 @@ pub struct Profile {
     #[serde(default)]
     pub groups: Vec<ProxyGroup>,
     #[serde(default)]
-    pub rules: Vec<String>,
+    pub rules: Vec<Value>,
     #[serde(default)]
     pub rule_providers: Vec<RuleProvider>,
     #[serde(default)]
@@ -219,6 +219,8 @@ pub struct TransparentProxy {
     pub tproxy: Value,
     #[serde(default)]
     pub ebpf: Value,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -1,0 +1,8 @@
+*
+!rust/
+!rust/**
+!ui/
+!ui/**
+rust/target/
+ui/dist/
+ui/node_modules/

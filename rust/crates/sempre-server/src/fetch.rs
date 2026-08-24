@@ -41,8 +41,34 @@ pub(crate) async fn load_snapshots(
         } else {
             source.user_agent.trim()
         };
-        match fetch_url(&source.url, user_agent).await {
+        let cache_minutes = source
+            .extra
+            .get("cache_ttl_minutes")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(60)
+            .min(1440);
+        if cache_minutes > 0
+            && let Some(cached) = read_fresh_snapshot(
+                state,
+                profile_id,
+                &source.id,
+                i64::try_from(cache_minutes).unwrap_or(1440),
+            )
+            .await?
+        {
+            snapshots.push(cached);
+            continue;
+        }
+        let proxy = (source
+            .extra
+            .get("fetch_mode")
+            .and_then(serde_json::Value::as_str)
+            == Some("domestic-direct"))
+        .then_some(state.config.direct_proxy_url.as_deref())
+        .flatten();
+        match fetch_source_text(&source.url, user_agent, proxy).await {
             Ok(content) => {
+                validate_content(&content)?;
                 let value = snapshot(&source.id, content);
                 store_snapshot(state, profile_id, &value).await?;
                 snapshots.push(value);
@@ -60,12 +86,45 @@ pub(crate) async fn load_snapshots(
     Ok(snapshots)
 }
 
-async fn fetch_url(input: &str, user_agent: &str) -> Result<String, ApiError> {
+async fn fetch_source_text(
+    input: &str,
+    user_agent: &str,
+    proxy: Option<&str>,
+) -> Result<String, ApiError> {
+    let mut last_error = None;
+    for attempt in 1..=3 {
+        match fetch_text(input, user_agent, MAX_SOURCE_SIZE, proxy).await {
+            Ok(content) => return Ok(content),
+            Err(error) => {
+                last_error = Some(error);
+                if attempt < 3 {
+                    tokio::time::sleep(Duration::from_millis(200 * attempt)).await;
+                }
+            }
+        }
+    }
+    Err(last_error.expect("three attempts always produce an error"))
+}
+
+pub(crate) async fn fetch_public_text(
+    input: &str,
+    user_agent: &str,
+    max_size: usize,
+) -> Result<String, ApiError> {
+    fetch_text(input, user_agent, max_size, None).await
+}
+
+async fn fetch_text(
+    input: &str,
+    user_agent: &str,
+    max_size: usize,
+    proxy: Option<&str>,
+) -> Result<String, ApiError> {
     let mut url: Url = input
         .parse()
         .map_err(|_| ApiError::bad_request("source URL is invalid"))?;
     for redirect in 0..=MAX_REDIRECTS {
-        let client = safe_client(&url).await?;
+        let client = safe_client(&url, proxy).await?;
         let response = client
             .get(url.clone())
             .header(header::USER_AGENT, user_agent)
@@ -94,9 +153,9 @@ async fn fetch_url(input: &str, user_agent: &str) -> Result<String, ApiError> {
         }
         if response
             .content_length()
-            .is_some_and(|length| length > MAX_SOURCE_SIZE as u64)
+            .is_some_and(|length| length > max_size as u64)
         {
-            return Err(ApiError::unavailable("source response exceeds 32 MiB"));
+            return Err(ApiError::unavailable("upstream response is too large"));
         }
         let mut content = Vec::new();
         let mut stream = response.bytes_stream();
@@ -104,20 +163,19 @@ async fn fetch_url(input: &str, user_agent: &str) -> Result<String, ApiError> {
             let chunk = chunk.map_err(|error| {
                 ApiError::unavailable(format!("source response failed: {error}"))
             })?;
-            if content.len().saturating_add(chunk.len()) > MAX_SOURCE_SIZE {
-                return Err(ApiError::unavailable("source response exceeds 32 MiB"));
+            if content.len().saturating_add(chunk.len()) > max_size {
+                return Err(ApiError::unavailable("upstream response is too large"));
             }
             content.extend_from_slice(&chunk);
         }
         let content = String::from_utf8(content)
             .map_err(|_| ApiError::unavailable("source response is not UTF-8"))?;
-        validate_content(&content)?;
         return Ok(content);
     }
     Err(ApiError::unavailable("source redirect failed"))
 }
 
-async fn safe_client(url: &Url) -> Result<Client, ApiError> {
+async fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError> {
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
@@ -141,13 +199,15 @@ async fn safe_client(url: &Url) -> Result<Client, ApiError> {
             "source URL resolves to a non-public address",
         ));
     }
-    Client::builder()
+    let mut builder = Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(20))
-        .resolve_to_addrs(host, &addresses)
-        .build()
-        .map_err(ApiError::internal)
+        .resolve_to_addrs(host, &addresses);
+    if let Some(proxy) = proxy {
+        builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(ApiError::internal)?);
+    }
+    builder.build().map_err(ApiError::internal)
 }
 
 fn public_ip(ip: IpAddr) -> bool {
@@ -225,6 +285,24 @@ async fn read_snapshot(
     source_id: &str,
 ) -> Result<Option<SourceSnapshot>, ApiError> {
     let row = sqlx::query("SELECT content, content_hash FROM source_snapshots WHERE profile_id = $1 AND source_id = $2").bind(profile_id).bind(source_id).fetch_optional(&state.pool).await?;
+    row.map(|row| {
+        Ok(SourceSnapshot {
+            source_id: source_id.into(),
+            content: row.try_get("content").map_err(ApiError::internal)?,
+            content_hash: row.try_get("content_hash").map_err(ApiError::internal)?,
+        })
+    })
+    .transpose()
+}
+
+async fn read_fresh_snapshot(
+    state: &AppState,
+    profile_id: Uuid,
+    source_id: &str,
+    cache_minutes: i64,
+) -> Result<Option<SourceSnapshot>, ApiError> {
+    let row = sqlx::query("SELECT content, content_hash FROM source_snapshots WHERE profile_id = $1 AND source_id = $2 AND fetched_at >= NOW() - ($3 * INTERVAL '1 minute')")
+        .bind(profile_id).bind(source_id).bind(cache_minutes).fetch_optional(&state.pool).await?;
     row.map(|row| {
         Ok(SourceSnapshot {
             source_id: source_id.into(),
