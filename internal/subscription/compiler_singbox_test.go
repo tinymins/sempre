@@ -139,6 +139,55 @@ func TestSingBoxManagedDNSUsesExplicitLocalUpstream(t *testing.T) {
 	}
 }
 
+func TestSingBoxPrivateAccessDoesNotMutateNativeDNSOverride(t *testing.T) {
+	profile, catalog, compiler := compilerFixture(t)
+	profile.DNS = map[string]any{
+		"modes": map[string]any{"sing_box_v12": "native"},
+		"overrides": map[string]any{"sing_box_v12": map[string]any{
+			"servers": []any{map[string]any{"type": "local", "tag": "local"}},
+			"rules":   []any{},
+		}},
+	}
+	profile.PrivateAccess = map[string]any{"enabled": true, "connectors": []any{map[string]any{
+		"tag": "wg-office", "type": "wireguard",
+		"endpoint": map[string]any{
+			"address": []any{"10.0.0.2/32"}, "privateKey": "private",
+			"peers": []any{map[string]any{"address": "wg.example.com", "port": float64(51820), "publicKey": "public", "allowedIps": []any{"10.0.0.0/24"}}},
+		},
+		"dns": []any{map[string]any{"tag": "wg-office-dns", "server": "10.0.0.1", "domainSuffixes": []any{"office.example.com"}}},
+	}}}
+	originalDNS := cloneMap(profile.DNS)
+
+	first, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13-windows"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := compiler.Render(context.Background(), profile, catalog, Target{Format: "sing-box-v13-windows"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(profile.DNS, originalDNS) {
+		t.Fatalf("native DNS override mutated after render: %#v", profile.DNS)
+	}
+	if first.Content != second.Content {
+		t.Fatal("repeated render accumulated private access DNS configuration")
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(first.Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	dnsServers := config["dns"].(map[string]any)["servers"].([]any)
+	count := 0
+	for _, item := range dnsServers {
+		if item.(map[string]any)["tag"] == "wg-office-dns" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("private DNS server count = %d, want 1", count)
+	}
+}
+
 func TestSingBoxManagedDNSUsesFirstCommaSeparatedLocalUpstream(t *testing.T) {
 	profile, catalog, compiler := compilerFixture(t)
 	profile.DNS = map[string]any{"shared": map[string]any{

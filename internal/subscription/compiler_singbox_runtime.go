@@ -336,7 +336,7 @@ func coreDNSOverride(config map[string]any, key string) map[string]any {
 	}
 	overrides, _ := objectValue(config["overrides"])
 	result, _ := objectValue(overrides[key])
-	return result
+	return cloneMap(result)
 }
 
 func singBoxDNSRules(shared dnsShared, modern, responseMatching, fakeIP bool) []any {
