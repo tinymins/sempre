@@ -92,7 +92,7 @@ func TestAdminServerAuthenticationBoundary(t *testing.T) {
 	if len(networkReport.Results) != 1 || !networkReport.Results[0].OK {
 		t.Fatalf("network report = %#v", networkReport)
 	}
-	manager.registry = core.NewRegistry(singBoxAutoConfigAdapter{})
+	manager.registry = core.NewRegistry(stableAutoConfigAdapter{})
 	response = testJSONRequest(t, http.MethodPost, server.URL+"/api/v1/cores/auto/diagnose", server.URL, login.Token, nil)
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("automatic core diagnosis = %d", response.StatusCode)

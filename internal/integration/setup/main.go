@@ -3,13 +3,16 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/tinymins/sempre/internal/layout"
 	"github.com/tinymins/sempre/internal/state"
+	uiassets "github.com/tinymins/sempre/internal/ui"
 )
 
 func main() {
@@ -45,6 +48,9 @@ func setup(root, coreBinary string) error {
 	if err := state.WriteAtomic(paths.Config("sing-box", hash), configData, 0o600); err != nil {
 		return err
 	}
+	if err := setupUI(paths); err != nil {
+		return err
+	}
 	return store.Update(func(document *state.Document) error {
 		source := document.Core("sing-box").Source("")
 		source.Channels["stable"] = "1.2.3"
@@ -68,4 +74,34 @@ func setup(root, coreBinary string) error {
 		document.Runtime = state.Runtime{}
 		return nil
 	})
+}
+
+func setupUI(paths layout.Layout) error {
+	manifest := uiassets.Manifest{Schema: 1, Name: "Sempre Integration UI", Version: "1.0.0", Entry: "index.html", API: uiassets.API{Major: 1}}
+	digest := sha256.Sum256([]byte("sempre integration UI"))
+	metadata := uiassets.Metadata{
+		Manifest: manifest, SourceType: "local", Source: "integration-test",
+		Digest: hex.EncodeToString(digest[:]), InstalledAt: time.Now().UTC(),
+	}
+	manifestData, err := json.Marshal(manifest)
+	if err != nil {
+		return err
+	}
+	metadataData, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(paths.UICurrent, 0o700); err != nil {
+		return err
+	}
+	for name, data := range map[string][]byte{
+		"index.html":          []byte("<!doctype html><title>Sempre Integration UI</title>"),
+		uiassets.ManifestName: manifestData,
+		uiassets.MetadataName: metadataData,
+	} {
+		if err := state.WriteAtomic(filepath.Join(paths.UICurrent, name), data, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
 }

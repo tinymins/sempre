@@ -14,11 +14,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            go: 1.25.12
+            go: 1.25.13
           - os: windows-latest
-            go: 1.25.12
+            go: 1.25.13
           - os: macos-latest
-            go: 1.25.12
+            go: 1.25.13
           - os: ubuntu-latest
             go: 1.26.5
     runs-on: ${{ matrix.os }}
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: 1.25.12
+          go-version: 1.25.13
           cache: true
       - run: go test -race ./...
 
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: 1.25.12
+          go-version: 1.25.13
           cache: true
       - name: Build network namespace integration test
         run: go test -c -tags=integration -o /tmp/sempre-transparent.test ./internal/transparentproxy
@@ -96,7 +96,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: 1.25.12
+          go-version: 1.25.13
           cache: true
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
@@ -108,7 +108,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: 1.25.12
+          go-version: 1.25.13
           cache: true
       - uses: oven-sh/setup-bun@v2
         with:

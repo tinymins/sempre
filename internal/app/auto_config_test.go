@@ -31,7 +31,7 @@ func TestApplyCoreConfigurationRejectsUnavailableCandidate(t *testing.T) {
 
 func TestApplyCoreConfigurationUsesRegisteredCandidate(t *testing.T) {
 	manager := newTestManager(t)
-	manager.registry = core.NewRegistry(singBoxAutoConfigAdapter{})
+	manager.registry = core.NewRegistry(stableAutoConfigAdapter{})
 	result, err := manager.ApplyCoreConfiguration(context.Background(), "sing-box/stable")
 	if err != nil {
 		t.Fatal(err)
@@ -42,6 +42,12 @@ func TestApplyCoreConfigurationUsesRegisteredCandidate(t *testing.T) {
 }
 
 type singBoxAutoConfigAdapter struct{ fakeAdapter }
+
+type stableAutoConfigAdapter struct{ singBoxAutoConfigAdapter }
+
+func (stableAutoConfigAdapter) AutoConfigCandidates(core.AutoConfigContext) []core.AutoConfigCandidate {
+	return []core.AutoConfigCandidate{{ID: "sing-box/stable", Reference: "sing-box@stable", ConfigurationMode: "platform-tun", Score: 100}}
+}
 
 func (singBoxAutoConfigAdapter) Resolve(context.Context, string, string, core.Target) (core.Package, error) {
 	return core.Package{Version: "1.2.3"}, nil

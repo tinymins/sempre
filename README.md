@@ -587,7 +587,7 @@ stable sing-box, Mihomo, Xray, and V2Ray snapshots for their target platform.
 Windows resources use an `asInvoker` manifest; UAC is requested at runtime only
 for privileged commands.
 
-Tagged release builds use Go 1.25.12, derive their embedded build date from the
+Tagged release builds use Go 1.25.13, derive their embedded build date from the
 Git commit timestamp, publish per-target CycloneDX SBOMs, and attach GitHub
 artifact attestations. Release binaries are currently unsigned at the operating
 system level.
