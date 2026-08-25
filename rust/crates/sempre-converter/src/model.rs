@@ -218,11 +218,55 @@ pub struct TransparentProxy {
     #[serde(default)]
     pub mode: String,
     #[serde(default)]
-    pub tun: Value,
+    pub capture_host: bool,
     #[serde(default)]
-    pub tproxy: Value,
+    pub lan_interfaces: Vec<String>,
     #[serde(default)]
-    pub ebpf: Value,
+    pub route_exclusions: Vec<String>,
+    #[serde(default)]
+    pub interface_mode: String,
+    #[serde(default)]
+    pub interfaces: Vec<String>,
+    #[serde(default)]
+    pub auto_exclude_local_routes: bool,
+    #[serde(default)]
+    pub auto_exclude_vpn_routes: bool,
+    #[serde(default)]
+    pub tun: TunConfig,
+    #[serde(default)]
+    pub tproxy: TProxyConfig,
+    #[serde(default)]
+    pub ebpf: EbpfConfig,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TunConfig {
+    #[serde(default)]
+    pub interface_name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub address: String,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TProxyConfig {
+    #[serde(default)]
+    pub listen_port: u16,
+    #[serde(default)]
+    pub dns_listen_port: u16,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EbpfConfig {
+    #[serde(default)]
+    pub wan_interface: String,
+    #[serde(default)]
+    pub auto_config_kernel_parameter: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

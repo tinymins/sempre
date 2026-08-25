@@ -55,12 +55,14 @@ pub(super) fn render(
     }
     outbounds.push(json!({ "tag": "direct", "protocol": "freedom" }));
     outbounds.push(json!({ "tag": "block", "protocol": "blackhole" }));
+    let mut inbounds = vec![
+        json!({ "tag": "sempre-socks-in", "listen": "127.0.0.1", "port": profile.local_proxy.socks_port, "protocol": "socks", "settings": { "udp": true } }),
+        json!({ "tag": "sempre-http-in", "listen": "127.0.0.1", "port": profile.local_proxy.http_port, "protocol": "http" }),
+    ];
+    inbounds.extend(super::transparent::v2ray_inbounds(profile, target));
     let config = json!({
         "log": { "loglevel": if profile.log_level == "off" { "none" } else { &profile.log_level } },
-        "inbounds": [
-            { "tag": "sempre-socks-in", "listen": "127.0.0.1", "port": profile.local_proxy.socks_port, "protocol": "socks", "settings": { "udp": true } },
-            { "tag": "sempre-http-in", "listen": "127.0.0.1", "port": profile.local_proxy.http_port, "protocol": "http" }
-        ],
+        "inbounds": inbounds,
         "outbounds": outbounds,
         "routing": { "domainStrategy": "IPIfNonMatch", "rules": [] }
     });

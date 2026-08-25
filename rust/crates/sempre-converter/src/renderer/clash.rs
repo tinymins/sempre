@@ -155,6 +155,7 @@ fn apply_runtime(profile: &Profile, target: &Target, config: &mut Value) {
     if profile.dns.is_object() {
         object.insert("dns".into(), profile.dns.clone());
     }
+    super::transparent::apply_clash(profile, target, config);
 }
 
 fn clash_log_level(level: &str) -> &str {

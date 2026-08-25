@@ -271,3 +271,119 @@ fn sing_box_compiles_string_and_native_custom_rules() {
                 .any(|rule| rule["process_name"] == json!(["git"]))
     }));
 }
+
+#[test]
+fn transparent_runtime_is_rendered_for_sing_box_modes() {
+    let mut input = request("sing-box-v13");
+    input.profile.transparent_proxy = serde_json::from_value(json!({
+        "mode": "tun-router",
+        "route_exclusions": ["10.10.10.0/24"],
+        "tun": { "interface_name": "sempre-tun", "address": "172.20.0.1/30" }
+    }))
+    .expect("transparent config");
+    let result = compile(&input).expect("compile sing-box TUN");
+    let config: Value = serde_json::from_str(&result.content).expect("sing-box JSON");
+    let tun = config["inbounds"]
+        .as_array()
+        .expect("inbounds")
+        .iter()
+        .find(|value| value["tag"] == "tun-in")
+        .expect("TUN inbound");
+    assert_eq!(tun["interface_name"], "sempre-tun");
+    assert_eq!(tun["address"], json!(["172.20.0.1/30"]));
+    assert_eq!(tun["route_exclude_address"], json!(["10.10.10.0/24"]));
+
+    input.profile.transparent_proxy.mode = "tproxy".into();
+    input.profile.transparent_proxy.tproxy.listen_port = 7893;
+    input.profile.transparent_proxy.tproxy.dns_listen_port = 1053;
+    let result = compile(&input).expect("compile sing-box TProxy");
+    let config: Value = serde_json::from_str(&result.content).expect("sing-box JSON");
+    assert!(config["inbounds"].as_array().is_some_and(|values| {
+        values
+            .iter()
+            .any(|value| value["tag"] == "tproxy-in" && value["listen_port"] == 7893)
+            && values
+                .iter()
+                .any(|value| value["tag"] == "dns-in" && value["listen_port"] == 1053)
+    }));
+}
+
+#[test]
+fn transparent_runtime_is_rendered_for_mihomo_and_clash_rs() {
+    let mut input = request("clash-meta");
+    input.target.core = "mihomo".into();
+    input.profile.transparent_proxy = serde_json::from_value(json!({
+        "mode": "tun-router",
+        "route_exclusions": ["192.0.2.0/24"],
+        "interface_mode": "include",
+        "interfaces": ["br-lan"],
+        "tun": { "interface_name": "sempre-tun" }
+    }))
+    .expect("transparent config");
+    let result = compile(&input).expect("compile Mihomo TUN");
+    let config: Value = serde_yaml::from_str(&result.content).expect("Mihomo YAML");
+    assert_eq!(config["tun"]["device"], "sempre-tun");
+    assert_eq!(config["tun"]["include-interface"], json!(["br-lan"]));
+    assert_eq!(
+        config["tun"]["route-exclude-address"],
+        json!(["192.0.2.0/24"])
+    );
+
+    input.target = Target::parse("clash-rs").expect("clash-rs target");
+    input.profile.transparent_proxy.tun.address = "172.21.0.1/30".into();
+    let result = compile(&input).expect("compile clash-rs TUN");
+    let config: Value = serde_yaml::from_str(&result.content).expect("clash-rs YAML");
+    assert_eq!(config["tun"]["gateway"], "172.21.0.1/30");
+
+    input.profile.transparent_proxy.mode = "tproxy".into();
+    input.profile.transparent_proxy.tproxy.listen_port = 7893;
+    input.profile.transparent_proxy.tproxy.dns_listen_port = 1053;
+    let result = compile(&input).expect("compile clash-rs TProxy");
+    let config: Value = serde_yaml::from_str(&result.content).expect("clash-rs YAML");
+    assert_eq!(config["tproxy-port"], 7893);
+    assert_eq!(config["listeners"][0]["port"], 1053);
+}
+
+#[test]
+fn transparent_runtime_is_rendered_for_xray_and_v2ray() {
+    let mut input = request("xray");
+    input.profile.transparent_proxy = serde_json::from_value(json!({
+        "mode": "tun-router",
+        "tun": { "interface_name": "sempre-tun", "address": "172.22.0.1/30" }
+    }))
+    .expect("transparent config");
+    let result = compile(&input).expect("compile Xray TUN");
+    let config: Value = serde_json::from_str(&result.content).expect("Xray JSON");
+    let tun = config["inbounds"]
+        .as_array()
+        .expect("inbounds")
+        .iter()
+        .find(|value| value["tag"] == "tun-in")
+        .expect("TUN inbound");
+    assert_eq!(tun["settings"]["name"], "sempre-tun");
+    assert_eq!(tun["settings"]["gateway"], json!(["172.22.0.1/30"]));
+
+    input.target = Target::parse("v2ray").expect("V2Ray target");
+    input.profile.transparent_proxy.mode = "tproxy".into();
+    input.profile.transparent_proxy.tproxy.listen_port = 7893;
+    input.profile.transparent_proxy.tproxy.dns_listen_port = 1053;
+    input.profile.dns = json!({ "shared": { "remoteDns": "9.9.9.9" } });
+    let result = compile(&input).expect("compile V2Ray TProxy");
+    let config: Value = serde_json::from_str(&result.content).expect("V2Ray JSON");
+    assert!(config["inbounds"].as_array().is_some_and(|values| {
+        values.iter().any(|value| {
+            value["tag"] == "tproxy-in" && value["streamSettings"]["sockopt"]["tproxy"] == "tproxy"
+        }) && values
+            .iter()
+            .any(|value| value["tag"] == "dns-in" && value["settings"]["address"] == "9.9.9.9")
+    }));
+}
+
+#[test]
+fn disabled_transparent_mode_keeps_only_local_inbounds() {
+    let mut input = request("sing-box-v13");
+    input.profile.transparent_proxy.mode = "disabled".into();
+    let result = compile(&input).expect("compile disabled mode");
+    let config: Value = serde_json::from_str(&result.content).expect("sing-box JSON");
+    assert_eq!(config["inbounds"].as_array().map(Vec::len), Some(2));
+}

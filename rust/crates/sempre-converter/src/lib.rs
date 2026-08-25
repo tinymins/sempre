@@ -14,9 +14,9 @@ pub use defaults::{
 };
 pub use inspection::{PreviewNode, preview_nodes, preview_proxy, trace_node_steps};
 pub use model::{
-    CompileRequest, CompileResult, CustomNode, Diagnostic, EditorConfig, FieldDiff, LocalProxy,
-    ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source, SourceSnapshot,
-    TransparentProxy,
+    CompileRequest, CompileResult, CustomNode, Diagnostic, EbpfConfig, EditorConfig, FieldDiff,
+    LocalProxy, ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source, SourceSnapshot,
+    TProxyConfig, TransparentProxy, TunConfig,
 };
 pub use parser::{ParseResult, parse_subscription};
 pub use rule_set::convert_clash_rule_set;

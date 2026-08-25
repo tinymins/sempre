@@ -179,12 +179,7 @@ async fn runtime_validation_is_deferred_until_refresh() {
     manager
         .subscriptions
         .update(|catalog| {
-            catalog.profiles[0]
-                .transparent_proxy
-                .tun
-                .as_object_mut()
-                .expect("tun object")
-                .insert("interface_name".into(), json!(" "));
+            catalog.profiles[0].transparent_proxy.tun.interface_name = " ".into();
             Ok(())
         })
         .expect("save invalid runtime input");

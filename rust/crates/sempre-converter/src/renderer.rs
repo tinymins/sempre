@@ -1,6 +1,7 @@
 mod clash;
 mod dae;
 mod singbox;
+mod transparent;
 mod v2ray;
 
 use crate::{CompileError, FieldDiff, Profile, Proxy, Target};

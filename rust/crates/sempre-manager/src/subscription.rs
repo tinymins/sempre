@@ -315,13 +315,7 @@ fn validate_runtime_profile(profile: &Profile) -> Result<(), ManagerError> {
     if profile.transparent_proxy.mode != "tun-router" {
         return Ok(());
     }
-    let name = profile
-        .transparent_proxy
-        .tun
-        .get("interface_name")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .trim();
+    let name = profile.transparent_proxy.tun.interface_name.trim();
     if name.is_empty() || name.len() > 15 {
         return Err(SubscriptionError::Invalid(
             "TUN interface name must contain 1 to 15 characters".into(),

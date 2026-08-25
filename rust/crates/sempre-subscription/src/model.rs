@@ -43,18 +43,14 @@ pub fn new_profile(name: &str) -> Profile {
     profile.management_api.external_controller = "0.0.0.0:9090".into();
     profile.management_api.secret = random_secret();
     profile.transparent_proxy.mode = "tun-router".into();
-    profile.transparent_proxy.tun = json!({
-        "interface_name": "sempre-tun", "interface_mode": "all", "interfaces": [],
-        "route_exclusions": [], "auto_exclude_local_routes": true,
-        "auto_exclude_vpn_routes": true
-    });
-    profile.transparent_proxy.tproxy = json!({
-        "listen_port": 7893, "dns_listen_port": 1053,
-        "capture_host": false, "lan_interfaces": []
-    });
-    profile.transparent_proxy.ebpf = json!({
-        "wan_interface": "auto", "auto_config_kernel_parameter": false
-    });
+    profile.transparent_proxy.capture_host = false;
+    profile.transparent_proxy.interface_mode = "all".into();
+    profile.transparent_proxy.auto_exclude_local_routes = true;
+    profile.transparent_proxy.auto_exclude_vpn_routes = true;
+    profile.transparent_proxy.tun.interface_name = "sempre-tun".into();
+    profile.transparent_proxy.tproxy.listen_port = 7893;
+    profile.transparent_proxy.tproxy.dns_listen_port = 1053;
+    profile.transparent_proxy.ebpf.wan_interface = "auto".into();
     profile.extra.insert("mode".into(), json!("local"));
     for key in [
         "use_system_groups",

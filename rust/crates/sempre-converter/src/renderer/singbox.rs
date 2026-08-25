@@ -38,7 +38,9 @@ pub(super) fn render(
     ]);
     let mut config = json!({
         "log": config::log(&profile.log_level),
-        "inbounds": config::local_inbounds(profile),
+        "inbounds": config::local_inbounds(profile).into_iter().chain(
+            super::transparent::sing_box_inbounds(profile, target)
+        ).collect::<Vec<_>>(),
         "outbounds": outbounds,
         "route": config::route(profile, &mut warnings),
         "experimental": config::management_api(profile)
