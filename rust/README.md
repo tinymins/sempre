@@ -1,8 +1,10 @@
 # Sempre Rust backend
 
-This workspace contains the shared subscription converter and the multi-user Sempre server.
+This workspace contains the shared subscription converter, the multi-user Sempre server, and the replacement local-client foundations.
 
 The converter is a pure boundary: `Profile + SourceSnapshot + Target -> CompileResult`. It does not perform HTTP requests, database access, environment reads, or process management. `sempre-server` owns authentication, PostgreSQL persistence, SSRF-safe source fetching, last-known-good snapshots, artifacts, memberships, and public share manifests. It does not install, start, or supervise proxy cores.
+
+`sempre-state` owns the new Rust client's filesystem layout, validated persistent state, atomic writes, and single-instance leases. The Rust client intentionally starts with a new state schema; the project-level backend rewrite does not migrate legacy Go state.
 
 The integration boundary and current local-compiler migration gate are tracked
 in [`docs/rust-subscription-integration.md`](../docs/rust-subscription-integration.md).
