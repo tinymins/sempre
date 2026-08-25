@@ -148,3 +148,15 @@ pub struct Definition {
     pub control_protocol: Option<ControlProtocol>,
     pub platforms: Vec<String>,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AutoConfigCandidate {
+    pub id: String,
+    pub core: String,
+    pub reference: String,
+    pub configuration_mode: String,
+    pub score: i32,
+    pub reasons: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}

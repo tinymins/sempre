@@ -78,6 +78,54 @@ async fn health_is_public_and_inventory_requires_authentication() {
 }
 
 #[tokio::test]
+async fn core_auto_diagnosis_and_update_routes_use_the_rust_manager() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let app = router(state);
+    let mut diagnose = request(
+        "POST",
+        "/api/v1/cores/auto/diagnose",
+        Body::empty(),
+        "127.0.0.1:1",
+    );
+    diagnose.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(diagnose).await.expect("diagnose");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let report: serde_json::Value = serde_json::from_slice(&body).expect("report JSON");
+    assert!(
+        !report["candidates"]
+            .as_array()
+            .expect("candidates")
+            .is_empty()
+    );
+
+    let mut update = request(
+        "POST",
+        "/api/v1/cores/update",
+        Body::from(r#"{"reference":"sing-box@1.12.20"}"#),
+        "127.0.0.1:1",
+    );
+    update.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    update.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    assert_eq!(
+        app.oneshot(update).await.expect("update").status(),
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
 async fn daemon_token_is_rejected_off_loopback_and_same_origin_login_works() {
     let root = tempfile::tempdir().expect("temporary directory");
     let (state, token) = test_state(&root);

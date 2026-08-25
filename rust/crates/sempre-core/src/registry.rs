@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 use thiserror::Error;
 
 use crate::{
-    AssetSelection, Capabilities, CommandSpec, CompilerTarget, Definition, RunSpec, RuntimeSpec,
-    Stability, Target,
+    AssetSelection, AutoConfigCandidate, Capabilities, CommandSpec, CompilerTarget, Definition,
+    RunSpec, RuntimeSpec, Stability, Target,
 };
 
 pub trait Adapter: Send + Sync {
@@ -32,6 +32,9 @@ pub trait Adapter: Send + Sync {
         config: &Path,
         runtime_directory: &Path,
     ) -> Result<RuntimeSpec, RegistryError>;
+    fn auto_config_candidates(&self, _target: &Target) -> Vec<AutoConfigCandidate> {
+        Vec::new()
+    }
 }
 
 #[derive(Default)]
@@ -49,6 +52,8 @@ pub enum RegistryError {
     VersionOutput { core: String, output: String },
     #[error("prepare {core} runtime: {message}")]
     Runtime { core: String, message: String },
+    #[error("invalid automatic configuration recommendation {0:?}")]
+    InvalidRecommendation(String),
 }
 
 impl Registry {
@@ -91,5 +96,34 @@ impl Registry {
                 .filter(|adapter| adapter.definition().stability == Stability::Stable)
                 .map(|adapter| adapter.capabilities(None, target)),
         )
+    }
+
+    pub fn auto_config_candidates(
+        &self,
+        target: &Target,
+    ) -> Result<Vec<AutoConfigCandidate>, RegistryError> {
+        let mut candidates = Vec::new();
+        let mut identifiers = std::collections::BTreeSet::new();
+        for adapter in self.adapters.values() {
+            for mut candidate in adapter.auto_config_candidates(target) {
+                if candidate.id.is_empty() || !identifiers.insert(candidate.id.clone()) {
+                    return Err(RegistryError::InvalidRecommendation(candidate.id));
+                }
+                let reference = crate::CoreRef::parse(&candidate.reference)
+                    .map_err(|_| RegistryError::InvalidRecommendation(candidate.id.clone()))?;
+                if reference.core != adapter.id() {
+                    return Err(RegistryError::InvalidRecommendation(candidate.id));
+                }
+                candidate.core = adapter.id().into();
+                candidates.push(candidate);
+            }
+        }
+        candidates.sort_by(|left, right| {
+            right
+                .score
+                .cmp(&left.score)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(candidates)
     }
 }

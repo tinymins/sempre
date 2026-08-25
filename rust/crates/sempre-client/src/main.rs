@@ -1,5 +1,6 @@
 mod api;
 mod args;
+mod core_management_api;
 mod custom_node_api;
 mod daemon;
 mod listener;

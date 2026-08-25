@@ -138,7 +138,7 @@ impl<R: VersionRunner> Manager<R> {
         })
     }
 
-    fn normalized_reference(&self, value: &str) -> Result<CoreRef, ManagerError> {
+    pub(crate) fn normalized_reference(&self, value: &str) -> Result<CoreRef, ManagerError> {
         let mut reference = CoreRef::parse(value)?;
         let adapter = self.registry.get(&reference.core)?;
         if reference

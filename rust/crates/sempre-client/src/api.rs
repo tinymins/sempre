@@ -55,10 +55,6 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
         .route("/api/v1/auth/login", post(login))
-        .route("/api/v1/cores", get(cores))
-        .route("/api/v1/cores/install", post(core_install))
-        .route("/api/v1/cores/use", post(core_use))
-        .route("/api/v1/cores/remove", post(core_remove))
         .route(
             "/api/v1/configs/current",
             get(config_get).put(config_write_removed),
@@ -68,6 +64,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             post(config_validate).layer(DefaultBodyLimit::max(MAX_CONFIG_SIZE + (64 << 10))),
         )
         .merge(crate::subscription_api::router())
+        .merge(crate::core_management_api::router())
         .merge(crate::subscription_debug_api::router())
         .merge(crate::subscription_profile_debug_api::router())
         .merge(crate::subscription_tools_api::router())
@@ -195,64 +192,6 @@ async fn login(
         password_required,
     })
     .into_response()
-}
-
-async fn cores(State(state): State<Arc<AppState>>) -> Response {
-    match state.manager.core_inventory() {
-        Ok(inventory) => Json(inventory).into_response(),
-        Err(error) => api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "CORE_INVENTORY_ERROR",
-            error.to_string(),
-        ),
-    }
-}
-
-#[derive(Deserialize)]
-struct CoreInstallInput {
-    reference: String,
-}
-
-async fn core_install(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<CoreInstallInput>,
-) -> Response {
-    match state.manager.install_core(&input.reference).await {
-        Ok(result) => Json(result).into_response(),
-        Err(error) => api_error(
-            StatusCode::BAD_REQUEST,
-            "CORE_INSTALL_FAILED",
-            error.to_string(),
-        ),
-    }
-}
-
-async fn core_use(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<CoreInstallInput>,
-) -> Response {
-    match state.manager.select_core(&input.reference).await {
-        Ok(change) => Json(change).into_response(),
-        Err(error) => api_error(
-            StatusCode::BAD_REQUEST,
-            "CORE_SELECTION_FAILED",
-            error.to_string(),
-        ),
-    }
-}
-
-async fn core_remove(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<CoreInstallInput>,
-) -> Response {
-    match state.manager.remove_core(&input.reference) {
-        Ok(change) => Json(change).into_response(),
-        Err(error) => api_error(
-            StatusCode::BAD_REQUEST,
-            "CORE_REMOVE_FAILED",
-            error.to_string(),
-        ),
-    }
 }
 
 async fn config_get(State(state): State<Arc<AppState>>) -> Response {

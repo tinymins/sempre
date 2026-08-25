@@ -92,6 +92,8 @@ pub enum ManagerError {
     ProfileNotFound(String),
     #[error("runtime is not ready: {0}")]
     RuntimeNotReady(String),
+    #[error("{0}")]
+    InvalidOperation(String),
     #[error("{message}")]
     RuntimeAction { code: &'static str, message: String },
 }

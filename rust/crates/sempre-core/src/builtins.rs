@@ -3,8 +3,8 @@ use std::{path::Path, sync::Arc};
 use regex::Regex;
 
 use crate::{
-    Adapter, AssetSelection, Capabilities, CommandSpec, CompilerTarget, ControlProtocol,
-    Definition, Registry, RegistryError, RunSpec, Stability, Target,
+    Adapter, AssetSelection, AutoConfigCandidate, Capabilities, CommandSpec, CompilerTarget,
+    ControlProtocol, Definition, Registry, RegistryError, RunSpec, Stability, Target,
     builtin_capabilities::capabilities, runtime,
 };
 
@@ -335,6 +335,10 @@ impl Adapter for BuiltInAdapter {
         runtime_directory: &Path,
     ) -> Result<crate::RuntimeSpec, RegistryError> {
         runtime::prepare(self.kind, config, runtime_directory)
+    }
+
+    fn auto_config_candidates(&self, target: &Target) -> Vec<AutoConfigCandidate> {
+        crate::recommendation::candidates(self.kind, target)
     }
 }
 

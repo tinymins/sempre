@@ -1,3 +1,4 @@
+mod auto_config;
 mod config;
 mod context;
 mod custom_node;
@@ -11,6 +12,7 @@ mod scheduler;
 mod subscription;
 mod subscription_tools;
 mod supervisor;
+mod update;
 
 use sempre_artifact::{Downloader, GithubClient};
 use sempre_core::{Registry, Target, built_in_registry};
@@ -19,6 +21,9 @@ use sempre_subscription::{Fetcher, RemoteClient, SubscriptionStore};
 use std::sync::Arc;
 use tokio::sync::Notify;
 
+pub use auto_config::{
+    AutoConfigApplyResult, AutoConfigCandidate, AutoConfigCheck, AutoConfigReport,
+};
 pub use config::{CurrentConfig, MAX_CONFIG_SIZE};
 pub use context::{ConfigurationContext, ConfigurationTarget, RunningCore};
 pub use error::ManagerError;
