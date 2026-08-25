@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use crate::VERSION;
+use crate::{VERSION, runtime_args::RuntimeCommand};
 
 #[derive(Debug, Parser)]
 #[command(name = "sempre", version = VERSION, about = "Manage external proxy cores")]
@@ -295,20 +295,6 @@ pub(crate) enum ServiceCommand {
     Restart,
     /// Print the native service state.
     Status,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum RuntimeCommand {
-    /// Print the managed runtime state.
-    Status,
-    /// Start the selected core and wait until it is running.
-    Start,
-    /// Stop the managed core and wait until it is stopped.
-    Stop,
-    /// Restart the managed core and wait for the replacement process.
-    Restart,
-    /// Schedule reconciliation without changing desired state.
-    Reload,
 }
 
 #[cfg(test)]

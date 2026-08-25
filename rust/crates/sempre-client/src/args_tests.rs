@@ -1,6 +1,9 @@
 use clap::Parser as _;
 
 use super::*;
+use crate::runtime_args::{
+    RuntimeConfigCommand, RuntimeConnectionCommand, RuntimeProxyCommand, RuntimeStreamTopic,
+};
 
 #[test]
 fn system_and_portable_modes_are_mutually_exclusive() {
@@ -144,6 +147,60 @@ fn parses_core_update_and_config_import() {
         custom.command,
         Command::CustomNode {
             command: CustomNodeCommand::Update { .. }
+        }
+    ));
+}
+
+#[test]
+fn parses_advanced_runtime_commands() {
+    let config =
+        Arguments::try_parse_from(["sempre", "runtime", "config", "set", "mode", "\"global\""])
+            .expect("runtime config patch");
+    assert!(matches!(
+        config.command,
+        Command::Runtime {
+            command: RuntimeCommand::Config {
+                command: Some(RuntimeConfigCommand::Set { .. })
+            }
+        }
+    ));
+    let delay = Arguments::try_parse_from([
+        "sempre",
+        "runtime",
+        "proxies",
+        "delay",
+        "edge",
+        "https://example.com/204",
+        "3000",
+    ])
+    .expect("runtime proxy delay");
+    assert!(matches!(
+        delay.command,
+        Command::Runtime {
+            command: RuntimeCommand::Proxies {
+                command: Some(RuntimeProxyCommand::Delay { .. })
+            }
+        }
+    ));
+    let close = Arguments::try_parse_from(["sempre", "runtime", "connections", "close", "--all"])
+        .expect("close every connection");
+    assert!(matches!(
+        close.command,
+        Command::Runtime {
+            command: RuntimeCommand::Connections {
+                command: Some(RuntimeConnectionCommand::Close { all: true, .. })
+            }
+        }
+    ));
+    assert!(Arguments::try_parse_from(["sempre", "runtime", "connections", "close"]).is_err());
+    let events = Arguments::try_parse_from(["sempre", "runtime", "events", "connections"])
+        .expect("runtime event stream");
+    assert!(matches!(
+        events.command,
+        Command::Runtime {
+            command: RuntimeCommand::Events {
+                topic: RuntimeStreamTopic::Connections
+            }
         }
     ));
 }

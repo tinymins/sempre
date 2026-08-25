@@ -13,6 +13,7 @@ mod gateway_api;
 mod listener;
 mod local_api;
 mod runtime_api;
+mod runtime_args;
 mod runtime_cli;
 mod runtime_control_api;
 mod runtime_events_api;
@@ -56,6 +57,8 @@ pub(crate) enum ClientError {
     Manager(#[from] ManagerError),
     #[error(transparent)]
     Control(#[from] ControlError),
+    #[error(transparent)]
+    CoreControl(#[from] sempre_core_control::ControlError),
     #[error(transparent)]
     Subscription(#[from] SubscriptionError),
     #[error(transparent)]
