@@ -6,6 +6,20 @@ use sempre_state::{Document, Layout, Mode, Runtime};
 
 use crate::{Manager, ManagerError, VersionRunner};
 
+pub async fn uninstall_system_service(layout: &Layout) -> Result<(), ManagerError> {
+    if layout.mode != Mode::System {
+        return Err(ManagerError::InvalidOperation(
+            "native service uninstall requires a system layout".into(),
+        ));
+    }
+    sempre_service::require_installation_privileges()?;
+    sempre_service::uninstall().await?;
+    let transparent = sempre_transparent::Controller::new(layout).cleanup().await;
+    let command = unregister_command(layout);
+    transparent?;
+    command
+}
+
 impl<R: VersionRunner> Manager<R> {
     pub async fn restore_bundle(
         &self,
@@ -194,8 +208,22 @@ fn register_command(layout: &Layout) -> Result<bool, ManagerError> {
 
 #[cfg(unix)]
 fn unregister_command(layout: &Layout) -> Result<(), ManagerError> {
-    fs::remove_file(&layout.command_executable)
-        .map_err(|error| ManagerError::io("remove command registration", error))
+    match fs::read_link(&layout.command_executable) {
+        Ok(target) if target == layout.service_executable => {
+            fs::remove_file(&layout.command_executable)
+                .map_err(|error| ManagerError::io("remove command registration", error))
+        }
+        Ok(_) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::InvalidInput
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(ManagerError::io("inspect command registration", error)),
+    }
 }
 
 #[cfg(windows)]
@@ -215,6 +243,9 @@ fn unregister_command(_: &Layout) -> Result<(), ManagerError> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+
     use sempre_state::{DesiredState, RuntimeState, Store};
 
     use super::*;
@@ -252,5 +283,31 @@ mod tests {
         ));
         require_replacement_confirmation(&source, &target, true)
             .expect("explicit replacement confirmation");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_unregistration_is_idempotent_and_preserves_foreign_paths() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let layout = Layout::system_at(&temporary.path().join("target"));
+        fs::create_dir_all(
+            layout
+                .command_executable
+                .parent()
+                .expect("command directory"),
+        )
+        .expect("command directory");
+        symlink(&layout.service_executable, &layout.command_executable).expect("owned command");
+        unregister_command(&layout).expect("remove owned command");
+        unregister_command(&layout).expect("missing command is already unregistered");
+        assert!(!layout.command_executable.exists());
+
+        let foreign = temporary.path().join("foreign-sempre");
+        symlink(&foreign, &layout.command_executable).expect("foreign command");
+        unregister_command(&layout).expect("preserve foreign command");
+        assert_eq!(
+            fs::read_link(&layout.command_executable).expect("foreign command remains"),
+            foreign
+        );
     }
 }

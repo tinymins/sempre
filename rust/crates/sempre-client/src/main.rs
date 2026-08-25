@@ -194,7 +194,8 @@ async fn run_service(command: ServiceCommand) -> Result<(), ClientError> {
             .await
         }
         ServiceCommand::Uninstall => {
-            sempre_service::uninstall().await?;
+            let layout = Layout::for_mode(Mode::System)?;
+            sempre_manager::uninstall_system_service(&layout).await?;
             println!("Service uninstalled. Sempre data was retained.");
             Ok(())
         }
