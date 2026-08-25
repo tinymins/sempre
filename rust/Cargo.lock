@@ -2007,6 +2007,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-manager"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "sempre-artifact",
+ "sempre-core",
+ "sempre-state",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "sempre-server"
 version = "0.1.0"
 dependencies = [

@@ -89,6 +89,13 @@ impl Store {
         Ok(Lease { file })
     }
 
+    pub fn acquire_operation(&self) -> Result<Lease, StateError> {
+        self.layout.ensure()?;
+        let file = open_lock(&self.layout.operation_lock)?;
+        file.lock_exclusive().map_err(StateError::Lock)?;
+        Ok(Lease { file })
+    }
+
     fn with_lock<T>(
         &self,
         action: impl FnOnce() -> Result<T, StateError>,
@@ -193,6 +200,15 @@ mod tests {
             store.acquire_instance(),
             Err(StateError::AlreadyRunning)
         ));
+    }
+
+    #[test]
+    fn operation_lease_uses_the_dedicated_lock() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let store = Store::new(Layout::at(temporary.path()));
+        store.initialize().expect("initialize state");
+        let _lease = store.acquire_operation().expect("operation lease");
+        assert!(store.layout.operation_lock.exists());
     }
 
     #[test]

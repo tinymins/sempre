@@ -1,0 +1,23 @@
+[package]
+name = "sempre-manager"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Sempre client application use cases and transactional core management"
+
+[dependencies]
+chrono.workspace = true
+sempre-artifact = { path = "../sempre-artifact" }
+sempre-core = { path = "../sempre-core" }
+sempre-state = { path = "../sempre-state" }
+serde.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
