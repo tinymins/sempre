@@ -14,21 +14,19 @@ concurrency:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       MIHOMO_VERSION: 1.19.29
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: 1.25.13
-          cache: true
-      - name: Build Sempre
+      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
+      - name: Build Rust client
         shell: bash
         run: |
           mkdir smoke
-          go build -o smoke/sempre ./cmd/sempre
+          cargo build --manifest-path=rust/Cargo.toml -p sempre-client
+          cp rust/target/debug/sempre smoke/sempre
       - name: Install and validate Mihomo
         shell: bash
         run: |
@@ -44,18 +42,15 @@ jobs:
           sudo ./smoke/sempre --portable core install "mihomo@${MIHOMO_VERSION}"
           sudo ./smoke/sempre --portable core use "mihomo@${MIHOMO_VERSION}"
           sudo ./smoke/sempre --portable config import smoke/subscription.yaml
-          sudo ./smoke/sempre --portable doctor
-      - name: Exercise Mihomo control API
+      - name: Exercise Mihomo through the Rust daemon
         shell: bash
         run: |
-          # The runner intentionally owns the log file; only Sempre needs elevation.
-          # shellcheck disable=SC2024
-          sudo ./smoke/sempre --portable portable run > smoke/portable.log 2>&1 &
+          sudo ./smoke/sempre --portable daemon > smoke/daemon.log 2>&1 &
           sempre_pid=$!
           cleanup() {
-            sudo kill "$sempre_pid" 2>/dev/null || true
+            sudo kill -TERM "$sempre_pid" 2>/dev/null || true
             wait "$sempre_pid" 2>/dev/null || true
-            cat smoke/portable.log
+            cat smoke/daemon.log
           }
           trap cleanup EXIT
 
@@ -63,9 +58,9 @@ jobs:
           for ((attempt = 0; attempt < 150; attempt++)); do
             if sudo test -f smoke/.sempre/run/control.json; then
               control=$(sudo cat smoke/.sempre/run/control.json)
-              base_url=$(jq -r '.BaseURL // empty' <<<"$control")
-              secret=$(jq -r '.Secret // empty' <<<"$control")
-              core=$(jq -r '.Core // empty' <<<"$control")
+              base_url=$(jq -r '.base_url // empty' <<<"$control")
+              secret=$(jq -r '.secret // empty' <<<"$control")
+              core=$(jq -r '.core // empty' <<<"$control")
               if [[ "$core" == 'mihomo' && -n "$base_url" && -n "$secret" ]] &&
                 curl --fail --silent --max-time 2 -H "Authorization: Bearer $secret" "$base_url/version" > smoke/version.json; then
                 break
@@ -75,6 +70,7 @@ jobs:
           done
 
           test "${core:-}" = 'mihomo'
+          sudo ./smoke/sempre --portable --json runtime status | jq -e '.runtime_state == "running" and .pid > 0'
           jq -e --arg version "$MIHOMO_VERSION" '.version | contains($version)' smoke/version.json
           curl --fail --silent -H "Authorization: Bearer $secret" "$base_url/proxies" | jq -e '.proxies | type == "object"'
           curl --fail --silent -H "Authorization: Bearer $secret" "$base_url/connections" | jq -e '.connections | type == "array"'
