@@ -12,6 +12,7 @@ sempre-artifact = { path = "../sempre-artifact" }
 sempre-core = { path = "../sempre-core" }
 sempre-state = { path = "../sempre-state" }
 serde.workspace = true
+sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

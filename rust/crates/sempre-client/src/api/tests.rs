@@ -287,6 +287,47 @@ async fn subscription_catalog_supports_authenticated_local_and_remote_creation()
         .expect("body");
     let catalog: serde_json::Value = serde_json::from_slice(&body).expect("catalog JSON");
     assert_eq!(catalog["profiles"].as_array().map(Vec::len), Some(1));
+    assert_eq!(catalog["configuration_context"]["key"], "common");
+    assert_eq!(catalog["schedule"]["interval"], "24h");
+
+    let mut candidate = catalog["profiles"][0].clone();
+    candidate["sources"] = serde_json::json!([{
+        "id": "source-1",
+        "type": "url",
+        "enabled": true,
+        "url": "https://offline.example/subscription"
+    }]);
+    let profile_id = candidate["id"].as_str().expect("profile ID");
+    let mut save = request(
+        "PUT",
+        &format!("/api/v1/subscriptions/{profile_id}"),
+        Body::from(serde_json::to_vec(&candidate).expect("candidate JSON")),
+        "127.0.0.1:1",
+    );
+    save.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    save.headers_mut().insert(
+        "x-sempre-configuration-context",
+        HeaderValue::from_static("common"),
+    );
+    save.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(save).await.expect("save profile");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let saved: serde_json::Value = serde_json::from_slice(&body).expect("save JSON");
+    assert_eq!(saved["change"]["Changed"], true);
+    assert_eq!(saved["profile"]["revision"], 2);
+    assert_eq!(
+        saved["profile"]["last_result"],
+        "profile saved; runtime configuration needs regeneration"
+    );
 
     let mut create = request(
         "POST",

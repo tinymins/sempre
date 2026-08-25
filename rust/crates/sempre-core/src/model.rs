@@ -124,7 +124,7 @@ pub struct RuntimeSpec {
     pub control: Option<ControlSpec>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CompilerTarget {
     pub format: String,
     pub version: Option<String>,

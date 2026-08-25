@@ -2041,6 +2041,7 @@ dependencies = [
  "sempre-core",
  "sempre-state",
  "serde",
+ "sha2",
  "tempfile",
  "thiserror",
  "tokio",
