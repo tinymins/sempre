@@ -149,6 +149,31 @@ fn parses_core_update_and_config_import() {
             command: CustomNodeCommand::Update { .. }
         }
     ));
+    let source =
+        Arguments::try_parse_from(["sempre", "subscription", "source", "add-raw", "nodes.yaml"])
+            .expect("raw subscription source");
+    assert!(matches!(
+        source.command,
+        Command::Subscription {
+            command: SubscriptionCommand::Source {
+                command: SubscriptionSourceCommand::AddRaw { .. }
+            }
+        }
+    ));
+    let save = Arguments::try_parse_from([
+        "sempre",
+        "subscription",
+        "save",
+        "profile-id",
+        "profile.json",
+    ])
+    .expect("save subscription profile");
+    assert!(matches!(
+        save.command,
+        Command::Subscription {
+            command: SubscriptionCommand::Save { .. }
+        }
+    ));
 }
 
 #[test]

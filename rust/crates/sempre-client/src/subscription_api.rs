@@ -177,78 +177,24 @@ async fn save(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     headers: HeaderMap,
-    Json(mut candidate): Json<Profile>,
+    Json(candidate): Json<Profile>,
 ) -> Response {
-    let context = match state.manager.configuration_context() {
-        Ok(context) => context,
-        Err(error) => return internal(error.to_string()),
-    };
-    if let Some(expected) = headers
+    let expected = headers
         .get("x-sempre-configuration-context")
         .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty())
-        && expected != context.key
+        .filter(|value| !value.is_empty());
+    match state
+        .manager
+        .save_subscription_profile(&id, candidate, expected)
     {
-        return error_response(
+        Ok((change, profile)) => Json(SaveOutput { change, profile }).into_response(),
+        Err(sempre_manager::ManagerError::ConfigurationContextChanged) => error_response(
             StatusCode::CONFLICT,
             "CONFIGURATION_CONTEXT_CHANGED",
             "subscription configuration target changed; reload before saving",
-        );
+        ),
+        Err(error) => operation(error.to_string()),
     }
-    let mut saved = None;
-    let result = state.manager.subscriptions().update(|catalog| {
-        let current = catalog
-            .profiles
-            .iter_mut()
-            .find(|profile| profile.id == id)
-            .ok_or_else(|| SubscriptionError::Invalid("profile was not found".into()))?;
-        let mode = profile_mode(current);
-        if mode == "remote" {
-            return Err(SubscriptionError::Invalid(
-                "remote profiles are read-only; edit the profile on its Sempre server".into(),
-            ));
-        }
-        if profile_mode(&candidate) != mode || candidate.extra.contains_key("remote") {
-            return Err(SubscriptionError::Invalid(
-                "subscription profile mode cannot be changed through profile editing".into(),
-            ));
-        }
-        preserve_source_metadata(&current.sources, &mut candidate.sources);
-        preserve_compilation_metadata(current, &mut candidate);
-        candidate.id.clone_from(&current.id);
-        candidate.name.clone_from(&current.name);
-        candidate.revision = current.revision + 1;
-        candidate.extra.insert(
-            "last_result".into(),
-            json!("profile saved; runtime configuration needs regeneration"),
-        );
-        candidate
-            .extra
-            .insert("last_runtime_validated".into(), json!(false));
-        current.clone_from(&candidate);
-        saved = Some(candidate.clone());
-        Ok(())
-    });
-    if let Err(error) = result {
-        return operation(error.to_string());
-    }
-    let document = match state.manager.state() {
-        Ok(document) => document,
-        Err(error) => return internal(error.to_string()),
-    };
-    let needs_restart =
-        document.selected.is_some() && document.active_profile_id.as_deref() == Some(id.as_str());
-    Json(SaveOutput {
-        change: sempre_manager::CoreChange {
-            changed: true,
-            needs_restart,
-            message: "subscription profile saved locally; runtime configuration needs regeneration"
-                .into(),
-            ..sempre_manager::CoreChange::default()
-        },
-        profile: saved.expect("saved profile"),
-    })
-    .into_response()
 }
 
 #[derive(Deserialize)]
@@ -336,66 +282,6 @@ fn valid_remote_url(value: &str) -> bool {
             && url.username().is_empty()
             && url.password().is_none()
     })
-}
-
-fn profile_mode(profile: &Profile) -> &str {
-    profile
-        .extra
-        .get("mode")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("local")
-}
-
-fn preserve_source_metadata(
-    previous: &[sempre_converter::Source],
-    candidate: &mut [sempre_converter::Source],
-) {
-    for source in candidate {
-        let Some(before) = previous
-            .iter()
-            .find(|before| before.id == source.id && same_fetch_identity(before, source))
-        else {
-            continue;
-        };
-        for key in ["snapshot_hash", "fetched_at", "last_status", "last_error"] {
-            if let Some(value) = before.extra.get(key) {
-                source.extra.insert(key.into(), value.clone());
-            }
-        }
-    }
-}
-
-fn same_fetch_identity(left: &sempre_converter::Source, right: &sempre_converter::Source) -> bool {
-    left.kind == right.kind
-        && left.url == right.url
-        && defaulted(&left.user_agent, "clash.meta") == defaulted(&right.user_agent, "clash.meta")
-        && extra_string(left, "fetch_mode", "auto") == extra_string(right, "fetch_mode", "auto")
-}
-
-fn defaulted<'a>(value: &'a str, fallback: &'a str) -> &'a str {
-    if value.is_empty() { fallback } else { value }
-}
-
-fn extra_string<'a>(source: &'a sempre_converter::Source, key: &str, fallback: &'a str) -> &'a str {
-    source
-        .extra
-        .get(key)
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or(fallback)
-}
-
-fn preserve_compilation_metadata(current: &Profile, candidate: &mut Profile) {
-    for key in [
-        "last_check",
-        "last_change",
-        "last_config_hash",
-        "last_compiler_target",
-        "last_compiler_warnings",
-    ] {
-        if let Some(value) = current.extra.get(key) {
-            candidate.extra.insert(key.into(), value.clone());
-        }
-    }
 }
 
 fn internal(error: impl Into<String>) -> Response {

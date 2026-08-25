@@ -113,6 +113,8 @@ pub enum ManagerError {
     InvalidOperation(String),
     #[error("replacing the existing system deployment requires --yes: {0}")]
     ConfirmationRequired(String),
+    #[error("subscription configuration target changed; reload before saving")]
+    ConfigurationContextChanged,
     #[error("application uninstall incomplete: {0}")]
     UninstallIncomplete(String),
     #[error("{message}")]

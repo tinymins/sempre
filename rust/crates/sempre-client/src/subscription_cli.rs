@@ -1,12 +1,17 @@
-use sempre_converter::Profile;
+use std::{fs, path::Path};
+
+use sempre_converter::{Profile, Source};
 use sempre_manager::{CoreChange, Manager};
 use sempre_state::{Layout, Mode, Store};
 use sempre_subscription::{SubscriptionError, new_profile};
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Map, json};
 use url::Url;
 
-use crate::{ClientError, args::SubscriptionCommand};
+use crate::{
+    ClientError,
+    args::{SubscriptionCommand, SubscriptionSourceCommand},
+};
 
 pub(crate) async fn run(
     mode: Mode,
@@ -20,6 +25,17 @@ pub(crate) async fn run(
         SubscriptionCommand::Create { name } => create(&manager, &name, None, json_output),
         SubscriptionCommand::CreateRemote { name, manifest_url } => {
             create(&manager, &name, Some(&manifest_url), json_output)
+        }
+        SubscriptionCommand::Save { id, file } => {
+            let candidate: Profile =
+                serde_json::from_slice(&read_text_file(&file, "subscription profile")?)
+                    .map_err(ClientError::Json)?;
+            let (change, profile) = manager.save_subscription_profile(&id, candidate, None)?;
+            if json_output {
+                print_json(&json!({ "change": change, "profile": profile }))
+            } else {
+                output_change(&change, false)
+            }
         }
         SubscriptionCommand::Use { id } => {
             let (change, render) = manager.activate_subscription_profile(&id).await?;
@@ -60,7 +76,167 @@ pub(crate) async fn run(
             let change = manager.clear_subscription_cache()?;
             output_change(&change, json_output)
         }
+        SubscriptionCommand::Source { command } => source(&manager, command, json_output).await,
     }
+}
+
+async fn source(
+    manager: &Manager,
+    command: SubscriptionSourceCommand,
+    json_output: bool,
+) -> Result<(), ClientError> {
+    match command {
+        SubscriptionSourceCommand::Test { input } => {
+            test_source(manager, &input, json_output).await
+        }
+        SubscriptionSourceCommand::AddUrl { url } => {
+            let id = resolve_profile_id(manager, None)?;
+            let mut profile = find_profile(manager, &id)?;
+            profile.sources.push(url_source(&url)?);
+            save_sources(manager, &id, profile, json_output)
+        }
+        SubscriptionSourceCommand::AddRaw { file } => {
+            let id = resolve_profile_id(manager, None)?;
+            let mut profile = find_profile(manager, &id)?;
+            let content = String::from_utf8(read_text_file(&file, "subscription source")?)
+                .map_err(|_| {
+                    SubscriptionError::Invalid("subscription source must be UTF-8".into())
+                })?;
+            profile.sources.push(Source {
+                id: uuid::Uuid::new_v4().to_string(),
+                kind: "raw".into(),
+                enabled: true,
+                url: String::new(),
+                remark: file.display().to_string(),
+                prefix: String::new(),
+                content,
+                user_agent: String::new(),
+                extra: Map::new(),
+            });
+            save_sources(manager, &id, profile, json_output)
+        }
+        SubscriptionSourceCommand::Remove { id: source_id } => {
+            let id = resolve_profile_id(manager, None)?;
+            let mut profile = find_profile(manager, &id)?;
+            let before = profile.sources.len();
+            profile.sources.retain(|source| source.id != source_id);
+            if profile.sources.len() == before {
+                return Err(SubscriptionError::Invalid(format!(
+                    "source {source_id:?} was not found"
+                ))
+                .into());
+            }
+            save_sources(manager, &id, profile, json_output)
+        }
+    }
+}
+
+fn save_sources(
+    manager: &Manager,
+    id: &str,
+    profile: Profile,
+    json_output: bool,
+) -> Result<(), ClientError> {
+    let (change, profile) = manager.save_subscription_profile(id, profile, None)?;
+    if json_output {
+        print_json(&json!({ "change": change, "profile": profile }))
+    } else {
+        output_change(&change, false)
+    }
+}
+
+async fn test_source(manager: &Manager, input: &str, json_output: bool) -> Result<(), ClientError> {
+    let path = Path::new(input);
+    let source = match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Source {
+            id: uuid::Uuid::new_v4().to_string(),
+            kind: "raw".into(),
+            enabled: true,
+            url: String::new(),
+            remark: input.into(),
+            prefix: String::new(),
+            content: String::from_utf8(read_text_file(path, "subscription source")?).map_err(
+                |_| SubscriptionError::Invalid("subscription source must be UTF-8".into()),
+            )?,
+            user_agent: String::new(),
+            extra: Map::new(),
+        },
+        Ok(_) => {
+            return Err(
+                SubscriptionError::Invalid("subscription source must be a file".into()).into(),
+            );
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => url_source(input)?,
+        Err(source) => {
+            return Err(ClientError::Io {
+                operation: "inspect subscription source",
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let result = manager.test_subscription_source(source, true).await?;
+    if json_output {
+        return print_json(&result);
+    }
+    println!("Format: {}", result.parse.format);
+    println!("Nodes: {}", result.parse.nodes.len());
+    println!("Bytes: {}", result.bytes);
+    for diagnostic in result.parse.diagnostics {
+        println!("{diagnostic}");
+    }
+    Ok(())
+}
+
+fn url_source(value: &str) -> Result<Source, ClientError> {
+    let url = Url::parse(value.trim())
+        .map_err(|_| SubscriptionError::Invalid("subscription source URL is invalid".into()))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(SubscriptionError::Invalid(
+            "subscription source URL must be absolute HTTP(S) without credentials".into(),
+        )
+        .into());
+    }
+    let mut extra = Map::new();
+    extra.insert("fetch_mode".into(), json!("auto"));
+    Ok(Source {
+        id: uuid::Uuid::new_v4().to_string(),
+        kind: "url".into(),
+        enabled: true,
+        url: value.trim().into(),
+        remark: String::new(),
+        prefix: String::new(),
+        content: String::new(),
+        user_agent: "clash.meta".into(),
+        extra,
+    })
+}
+
+fn read_text_file(path: &Path, description: &str) -> Result<Vec<u8>, ClientError> {
+    let metadata = fs::metadata(path).map_err(|source| ClientError::Io {
+        operation: "inspect subscription input",
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if !metadata.is_file()
+        || metadata.len() == 0
+        || metadata.len() > sempre_subscription::MAX_SOURCE_SIZE as u64
+    {
+        return Err(SubscriptionError::Invalid(format!(
+            "{description} must be a non-empty file at most {} bytes",
+            sempre_subscription::MAX_SOURCE_SIZE
+        ))
+        .into());
+    }
+    fs::read(path).map_err(|source| ClientError::Io {
+        operation: "read subscription input",
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 fn list(manager: &Manager, json_output: bool) -> Result<(), ClientError> {

@@ -201,6 +201,8 @@ pub(crate) enum SubscriptionCommand {
     Create { name: String },
     /// Create a read-only remote profile from a Sempre server manifest.
     CreateRemote { name: String, manifest_url: String },
+    /// Replace a local profile from a JSON file without compiling it.
+    Save { id: String, file: PathBuf },
     /// Activate, fetch, compile, validate, and stage a profile.
     Use { id: String },
     /// Refresh, compile, and validate a profile.
@@ -223,6 +225,23 @@ pub(crate) enum SubscriptionCommand {
     Status,
     /// Remove cached remote subscription responses.
     ClearCache,
+    /// Add, remove, or test subscription sources.
+    Source {
+        #[command(subcommand)]
+        command: SubscriptionSourceCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SubscriptionSourceCommand {
+    /// Append an HTTP(S) source to the active local profile.
+    AddUrl { url: String },
+    /// Append a raw UTF-8 source file to the active local profile.
+    AddRaw { file: PathBuf },
+    /// Remove a source from the active local profile.
+    Remove { id: String },
+    /// Fetch and parse an HTTP(S) source or parse a local UTF-8 file.
+    Test { input: String },
 }
 
 #[derive(Debug, Subcommand)]
