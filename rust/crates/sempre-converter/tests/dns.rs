@@ -136,7 +136,7 @@ fn v2ray_family_compiles_split_dns_and_native_override() {
     assert_eq!(output["dns"]["hosts"]["dns.quad9.net"], "9.9.9.9");
     assert!(output["routing"]["rules"].as_array().is_some_and(|values| {
         values.iter().any(|value| {
-            value["inboundTag"] == json!(["remote-dns"]) && value["outboundTag"] == "edge"
+            value["inboundTag"] == json!(["remote-dns"]) && value["balancerTag"] == "foreign"
         })
     }));
 
