@@ -1,6 +1,7 @@
 mod defaults;
 mod editor;
 mod icons;
+mod inspection;
 mod model;
 mod parser;
 mod renderer;
@@ -11,6 +12,7 @@ pub use defaults::{
     Defaults, EditorDefaults, effective_profile, recommended_defaults, recommended_editor_defaults,
     system_defaults,
 };
+pub use inspection::{PreviewNode, preview_nodes};
 pub use model::{
     CompileRequest, CompileResult, CustomNode, Diagnostic, EditorConfig, FieldDiff, LocalProxy,
     ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source, SourceSnapshot,
@@ -44,11 +46,8 @@ pub enum CompileError {
 }
 
 pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> {
-    let mut target = Target::parse(&request.target.format)?;
-    if !request.target.core.trim().is_empty() {
-        target.core.clone_from(&request.target.core);
-    }
-    let profile = defaults::effective_profile(editor::apply(&request.profile)?, &target);
+    let target = normalized_target(&request.target)?;
+    let profile = prepare_profile(&request.profile, &target)?;
     let snapshots: HashMap<&str, &SourceSnapshot> = request
         .snapshots
         .iter()
@@ -136,7 +135,19 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
     })
 }
 
-fn normalize_prefix(value: &str) -> String {
+pub fn prepare_profile(profile: &Profile, target: &Target) -> Result<Profile, CompileError> {
+    Ok(defaults::effective_profile(editor::apply(profile)?, target))
+}
+
+fn normalized_target(input: &Target) -> Result<Target, CompileError> {
+    let mut target = Target::parse(&input.format)?;
+    if !input.core.trim().is_empty() {
+        target.core.clone_from(&input.core);
+    }
+    Ok(target)
+}
+
+pub(crate) fn normalize_prefix(value: &str) -> String {
     let value = value.trim();
     if value.ends_with([' ', '-', '_', '|', ':']) {
         value.into()

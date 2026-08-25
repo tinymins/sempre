@@ -254,7 +254,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 }
 
-fn local_render(result: CompileResult, mut warnings: Vec<String>) -> SubscriptionRender {
+pub(crate) fn local_render(result: CompileResult, mut warnings: Vec<String>) -> SubscriptionRender {
     warnings.extend(result.diagnostics.iter().map(|item| item.message.clone()));
     SubscriptionRender {
         format: result.format,
@@ -271,7 +271,7 @@ fn local_render(result: CompileResult, mut warnings: Vec<String>) -> Subscriptio
     }
 }
 
-fn validate_source_content(content: &str) -> Result<(), SubscriptionError> {
+pub(crate) fn validate_source_content(content: &str) -> Result<(), SubscriptionError> {
     let parsed = parse_subscription(content);
     if parsed.nodes.is_empty() {
         let detail = if parsed.diagnostics.is_empty() {
@@ -284,7 +284,10 @@ fn validate_source_content(content: &str) -> Result<(), SubscriptionError> {
     Ok(())
 }
 
-fn find_profile<'a>(catalog: &'a Catalog, id: &str) -> Result<&'a Profile, ManagerError> {
+pub(crate) fn find_profile<'a>(
+    catalog: &'a Catalog,
+    id: &str,
+) -> Result<&'a Profile, ManagerError> {
     catalog
         .profiles
         .iter()
@@ -292,7 +295,7 @@ fn find_profile<'a>(catalog: &'a Catalog, id: &str) -> Result<&'a Profile, Manag
         .ok_or_else(|| ManagerError::ProfileNotFound(id.into()))
 }
 
-fn profile_mode(profile: &Profile) -> &str {
+pub(crate) fn profile_mode(profile: &Profile) -> &str {
     profile
         .extra
         .get("mode")

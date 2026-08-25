@@ -68,6 +68,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             post(config_validate).layer(DefaultBodyLimit::max(MAX_CONFIG_SIZE + (64 << 10))),
         )
         .merge(crate::subscription_api::router())
+        .merge(crate::subscription_tools_api::router())
         .merge(crate::custom_node_api::router())
         .merge(crate::runtime_api::router())
         .merge(crate::runtime_control_api::router())

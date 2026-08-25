@@ -406,7 +406,7 @@ fn internal(error: impl Into<String>) -> Response {
     )
 }
 
-fn operation(error: impl Into<String>) -> Response {
+pub(crate) fn operation(error: impl Into<String>) -> Response {
     error_response(
         StatusCode::BAD_REQUEST,
         "SUBSCRIPTION_OPERATION_FAILED",
