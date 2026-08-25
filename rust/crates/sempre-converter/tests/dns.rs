@@ -150,3 +150,46 @@ fn v2ray_family_compiles_split_dns_and_native_override() {
     assert_eq!(native["dns"]["queryStrategy"], "UseIPv6");
     assert_eq!(native["dns"]["servers"], json!(["1.1.1.1"]));
 }
+
+#[test]
+fn sing_box_system_dns_takeover_is_explicit_and_linux_only() {
+    let mut input = request("sing-box-v13");
+    input.profile.dns["shared"]["systemDnsTakeoverEnabled"] = json!(true);
+    input.profile.dns["shared"]["systemDnsListenHosts"] = json!(["127.0.0.1"]);
+    let output = compile(&input).expect("Linux system DNS");
+    let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
+    assert!(output["inbounds"].as_array().is_some_and(|values| {
+        values.iter().any(|value| {
+            value["tag"] == "system-dns-in"
+                && value["listen"] == "127.0.0.1"
+                && value["listen_port"] == 53
+                && value["override_address"] == "1.1.1.1"
+        })
+    }));
+    assert!(output["route"]["rules"].as_array().is_some_and(|rules| {
+        rules.windows(2).any(|rules| {
+            rules[0]["inbound"] == "system-dns-in"
+                && rules[0]["action"] == "sniff"
+                && rules[1]["inbound"] == "system-dns-in"
+                && rules[1]["action"] == "hijack-dns"
+        })
+    }));
+
+    input.target.format = "sing-box-v13-macos".into();
+    assert!(
+        compile(&input)
+            .expect_err("macOS takeover must fail")
+            .to_string()
+            .contains("Linux system sing-box")
+    );
+
+    input.target.format = "sing-box-v13".into();
+    input.profile.dns["shared"]["localDns"] = json!("local");
+    input.profile.dns["shared"]["localDnsTransport"] = json!("system");
+    assert!(
+        compile(&input)
+            .expect_err("recursive local resolver must fail")
+            .to_string()
+            .contains("explicit local DNS")
+    );
+}

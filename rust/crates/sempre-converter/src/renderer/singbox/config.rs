@@ -2,7 +2,17 @@ use serde_json::{Value, json};
 
 use crate::{Profile, Target};
 
-pub(super) fn local_inbounds(profile: &Profile) -> Vec<Value> {
+pub(super) fn inbounds(profile: &Profile, target: &Target) -> Vec<Value> {
+    local_inbounds(profile)
+        .into_iter()
+        .chain(super::super::dns::sing_box_system_inbounds(profile))
+        .chain(super::super::transparent::sing_box_inbounds(
+            profile, target,
+        ))
+        .collect()
+}
+
+fn local_inbounds(profile: &Profile) -> Vec<Value> {
     let users = if profile.local_proxy.username.is_empty() {
         vec![]
     } else {
@@ -22,14 +32,15 @@ pub(super) fn route(profile: &Profile, target: &Target, warnings: &mut Vec<Strin
         .first()
         .map_or("proxy", |group| group.name.as_str());
     let mut rule_sets = Vec::new();
-    let mut rules = if target.version == "11" {
+    let mut rules = super::super::dns::sing_box_system_route_rules(profile);
+    rules.extend(if target.version == "11" {
         vec![json!({ "protocol": "dns", "outbound": "dns-out" })]
     } else {
         vec![
             json!({ "action": "sniff" }),
             json!({ "protocol": "dns", "action": "hijack-dns" }),
         ]
-    };
+    });
     rules.push(json!({ "ip_is_private": true, "outbound": "direct" }));
     for value in &profile.rules {
         if value.is_object() {

@@ -41,9 +41,7 @@ pub(super) fn render(
     let route = config::route(profile, target, &mut warnings);
     let mut config = json!({
         "log": config::log(&profile.log_level),
-        "inbounds": config::local_inbounds(profile).into_iter().chain(
-            super::transparent::sing_box_inbounds(profile, target)
-        ).collect::<Vec<_>>(),
+        "inbounds": config::inbounds(profile, target),
         "outbounds": outbounds,
         "dns": dns,
         "route": route,

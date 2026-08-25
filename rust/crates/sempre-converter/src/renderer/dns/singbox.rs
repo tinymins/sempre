@@ -219,6 +219,50 @@ pub(super) fn route_policy(profile: &Profile) -> (Vec<Value>, Option<Value>) {
     (rule_sets, route)
 }
 
+pub(super) fn system_inbounds(shared: &SharedDns) -> Vec<Value> {
+    if !shared.system_takeover() {
+        return Vec::new();
+    }
+    shared
+        .system_dns_listen_hosts
+        .iter()
+        .enumerate()
+        .map(|(index, host)| {
+            json!({
+                "type": "direct", "tag": system_inbound_tag(host, index),
+                "listen": host, "listen_port": shared.system_dns_listen_port,
+                "override_address": "1.1.1.1", "override_port": 53
+            })
+        })
+        .collect()
+}
+
+pub(super) fn system_route_rules(shared: &SharedDns) -> Vec<Value> {
+    if !shared.system_takeover() {
+        return Vec::new();
+    }
+    shared
+        .system_dns_listen_hosts
+        .iter()
+        .enumerate()
+        .flat_map(|(index, host)| {
+            let tag = system_inbound_tag(host, index);
+            [
+                json!({ "inbound": tag, "action": "sniff" }),
+                json!({ "inbound": tag, "protocol": "dns", "action": "hijack-dns" }),
+            ]
+        })
+        .collect()
+}
+
+fn system_inbound_tag(host: &str, index: usize) -> String {
+    match host {
+        "127.0.0.1" => "system-dns-in".into(),
+        "0.0.0.0" => "system-dns-in-any".into(),
+        _ => format!("system-dns-in-{index}"),
+    }
+}
+
 pub(super) fn strip_fakeip(config: &mut Value) {
     config.as_object_mut().map(|value| value.remove("fakeip"));
     for key in ["servers", "rules"] {

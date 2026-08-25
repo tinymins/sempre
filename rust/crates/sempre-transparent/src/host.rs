@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::{net::TcpStream, time::sleep};
 
-use crate::{Mode, Plan, TransparentError, command, nft, policy};
+use crate::{Mode, Plan, TransparentError, command, nft, policy, system_dns::SystemDns};
 
 const TUN_TIMEOUT: Duration = Duration::from_secs(20);
 const LISTENER_TIMEOUT: Duration = Duration::from_secs(8);
@@ -10,41 +10,75 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct Controller {
     runner: Arc<dyn command::Runner>,
+    system_dns: SystemDns,
 }
 
 impl Default for Controller {
     fn default() -> Self {
-        Self::new()
+        Self {
+            runner: Arc::new(command::SystemRunner),
+            system_dns: SystemDns::disabled(),
+        }
     }
 }
 
 impl Controller {
-    pub fn new() -> Self {
+    pub fn new(layout: &sempre_state::Layout) -> Self {
         Self {
             runner: Arc::new(command::SystemRunner),
+            system_dns: SystemDns::new(
+                cfg!(target_os = "linux") && layout.mode == sempre_state::Mode::System,
+                layout.home.join("system-dns"),
+                "/etc/resolv.conf".into(),
+            ),
         }
     }
 
+    pub fn prepare(
+        &self,
+        core: &str,
+        profile: &sempre_converter::Profile,
+        runtime_config: &std::path::Path,
+    ) -> Result<Plan, TransparentError> {
+        if !cfg!(target_os = "linux") {
+            return Ok(Plan::default());
+        }
+        let inventory = sempre_network::inventory()?;
+        crate::prepare_with_inventory_authorized(
+            core,
+            profile,
+            runtime_config,
+            &inventory,
+            self.system_dns.allowed(),
+        )
+    }
+
     pub async fn apply(&self, plan: &Plan) -> Result<(), TransparentError> {
-        if !cfg!(target_os = "linux") || !plan.enabled() {
+        if !cfg!(target_os = "linux") || !plan.active() {
             return Ok(());
         }
         self.require_root().await?;
-        policy::check_collisions(self.runner.as_ref()).await?;
-        nft::check_collisions(self.runner.as_ref()).await?;
-        self.cleanup_owned().await?;
-        self.wait_ready(plan).await?;
-        if plan.mode == Mode::Tun {
-            return Ok(());
+        self.system_dns.restore()?;
+        if plan.enabled() {
+            policy::check_collisions(self.runner.as_ref()).await?;
+            nft::check_collisions(self.runner.as_ref()).await?;
+            self.cleanup_network().await?;
+            self.wait_ready(plan).await?;
+            if plan.mode == Mode::TProxy {
+                self.check_forwarding(plan).await?;
+                if let Err(error) = policy::apply(self.runner.as_ref()).await {
+                    let _ = self.cleanup_network().await;
+                    return Err(error);
+                }
+                if let Err(error) = nft::apply(self.runner.as_ref(), plan).await {
+                    let _ = self.cleanup_network().await;
+                    return Err(error);
+                }
+            }
         }
-        self.check_forwarding(plan).await?;
-        if let Err(error) = policy::apply(self.runner.as_ref()).await {
-            let _ = self.cleanup_owned().await;
-            return Err(error);
-        }
-        if let Err(error) = nft::apply(self.runner.as_ref(), plan).await {
-            let _ = self.cleanup_owned().await;
-            return Err(error);
+        if let Some(system_dns) = &plan.system_dns {
+            self.wait_system_dns(system_dns).await?;
+            self.system_dns.apply()?;
         }
         if let Err(error) = self.verify(plan).await {
             let _ = self.cleanup_owned().await;
@@ -54,13 +88,18 @@ impl Controller {
     }
 
     pub async fn verify(&self, plan: &Plan) -> Result<(), TransparentError> {
-        if !cfg!(target_os = "linux") || !plan.enabled() {
+        if !cfg!(target_os = "linux") || !plan.active() {
             return Ok(());
         }
-        self.wait_ready(plan).await?;
-        if plan.mode == Mode::TProxy {
-            nft::verify(self.runner.as_ref()).await?;
-            policy::verify(self.runner.as_ref()).await?;
+        if plan.enabled() {
+            self.wait_ready(plan).await?;
+            if plan.mode == Mode::TProxy {
+                nft::verify(self.runner.as_ref()).await?;
+                policy::verify(self.runner.as_ref()).await?;
+            }
+        }
+        if plan.system_dns.is_some() {
+            self.system_dns.verify()?;
         }
         Ok(())
     }
@@ -73,9 +112,35 @@ impl Controller {
     }
 
     async fn cleanup_owned(&self) -> Result<(), TransparentError> {
+        let dns_result = self.system_dns.restore();
+        let network_result = self.cleanup_network().await;
+        dns_result.and(network_result)
+    }
+
+    async fn cleanup_network(&self) -> Result<(), TransparentError> {
         let nft_result = nft::delete_owned(self.runner.as_ref()).await;
         let policy_result = policy::delete(self.runner.as_ref()).await;
         nft_result.and(policy_result)
+    }
+
+    async fn wait_system_dns(&self, plan: &crate::SystemDnsPlan) -> Result<(), TransparentError> {
+        let started = std::time::Instant::now();
+        for host in &plan.listen_hosts {
+            let host = if host == "0.0.0.0" { "127.0.0.1" } else { host };
+            loop {
+                match TcpStream::connect((host, plan.listen_port)).await {
+                    Ok(_) => break,
+                    Err(_) if started.elapsed() < LISTENER_TIMEOUT => sleep(POLL_INTERVAL).await,
+                    Err(error) => {
+                        return Err(TransparentError::Invalid(format!(
+                            "system DNS listener {host}:{} did not become ready: {error}",
+                            plan.listen_port
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn wait_ready(&self, plan: &Plan) -> Result<(), TransparentError> {

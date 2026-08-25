@@ -76,7 +76,7 @@ impl<R: VersionRunner> Manager<R> {
         let remote = RemoteClient::new()?;
         let gateway = Arc::new(sempre_gateway::Controller::new(store.layout())?);
         let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
-        let transparent = Arc::new(TransparentController::new());
+        let transparent = Arc::new(TransparentController::new(store.layout()));
         Ok(Self {
             store,
             registry: built_in_registry(),

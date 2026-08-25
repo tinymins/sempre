@@ -270,7 +270,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .iter()
                 .find(|profile| profile.id == profile_id)
                 .ok_or_else(|| ManagerError::ProfileNotFound(profile_id.into()))?;
-            sempre_transparent::prepare(&deployment.core, profile, &runtime.config)?
+            self.transparent
+                .prepare(&deployment.core, profile, &runtime.config)?
         } else {
             TransparentPlan::default()
         };
@@ -398,7 +399,7 @@ async fn wait_startup<R: VersionRunner + ValidationRunner>(
     plan: &RuntimePlan,
     grace: Duration,
 ) -> ProcessEvent {
-    if plan.transparent.enabled() {
+    if plan.transparent.active() {
         return tokio::select! {
             result = manager.transparent.apply(&plan.transparent) => ProcessEvent::Healthy(result),
             result = process.wait() => ProcessEvent::Exited(result),

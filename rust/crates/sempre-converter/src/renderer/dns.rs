@@ -12,8 +12,16 @@ pub(super) fn sing_box(
     target: &Target,
 ) -> Result<Value, CompileError> {
     let shared = SharedDns::resolve(&profile.dns);
-    shared.validate()?;
+    shared.validate(profile, target)?;
     Ok(singbox::render(profile, proxies, target, &shared))
+}
+
+pub(super) fn sing_box_system_inbounds(profile: &Profile) -> Vec<Value> {
+    singbox::system_inbounds(&SharedDns::resolve(&profile.dns))
+}
+
+pub(super) fn sing_box_system_route_rules(profile: &Profile) -> Vec<Value> {
+    singbox::system_route_rules(&SharedDns::resolve(&profile.dns))
 }
 
 pub(super) fn sing_box_route_policy(profile: &Profile) -> (Vec<Value>, Option<Value>) {
@@ -106,6 +114,8 @@ pub(super) struct SharedDns {
     fakeip_ipv4_range: String,
     fakeip_ipv6_range: String,
     fakeip_ttl: u64,
+    system_dns_listen_port: u64,
+    system_dns_listen_hosts: Vec<String>,
     flags: DnsFlags,
     cn_domain_rule_set: RuleSet,
     cn_ip_rule_set: RuleSet,
@@ -129,6 +139,7 @@ impl DnsFlags {
     const CN_IP_LOCAL: u8 = 1 << 3;
     const EXCLUDE_HK: u8 = 1 << 4;
     const PREFER_IPV4: u8 = 1 << 5;
+    const SYSTEM_TAKEOVER: u8 = 1 << 6;
 
     fn resolve(shared: &Value) -> Self {
         let mut bits = 0;
@@ -139,6 +150,7 @@ impl DnsFlags {
             (Self::CN_IP_LOCAL, "cnIpLocalDns", true),
             (Self::EXCLUDE_HK, "excludeHkFromCnIp", true),
             (Self::PREFER_IPV4, "preferIpv4", true),
+            (Self::SYSTEM_TAKEOVER, "systemDnsTakeoverEnabled", false),
         ] {
             if boolean(shared, key, fallback) {
                 bits |= flag;
@@ -189,6 +201,8 @@ impl SharedDns {
             fakeip_ipv4_range: string(shared, "fakeipIpv4Range", "198.18.0.0/15"),
             fakeip_ipv6_range: string(shared, "fakeipIpv6Range", "fc00::/18"),
             fakeip_ttl: integer(shared, "fakeipTtl", 300),
+            system_dns_listen_port: integer(shared, "systemDnsListenPort", 53),
+            system_dns_listen_hosts: system_dns_hosts(shared),
             flags: DnsFlags::resolve(shared),
             cn_domain_rule_set: RuleSet::resolve(
                 shared,
@@ -208,7 +222,7 @@ impl SharedDns {
         }
     }
 
-    fn validate(&self) -> Result<(), CompileError> {
+    fn validate(&self, profile: &Profile, target: &Target) -> Result<(), CompileError> {
         if !matches!(self.local_transport.as_str(), "system" | "udp" | "tls") {
             return Err(CompileError::Render(format!(
                 "unsupported local DNS transport {:?}",
@@ -223,6 +237,47 @@ impl SharedDns {
             if rule_set.enabled && rule_set.url.trim().is_empty() {
                 return Err(CompileError::Render(format!(
                     "{name} DNS rule-set URL is required when enabled"
+                )));
+            }
+        }
+        if self.system_takeover() {
+            if target.platform != "default" {
+                return Err(CompileError::Render(
+                    "system DNS takeover is only available for Linux system sing-box runtime"
+                        .into(),
+                ));
+            }
+            if self.system_dns_listen_port != 53 {
+                return Err(CompileError::Render(
+                    "system DNS takeover requires listen port 53 because resolv.conf cannot specify ports".into(),
+                ));
+            }
+            if !self
+                .system_dns_listen_hosts
+                .iter()
+                .any(|host| matches!(host.as_str(), "127.0.0.1" | "0.0.0.0"))
+            {
+                return Err(CompileError::Render(
+                    "system DNS takeover listen hosts must include 127.0.0.1 or 0.0.0.0".into(),
+                ));
+            }
+            if self.local_server().1 {
+                return Err(CompileError::Render(
+                    "system DNS takeover requires an explicit local DNS upstream instead of local"
+                        .into(),
+                ));
+            }
+            let managed_port = u64::from(profile.local_proxy.socks_port);
+            let ports = [
+                managed_port,
+                u64::from(profile.local_proxy.http_port),
+                u64::from(profile.transparent_proxy.tproxy.listen_port),
+                u64::from(profile.transparent_proxy.tproxy.dns_listen_port),
+            ];
+            if ports.contains(&self.system_dns_listen_port) {
+                return Err(CompileError::Render(format!(
+                    "system DNS takeover port {} conflicts with another managed listener",
+                    self.system_dns_listen_port
                 )));
             }
         }
@@ -260,6 +315,32 @@ impl SharedDns {
     const fn prefer_ipv4(&self) -> bool {
         self.flags.has(DnsFlags::PREFER_IPV4)
     }
+    const fn system_takeover(&self) -> bool {
+        self.flags.has(DnsFlags::SYSTEM_TAKEOVER)
+    }
+}
+
+fn system_dns_hosts(shared: &Value) -> Vec<String> {
+    let values = shared
+        .get("systemDnsListenHosts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str);
+    let mut hosts = Vec::new();
+    for host in values.filter_map(|host| host.trim().parse::<std::net::Ipv4Addr>().ok()) {
+        let host = host.to_string();
+        if host == "0.0.0.0" {
+            return vec![host];
+        }
+        if !hosts.contains(&host) {
+            hosts.push(host);
+        }
+    }
+    if hosts.is_empty() {
+        hosts.push("127.0.0.1".into());
+    }
+    hosts
 }
 
 impl RuleSet {
