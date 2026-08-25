@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use sempre_converter::Profile;
 use sempre_subscription::{SubscriptionError, new_profile};
@@ -22,6 +22,11 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
             "/api/v1/subscriptions/{id}",
             get(get_profile).put(save).patch(rename).delete(remove),
         )
+        .route("/api/v1/subscriptions/{id}/refresh", post(refresh_profile))
+        .route(
+            "/api/v1/subscriptions/{id}/activate",
+            post(activate_profile),
+        )
 }
 
 #[derive(Serialize)]
@@ -36,7 +41,7 @@ struct CatalogOutput {
 }
 
 async fn list(State(state): State<Arc<AppState>>) -> Response {
-    let catalog = match state.subscriptions.read() {
+    let catalog = match state.manager.subscriptions().read() {
         Ok(catalog) => catalog,
         Err(error) => return internal(error.to_string()),
     };
@@ -90,7 +95,7 @@ async fn create(State(state): State<Arc<AppState>>, Json(input): Json<CreateInpu
         return bad_request("profile mode must be local or remote");
     }
     let candidate = profile.clone();
-    match state.subscriptions.update(|catalog| {
+    match state.manager.subscriptions().update(|catalog| {
         catalog.profiles.push(candidate);
         Ok(())
     }) {
@@ -100,7 +105,7 @@ async fn create(State(state): State<Arc<AppState>>, Json(input): Json<CreateInpu
 }
 
 async fn get_profile(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-    match state.subscriptions.read() {
+    match state.manager.subscriptions().read() {
         Ok(catalog) => catalog
             .profiles
             .into_iter()
@@ -139,7 +144,7 @@ async fn save(
         );
     }
     let mut saved = None;
-    let result = state.subscriptions.update(|catalog| {
+    let result = state.manager.subscriptions().update(|catalog| {
         let current = catalog
             .profiles
             .iter_mut()
@@ -209,7 +214,7 @@ async fn rename(
         return bad_request("profile name is required");
     }
     let mut changed = None;
-    let result = state.subscriptions.update(|catalog| {
+    let result = state.manager.subscriptions().update(|catalog| {
         let profile = catalog
             .profiles
             .iter_mut()
@@ -234,7 +239,7 @@ async fn remove(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> R
     if document.active_profile_id.as_deref() == Some(&id) {
         return bad_request("the active subscription profile cannot be deleted");
     }
-    match state.subscriptions.update(|catalog| {
+    match state.manager.subscriptions().update(|catalog| {
         if catalog.profiles.len() == 1 {
             return Err(SubscriptionError::Invalid(
                 "at least one subscription profile is required".into(),
@@ -248,6 +253,26 @@ async fn remove(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> R
         Ok(())
     }) {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => operation(error.to_string()),
+    }
+}
+
+#[derive(Serialize)]
+struct PrepareOutput {
+    change: sempre_manager::CoreChange,
+    render: sempre_manager::SubscriptionRender,
+}
+
+async fn refresh_profile(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+    match state.manager.refresh_subscription_profile(&id).await {
+        Ok((change, render)) => Json(PrepareOutput { change, render }).into_response(),
+        Err(error) => operation(error.to_string()),
+    }
+}
+
+async fn activate_profile(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+    match state.manager.activate_subscription_profile(&id).await {
+        Ok((change, render)) => Json(PrepareOutput { change, render }).into_response(),
         Err(error) => operation(error.to_string()),
     }
 }

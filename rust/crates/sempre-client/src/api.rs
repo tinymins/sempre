@@ -11,7 +11,6 @@ use axum::{
 };
 use sempre_control::{API_MAJOR, AuthStore, WebConfigStore, token_matches};
 use sempre_manager::{MAX_CONFIG_SIZE, Manager};
-use sempre_subscription::SubscriptionStore;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -26,7 +25,6 @@ pub(crate) struct AppState {
     daemon_token: String,
     bind: String,
     local_url: String,
-    pub(crate) subscriptions: SubscriptionStore,
 }
 
 impl AppState {
@@ -36,7 +34,6 @@ impl AppState {
         daemon_token: String,
         bind: String,
         local_url: String,
-        subscriptions: SubscriptionStore,
     ) -> Self {
         Self {
             manager,
@@ -45,7 +42,6 @@ impl AppState {
             daemon_token,
             bind,
             local_url,
-            subscriptions,
         }
     }
 }

@@ -3,7 +3,6 @@ use std::{fs, path::PathBuf, sync::Arc};
 use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, validate_listen};
 use sempre_manager::Manager;
 use sempre_state::{Layout, Mode, Store};
-use sempre_subscription::SubscriptionStore;
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -34,15 +33,12 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
     public_endpoint.write(&layout.endpoint)?;
 
     let manager = Arc::new(Manager::new(store)?);
-    let subscriptions = SubscriptionStore::new(layout.clone());
-    subscriptions.initialize()?;
     let state = Arc::new(api::AppState::new(
         manager,
         web,
         daemon_endpoint.token,
         bind.clone(),
         local_url.clone(),
-        subscriptions,
     ));
     let app = api::router(state);
     info!(%bind, %local_url, mode = ?mode, "Sempre Rust client daemon listening");

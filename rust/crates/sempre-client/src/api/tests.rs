@@ -6,7 +6,6 @@ use axum::{
 use sempre_control::{DaemonEndpoint, WebConfigStore};
 use sempre_manager::Manager;
 use sempre_state::{Layout, Store};
-use sempre_subscription::SubscriptionStore;
 use tower::ServiceExt;
 
 use super::*;
@@ -18,8 +17,6 @@ fn test_state(root: &tempfile::TempDir) -> (Arc<AppState>, String) {
     web.initialize().expect("web config");
     let endpoint = DaemonEndpoint::new("http://127.0.0.1:33211").expect("endpoint");
     let token = endpoint.token.clone();
-    let subscriptions = SubscriptionStore::new(layout.clone());
-    subscriptions.initialize().expect("subscriptions");
     (
         Arc::new(AppState::new(
             manager,
@@ -27,7 +24,6 @@ fn test_state(root: &tempfile::TempDir) -> (Arc<AppState>, String) {
             endpoint.token,
             "127.0.0.1:33211".into(),
             "http://127.0.0.1:33211".into(),
-            subscriptions,
         )),
         token,
     )
@@ -268,6 +264,45 @@ async fn current_configuration_is_read_only_and_requires_a_selected_config() {
         .expect("body");
     let value: serde_json::Value = serde_json::from_slice(&body).expect("error JSON");
     assert_eq!(value["error"]["code"], "DIRECT_CONFIG_REMOVED");
+}
+
+#[tokio::test]
+async fn subscription_prepare_routes_use_the_manager_boundary() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let profile_id = state
+        .manager
+        .subscriptions()
+        .read()
+        .expect("catalog")
+        .profiles[0]
+        .id
+        .clone();
+    let app = router(state);
+    for operation in ["refresh", "activate"] {
+        let mut prepare = request(
+            "POST",
+            &format!("/api/v1/subscriptions/{profile_id}/{operation}"),
+            Body::empty(),
+            "127.0.0.1:1",
+        );
+        prepare.headers_mut().insert(
+            DAEMON_TOKEN_HEADER,
+            HeaderValue::from_str(&token).expect("token"),
+        );
+        let response = app.clone().oneshot(prepare).await.expect("prepare profile");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("body");
+        let error: serde_json::Value = serde_json::from_slice(&body).expect("error JSON");
+        assert_eq!(error["error"]["code"], "SUBSCRIPTION_OPERATION_FAILED");
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("select"))
+        );
+    }
 }
 
 #[tokio::test]
