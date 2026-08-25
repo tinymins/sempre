@@ -28,4 +28,14 @@ pub enum SubscriptionError {
     SnapshotIntegrity { hash: String },
     #[error("write subscription snapshot: {0}")]
     WriteSnapshot(#[source] io::Error),
+    #[error("subscription fetch failed: {0}")]
+    Fetch(String),
+    #[error("read subscription cache: {0}")]
+    ReadCache(#[source] io::Error),
+    #[error("decode subscription cache: {0}")]
+    DecodeCache(#[source] serde_json::Error),
+    #[error("encode subscription cache: {0}")]
+    EncodeCache(#[source] serde_json::Error),
+    #[error("write subscription cache: {0}")]
+    WriteCache(#[source] io::Error),
 }

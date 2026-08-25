@@ -79,6 +79,30 @@ impl SubscriptionStore {
         Ok(content)
     }
 
+    pub fn clear_cache(&self) -> Result<(), SubscriptionError> {
+        let entries = match fs::read_dir(&self.layout.subscription_cache) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(SubscriptionError::ReadCache(error)),
+        };
+        for entry in entries {
+            let entry = entry.map_err(SubscriptionError::ReadCache)?;
+            if entry
+                .file_type()
+                .map_err(SubscriptionError::ReadCache)?
+                .is_file()
+            {
+                fs::remove_file(entry.path()).map_err(SubscriptionError::WriteCache)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn cache_path(&self, key: &str) -> std::path::PathBuf {
+        let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
+        self.layout.subscription_cache.join(format!("{hash}.json"))
+    }
+
     fn with_lock<T>(
         &self,
         action: impl FnOnce() -> Result<T, SubscriptionError>,

@@ -2090,10 +2090,13 @@ dependencies = [
 name = "sempre-subscription"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "base64",
  "chrono",
  "fs2",
+ "futures-util",
  "rand 0.9.5",
+ "reqwest",
  "sempre-converter",
  "sempre-state",
  "serde",
@@ -2101,6 +2104,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+ "tokio",
  "url",
  "uuid",
 ]
