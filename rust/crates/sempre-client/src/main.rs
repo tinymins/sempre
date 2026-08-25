@@ -1,6 +1,7 @@
 mod api;
 mod args;
 mod daemon;
+mod subscription_api;
 
 use std::io;
 
@@ -9,6 +10,7 @@ use clap::Parser;
 use sempre_control::ControlError;
 use sempre_manager::{Manager, ManagerError};
 use sempre_state::{Layout, LayoutError, Mode, StateError, Store};
+use sempre_subscription::SubscriptionError;
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
@@ -24,6 +26,8 @@ pub(crate) enum ClientError {
     Manager(#[from] ManagerError),
     #[error(transparent)]
     Control(#[from] ControlError),
+    #[error(transparent)]
+    Subscription(#[from] SubscriptionError),
     #[error("bind local API at {address}: {source}")]
     Bind { address: String, source: io::Error },
     #[error("read local API address: {0}")]

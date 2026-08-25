@@ -6,6 +6,7 @@ use axum::{
 use sempre_control::{DaemonEndpoint, WebConfigStore};
 use sempre_manager::Manager;
 use sempre_state::{Layout, Store};
+use sempre_subscription::SubscriptionStore;
 use tower::ServiceExt;
 
 use super::*;
@@ -13,10 +14,12 @@ use super::*;
 fn test_state(root: &tempfile::TempDir) -> (Arc<AppState>, String) {
     let layout = Layout::at(root.path());
     let manager = Arc::new(Manager::new(Store::new(layout.clone())).expect("manager"));
-    let web = WebConfigStore::new(layout.web_config);
+    let web = WebConfigStore::new(layout.web_config.clone());
     web.initialize().expect("web config");
     let endpoint = DaemonEndpoint::new("http://127.0.0.1:33211").expect("endpoint");
     let token = endpoint.token.clone();
+    let subscriptions = SubscriptionStore::new(layout.clone());
+    subscriptions.initialize().expect("subscriptions");
     (
         Arc::new(AppState::new(
             manager,
@@ -24,6 +27,7 @@ fn test_state(root: &tempfile::TempDir) -> (Arc<AppState>, String) {
             endpoint.token,
             "127.0.0.1:33211".into(),
             "http://127.0.0.1:33211".into(),
+            subscriptions,
         )),
         token,
     )
@@ -264,4 +268,51 @@ async fn current_configuration_is_read_only_and_requires_a_selected_config() {
         .expect("body");
     let value: serde_json::Value = serde_json::from_slice(&body).expect("error JSON");
     assert_eq!(value["error"]["code"], "DIRECT_CONFIG_REMOVED");
+}
+
+#[tokio::test]
+async fn subscription_catalog_supports_authenticated_local_and_remote_creation() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let app = router(state);
+    let mut list = request("GET", "/api/v1/subscriptions", Body::empty(), "127.0.0.1:1");
+    list.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(list).await.expect("list profiles");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let catalog: serde_json::Value = serde_json::from_slice(&body).expect("catalog JSON");
+    assert_eq!(catalog["profiles"].as_array().map(Vec::len), Some(1));
+
+    let mut create = request(
+        "POST",
+        "/api/v1/subscriptions",
+        Body::from(
+            r#"{"name":"Remote","mode":"remote","manifest_url":"https://server.example/share"}"#,
+        ),
+        "127.0.0.1:1",
+    );
+    create.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    create.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.oneshot(create).await.expect("create profile");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let profile: serde_json::Value = serde_json::from_slice(&body).expect("profile JSON");
+    assert_eq!(profile["mode"], "remote");
+    assert_eq!(
+        profile["remote"]["manifest_url"],
+        "https://server.example/share"
+    );
 }

@@ -11,6 +11,7 @@ use axum::{
 };
 use sempre_control::{API_MAJOR, AuthStore, WebConfigStore, token_matches};
 use sempre_manager::{MAX_CONFIG_SIZE, Manager};
+use sempre_subscription::SubscriptionStore;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -19,12 +20,13 @@ use crate::VERSION;
 const DAEMON_TOKEN_HEADER: &str = "x-sempre-daemon-token";
 
 pub(crate) struct AppState {
-    manager: Arc<Manager>,
+    pub(crate) manager: Arc<Manager>,
     web: WebConfigStore,
     auth: AuthStore,
     daemon_token: String,
     bind: String,
     local_url: String,
+    pub(crate) subscriptions: SubscriptionStore,
 }
 
 impl AppState {
@@ -34,6 +36,7 @@ impl AppState {
         daemon_token: String,
         bind: String,
         local_url: String,
+        subscriptions: SubscriptionStore,
     ) -> Self {
         Self {
             manager,
@@ -42,6 +45,7 @@ impl AppState {
             daemon_token,
             bind,
             local_url,
+            subscriptions,
         }
     }
 }
@@ -62,6 +66,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             "/api/v1/configs/validate",
             post(config_validate).layer(DefaultBodyLimit::max(MAX_CONFIG_SIZE + (64 << 10))),
         )
+        .merge(crate::subscription_api::router())
         .layer(middleware::from_fn_with_state(state.clone(), security))
         .with_state(state)
 }

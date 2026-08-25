@@ -15,9 +15,12 @@ axum.workspace = true
 chrono.workspace = true
 clap.workspace = true
 sempre-control = { path = "../sempre-control" }
+sempre-converter = { path = "../sempre-converter" }
 sempre-manager = { path = "../sempre-manager" }
 sempre-state = { path = "../sempre-state" }
+sempre-subscription = { path = "../sempre-subscription" }
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -25,7 +28,6 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 tempfile.workspace = true
 tower.workspace = true
 
