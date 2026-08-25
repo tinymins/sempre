@@ -1,5 +1,6 @@
 mod error;
 mod install;
+mod inventory;
 mod process;
 
 use sempre_artifact::{Downloader, GithubClient};
@@ -8,6 +9,7 @@ use sempre_state::{Document, Store};
 
 pub use error::ManagerError;
 pub use install::InstallResult;
+pub use inventory::{CoreInventory, InstalledCore};
 pub use process::{ProcessRunner, VersionRunner};
 
 const USER_AGENT: &str = concat!("Sempre/", env!("CARGO_PKG_VERSION"));

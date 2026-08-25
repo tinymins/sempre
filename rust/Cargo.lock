@@ -1962,13 +1962,20 @@ name = "sempre-client"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "clap",
+ "sempre-control",
+ "sempre-manager",
  "sempre-state",
  "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

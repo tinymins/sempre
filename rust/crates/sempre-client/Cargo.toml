@@ -12,13 +12,22 @@ path = "src/main.rs"
 
 [dependencies]
 axum.workspace = true
+chrono.workspace = true
 clap.workspace = true
+sempre-control = { path = "../sempre-control" }
+sempre-manager = { path = "../sempre-manager" }
 sempre-state = { path = "../sempre-state" }
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+tower.workspace = true
 
 [lints]
 workspace = true
