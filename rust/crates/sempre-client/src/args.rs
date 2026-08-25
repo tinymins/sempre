@@ -11,12 +11,20 @@ pub(crate) struct Arguments {
     pub system: bool,
     #[arg(long, conflicts_with = "system", global = true)]
     pub portable: bool,
+    #[arg(long, hide = true, global = true)]
+    pub elevated: bool,
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
+    /// Install this extracted release as the native system service.
+    Install {
+        /// Replace a different existing system deployment without prompting.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Run the authenticated local control daemon.
     Daemon {
         /// Override the persisted listen address for this process.
@@ -41,6 +49,26 @@ pub(crate) enum Command {
     #[cfg(windows)]
     #[command(hide = true)]
     ServiceHost,
+}
+
+impl Arguments {
+    pub fn requires_administrator(&self) -> bool {
+        let system = !self.portable;
+        match &self.command {
+            Command::Install { .. } => true,
+            Command::Daemon {
+                development_root, ..
+            } => development_root.is_none() && system,
+            Command::Core { .. } => system,
+            Command::Bundle { command } => match command {
+                BundleCommand::Export { .. } => system,
+                BundleCommand::Restore { .. } => true,
+            },
+            Command::Version => false,
+            #[cfg(windows)]
+            Command::ServiceHost => false,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,5 +154,29 @@ mod tests {
                 command: BundleCommand::Restore { yes: true }
             }
         ));
+        let install =
+            Arguments::try_parse_from(["sempre", "install", "--yes"]).expect("release install");
+        assert!(install.requires_administrator());
+        assert!(matches!(install.command, Command::Install { yes: true }));
+    }
+
+    #[test]
+    fn administrator_boundary_matches_mutating_system_commands() {
+        let version = Arguments::try_parse_from(["sempre", "version"]).expect("version");
+        assert!(!version.requires_administrator());
+        let portable_core = Arguments::try_parse_from(["sempre", "--portable", "core", "list"])
+            .expect("portable core list");
+        assert!(!portable_core.requires_administrator());
+        let system_core =
+            Arguments::try_parse_from(["sempre", "core", "list"]).expect("system core list");
+        assert!(system_core.requires_administrator());
+        let development = Arguments::try_parse_from([
+            "sempre",
+            "daemon",
+            "--development-root",
+            ".cache/sempre-dev/runtime",
+        ])
+        .expect("development daemon");
+        assert!(!development.requires_administrator());
     }
 }

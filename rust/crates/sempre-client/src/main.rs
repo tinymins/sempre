@@ -4,6 +4,7 @@ mod bundle_api;
 mod core_management_api;
 mod custom_node_api;
 mod daemon;
+mod elevate;
 mod gateway_api;
 mod listener;
 mod runtime_api;
@@ -46,6 +47,8 @@ pub(crate) enum ClientError {
     Subscription(#[from] SubscriptionError),
     #[error(transparent)]
     Bundle(#[from] sempre_bundle::BundleError),
+    #[error("deployment cancelled")]
+    Cancelled,
     #[error("bind local API at {address}: {source}")]
     Bind { address: String, source: io::Error },
     #[error("read local API address: {0}")]
@@ -73,6 +76,7 @@ fn main() {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sempre=info")),
         )
         .init();
+    let raw_arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     let arguments = Arguments::parse();
     #[cfg(windows)]
     if matches!(arguments.command, Command::ServiceHost) {
@@ -81,6 +85,14 @@ fn main() {
             std::process::exit(1);
         }
         return;
+    }
+    match elevate::ensure(&arguments, &raw_arguments) {
+        Ok(elevate::Outcome::Continue) => {}
+        Ok(elevate::Outcome::Exit(code)) => std::process::exit(code),
+        Err(error) => {
+            eprintln!("ERROR: {error}");
+            std::process::exit(1);
+        }
     }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -99,6 +111,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Mode::System
     };
     match arguments.command {
+        Command::Install { yes } => run_install(yes).await,
         Command::Version => {
             println!("Sempre {VERSION}");
             Ok(())
@@ -115,6 +128,17 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Command::Core { command } => run_core(mode, command).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
     }
+}
+
+async fn run_install(yes: bool) -> Result<(), ClientError> {
+    let executable = current_executable("locate release executable")?;
+    let source = Layout::portable_at(&executable);
+    sempre_bundle::validate_release(&source.root)?;
+    let manager = Manager::new(Store::new(source))?;
+    let target = Layout::for_mode(Mode::System)?;
+    deploy_bundle(&manager, &target, sempre_bundle::BundleKind::Release, yes).await?;
+    println!("Sempre installed, enabled, and started.");
+    Ok(())
 }
 
 async fn run_bundle(mode: Mode, command: BundleCommand) -> Result<(), ClientError> {
@@ -141,20 +165,63 @@ async fn run_bundle(mode: Mode, command: BundleCommand) -> Result<(), ClientErro
             Ok(())
         }
         BundleCommand::Restore { yes } => {
-            let executable = std::env::current_exe().map_err(|source| ClientError::Io {
-                operation: "locate snapshot executable",
-                path: PathBuf::from("sempre"),
-                source,
-            })?;
+            let executable = current_executable("locate snapshot executable")?;
             let source = Layout::portable_at(&executable);
             sempre_bundle::validate_snapshot(&source.root)?;
             let manager = Manager::new(Store::new(source))?;
             let target = Layout::for_mode(Mode::System)?;
-            manager.restore_bundle(&target, yes).await?;
+            deploy_bundle(&manager, &target, sempre_bundle::BundleKind::Snapshot, yes).await?;
             println!("Sempre snapshot restored, enabled, and started.");
             Ok(())
         }
     }
+}
+
+async fn deploy_bundle(
+    manager: &Manager,
+    target: &Layout,
+    kind: sempre_bundle::BundleKind,
+    allow_replace: bool,
+) -> Result<(), ClientError> {
+    let result = match kind {
+        sempre_bundle::BundleKind::Release => manager.install_release(target, allow_replace).await,
+        sempre_bundle::BundleKind::Snapshot => manager.restore_bundle(target, allow_replace).await,
+    };
+    let Err(ManagerError::ConfirmationRequired(message)) = result else {
+        return result.map_err(ClientError::from);
+    };
+    if allow_replace || !confirm_replacement(&message)? {
+        return Err(ClientError::Cancelled);
+    }
+    match kind {
+        sempre_bundle::BundleKind::Release => manager.install_release(target, true).await?,
+        sempre_bundle::BundleKind::Snapshot => manager.restore_bundle(target, true).await?,
+    }
+    Ok(())
+}
+
+fn confirm_replacement(message: &str) -> Result<bool, ClientError> {
+    eprint!("{message}. Replace it? [y/N]: ");
+    let mut answer = String::new();
+    io::stdin()
+        .read_line(&mut answer)
+        .map_err(|source| ClientError::Io {
+            operation: "read deployment confirmation",
+            path: PathBuf::from("stdin"),
+            source,
+        })?;
+    Ok(matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
+}
+
+fn current_executable(operation: &'static str) -> Result<PathBuf, ClientError> {
+    std::env::current_exe().map_err(|source| ClientError::Io {
+        operation,
+        path: PathBuf::from("sempre"),
+        source,
+    })
 }
 
 async fn run_core(mode: Mode, command: CoreCommand) -> Result<(), ClientError> {

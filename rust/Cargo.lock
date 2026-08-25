@@ -2119,6 +2119,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures-util",
+ "nix",
  "sempre-artifact",
  "sempre-bundle",
  "sempre-control",
