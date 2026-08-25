@@ -32,11 +32,26 @@ pub(crate) async fn install(
     layout: &Layout,
     downloader: &Downloader,
 ) -> Result<(PathBuf, bool), TunnelError> {
-    let binary = binary_path(layout);
+    install_for(
+        layout,
+        downloader,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    )
+    .await
+}
+
+pub async fn install_for(
+    layout: &Layout,
+    downloader: &Downloader,
+    os: &str,
+    arch: &str,
+) -> Result<(PathBuf, bool), TunnelError> {
+    let binary = tool_directory(layout).join(executable_name(os));
     if binary.is_file() {
         return Ok((binary, false));
     }
-    let package = package_for(std::env::consts::OS, std::env::consts::ARCH)?;
+    let package = package_for(os, arch)?;
     let temporary = tempfile::Builder::new()
         .prefix("wstunnel-install-")
         .tempdir_in(&layout.runtime)
@@ -59,15 +74,15 @@ pub(crate) async fn install(
         &extracted,
         &ExtractOptions {
             format: ArchiveFormat::TarGz,
-            single_file_name: Some(executable_name(std::env::consts::OS)),
+            single_file_name: Some(executable_name(os)),
         },
     )?;
-    let source = find(&extracted, &executable_name(std::env::consts::OS))?;
-    activate(layout, &source)?;
+    let source = find(&extracted, &executable_name(os))?;
+    activate(layout, &source, os)?;
     Ok((binary, true))
 }
 
-fn activate(layout: &Layout, source: &Path) -> Result<(), TunnelError> {
+fn activate(layout: &Layout, source: &Path, os: &str) -> Result<(), TunnelError> {
     let final_directory = tool_directory(layout);
     let parent = final_directory
         .parent()
@@ -78,7 +93,7 @@ fn activate(layout: &Layout, source: &Path) -> Result<(), TunnelError> {
         .prefix(".wstunnel-")
         .tempdir_in(parent)
         .map_err(|error| TunnelError::io("create wstunnel staging directory", error))?;
-    let staged = staging.path().join(executable_name(std::env::consts::OS));
+    let staged = staging.path().join(executable_name(os));
     fs::copy(source, &staged).map_err(|error| TunnelError::io("stage wstunnel binary", error))?;
     make_executable(&staged)?;
     if final_directory.exists() {

@@ -458,4 +458,7 @@ mod tests {
         serde_json::from_reader(&mut file).expect("decode archive entry")
     }
 }
+mod release;
 mod restore;
+
+pub use release::{ReleaseTarget, package_release};
