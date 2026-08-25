@@ -35,6 +35,12 @@ pub(crate) enum ClientError {
     LocalAddress(#[source] io::Error),
     #[error("serve local API: {0}")]
     Serve(#[source] io::Error),
+    #[error("{component} task failed: {source}")]
+    Task {
+        component: &'static str,
+        #[source]
+        source: tokio::task::JoinError,
+    },
 }
 
 #[tokio::main]

@@ -2130,6 +2130,7 @@ dependencies = [
  "sempre-core",
  "sempre-state",
  "sempre-subscription",
+ "sempre-supervisor",
  "serde",
  "serde_json",
  "sha2",

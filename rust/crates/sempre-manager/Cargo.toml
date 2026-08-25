@@ -13,6 +13,7 @@ sempre-converter = { path = "../sempre-converter" }
 sempre-core = { path = "../sempre-core" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }
+sempre-supervisor = { path = "../sempre-supervisor" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

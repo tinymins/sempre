@@ -7,6 +7,7 @@ mod lifecycle;
 mod process;
 mod runtime;
 mod subscription;
+mod supervisor;
 
 use sempre_artifact::{Downloader, GithubClient};
 use sempre_core::{Registry, Target, built_in_registry};

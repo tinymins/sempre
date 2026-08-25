@@ -3,7 +3,11 @@ use std::{fs, path::PathBuf, sync::Arc};
 use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, validate_listen};
 use sempre_manager::Manager;
 use sempre_state::{Layout, Mode, Store};
-use tokio::net::TcpListener;
+use tokio::{
+    net::TcpListener,
+    sync::watch,
+    task::{JoinError, JoinHandle},
+};
 use tracing::info;
 
 use crate::{ClientError, VERSION, api};
@@ -34,7 +38,7 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
 
     let manager = Arc::new(Manager::new(store)?);
     let state = Arc::new(api::AppState::new(
-        manager,
+        Arc::clone(&manager),
         web,
         daemon_endpoint.token,
         bind.clone(),
@@ -42,13 +46,57 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
     ));
     let app = api::router(state);
     info!(%bind, %local_url, mode = ?mode, "Sempre Rust client daemon listening");
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown())
-    .await
-    .map_err(ClientError::Serve)
+    let (shutdown_sender, shutdown_receiver) = watch::channel(false);
+    let signal_sender = shutdown_sender.clone();
+    let signal = tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = signal_sender.send(true);
+    });
+    let server_shutdown = shutdown_sender.subscribe();
+    let mut server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_requested(server_shutdown))
+        .await
+        .map_err(ClientError::Serve)
+    });
+    let mut supervisor = tokio::spawn(async move {
+        manager.run_supervisor(shutdown_receiver).await?;
+        Ok(())
+    });
+
+    let result = tokio::select! {
+        result = &mut server => {
+            let _ = shutdown_sender.send(true);
+            settle_tasks(result, "API server", supervisor, "core supervisor").await
+        },
+        result = &mut supervisor => {
+            let _ = shutdown_sender.send(true);
+            settle_tasks(result, "core supervisor", server, "API server").await
+        },
+    };
+    signal.abort();
+    result
+}
+
+async fn settle_tasks(
+    first: Result<Result<(), ClientError>, JoinError>,
+    first_name: &'static str,
+    second: JoinHandle<Result<(), ClientError>>,
+    second_name: &'static str,
+) -> Result<(), ClientError> {
+    let first = task_result(first, first_name);
+    let second = task_result(second.await, second_name);
+    first.and(second)
+}
+
+fn task_result(
+    result: Result<Result<(), ClientError>, JoinError>,
+    component: &'static str,
+) -> Result<(), ClientError> {
+    result.map_err(|source| ClientError::Task { component, source })?
 }
 
 struct DiscoveryGuard {
@@ -71,7 +119,13 @@ impl Drop for DiscoveryGuard {
     }
 }
 
-async fn shutdown() {
+async fn shutdown_requested(mut shutdown: watch::Receiver<bool>) {
+    if !*shutdown.borrow() {
+        let _ = shutdown.changed().await;
+    }
+}
+
+async fn shutdown_signal() {
     let interrupt = async {
         let _ = tokio::signal::ctrl_c().await;
     };

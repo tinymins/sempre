@@ -4,6 +4,7 @@ use sempre_artifact::ArtifactError;
 use sempre_core::{ReferenceError, RegistryError};
 use sempre_state::StateError;
 use sempre_subscription::SubscriptionError;
+use sempre_supervisor::SupervisorError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -20,6 +21,8 @@ pub enum ManagerError {
     Subscription(#[from] SubscriptionError),
     #[error("compile subscription profile: {0}")]
     Compile(#[from] sempre_converter::CompileError),
+    #[error(transparent)]
+    Supervisor(#[from] SupervisorError),
     #[error("{context}: {source}")]
     Io {
         context: String,
