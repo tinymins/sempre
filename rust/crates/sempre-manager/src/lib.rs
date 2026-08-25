@@ -28,7 +28,7 @@ pub use lifecycle::CoreChange;
 pub use process::{ProcessRunner, ValidationRunner, VersionRunner};
 pub use runtime::{RuntimeActionAvailability, RuntimeActions, RuntimeDeployment, RuntimeStatus};
 pub use subscription::SubscriptionRender;
-pub use subscription_tools::SourceTestResult;
+pub use subscription_tools::{ProfileDebugResult, ProfileDebugSource, SourceTestResult};
 
 const USER_AGENT: &str = concat!("Sempre/", env!("CARGO_PKG_VERSION"));
 

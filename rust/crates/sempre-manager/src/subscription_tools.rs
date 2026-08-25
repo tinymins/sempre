@@ -23,7 +23,80 @@ pub struct SourceTestResult {
     pub raw_text: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct ProfileDebugSource {
+    pub source_index: usize,
+    pub source: Source,
+    pub parse: ParseResult,
+    pub raw_text: String,
+    pub from_cache: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProfileDebugResult {
+    pub profile: Profile,
+    pub effective: Profile,
+    pub sources: Vec<ProfileDebugSource>,
+    pub nodes: Vec<PreviewNode>,
+    pub render: SubscriptionRender,
+}
+
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
+    pub async fn debug_subscription_profile(
+        &self,
+        id: &str,
+        format: &str,
+    ) -> Result<ProfileDebugResult, ManagerError> {
+        let _operation = self.store.acquire_operation()?;
+        let catalog = self.subscriptions.read()?;
+        let profile = find_profile(&catalog, id)?.clone();
+        if profile_mode(&profile) == "remote" {
+            return Err(sempre_subscription::SubscriptionError::Invalid(
+                "remote profiles expose compiled artifacts, not source diagnostics".into(),
+            )
+            .into());
+        }
+        let target = Target::parse(format)?;
+        let mut updated = profile.clone();
+        let mut snapshots = Vec::new();
+        let mut sources = Vec::new();
+        for (index, source) in updated.sources.iter_mut().enumerate() {
+            if !source.enabled {
+                continue;
+            }
+            let result = self
+                .fetcher
+                .load(source.clone(), true, validate_source_content)
+                .await?;
+            *source = result.source.clone();
+            sources.push(ProfileDebugSource {
+                source_index: index + 1,
+                source: result.source,
+                parse: parse_subscription(&result.snapshot.content),
+                raw_text: result.snapshot.content.clone(),
+                from_cache: result.from_cache,
+            });
+            snapshots.push(result.snapshot);
+        }
+        let request = CompileRequest {
+            protocol: 1,
+            profile: updated.clone(),
+            snapshots,
+            custom_nodes: catalog.custom_nodes,
+            target: target.clone(),
+        };
+        let nodes = preview_nodes(&request)?;
+        let render = local_render(compile(&request)?, Vec::new());
+        let effective = sempre_converter::prepare_profile(&updated, &target)?;
+        Ok(ProfileDebugResult {
+            profile,
+            effective,
+            sources,
+            nodes,
+            render,
+        })
+    }
+
     pub async fn render_subscription_profile(
         &self,
         id: &str,
@@ -231,6 +304,14 @@ mod tests {
             .expect("source test");
         assert_eq!(tested.parse.nodes.len(), 1);
         assert!(!tested.source.id.is_empty());
+        let debug = manager
+            .debug_subscription_profile(&profile_id, "clash-meta")
+            .await
+            .expect("profile debug");
+        assert_eq!(debug.sources.len(), 1);
+        assert_eq!(debug.sources[0].parse.nodes.len(), 1);
+        assert_eq!(debug.nodes.len(), 1);
+        assert_eq!(debug.render.node_count, 1);
         assert_eq!(manager.state().expect("state after"), before);
     }
 }

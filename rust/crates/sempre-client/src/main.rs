@@ -8,6 +8,7 @@ mod runtime_control_api;
 mod runtime_events_api;
 mod subscription_api;
 mod subscription_debug_api;
+mod subscription_profile_debug_api;
 mod subscription_tools_api;
 mod system_api;
 mod web_ui_api;
