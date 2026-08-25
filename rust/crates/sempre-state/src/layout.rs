@@ -111,6 +111,18 @@ impl Layout {
         Ok(())
     }
 
+    pub fn ensure_instance_lock_directory(&self) -> Result<(), LayoutError> {
+        let directory = self
+            .instance_lock
+            .parent()
+            .unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(directory).map_err(|source| LayoutError::CreateDirectory {
+            path: directory.to_path_buf(),
+            source,
+        })?;
+        secure_private_directory(directory)
+    }
+
     pub fn core_version_dir(&self, core: &str, repository: Option<&str>, version: &str) -> PathBuf {
         match repository.filter(|value| !value.is_empty()) {
             Some(repository) => self

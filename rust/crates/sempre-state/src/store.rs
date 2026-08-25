@@ -14,8 +14,8 @@ use crate::{Document, Layout, LayoutError, StateValidationError};
 pub enum StateError {
     #[error(transparent)]
     Layout(#[from] LayoutError),
-    #[error("open state lock: {0}")]
-    OpenLock(#[source] io::Error),
+    #[error("open lock {path}: {source}")]
+    OpenLock { path: Box<Path>, source: io::Error },
     #[error("lock state: {0}")]
     Lock(#[source] io::Error),
     #[error("read state: {0}")]
@@ -82,7 +82,7 @@ impl Store {
     }
 
     pub fn acquire_instance(&self) -> Result<Lease, StateError> {
-        self.layout.ensure()?;
+        self.layout.ensure_instance_lock_directory()?;
         let file = open_lock(&self.layout.instance_lock)?;
         file.try_lock_exclusive()
             .map_err(|_| StateError::AlreadyRunning)?;
@@ -144,7 +144,10 @@ fn open_lock(path: &Path) -> Result<File, StateError> {
         .read(true)
         .write(true)
         .open(path)
-        .map_err(StateError::OpenLock)
+        .map_err(|source| StateError::OpenLock {
+            path: path.into(),
+            source,
+        })
 }
 
 #[cfg(unix)]

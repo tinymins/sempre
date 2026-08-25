@@ -6,6 +6,8 @@ The converter is a pure boundary: `Profile + SourceSnapshot + Target -> CompileR
 
 `sempre-state` owns the new Rust client's filesystem layout, validated persistent state, atomic writes, and single-instance leases. The Rust client intentionally starts with a new state schema; the project-level backend rewrite does not migrate legacy Go state.
 
+`sempre-client` produces the replacement `sempre` binary. Its current migration slice owns mode selection, state initialization, single-instance enforcement, signal shutdown, and the public health endpoint. It is not wired into release artifacts until the protected local API and core lifecycle have migrated.
+
 The integration boundary and current local-compiler migration gate are tracked
 in [`docs/rust-subscription-integration.md`](../docs/rust-subscription-integration.md).
 

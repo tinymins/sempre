@@ -2,6 +2,7 @@
 members = [
     "crates/sempre-converter",
     "crates/sempre-converter-cli",
+    "crates/sempre-client",
     "crates/sempre-server",
     "crates/sempre-state",
 ]
@@ -18,6 +19,7 @@ base64 = "0.22"
 argon2 = "0.5"
 axum = { version = "0.8", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
 futures-util = "0.3"
 humantime = "2"
