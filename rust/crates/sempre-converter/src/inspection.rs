@@ -34,7 +34,7 @@ pub fn preview_nodes(request: &CompileRequest) -> Result<Vec<PreviewNode>, Compi
     for value in &profile.manual_servers {
         let proxy = Proxy::from_value(value.clone())
             .map_err(|_| CompileError::InvalidCustomNode("manual server".into()))?;
-        nodes.push(preview(proxy, 0, "manual", &[]));
+        nodes.push(preview_proxy(proxy, 0, "manual", &[]));
     }
     let selected: std::collections::HashSet<&str> =
         profile.custom_node_ids.iter().map(String::as_str).collect();
@@ -45,7 +45,12 @@ pub fn preview_nodes(request: &CompileRequest) -> Result<Vec<PreviewNode>, Compi
     {
         let proxy = Proxy::from_value(node.proxy.clone())
             .map_err(|_| CompileError::InvalidCustomNode(node.name.clone()))?;
-        nodes.push(preview(proxy, 0, &format!("custom-node:{}", node.id), &[]));
+        nodes.push(preview_proxy(
+            proxy,
+            0,
+            &format!("custom-node:{}", node.id),
+            &[],
+        ));
     }
     let snapshots: HashMap<&str, &SourceSnapshot> = request
         .snapshots
@@ -70,7 +75,12 @@ pub fn preview_nodes(request: &CompileRequest) -> Result<Vec<PreviewNode>, Compi
             if !source.prefix.trim().is_empty() {
                 proxy.name = format!("{}{}", normalize_prefix(&source.prefix), proxy.name);
             }
-            nodes.push(preview(proxy, index + 1, &source.url, &profile.filters));
+            nodes.push(preview_proxy(
+                proxy,
+                index + 1,
+                &source.url,
+                &profile.filters,
+            ));
         }
     }
     Ok(nodes)
@@ -152,7 +162,7 @@ fn source_format(node: &PreviewNode) -> &'static str {
     }
 }
 
-fn preview(
+pub fn preview_proxy(
     mut proxy: Proxy,
     source_index: usize,
     source_url: &str,

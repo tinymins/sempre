@@ -12,7 +12,7 @@ pub use defaults::{
     Defaults, EditorDefaults, effective_profile, recommended_defaults, recommended_editor_defaults,
     system_defaults,
 };
-pub use inspection::{PreviewNode, preview_nodes, trace_node_steps};
+pub use inspection::{PreviewNode, preview_nodes, preview_proxy, trace_node_steps};
 pub use model::{
     CompileRequest, CompileResult, CustomNode, Diagnostic, EditorConfig, FieldDiff, LocalProxy,
     ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source, SourceSnapshot,

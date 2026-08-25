@@ -19,6 +19,8 @@ pub struct SourceTestResult {
     pub from_cache: bool,
     pub content_hash: String,
     pub bytes: usize,
+    #[serde(skip)]
+    pub raw_text: String,
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
@@ -129,6 +131,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .await?;
         Ok(SourceTestResult {
             parse: parse_subscription(&result.snapshot.content),
+            raw_text: result.snapshot.content.clone(),
             source: result.source,
             from_cache: result.from_cache,
             content_hash: result.snapshot.content_hash,
