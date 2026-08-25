@@ -1,0 +1,27 @@
+[package]
+name = "sempre-artifact"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Verified release resolution, download, and safe archive extraction"
+
+[dependencies]
+flate2.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+sempre-core = { path = "../sempre-core" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
