@@ -1,5 +1,6 @@
 mod api;
 mod args;
+mod bootstrap;
 mod bundle_api;
 mod core_management_api;
 mod custom_node_api;
@@ -50,6 +51,8 @@ pub(crate) enum ClientError {
     Subscription(#[from] SubscriptionError),
     #[error(transparent)]
     Bundle(#[from] sempre_bundle::BundleError),
+    #[error(transparent)]
+    Ui(#[from] sempre_ui::UiError),
     #[error("deployment cancelled")]
     Cancelled,
     #[error("bind local API at {address}: {source}")]
@@ -114,7 +117,26 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Mode::System
     };
     match arguments.command {
-        Command::Install { yes } => run_install(yes).await,
+        Command::Install {
+            yes,
+            core,
+            subscription,
+            subscription_file,
+            ui,
+            ui_sha256,
+        } => {
+            run_install(
+                yes,
+                bootstrap::Options {
+                    core: core.as_deref(),
+                    subscription: subscription.as_deref(),
+                    subscription_file: subscription_file.as_deref(),
+                    ui: ui.as_deref(),
+                    ui_sha256: ui_sha256.as_deref(),
+                },
+            )
+            .await
+        }
         Command::Version => {
             println!("Sempre {VERSION}");
             Ok(())
@@ -133,11 +155,12 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
     }
 }
 
-async fn run_install(yes: bool) -> Result<(), ClientError> {
+async fn run_install(yes: bool, options: bootstrap::Options<'_>) -> Result<(), ClientError> {
     let executable = current_executable("locate release executable")?;
     let source = Layout::portable_at(&executable);
     sempre_bundle::validate_release(&source.root)?;
     let manager = Manager::new(Store::new(source))?;
+    bootstrap::prepare(&manager, options).await?;
     let target = Layout::for_mode(Mode::System)?;
     deploy_bundle(&manager, &target, sempre_bundle::BundleKind::Release, yes).await?;
     println!("Sempre installed, enabled, and started.");

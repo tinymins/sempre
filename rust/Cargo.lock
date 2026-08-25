@@ -2165,6 +2165,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
  "zip",
 ]
 
@@ -2420,7 +2421,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "futures-util",
+ "regex",
  "reqwest",
+ "sempre-artifact",
  "sempre-state",
  "serde",
  "serde_json",

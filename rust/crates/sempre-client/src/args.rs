@@ -24,6 +24,21 @@ pub(crate) enum Command {
         /// Replace a different existing system deployment without prompting.
         #[arg(long)]
         yes: bool,
+        /// Select this bundled or downloadable core reference before installation.
+        #[arg(long)]
+        core: Option<String>,
+        /// Configure the default profile with this subscription URL or raw content.
+        #[arg(long, conflicts_with = "subscription_file")]
+        subscription: Option<String>,
+        /// Read the subscription URL or raw content from a small local file.
+        #[arg(long, conflicts_with = "subscription")]
+        subscription_file: Option<PathBuf>,
+        /// Replace the bundled UI with an HTTPS ZIP URL or owner/repository reference.
+        #[arg(long)]
+        ui: Option<String>,
+        /// Require this SHA-256 digest for the custom UI archive.
+        #[arg(long, requires = "ui")]
+        ui_sha256: Option<String>,
     },
     /// Run the authenticated local control daemon.
     Daemon {
@@ -157,7 +172,39 @@ mod tests {
         let install =
             Arguments::try_parse_from(["sempre", "install", "--yes"]).expect("release install");
         assert!(install.requires_administrator());
-        assert!(matches!(install.command, Command::Install { yes: true }));
+        assert!(matches!(
+            install.command,
+            Command::Install { yes: true, .. }
+        ));
+        let configured = Arguments::try_parse_from([
+            "sempre",
+            "install",
+            "--core=mihomo@stable",
+            "--subscription-file=subscription.txt",
+            "--ui=https://example.com/ui.zip",
+            "--ui-sha256",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ])
+        .expect("configured install");
+        assert!(matches!(
+            configured.command,
+            Command::Install {
+                core: Some(_),
+                subscription_file: Some(_),
+                ui: Some(_),
+                ui_sha256: Some(_),
+                ..
+            }
+        ));
+        assert!(
+            Arguments::try_parse_from([
+                "sempre",
+                "install",
+                "--subscription=https://example.com/sub",
+                "--subscription-file=subscription.txt",
+            ])
+            .is_err()
+        );
     }
 
     #[test]

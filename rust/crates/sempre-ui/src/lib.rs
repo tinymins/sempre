@@ -1,3 +1,4 @@
+mod github;
 mod install;
 
 use std::{fs, io, path::PathBuf};
@@ -48,6 +49,8 @@ pub enum UiError {
     Write(#[source] io::Error),
     #[error("download UI: {0}")]
     Http(#[source] reqwest::Error),
+    #[error("resolve UI release: {0}")]
+    Artifact(#[from] sempre_artifact::ArtifactError),
     #[error("read UI ZIP: {0}")]
     Zip(#[source] zip::result::ZipError),
 }

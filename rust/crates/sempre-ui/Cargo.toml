@@ -10,8 +10,10 @@ description = "Validated Sempre control UI state and installation boundary"
 chrono.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sempre-artifact = { path = "../sempre-artifact" }
 sempre-state = { path = "../sempre-state" }
 sha2.workspace = true
 tempfile.workspace = true
