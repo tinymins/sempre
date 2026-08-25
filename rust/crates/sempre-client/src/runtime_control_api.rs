@@ -38,7 +38,7 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/api/v1/runtime/cache/flush", post(cache_flush))
 }
 
-fn client(
+pub(crate) fn client(
     state: &AppState,
 ) -> Result<sempre_core_control::Client, sempre_core_control::ControlError> {
     sempre_core_control::Client::from_file(&state.manager.store().layout().core_control)
@@ -298,7 +298,7 @@ fn operation(value: Result<(), sempre_core_control::ControlError>, response: Val
     )
 }
 
-fn runtime_error(error: &sempre_core_control::ControlError) -> Response {
+pub(crate) fn runtime_error(error: &sempre_core_control::ControlError) -> Response {
     let (status, code, details) = match &error {
         sempre_core_control::ControlError::Unavailable
         | sempre_core_control::ControlError::InvalidMetadata(_)

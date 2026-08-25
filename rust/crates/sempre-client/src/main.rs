@@ -5,6 +5,7 @@ mod daemon;
 mod listener;
 mod runtime_api;
 mod runtime_control_api;
+mod runtime_events_api;
 mod subscription_api;
 mod system_api;
 mod web_ui_api;

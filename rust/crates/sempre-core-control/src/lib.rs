@@ -1,4 +1,5 @@
 mod model;
+mod stream;
 
 use std::{fs, path::Path, time::Duration};
 
@@ -33,6 +34,14 @@ pub enum ControlError {
     Status { status: u16, body: String },
     #[error("decode core API response: {0}")]
     Decode(#[source] serde_json::Error),
+    #[error("managed core stream topic is unsupported: {0}")]
+    UnsupportedTopic(String),
+    #[error("managed core stream timed out")]
+    StreamTimeout,
+    #[error("managed core stream closed")]
+    StreamClosed,
+    #[error("managed core stream failed: {0}")]
+    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
     #[error("core API response exceeds its {limit} byte limit")]
     ResponseTooLarge { limit: usize },
 }
@@ -84,6 +93,7 @@ impl Client {
             .map_err(|_| ControlError::InvalidMetadata("base URL is invalid".into()))?;
         if endpoint.core.is_empty()
             || endpoint.secret.is_empty()
+            || header::HeaderValue::from_str(&format!("Bearer {}", endpoint.secret)).is_err()
             || base.scheme() != "http"
             || !base
                 .host_str()
