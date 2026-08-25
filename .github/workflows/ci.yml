@@ -49,6 +49,26 @@ jobs:
       - run: bun run tsc
       - run: bun run test
 
+  transparent-netns:
+    name: Linux transparent network namespace
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
+      - name: Install kernel networking tools
+        run: sudo apt-get update && sudo apt-get install --yes iproute2 nftables
+      - name: Build isolated TProxy integration test
+        run: cargo test --manifest-path=rust/Cargo.toml -p sempre-transparent --test linux_netns --no-run
+      - name: Exercise nftables, policy routes, and host interception
+        shell: bash
+        run: |
+          test_binary=$(find rust/target/debug/deps -maxdepth 1 -type f \
+            -name 'linux_netns-*' -perm -111 -print -quit)
+          test -n "$test_binary"
+          sudo env SEMPRE_NETNS_TEST=1 unshare --net --mount-proc \
+            sh -c 'ip link set lo up; exec "$1" --ignored --nocapture' \
+            sh "$PWD/$test_binary"
+
   vulnerability:
     runs-on: ubuntu-24.04
     steps:

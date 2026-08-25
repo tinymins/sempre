@@ -169,9 +169,11 @@ async fn route_json(
     arguments: &[&str],
 ) -> Result<Value, TransparentError> {
     let output = runner.run("ip", arguments, None).await?;
-    let missing =
-        output.stdout.trim() == "[]" && output.stderr.contains("FIB table does not exist");
-    if !(output.success || missing) {
+    let missing = !output.success && output.stderr.contains("FIB table does not exist");
+    if missing {
+        return Ok(Value::Array(Vec::new()));
+    }
+    if !output.success {
         return match command::require_success("ip", output) {
             Err(error) => Err(error),
             Ok(_) => unreachable!("route output was unsuccessful"),
@@ -241,7 +243,7 @@ mod tests {
                 let route = arguments.contains(&"route");
                 Ok(Output {
                     success: !route,
-                    stdout: "[]\n".into(),
+                    stdout: if route { "[".into() } else { "[]\n".into() },
                     stderr: if route {
                         "Error: ipv4: FIB table does not exist.\nDump terminated\n".into()
                     } else {
@@ -276,5 +278,30 @@ mod tests {
         delete(&MissingRoutes)
             .await
             .expect("cleanup ignores missing table");
+    }
+
+    struct FailedRoutes;
+
+    impl command::Runner for FailedRoutes {
+        fn run<'a>(
+            &'a self,
+            _: &'a str,
+            arguments: &'a [&'a str],
+            _: Option<&'a [u8]>,
+        ) -> Pin<Box<dyn Future<Output = Result<Output, TransparentError>> + Send + 'a>> {
+            Box::pin(async move {
+                Ok(Output {
+                    success: !arguments.contains(&"route"),
+                    stdout: String::new(),
+                    stderr: "RTNETLINK answers: Operation not permitted\n".into(),
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn route_query_failures_are_not_hidden() {
+        assert!(check_collisions(&FailedRoutes).await.is_err());
+        assert!(delete(&FailedRoutes).await.is_err());
     }
 }

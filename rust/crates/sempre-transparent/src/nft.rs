@@ -114,17 +114,21 @@ pub(crate) fn script(plan: &Plan) -> String {
 
 fn capture_rules(output: &mut String, family: &str, protocol: &str, plan: &Plan, dns: bool) {
     let port = if dns { plan.dns_port } else { plan.tproxy_port };
-    let destination = if dns { " dport 53" } else { "" };
+    let destination = if dns {
+        format!(" {protocol} dport 53")
+    } else {
+        String::new()
+    };
     let kind = if dns { "dns" } else { "proxy" };
     let _ = writeln!(
         output,
-        "add rule {family} {TABLE} prerouting meta mark {ROUTE_MARK:#x} meta l4proto {protocol} {protocol}{destination} meta mark set {ROUTE_MARK:#x} tproxy to :{port} counter accept comment \"sempre:{kind}:host:{protocol}:\""
+        "add rule {family} {TABLE} prerouting meta mark {ROUTE_MARK:#x} meta l4proto {protocol}{destination} meta mark set {ROUTE_MARK:#x} tproxy to :{port} counter accept comment \"sempre:{kind}:host:{protocol}:\""
     );
     for interface in &plan.lan_interfaces {
         let interface = serde_json::to_string(interface).expect("interface string");
         let _ = writeln!(
             output,
-            "add rule {family} {TABLE} prerouting iifname {interface} meta l4proto {protocol} {protocol}{destination} meta mark set {ROUTE_MARK:#x} tproxy to :{port} counter accept comment \"sempre:{kind}:lan:{protocol}:\""
+            "add rule {family} {TABLE} prerouting iifname {interface} meta l4proto {protocol}{destination} meta mark set {ROUTE_MARK:#x} tproxy to :{port} counter accept comment \"sempre:{kind}:lan:{protocol}:\""
         );
     }
 }
@@ -189,6 +193,8 @@ mod tests {
         assert!(script.contains("iifname \"vmbr1\""));
         assert!(script.contains("tproxy to :7893"));
         assert!(script.contains("tproxy to :1053"));
+        assert!(!script.contains("meta l4proto tcp tcp meta"));
+        assert!(!script.contains("meta l4proto udp udp meta"));
         let bypass = script
             .find("output meta mark 0x53500002 return")
             .expect("bypass");

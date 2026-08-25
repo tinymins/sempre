@@ -17,6 +17,7 @@ thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+socket2.workspace = true
 tempfile.workspace = true
 
 [lints]
