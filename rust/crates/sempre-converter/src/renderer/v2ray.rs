@@ -53,18 +53,30 @@ pub(super) fn render(
     if outbounds.is_empty() {
         return Err(CompileError::EmptyProfile);
     }
-    outbounds.push(json!({ "tag": "direct", "protocol": "freedom" }));
-    outbounds.push(json!({ "tag": "block", "protocol": "blackhole" }));
+    outbounds.push(json!({ "tag": "direct", "protocol": "freedom", "settings": { "domainStrategy": "UseIP" } }));
+    outbounds.push(json!({ "tag": "reject", "protocol": "blackhole", "settings": {} }));
+    outbounds.push(json!({ "tag": "dns-out", "protocol": "dns", "settings": {} }));
     let mut inbounds = vec![
         json!({ "tag": "sempre-socks-in", "listen": "127.0.0.1", "port": profile.local_proxy.socks_port, "protocol": "socks", "settings": { "udp": true } }),
         json!({ "tag": "sempre-http-in", "listen": "127.0.0.1", "port": profile.local_proxy.http_port, "protocol": "http" }),
     ];
     inbounds.extend(super::transparent::v2ray_inbounds(profile, target));
+    let default_outbound = &proxies[0].name;
+    let mut routing_rules = vec![
+        json!({ "type": "field", "inboundTag": ["dns-in"], "outboundTag": "dns-out" }),
+        json!({ "type": "field", "inboundTag": ["local-dns", "bootstrap-dns"], "outboundTag": "direct" }),
+        json!({ "type": "field", "inboundTag": ["remote-dns"], "outboundTag": default_outbound }),
+        json!({ "type": "field", "ip": ["geoip:private", "geoip:cn"], "outboundTag": "direct" }),
+        json!({ "type": "field", "domain": ["geosite:cn"], "outboundTag": "direct" }),
+    ];
+    routing_rules
+        .push(json!({ "type": "field", "network": "tcp,udp", "outboundTag": default_outbound }));
     let config = json!({
         "log": { "loglevel": if profile.log_level == "off" { "none" } else { &profile.log_level } },
+        "dns": super::dns::v2ray(profile, proxies, target),
         "inbounds": inbounds,
         "outbounds": outbounds,
-        "routing": { "domainStrategy": "IPIfNonMatch", "rules": [] }
+        "routing": { "domainStrategy": "IPIfNonMatch", "domainMatcher": "hybrid", "rules": routing_rules }
     });
     let mut content = serde_json::to_string_pretty(&config)
         .map_err(|error| CompileError::Render(error.to_string()))?;

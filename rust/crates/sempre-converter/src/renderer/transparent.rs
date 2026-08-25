@@ -121,20 +121,11 @@ pub(super) fn v2ray_inbounds(profile: &Profile, target: &Target) -> Vec<Value> {
             json!({
                 "tag": "dns-in", "listen": "0.0.0.0",
                 "port": transparent.tproxy.dns_listen_port, "protocol": "dokodemo-door",
-                "settings": { "address": remote_dns(profile), "port": 53, "network": "tcp,udp" }
+                "settings": { "address": super::dns::remote_address(profile), "port": 53, "network": "tcp,udp" }
             }),
         ],
         _ => Vec::new(),
     }
-}
-
-fn remote_dns(profile: &Profile) -> &str {
-    profile
-        .dns
-        .get("shared")
-        .and_then(|value| value.get("remoteDns"))
-        .and_then(Value::as_str)
-        .unwrap_or("8.8.8.8")
 }
 
 fn value_or<'a>(value: &'a str, fallback: &'a str) -> &'a str {

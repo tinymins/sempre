@@ -32,25 +32,27 @@ pub(super) fn render(
         .filter_map(|value| value["tag"].as_str().map(str::to_owned))
         .collect();
     outbounds.splice(0..0, selector_outbounds(&profile.groups, &names));
-    outbounds.extend([
-        json!({ "type": "direct", "tag": "direct" }),
-        json!({ "type": "block", "tag": "block" }),
-    ]);
+    outbounds.push(json!({ "type": "direct", "tag": "direct" }));
+    outbounds.push(json!({ "type": "block", "tag": "reject" }));
+    if target.version == "11" {
+        outbounds.push(json!({ "type": "dns", "tag": "dns-out" }));
+    }
+    let dns = super::dns::sing_box(profile, proxies, target)?;
+    let route = config::route(profile, target, &mut warnings);
     let mut config = json!({
         "log": config::log(&profile.log_level),
         "inbounds": config::local_inbounds(profile).into_iter().chain(
             super::transparent::sing_box_inbounds(profile, target)
         ).collect::<Vec<_>>(),
         "outbounds": outbounds,
-        "route": config::route(profile, &mut warnings),
+        "dns": dns,
+        "route": route,
         "experimental": config::management_api(profile)
     });
-    if profile.dns.is_object() {
-        config["dns"] = profile.dns.clone();
-    }
     if let Some(override_value) = profile.core_overrides.get("sing-box") {
         deep_merge(&mut config, override_value);
     }
+    super::dns::apply_sing_box_platform_policy(profile, target, &mut config, &mut warnings);
     config::normalize_for_version(&mut config, target);
     let mut content = serde_json::to_string_pretty(&config)
         .map_err(|error| CompileError::Render(error.to_string()))?;

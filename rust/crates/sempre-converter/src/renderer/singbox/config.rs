@@ -16,13 +16,21 @@ pub(super) fn local_inbounds(profile: &Profile) -> Vec<Value> {
     ]
 }
 
-pub(super) fn route(profile: &Profile, warnings: &mut Vec<String>) -> Value {
+pub(super) fn route(profile: &Profile, target: &Target, warnings: &mut Vec<String>) -> Value {
     let final_outbound = profile
         .groups
         .first()
         .map_or("proxy", |group| group.name.as_str());
     let mut rule_sets = Vec::new();
-    let mut rules = Vec::new();
+    let mut rules = if target.version == "11" {
+        vec![json!({ "protocol": "dns", "outbound": "dns-out" })]
+    } else {
+        vec![
+            json!({ "action": "sniff" }),
+            json!({ "protocol": "dns", "action": "hijack-dns" }),
+        ]
+    };
+    rules.push(json!({ "ip_is_private": true, "outbound": "direct" }));
     for value in &profile.rules {
         if value.is_object() {
             rules.push(value.clone());
@@ -38,6 +46,11 @@ pub(super) fn route(profile: &Profile, warnings: &mut Vec<String>) -> Value {
             None => warnings.push(format!("unsupported custom rule: {line}")),
         }
     }
+    let (dns_rule_sets, dns_route) = super::super::dns::sing_box_route_policy(profile);
+    rule_sets.extend(dns_rule_sets);
+    if let Some(rule) = dns_route {
+        rules.push(rule);
+    }
     for provider in &profile.rule_providers {
         let format = if provider.format.is_empty() {
             "source"
@@ -47,7 +60,12 @@ pub(super) fn route(profile: &Profile, warnings: &mut Vec<String>) -> Value {
         rule_sets.push(json!({ "type": "remote", "tag": provider.tag, "format": format, "url": provider.url, "download_detour": "direct" }));
         rules.push(json!({ "rule_set": [provider.tag], "outbound": if provider.outbound.is_empty() { final_outbound } else { &provider.outbound } }));
     }
-    json!({ "rules": rules, "rule_set": rule_sets, "final": final_outbound, "auto_detect_interface": true })
+    let mut route = json!({ "rules": rules, "rule_set": rule_sets, "final": final_outbound, "auto_detect_interface": true });
+    if target.version != "11" {
+        route["default_domain_resolver"] =
+            json!({ "server": "bootstrap", "strategy": "ipv4_only" });
+    }
+    route
 }
 
 fn custom_route_rule(line: &str) -> Option<Value> {

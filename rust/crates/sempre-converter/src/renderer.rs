@@ -1,5 +1,6 @@
 mod clash;
 mod dae;
+mod dns;
 mod singbox;
 mod transparent;
 mod v2ray;

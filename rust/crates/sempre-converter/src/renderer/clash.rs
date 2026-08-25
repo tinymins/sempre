@@ -10,7 +10,9 @@ pub(super) fn render(
     let names: Vec<String> = proxies.iter().map(|proxy| proxy.name.clone()).collect();
     let groups = groups(&profile.groups, &names);
     let final_group = groups
-        .first()
+        .iter()
+        .find(|value| value["name"] == "⚓️ 其他流量")
+        .or_else(|| groups.first())
         .and_then(|value| value["name"].as_str())
         .unwrap_or("proxy");
     let mut warnings = Vec::new();
@@ -54,26 +56,27 @@ pub(super) fn render(
         "GEOIP,CN,DIRECT,no-resolve".into(),
         format!("MATCH,{final_group}"),
     ]);
+    let mut rendered_proxies = proxies.iter().map(Proxy::as_value).collect::<Vec<_>>();
+    if matches!(target.core.as_str(), "mihomo" | "clash-rs")
+        && profile.transparent_proxy.mode == "tproxy"
+    {
+        rendered_proxies.push(json!({ "name": "sempre-dns-out", "type": "dns" }));
+        rules.insert(0, "DST-PORT,53,sempre-dns-out".into());
+    }
     let mut config = json!({
         "allow-lan": true,
         "mode": "Rule",
         "log-level": clash_log_level(&profile.log_level),
-        "proxies": proxies.iter().map(Proxy::as_value).collect::<Vec<_>>(),
+        "proxies": rendered_proxies,
         "proxy-groups": groups,
         "rule-providers": providers,
         "rules": rules,
         "profile": { "store-selected": true, "store-fake-ip": true, "tracing": true }
     });
     if target.format != "clash" {
-        let object = config.as_object_mut().expect("object");
-        object.insert("unified-delay".into(), json!(true));
-        object.insert("tcp-concurrent".into(), json!(true));
-        object.insert("find-process-mode".into(), json!("strict"));
-        object.insert("geodata-mode".into(), json!(true));
-        object.insert("geo-auto-update".into(), json!(true));
-        object.insert("geo-update-interval".into(), json!(24));
+        apply_meta_options(&mut config);
     }
-    apply_runtime(profile, target, &mut config);
+    apply_runtime(profile, target, final_group, &mut config);
     if let Some(override_value) = profile.core_overrides.get(&target.core) {
         deep_merge(&mut config, override_value);
     }
@@ -92,6 +95,26 @@ pub(super) fn render(
         })
         .collect();
     Ok((content, diffs, warnings))
+}
+
+fn apply_meta_options(config: &mut Value) {
+    let object = config.as_object_mut().expect("object");
+    object.insert("unified-delay".into(), json!(true));
+    object.insert("tcp-concurrent".into(), json!(true));
+    object.insert("find-process-mode".into(), json!("strict"));
+    object.insert("geodata-mode".into(), json!(true));
+    object.insert("geo-auto-update".into(), json!(true));
+    object.insert("geo-update-interval".into(), json!(24));
+    object.insert(
+        "sniffer".into(),
+        json!({
+            "enable": true, "force-dns-mapping": true, "parse-pure-ip": true,
+            "override-destination": true, "sniff": {
+                "HTTP": { "ports": [80, "8080-8880"], "override-destination": true },
+                "TLS": { "ports": [443, 8443] }, "QUIC": { "ports": [443, 8443] }
+            }
+        }),
+    );
 }
 
 fn groups(configured: &[ProxyGroup], names: &[String]) -> Vec<Value> {
@@ -134,7 +157,10 @@ fn groups(configured: &[ProxyGroup], names: &[String]) -> Vec<Value> {
         .collect()
 }
 
-fn apply_runtime(profile: &Profile, target: &Target, config: &mut Value) {
+fn apply_runtime(profile: &Profile, target: &Target, final_group: &str, config: &mut Value) {
+    if let Some(dns) = super::dns::clash(profile, target, final_group) {
+        config["dns"] = dns;
+    }
     if target.core != "mihomo" && target.core != "clash-rs" {
         return;
     }
@@ -151,9 +177,6 @@ fn apply_runtime(profile: &Profile, target: &Target, config: &mut Value) {
                 profile.local_proxy.username, profile.local_proxy.password
             )]),
         );
-    }
-    if profile.dns.is_object() {
-        object.insert("dns".into(), profile.dns.clone());
     }
     super::transparent::apply_clash(profile, target, config);
 }
