@@ -1,0 +1,25 @@
+[package]
+name = "sempre-control"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Authenticated local control-plane configuration and endpoint discovery"
+
+[dependencies]
+argon2.workspace = true
+base64.workspace = true
+chrono.workspace = true
+rand.workspace = true
+sempre-state = { path = "../sempre-state" }
+serde.workspace = true
+serde_json.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

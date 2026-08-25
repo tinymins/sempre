@@ -1972,6 +1972,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-control"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "base64",
+ "chrono",
+ "rand 0.9.5",
+ "sempre-state",
+ "serde",
+ "serde_json",
+ "subtle",
+ "tempfile",
+ "thiserror",
+ "url",
+]
+
+[[package]]
 name = "sempre-converter"
 version = "0.1.0"
 dependencies = [

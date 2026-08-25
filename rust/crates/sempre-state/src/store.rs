@@ -1,14 +1,10 @@
-use std::{
-    fs::{self, File, OpenOptions},
-    io::{self, Write as _},
-    path::Path,
-};
+use std::{fs, fs::File, fs::OpenOptions, io, path::Path};
 
 use chrono::Utc;
 use fs2::FileExt as _;
 use thiserror::Error;
 
-use crate::{Document, Layout, LayoutError, StateValidationError};
+use crate::{Document, Layout, LayoutError, StateValidationError, write_atomic};
 
 #[derive(Debug, Error)]
 pub enum StateError {
@@ -118,23 +114,7 @@ impl Store {
         document.validate()?;
         let mut data = serde_json::to_vec_pretty(document).map_err(StateError::Encode)?;
         data.push(b'\n');
-        let parent = self.layout.state.parent().ok_or_else(|| {
-            StateError::Write(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "state path has no parent",
-            ))
-        })?;
-        let mut temporary = tempfile::Builder::new()
-            .prefix(".sempre-state-")
-            .tempfile_in(parent)
-            .map_err(StateError::Write)?;
-        temporary.write_all(&data).map_err(StateError::Write)?;
-        temporary.as_file().sync_all().map_err(StateError::Write)?;
-        temporary
-            .persist(&self.layout.state)
-            .map_err(|error| StateError::Write(error.error))?;
-        sync_parent(parent)?;
-        Ok(())
+        write_atomic(&self.layout.state, &data, 0o600).map_err(StateError::Write)
     }
 }
 
@@ -155,18 +135,6 @@ fn open_lock(path: &Path) -> Result<File, StateError> {
             path: path.into(),
             source,
         })
-}
-
-#[cfg(unix)]
-fn sync_parent(parent: &Path) -> Result<(), StateError> {
-    File::open(parent)
-        .and_then(|directory| directory.sync_all())
-        .map_err(StateError::Write)
-}
-
-#[cfg(not(unix))]
-fn sync_parent(_parent: &Path) -> Result<(), StateError> {
-    Ok(())
 }
 
 #[cfg(test)]
