@@ -73,6 +73,16 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: CustomNodeCommand,
     },
+    /// Inspect and change the authenticated Web listener.
+    Web {
+        #[command(subcommand)]
+        command: WebCommand,
+    },
+    /// Install and manage the control UI.
+    Ui {
+        #[command(subcommand)]
+        command: UiCommand,
+    },
     /// Export or restore a portable deployment snapshot.
     Bundle {
         #[command(subcommand)]
@@ -121,6 +131,7 @@ impl Arguments {
             Command::Config { .. } => system,
             Command::Subscription { .. } => system,
             Command::CustomNode { .. } => system,
+            Command::Web { .. } | Command::Ui { .. } => system,
             Command::Bundle { command } => match command {
                 BundleCommand::Export { .. } => system,
                 BundleCommand::Restore { .. } => true,
@@ -214,6 +225,46 @@ pub(crate) enum CustomNodeCommand {
     Update { id: String, file: PathBuf },
     /// Remove an unreferenced custom node.
     Remove { id: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WebCommand {
+    /// Print the listener URL and password state.
+    Status,
+    /// Persist or live-rebind the Web listener.
+    Listen { address: String },
+    /// Manage the administrator password.
+    Password {
+        #[command(subcommand)]
+        command: WebPasswordCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WebPasswordCommand {
+    /// Read and set a password from standard input.
+    Set {
+        #[arg(long, required = true)]
+        stdin: bool,
+    },
+    /// Clear the password and allow same-origin empty-password login.
+    Clear,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum UiCommand {
+    /// Print installed UI metadata.
+    Status,
+    /// Install official, GitHub, HTTPS, or local ZIP UI content.
+    Install {
+        source: String,
+        #[arg(long)]
+        sha256: Option<String>,
+    },
+    /// Update the UI from its recorded non-local source.
+    Update,
+    /// Remove the installed UI.
+    Remove,
 }
 
 #[derive(Debug, Subcommand)]

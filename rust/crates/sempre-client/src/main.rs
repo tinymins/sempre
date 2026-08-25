@@ -23,7 +23,9 @@ mod subscription_profile_debug_api;
 mod subscription_tools_api;
 mod system_api;
 mod tunnel_api;
+mod ui_distribution;
 mod web_ui_api;
+mod web_ui_cli;
 #[cfg(windows)]
 mod windows_service_host;
 
@@ -171,6 +173,8 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Command::Config { command } => run_config(mode, command).await,
         Command::Subscription { command } => subscription_cli::run(mode, command, json).await,
         Command::CustomNode { command } => custom_node_cli::run(mode, command, json),
+        Command::Web { command } => web_ui_cli::run_web(mode, command, json).await,
+        Command::Ui { command } => web_ui_cli::run_ui(mode, command, json).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
         Command::Service { command } => run_service(command).await,
         Command::Runtime { command } => runtime_cli::run(mode, command, json).await,

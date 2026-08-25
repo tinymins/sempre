@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use reqwest::{Client, Method, StatusCode};
 use sempre_control::DaemonEndpoint;
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 const TOKEN_HEADER: &str = "x-sempre-daemon-token";
@@ -43,6 +43,14 @@ impl LocalApi {
         self.request(Method::POST, path).await
     }
 
+    pub(crate) async fn patch<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl Serialize,
+    ) -> Result<T, Error> {
+        self.request_with_body(Method::PATCH, path, body).await
+    }
+
     async fn request<T: DeserializeOwned>(&self, method: Method, path: &str) -> Result<T, Error> {
         let url = format!("{}{}", self.endpoint.base_url, path);
         let response = self
@@ -59,6 +67,34 @@ impl LocalApi {
                 .await
                 .unwrap_or_else(|error| error.to_string());
             return Err(Error::Status { status, message });
+        }
+        response.json().await.map_err(Error::Http)
+    }
+
+    async fn request_with_body<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: &impl Serialize,
+    ) -> Result<T, Error> {
+        let url = format!("{}{}", self.endpoint.base_url, path);
+        let response = self
+            .client
+            .request(method, url)
+            .header(TOKEN_HEADER, &self.endpoint.token)
+            .json(body)
+            .send()
+            .await
+            .map_err(Error::Http)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(Error::Status {
+                status,
+                message: response
+                    .text()
+                    .await
+                    .unwrap_or_else(|error| error.to_string()),
+            });
         }
         response.json().await.map_err(Error::Http)
     }
