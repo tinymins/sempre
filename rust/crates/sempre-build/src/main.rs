@@ -6,7 +6,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use sempre_build::{BuildError, BuildInput, BuildTarget};
 
 #[derive(Debug, Parser)]
@@ -16,11 +16,21 @@ use sempre_build::{BuildError, BuildInput, BuildTarget};
 )]
 struct Arguments {
     /// Replace the Git-derived release version.
-    #[arg(long)]
+    #[arg(long, global = true)]
     version: Option<String>,
     /// Write the target artifacts to this directory.
-    #[arg(long, default_value = "dist")]
+    #[arg(long, default_value = "dist", global = true)]
     output: PathBuf,
+    #[command(subcommand)]
+    task: Option<Task>,
+}
+
+#[derive(Clone, Copy, Debug, Subcommand)]
+enum Task {
+    /// Run Rust and frontend quality gates without packaging.
+    Verify,
+    /// Build and package only the current native release target.
+    Package,
 }
 
 #[tokio::main]
@@ -35,10 +45,20 @@ async fn run(arguments: Arguments) -> Result<(), BuildError> {
     let root = repository_root()?;
     let rust = root.join("rust");
     let output = absolute_output(&root, &arguments.output)?;
-    run_command(&rust, "cargo", ["fmt", "--all", "--", "--check"], &[])?;
-    run_command(&rust, "cargo", ["test", "--workspace"], &[])?;
+    if !matches!(arguments.task, Some(Task::Package)) {
+        verify(&root, &rust)?;
+    }
+    if matches!(arguments.task, Some(Task::Verify)) {
+        return Ok(());
+    }
+    build_release(&root, &rust, &output, arguments.version).await
+}
+
+fn verify(root: &Path, rust: &Path) -> Result<(), BuildError> {
+    run_command(rust, "cargo", ["fmt", "--all", "--", "--check"], &[])?;
+    run_command(rust, "cargo", ["test", "--workspace"], &[])?;
     run_command(
-        &rust,
+        rust,
         "cargo",
         [
             "clippy",
@@ -51,30 +71,38 @@ async fn run(arguments: Arguments) -> Result<(), BuildError> {
         &[],
     )?;
     for script in ["lint", "tsc"] {
-        run_command(&root, "bun", ["run", script], &[])?;
+        run_command(root, "bun", ["run", script], &[])?;
     }
     run_command(&root.join("ui"), "bun", ["run", "test"], &[])?;
     run_command(&root.join("site"), "bun", ["run", "test"], &[])?;
-    run_command(&root, "bun", ["run", "build:ui"], &[])?;
+    Ok(())
+}
 
-    let version = arguments
-        .version
-        .unwrap_or_else(|| git(&root, ["describe", "--tags", "--always", "--dirty"]));
+async fn build_release(
+    root: &Path,
+    rust: &Path,
+    output: &Path,
+    version: Option<String>,
+) -> Result<(), BuildError> {
+    run_command(root, "bun", ["run", "build:ui"], &[])?;
+
+    let version =
+        version.unwrap_or_else(|| git(root, ["describe", "--tags", "--always", "--dirty"]));
     let version = if version == "unknown" {
         String::from("dev")
     } else {
         version
     };
-    let commit = git(&root, ["rev-parse", "--short=12", "HEAD"]);
-    let date = git(&root, ["show", "-s", "--format=%cI", "HEAD"]);
+    let commit = git(root, ["rev-parse", "--short=12", "HEAD"]);
+    let date = git(root, ["show", "-s", "--format=%cI", "HEAD"]);
     let installed_at = DateTime::parse_from_rfc3339(&date)
         .map_or_else(|_| Utc::now(), |value| value.with_timezone(&Utc));
     if output.exists() {
-        fs::remove_dir_all(&output)
-            .map_err(|error| BuildError::io("remove previous release output", &output, error))?;
+        fs::remove_dir_all(output)
+            .map_err(|error| BuildError::io("remove previous release output", output, error))?;
     }
-    fs::create_dir_all(&output)
-        .map_err(|error| BuildError::io("create release output", &output, error))?;
+    fs::create_dir_all(output)
+        .map_err(|error| BuildError::io("create release output", output, error))?;
     let ui_archive = output.join("sempre-ui.zip");
     sempre_build::prepare_ui(&root.join("ui/dist"), &ui_archive, &version)?;
 
@@ -84,7 +112,7 @@ async fn run(arguments: Arguments) -> Result<(), BuildError> {
         ("SEMPRE_BUILD_DATE", date.as_str()),
     ];
     run_command(
-        &rust,
+        rust,
         "cargo",
         ["build", "--release", "-p", "sempre-client"],
         &environment,
@@ -94,7 +122,7 @@ async fn run(arguments: Arguments) -> Result<(), BuildError> {
     let result = sempre_build::package(&BuildInput {
         executable,
         ui_archive,
-        output,
+        output: output.to_path_buf(),
         version,
         installed_at,
         target,
@@ -195,5 +223,25 @@ mod tests {
             absolute_output(root, Path::new("dist")).expect("dist"),
             root.join("dist")
         );
+    }
+
+    #[test]
+    fn build_stages_are_explicit_and_default_to_all() {
+        let all = Arguments::try_parse_from(["sempre-build"]).expect("default build");
+        assert!(all.task.is_none());
+        let verify = Arguments::try_parse_from(["sempre-build", "verify"]).expect("verify");
+        assert!(matches!(verify.task, Some(Task::Verify)));
+        let package = Arguments::try_parse_from([
+            "sempre-build",
+            "package",
+            "--output",
+            "artifacts",
+            "--version",
+            "v2.0.0",
+        ])
+        .expect("package");
+        assert!(matches!(package.task, Some(Task::Package)));
+        assert_eq!(package.output, PathBuf::from("artifacts"));
+        assert_eq!(package.version.as_deref(), Some("v2.0.0"));
     }
 }

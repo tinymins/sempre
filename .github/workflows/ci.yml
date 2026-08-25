@@ -8,114 +8,88 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  rust:
+    name: Rust (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            go: 1.25.13
-          - os: windows-latest
-            go: 1.25.13
-          - os: macos-latest
-            go: 1.25.13
-          - os: ubuntu-latest
-            go: 1.26.5
-    runs-on: ${{ matrix.os }}
+          - name: linux-amd64
+            runner: ubuntu-24.04
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+          - name: windows-amd64
+            runner: windows-2025
+          - name: windows-arm64
+            runner: windows-11-arm
+          - name: darwin-amd64
+            runner: macos-15-intel
+          - name: darwin-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
         with:
-          go-version: ${{ matrix.go }}
-          cache: true
-      - run: go test ./...
-      - run: go vet ./...
+          components: rustfmt, clippy
+      - run: cargo fmt --manifest-path=rust/Cargo.toml --all -- --check
+      - run: cargo test --manifest-path=rust/Cargo.toml --workspace
+      - run: cargo clippy --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings
 
-  race:
-    runs-on: ubuntu-latest
+  frontend:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          go-version: 1.25.13
-          cache: true
-      - run: go test -race ./...
-
-  linux-transparent:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: 1.25.13
-          cache: true
-      - name: Build network namespace integration test
-        run: go test -c -tags=integration -o /tmp/sempre-transparent.test ./internal/transparentproxy
-      - name: Create isolated gateway and LAN
-        run: |
-          sudo ip netns add sempre-gateway
-          sudo ip netns add sempre-client
-          sudo ip link add sg-lan type veth peer name sc-lan
-          sudo ip link set sg-lan netns sempre-gateway
-          sudo ip link set sc-lan netns sempre-client
-          sudo ip netns exec sempre-gateway ip link set sg-lan name lan0
-          sudo ip netns exec sempre-client ip link set sc-lan name eth0
-          sudo ip netns exec sempre-gateway ip link set lo up
-          sudo ip netns exec sempre-gateway ip address add 10.10.10.1/24 dev lan0
-          sudo ip netns exec sempre-gateway ip link set lan0 up
-          sudo ip netns exec sempre-client ip link set lo up
-          sudo ip netns exec sempre-client ip address add 10.10.10.114/24 dev eth0
-          sudo ip netns exec sempre-client ip link set eth0 up
-          sudo ip netns exec sempre-client ip route add default via 10.10.10.1
-          sudo ip netns exec sempre-gateway ip link add wan0 type dummy
-          sudo ip netns exec sempre-gateway ip address add 10.23.0.200/21 dev wan0
-          sudo ip netns exec sempre-gateway ip link set wan0 up
-          sudo ip netns exec sempre-gateway ip route add default dev wan0
-          sudo ip netns exec sempre-gateway ip link add vmbr1 type bridge
-          sudo ip netns exec sempre-gateway ip address add 10.20.0.1/24 dev vmbr1
-          sudo ip netns exec sempre-gateway ip link set vmbr1 up
-          sudo ip netns exec sempre-gateway ip link add docker0 type bridge
-          sudo ip netns exec sempre-gateway ip address add 172.17.0.1/16 dev docker0
-          sudo ip netns exec sempre-gateway ip link set docker0 up
-          sudo ip netns exec sempre-gateway ip link add wg0 type dummy
-          sudo ip netns exec sempre-gateway ip link set wg0 up
-          sudo ip netns exec sempre-gateway ip route add 100.80.0.0/16 dev wg0
-          sudo ip netns exec sempre-gateway sysctl -w net.ipv4.ip_forward=1
-          sudo ip netns exec sempre-gateway sysctl -w net.ipv6.conf.all.disable_ipv6=0
-      - name: Verify host, LAN, TCP, UDP, DNS, and cleanup
-        run: sudo ip netns exec sempre-gateway env SEMPRE_NETNS_TEST=1 SEMPRE_CLIENT_NETNS=sempre-client /tmp/sempre-transparent.test -test.v -test.run='^TestNetNS'
-      - name: Remove isolated network namespaces
-        if: always()
-        run: |
-          sudo ip netns delete sempre-client || true
-          sudo ip netns delete sempre-gateway || true
+          bun-version: 1.3.14
+      - run: bun install --cwd ui --frozen-lockfile
+      - run: bun install --cwd site --frozen-lockfile
+      - run: bun run lint
+      - run: bun run tsc
+      - run: bun run test
 
   vulnerability:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: 1.25.13
-          cache: true
-      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit --file rust/Cargo.lock
 
   build:
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.name }})
+    needs: [rust, frontend]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            runner: ubuntu-24.04
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+          - name: windows-amd64
+            runner: windows-2025
+          - name: windows-arm64
+            runner: windows-11-arm
+          - name: darwin-amd64
+            runner: macos-15-intel
+          - name: darwin-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: 1.25.13
-          cache: true
-      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
       - run: bun install --cwd ui --frozen-lockfile
-      - run: go run ./cmd/build
+      - run: cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- package
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: sempre-dist
+          name: sempre-dist-${{ matrix.name }}
           path: dist/
