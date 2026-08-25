@@ -59,6 +59,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: BundleCommand,
     },
+    /// Manage the native Sempre service registration and lifecycle.
+    Service {
+        #[command(subcommand)]
+        command: ServiceCommand,
+    },
     /// Print build version information.
     Version,
     #[cfg(windows)]
@@ -79,6 +84,7 @@ impl Arguments {
                 BundleCommand::Export { .. } => system,
                 BundleCommand::Restore { .. } => true,
             },
+            Command::Service { command } => !matches!(command, ServiceCommand::Status),
             Command::Version => false,
             #[cfg(windows)]
             Command::ServiceHost => false,
@@ -110,6 +116,26 @@ pub(crate) enum CoreCommand {
     Remove { reference: String },
 }
 
+#[derive(Debug, Subcommand)]
+pub(crate) enum ServiceCommand {
+    /// Install this extracted release as the native system service.
+    Install {
+        /// Replace a different existing system deployment without prompting.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Remove the native service registration while retaining Sempre data.
+    Uninstall,
+    /// Start the native service.
+    Start,
+    /// Stop the native service.
+    Stop,
+    /// Restart the native service.
+    Restart,
+    /// Print the native service state.
+    Status,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,6 +145,12 @@ mod tests {
         assert!(
             Arguments::try_parse_from(["sempre", "--system", "--portable", "version"]).is_err()
         );
+        let status =
+            Arguments::try_parse_from(["sempre", "service", "status"]).expect("service status");
+        assert!(!status.requires_administrator());
+        let restart =
+            Arguments::try_parse_from(["sempre", "service", "restart"]).expect("service restart");
+        assert!(restart.requires_administrator());
     }
 
     #[test]

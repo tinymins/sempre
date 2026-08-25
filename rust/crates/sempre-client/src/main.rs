@@ -23,7 +23,7 @@ mod windows_service_host;
 
 use std::{fs, io, path::PathBuf};
 
-use args::{Arguments, BundleCommand, Command, CoreCommand};
+use args::{Arguments, BundleCommand, Command, CoreCommand, ServiceCommand};
 use clap::Parser;
 use sempre_control::ControlError;
 use sempre_manager::{Manager, ManagerError};
@@ -53,6 +53,8 @@ pub(crate) enum ClientError {
     Bundle(#[from] sempre_bundle::BundleError),
     #[error(transparent)]
     Ui(#[from] sempre_ui::UiError),
+    #[error(transparent)]
+    Service(#[from] sempre_service::ServiceError),
     #[error("deployment cancelled")]
     Cancelled,
     #[error("bind local API at {address}: {source}")]
@@ -152,7 +154,47 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         },
         Command::Core { command } => run_core(mode, command).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
+        Command::Service { command } => run_service(command).await,
     }
+}
+
+async fn run_service(command: ServiceCommand) -> Result<(), ClientError> {
+    match command {
+        ServiceCommand::Install { yes } => {
+            run_install(
+                yes,
+                bootstrap::Options {
+                    core: None,
+                    subscription: None,
+                    subscription_file: None,
+                    ui: None,
+                    ui_sha256: None,
+                },
+            )
+            .await
+        }
+        ServiceCommand::Uninstall => {
+            sempre_service::uninstall().await?;
+            println!("Service uninstalled. Sempre data was retained.");
+            Ok(())
+        }
+        ServiceCommand::Start => service_action("started", sempre_service::start()).await,
+        ServiceCommand::Stop => service_action("stopped", sempre_service::stop()).await,
+        ServiceCommand::Restart => service_action("restarted", sempre_service::restart()).await,
+        ServiceCommand::Status => {
+            println!("{}", sempre_service::status().await?);
+            Ok(())
+        }
+    }
+}
+
+async fn service_action(
+    completed: &str,
+    action: impl std::future::Future<Output = Result<(), sempre_service::ServiceError>>,
+) -> Result<(), ClientError> {
+    action.await?;
+    println!("Service {completed}.");
+    Ok(())
 }
 
 async fn run_install(yes: bool, options: bootstrap::Options<'_>) -> Result<(), ClientError> {

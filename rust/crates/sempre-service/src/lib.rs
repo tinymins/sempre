@@ -45,6 +45,19 @@ pub enum State {
     Unknown,
 }
 
+impl std::fmt::Display for State {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::NotInstalled => "not installed",
+            Self::Stopped => "stopped",
+            Self::StartPending => "start pending",
+            Self::Running => "running",
+            Self::StopPending => "stop pending",
+            Self::Unknown => "unknown",
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
     Restart,
