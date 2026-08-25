@@ -5,7 +5,7 @@ use regex::Regex;
 use crate::{
     Adapter, AssetSelection, Capabilities, CommandSpec, CompilerTarget, ControlProtocol,
     Definition, Registry, RegistryError, RunSpec, Stability, Target,
-    builtin_capabilities::capabilities,
+    builtin_capabilities::capabilities, runtime,
 };
 
 const PLATFORMS: [&str; 6] = [
@@ -327,6 +327,14 @@ impl Adapter for BuiltInAdapter {
             ],
         };
         with_runtime_environment(self.kind, command(binary, &arguments, Some(data)))
+    }
+
+    fn prepare_runtime(
+        &self,
+        config: &Path,
+        runtime_directory: &Path,
+    ) -> Result<crate::RuntimeSpec, RegistryError> {
+        runtime::prepare(self.kind, config, runtime_directory)
     }
 }
 

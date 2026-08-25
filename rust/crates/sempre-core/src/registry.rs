@@ -1,10 +1,10 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use thiserror::Error;
 
 use crate::{
-    AssetSelection, Capabilities, CommandSpec, CompilerTarget, Definition, RunSpec, Stability,
-    Target,
+    AssetSelection, Capabilities, CommandSpec, CompilerTarget, Definition, RunSpec, RuntimeSpec,
+    Stability, Target,
 };
 
 pub trait Adapter: Send + Sync {
@@ -27,6 +27,11 @@ pub trait Adapter: Send + Sync {
     ) -> Result<CompilerTarget, RegistryError>;
     fn validation_command(&self, binary: &str, config: &str, data_directory: &str) -> CommandSpec;
     fn run_spec(&self, binary: &str, config: &str, data_directory: &str) -> RunSpec;
+    fn prepare_runtime(
+        &self,
+        config: &Path,
+        runtime_directory: &Path,
+    ) -> Result<RuntimeSpec, RegistryError>;
 }
 
 #[derive(Default)]
@@ -42,6 +47,8 @@ pub enum RegistryError {
     Target { core: String, target: String },
     #[error("{core} returned unrecognized version output {output:?}")]
     VersionOutput { core: String, output: String },
+    #[error("prepare {core} runtime: {message}")]
+    Runtime { core: String, message: String },
 }
 
 impl Registry {
