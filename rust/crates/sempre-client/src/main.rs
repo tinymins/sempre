@@ -14,6 +14,7 @@ mod runtime_cli;
 mod runtime_control_api;
 mod runtime_events_api;
 mod subscription_api;
+mod subscription_cli;
 mod subscription_debug_api;
 mod subscription_profile_debug_api;
 mod subscription_tools_api;
@@ -163,6 +164,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         },
         Command::Core { command } => run_core(mode, command).await,
         Command::Config { command } => run_config(mode, command).await,
+        Command::Subscription { command } => subscription_cli::run(mode, command, json).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
         Command::Service { command } => run_service(command).await,
         Command::Runtime { command } => runtime_cli::run(mode, command, json).await,

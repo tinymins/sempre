@@ -13,6 +13,7 @@ mod runtime;
 mod scheduler;
 mod service_deploy;
 mod subscription;
+mod subscription_mutation;
 mod subscription_tools;
 mod supervisor;
 mod tunnel;

@@ -63,6 +63,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    /// Manage local and remote subscription profiles.
+    Subscription {
+        #[command(subcommand)]
+        command: SubscriptionCommand,
+    },
     /// Export or restore a portable deployment snapshot.
     Bundle {
         #[command(subcommand)]
@@ -97,6 +102,7 @@ impl Arguments {
             } => development_root.is_none(),
             Command::Core { .. } => system,
             Command::Config { .. } => system,
+            Command::Subscription { .. } => system,
             Command::Bundle { command } => match command {
                 BundleCommand::Export { .. } => system,
                 BundleCommand::Restore { .. } => true,
@@ -143,6 +149,40 @@ pub(crate) enum CoreCommand {
 pub(crate) enum ConfigCommand {
     /// Add a local file as a raw source and stage its converted configuration.
     Import { file: PathBuf },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SubscriptionCommand {
+    /// List subscription profiles.
+    List,
+    /// Print one profile, or the active profile when omitted.
+    Show { id: Option<String> },
+    /// Create a local profile.
+    Create { name: String },
+    /// Create a read-only remote profile from a Sempre server manifest.
+    CreateRemote { name: String, manifest_url: String },
+    /// Activate, fetch, compile, validate, and stage a profile.
+    Use { id: String },
+    /// Refresh, compile, and validate a profile.
+    Update { id: Option<String> },
+    /// Render a profile without changing runtime state.
+    Render {
+        id: Option<String>,
+        #[arg(long, default_value = "clash-meta")]
+        format: String,
+    },
+    /// Remove a non-active profile.
+    Remove { id: String },
+    /// Replace the active profile sources with one HTTP(S) URL; empty clears sources.
+    Set { url: String },
+    /// Set the scheduled refresh interval or disable it with `off`.
+    Schedule { interval: String },
+    /// Enable or disable automatic restart after scheduled refresh.
+    AutoRestart { enabled: bool },
+    /// Print active profile and refresh state.
+    Status,
+    /// Remove cached remote subscription responses.
+    ClearCache,
 }
 
 #[derive(Debug, Subcommand)]
