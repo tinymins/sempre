@@ -11,6 +11,7 @@ mod lifecycle;
 mod process;
 mod runtime;
 mod scheduler;
+mod service_deploy;
 mod subscription;
 mod subscription_tools;
 mod supervisor;

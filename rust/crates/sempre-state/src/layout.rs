@@ -92,14 +92,16 @@ impl Layout {
     pub fn system_at(root: &Path) -> Self {
         let binary_root = root.join("bin");
         let executable = binary_root.join(executable_name("sempre"));
-        Self::new(
+        let mut layout = Self::new(
             Mode::System,
             &binary_root,
             &root.join("data"),
             &root.join("logs"),
             &root.join("run"),
             &executable,
-        )
+        );
+        layout.command_executable = root.join("command").join(executable_name("sempre"));
+        layout
     }
 
     pub fn ensure(&self) -> Result<(), LayoutError> {
@@ -148,24 +150,32 @@ impl Layout {
 
     fn system() -> Result<Self, LayoutError> {
         #[cfg(target_os = "linux")]
-        return Ok(Self::new(
-            Mode::System,
-            Path::new("/usr/local/libexec/sempre"),
-            Path::new("/var/lib/sempre"),
-            Path::new("/var/log/sempre"),
-            Path::new("/run/sempre"),
-            Path::new("/usr/local/libexec/sempre/sempre"),
-        ));
+        {
+            let mut layout = Self::new(
+                Mode::System,
+                Path::new("/usr/local/libexec/sempre"),
+                Path::new("/var/lib/sempre"),
+                Path::new("/var/log/sempre"),
+                Path::new("/run/sempre"),
+                Path::new("/usr/local/libexec/sempre/sempre"),
+            );
+            layout.command_executable = PathBuf::from("/usr/local/bin/sempre");
+            return Ok(layout);
+        }
 
         #[cfg(target_os = "macos")]
-        return Ok(Self::new(
-            Mode::System,
-            Path::new("/Library/Application Support/Sempre/bin"),
-            Path::new("/Library/Application Support/Sempre/data"),
-            Path::new("/Library/Logs/Sempre"),
-            Path::new("/var/run/sempre"),
-            Path::new("/Library/Application Support/Sempre/bin/sempre"),
-        ));
+        {
+            let mut layout = Self::new(
+                Mode::System,
+                Path::new("/Library/Application Support/Sempre/bin"),
+                Path::new("/Library/Application Support/Sempre/data"),
+                Path::new("/Library/Logs/Sempre"),
+                Path::new("/var/run/sempre"),
+                Path::new("/Library/Application Support/Sempre/bin/sempre"),
+            );
+            layout.command_executable = PathBuf::from("/usr/local/bin/sempre");
+            return Ok(layout);
+        }
 
         #[cfg(target_os = "windows")]
         {
@@ -294,6 +304,20 @@ mod tests {
         assert_eq!(layout.mode, Mode::Portable);
         assert_eq!(layout.home, temporary.path().join(".sempre"));
         assert_eq!(layout.runtime, layout.home.join("run"));
+    }
+
+    #[test]
+    fn system_layout_separates_managed_binary_from_command_registration() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let layout = Layout::system_at(temporary.path());
+        assert_ne!(layout.service_executable, layout.command_executable);
+        assert_eq!(
+            layout.command_executable,
+            temporary
+                .path()
+                .join("command")
+                .join(executable_name("sempre"))
+        );
     }
 
     #[test]

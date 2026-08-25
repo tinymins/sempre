@@ -16,10 +16,12 @@ mod subscription_tools_api;
 mod system_api;
 mod tunnel_api;
 mod web_ui_api;
+#[cfg(windows)]
+mod windows_service_host;
 
-use std::io;
+use std::{fs, io, path::PathBuf};
 
-use args::{Arguments, Command, CoreCommand};
+use args::{Arguments, BundleCommand, Command, CoreCommand};
 use clap::Parser;
 use sempre_control::ControlError;
 use sempre_manager::{Manager, ManagerError};
@@ -42,6 +44,8 @@ pub(crate) enum ClientError {
     Control(#[from] ControlError),
     #[error(transparent)]
     Subscription(#[from] SubscriptionError),
+    #[error(transparent)]
+    Bundle(#[from] sempre_bundle::BundleError),
     #[error("bind local API at {address}: {source}")]
     Bind { address: String, source: io::Error },
     #[error("read local API address: {0}")]
@@ -54,16 +58,35 @@ pub(crate) enum ClientError {
         #[source]
         source: tokio::task::JoinError,
     },
+    #[error("{operation} {path}: {source}")]
+    Io {
+        operation: &'static str,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sempre=info")),
         )
         .init();
-    if let Err(error) = run(Arguments::parse()).await {
+    let arguments = Arguments::parse();
+    #[cfg(windows)]
+    if matches!(arguments.command, Command::ServiceHost) {
+        if let Err(error) = windows_service_host::dispatch() {
+            eprintln!("ERROR: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("build Sempre runtime");
+    if let Err(error) = runtime.block_on(run(arguments)) {
         eprintln!("ERROR: {error}");
         std::process::exit(1);
     }
@@ -80,8 +103,51 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
             println!("Sempre {VERSION}");
             Ok(())
         }
+        #[cfg(windows)]
+        Command::ServiceHost => unreachable!("service host is dispatched before the async runtime"),
         Command::Daemon { listen } => daemon::run(mode, listen.as_deref()).await,
         Command::Core { command } => run_core(mode, command).await,
+        Command::Bundle { command } => run_bundle(mode, command).await,
+    }
+}
+
+async fn run_bundle(mode: Mode, command: BundleCommand) -> Result<(), ClientError> {
+    match command {
+        BundleCommand::Export { directory } => {
+            let manager = Manager::new(Store::new(Layout::for_mode(mode)?))?;
+            let result = manager.export_bundle()?;
+            fs::create_dir_all(&directory).map_err(|source| ClientError::Io {
+                operation: "create bundle output directory",
+                path: directory.clone(),
+                source,
+            })?;
+            let destination = directory.join(&result.download_name);
+            if let Err(source) = fs::copy(&result.archive, &destination) {
+                let _ = fs::remove_file(&result.archive);
+                return Err(ClientError::Io {
+                    operation: "copy bundle archive",
+                    path: destination,
+                    source,
+                });
+            }
+            let _ = fs::remove_file(&result.archive);
+            println!("Bundle archive: {}", destination.display());
+            Ok(())
+        }
+        BundleCommand::Restore { yes } => {
+            let executable = std::env::current_exe().map_err(|source| ClientError::Io {
+                operation: "locate snapshot executable",
+                path: PathBuf::from("sempre"),
+                source,
+            })?;
+            let source = Layout::portable_at(&executable);
+            sempre_bundle::validate_snapshot(&source.root)?;
+            let manager = Manager::new(Store::new(source))?;
+            let target = Layout::for_mode(Mode::System)?;
+            manager.restore_bundle(&target, yes).await?;
+            println!("Sempre snapshot restored, enabled, and started.");
+            Ok(())
+        }
     }
 }
 

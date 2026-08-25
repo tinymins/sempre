@@ -16,6 +16,7 @@ chrono.workspace = true
 clap.workspace = true
 futures-util.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }
+sempre-bundle = { path = "../sempre-bundle" }
 sempre-control = { path = "../sempre-control" }
 sempre-converter = { path = "../sempre-converter" }
 sempre-core-control = { path = "../sempre-core-control" }

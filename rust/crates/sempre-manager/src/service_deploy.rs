@@ -1,0 +1,229 @@
+use std::{fs, io, path::Path};
+
+use sempre_service::State;
+use sempre_state::{Document, Layout, Mode, Runtime};
+
+use crate::{Manager, ManagerError, VersionRunner};
+
+impl<R: VersionRunner> Manager<R> {
+    pub async fn restore_bundle(
+        &self,
+        target: &Layout,
+        allow_replace: bool,
+    ) -> Result<(), ManagerError> {
+        let source = self.store.layout();
+        if source.mode != Mode::Portable {
+            return Err(ManagerError::InvalidOperation(
+                "bundle restore must run from an extracted portable snapshot".into(),
+            ));
+        }
+        sempre_bundle::validate_snapshot(&source.root)?;
+        sempre_control::WebConfigStore::new(&source.web_config).read()?;
+        sempre_service::require_installation_privileges()?;
+        require_replacement_confirmation(source, target, allow_replace)?;
+        prepare_command_registration(target)?;
+        let _operation = self.store.acquire_operation()?;
+        let mut transaction = sempre_bundle::stage_restore(source, target)?;
+        let previous_service = sempre_service::status().await?;
+        if !matches!(previous_service, State::NotInstalled | State::Stopped) {
+            sempre_service::stop().await?;
+        }
+        if let Err(error) = transaction.activate() {
+            restore_service_state(previous_service).await;
+            return Err(error.into());
+        }
+        if let Err(error) = target.ensure() {
+            transaction.rollback();
+            restore_service_state(previous_service).await;
+            return Err(error.into());
+        }
+        let mut command_created = false;
+        let result = async {
+            sempre_service::install(&target.service_executable, &target.home).await?;
+            command_created = register_command(target)?;
+            sempre_service::start().await?;
+            Ok::<(), ManagerError>(())
+        }
+        .await;
+        if let Err(error) = result {
+            if command_created {
+                let _ = unregister_command(target);
+            }
+            transaction.rollback();
+            restore_registration_after_rollback(target, previous_service).await;
+            return Err(error);
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+}
+
+fn require_replacement_confirmation(
+    source: &Layout,
+    target: &Layout,
+    allow_replace: bool,
+) -> Result<(), ManagerError> {
+    if allow_replace || !target.state.exists() {
+        return Ok(());
+    }
+    let same_state = same_deployment_state(&source.state, &target.state)?;
+    let same_subscriptions = same_file(&source.subscription_catalog, &target.subscription_catalog)?;
+    if same_state && same_subscriptions {
+        Ok(())
+    } else {
+        Err(ManagerError::ConfirmationRequired(format!(
+            "{} already contains different state or subscriptions",
+            target.home.display()
+        )))
+    }
+}
+
+fn same_deployment_state(left: &Path, right: &Path) -> Result<bool, ManagerError> {
+    let mut left = read_document(left)?;
+    let Ok(mut right) = read_document(right) else {
+        return Ok(false);
+    };
+    left.runtime = Runtime::default();
+    right.runtime = Runtime::default();
+    left.updated_at = right.updated_at;
+    Ok(left == right)
+}
+
+fn read_document(path: &Path) -> Result<Document, ManagerError> {
+    let data = fs::read(path)
+        .map_err(|error| ManagerError::io(format!("read {}", path.display()), error))?;
+    serde_json::from_slice(&data).map_err(|error| {
+        ManagerError::InvalidOperation(format!(
+            "decode deployment state {}: {error}",
+            path.display()
+        ))
+    })
+}
+
+fn same_file(left: &Path, right: &Path) -> Result<bool, ManagerError> {
+    let left = match fs::read(left) {
+        Ok(data) => Some(data),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(ManagerError::io(format!("read {}", left.display()), error)),
+    };
+    let right = match fs::read(right) {
+        Ok(data) => Some(data),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(ManagerError::io(format!("read {}", right.display()), error)),
+    };
+    Ok(left == right)
+}
+
+async fn restore_registration_after_rollback(target: &Layout, previous: State) {
+    if previous == State::NotInstalled {
+        let _ = sempre_service::uninstall().await;
+    } else {
+        let _ = sempre_service::install(&target.service_executable, &target.home).await;
+        restore_service_state(previous).await;
+    }
+}
+
+async fn restore_service_state(previous: State) {
+    if matches!(previous, State::Running | State::StartPending) {
+        let _ = sempre_service::start().await;
+    } else if matches!(previous, State::Stopped | State::StopPending) {
+        let _ = sempre_service::stop().await;
+    }
+}
+
+#[cfg(unix)]
+fn prepare_command_registration(layout: &Layout) -> Result<(), ManagerError> {
+    match fs::read_link(&layout.command_executable) {
+        Ok(target) if target == layout.service_executable => Ok(()),
+        Ok(_) => Err(ManagerError::InvalidOperation(format!(
+            "command path {} is already owned by another installation",
+            layout.command_executable.display()
+        ))),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::InvalidInput => {
+            Err(ManagerError::InvalidOperation(format!(
+                "command path {} exists and is not a symbolic link",
+                layout.command_executable.display()
+            )))
+        }
+        Err(error) => Err(ManagerError::io("inspect command registration", error)),
+    }
+}
+
+#[cfg(unix)]
+fn register_command(layout: &Layout) -> Result<bool, ManagerError> {
+    if fs::read_link(&layout.command_executable).is_ok() {
+        return Ok(false);
+    }
+    let parent = layout.command_executable.parent().ok_or_else(|| {
+        ManagerError::InvalidOperation("command registration has no parent".into())
+    })?;
+    fs::create_dir_all(parent)
+        .map_err(|error| ManagerError::io("create command directory", error))?;
+    std::os::unix::fs::symlink(&layout.service_executable, &layout.command_executable)
+        .map_err(|error| ManagerError::io("register system command", error))?;
+    Ok(true)
+}
+
+#[cfg(unix)]
+fn unregister_command(layout: &Layout) -> Result<(), ManagerError> {
+    fs::remove_file(&layout.command_executable)
+        .map_err(|error| ManagerError::io("remove command registration", error))
+}
+
+#[cfg(windows)]
+fn prepare_command_registration(_: &Layout) -> Result<(), ManagerError> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn register_command(_: &Layout) -> Result<bool, ManagerError> {
+    Ok(false)
+}
+
+#[cfg(windows)]
+fn unregister_command(_: &Layout) -> Result<(), ManagerError> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use sempre_state::{DesiredState, RuntimeState, Store};
+
+    use super::*;
+
+    #[test]
+    fn replacement_confirmation_ignores_runtime_but_detects_deployment_intent() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let source = Layout::at(&temporary.path().join("source"));
+        let target = Layout::system_at(&temporary.path().join("target"));
+        let source_store = Store::new(source.clone());
+        let target_store = Store::new(target.clone());
+        source_store.initialize().expect("source state");
+        target_store.initialize().expect("target state");
+        fs::write(&source.subscription_catalog, b"same").expect("source catalog");
+        fs::write(&target.subscription_catalog, b"same").expect("target catalog");
+        target_store
+            .update(|document| {
+                document.runtime.state = RuntimeState::Running;
+                document.runtime.pid = Some(42);
+                Ok(())
+            })
+            .expect("runtime state");
+        require_replacement_confirmation(&source, &target, false)
+            .expect("runtime does not require replacement confirmation");
+
+        target_store
+            .update(|document| {
+                document.desired_state = DesiredState::Stopped;
+                Ok(())
+            })
+            .expect("deployment intent");
+        assert!(matches!(
+            require_replacement_confirmation(&source, &target, false),
+            Err(ManagerError::ConfirmationRequired(_))
+        ));
+        require_replacement_confirmation(&source, &target, true)
+            .expect("explicit replacement confirmation");
+    }
+}

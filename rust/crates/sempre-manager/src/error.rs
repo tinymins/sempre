@@ -1,8 +1,9 @@
 use std::{io, path::PathBuf};
 
 use sempre_artifact::ArtifactError;
+use sempre_control::ControlError;
 use sempre_core::{ReferenceError, RegistryError};
-use sempre_state::StateError;
+use sempre_state::{LayoutError, StateError};
 use sempre_subscription::SubscriptionError;
 use sempre_supervisor::SupervisorError;
 use thiserror::Error;
@@ -12,13 +13,19 @@ pub enum ManagerError {
     #[error(transparent)]
     State(#[from] StateError),
     #[error(transparent)]
+    Layout(#[from] LayoutError),
+    #[error(transparent)]
     Reference(#[from] ReferenceError),
     #[error(transparent)]
     Core(#[from] RegistryError),
     #[error(transparent)]
+    Control(#[from] ControlError),
+    #[error(transparent)]
     Artifact(#[from] ArtifactError),
     #[error(transparent)]
     Bundle(#[from] sempre_bundle::BundleError),
+    #[error(transparent)]
+    Service(#[from] sempre_service::ServiceError),
     #[error(transparent)]
     Subscription(#[from] SubscriptionError),
     #[error(transparent)]
@@ -102,6 +109,8 @@ pub enum ManagerError {
     RuntimeNotReady(String),
     #[error("{0}")]
     InvalidOperation(String),
+    #[error("replacing the existing system deployment requires --yes: {0}")]
+    ConfirmationRequired(String),
     #[error("{message}")]
     RuntimeAction { code: &'static str, message: String },
 }

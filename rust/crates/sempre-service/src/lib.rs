@@ -1,10 +1,33 @@
-use std::{io, time::Duration};
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+mod render;
+
+use std::{io, path::Path, time::Duration};
 
 use serde::Serialize;
 use thiserror::Error;
 use tokio::{process::Command, time::timeout};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+pub(crate) const NAME: &str = "sempre";
+#[cfg(target_os = "windows")]
+pub(crate) const DISPLAY_NAME: &str = "Sempre";
+pub(crate) const DESCRIPTION: &str = "Cross-platform lifecycle manager for proxy cores";
+
+#[cfg(target_os = "linux")]
+#[path = "platform/linux.rs"]
+mod platform;
+#[cfg(target_os = "macos")]
+#[path = "platform/macos.rs"]
+mod platform;
+#[cfg(target_os = "windows")]
+#[path = "platform/windows.rs"]
+mod platform;
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+#[path = "platform/unsupported.rs"]
+mod platform;
+#[cfg(target_os = "windows")]
+mod windows_host;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum State {
@@ -32,6 +55,17 @@ pub enum Action {
 pub enum ServiceError {
     #[error("service action must be restart or stop")]
     InvalidAction,
+    #[error("service path must be absolute and valid Unicode: {0}")]
+    InvalidPath(String),
+    #[error("administrator access is required; rerun this command with elevation")]
+    AdministratorRequired,
+    #[error("{operation} {path}: {source}")]
+    Io {
+        operation: &'static str,
+        path: String,
+        #[source]
+        source: io::Error,
+    },
     #[error("run {program}: {source}")]
     Start { program: String, source: io::Error },
     #[error("{program} timed out after 30 seconds")]
@@ -58,17 +92,49 @@ pub async fn status() -> Result<State, ServiceError> {
     platform::status().await
 }
 
+pub fn require_installation_privileges() -> Result<(), ServiceError> {
+    #[cfg(unix)]
+    require_administrator()?;
+    Ok(())
+}
+
+pub async fn install(executable: &Path, working_directory: &Path) -> Result<(), ServiceError> {
+    platform::install(executable, working_directory).await
+}
+
+pub async fn uninstall() -> Result<(), ServiceError> {
+    platform::uninstall().await
+}
+
+pub async fn start() -> Result<(), ServiceError> {
+    platform::start().await
+}
+
+pub async fn stop() -> Result<(), ServiceError> {
+    platform::stop().await
+}
+
+pub async fn restart() -> Result<(), ServiceError> {
+    platform::restart().await
+}
+
 pub async fn action(action: Action) -> Result<(), ServiceError> {
-    platform::action(action).await
+    match action {
+        Action::Restart => restart().await,
+        Action::Stop => stop().await,
+    }
 }
 
-struct Output {
-    success: bool,
-    status: String,
-    text: String,
+#[cfg(target_os = "windows")]
+pub use windows_host::dispatch as dispatch_windows_service;
+
+pub(crate) struct Output {
+    pub success: bool,
+    pub status: String,
+    pub text: String,
 }
 
-async fn command(program: &str, arguments: &[&str]) -> Result<Output, ServiceError> {
+pub(crate) async fn command(program: &str, arguments: &[&str]) -> Result<Output, ServiceError> {
     let result = timeout(
         COMMAND_TIMEOUT,
         Command::new(program).args(arguments).output(),
@@ -95,7 +161,7 @@ async fn command(program: &str, arguments: &[&str]) -> Result<Output, ServiceErr
     })
 }
 
-async fn checked(program: &str, arguments: &[&str]) -> Result<(), ServiceError> {
+pub(crate) async fn checked(program: &str, arguments: &[&str]) -> Result<(), ServiceError> {
     let output = command(program, arguments).await?;
     if output.success {
         Ok(())
@@ -108,140 +174,38 @@ async fn checked(program: &str, arguments: &[&str]) -> Result<(), ServiceError> 
     }
 }
 
-#[cfg(target_os = "linux")]
-mod platform {
-    use super::{Action, ServiceError, State, checked, command};
-
-    const UNIT: &str = "sempre.service";
-
-    pub async fn status() -> Result<State, ServiceError> {
-        let load = command("systemctl", &["show", "-p", "LoadState", "--value", UNIT]).await?;
-        if !load.success || matches!(load.text.as_str(), "" | "not-found") {
-            return Ok(State::NotInstalled);
-        }
-        let active = command("systemctl", &["is-active", UNIT]).await?;
-        Ok(match active.text.as_str() {
-            "active" => State::Running,
-            "activating" => State::StartPending,
-            "deactivating" => State::StopPending,
-            "inactive" | "failed" => State::Stopped,
-            _ => State::Unknown,
-        })
-    }
-
-    pub async fn action(action: Action) -> Result<(), ServiceError> {
-        checked(
-            "systemctl",
-            &[
-                match action {
-                    Action::Restart => "restart",
-                    Action::Stop => "stop",
-                },
-                UNIT,
-            ],
-        )
-        .await
-    }
-}
-
-#[cfg(target_os = "macos")]
-mod platform {
-    use std::path::Path;
-
-    use super::{Action, ServiceError, State, checked, command};
-
-    const LABEL: &str = "io.github.tinymins.sempre";
-    const PLIST: &str = "/Library/LaunchDaemons/io.github.tinymins.sempre.plist";
-
-    pub async fn status() -> Result<State, ServiceError> {
-        let output = command("launchctl", &["print", &format!("system/{LABEL}")]).await?;
-        if output.success {
-            return Ok(if output.text.contains("state = running") {
-                State::Running
-            } else {
-                State::Stopped
-            });
-        }
-        Ok(if Path::new(PLIST).is_file() {
-            State::Stopped
-        } else {
-            State::NotInstalled
-        })
-    }
-
-    pub async fn action(action: Action) -> Result<(), ServiceError> {
-        match action {
-            Action::Restart => {
-                checked("launchctl", &["enable", &format!("system/{LABEL}")]).await?;
-                checked(
-                    "launchctl",
-                    &["kickstart", "-k", &format!("system/{LABEL}")],
-                )
-                .await
-            }
-            Action::Stop => checked("launchctl", &["bootout", &format!("system/{LABEL}")]).await,
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-mod platform {
-    use super::{Action, ServiceError, State, checked, command};
-
-    const NAME: &str = "sempre";
-
-    pub async fn status() -> Result<State, ServiceError> {
-        let output = command("sc.exe", &["query", NAME]).await?;
-        if !output.success && output.text.contains("1060") {
-            return Ok(State::NotInstalled);
-        }
-        Ok(parse_windows_status(&output.text))
-    }
-
-    pub async fn action(action: Action) -> Result<(), ServiceError> {
-        checked("sc.exe", &["stop", NAME]).await?;
-        if action == Action::Restart {
-            checked("sc.exe", &["start", NAME]).await?;
-        }
+#[cfg(unix)]
+pub(crate) fn require_administrator() -> Result<(), ServiceError> {
+    if nix::unistd::Uid::effective().is_root() {
         Ok(())
-    }
-
-    fn parse_windows_status(value: &str) -> State {
-        if value.contains("RUNNING") {
-            State::Running
-        } else if value.contains("START_PENDING") {
-            State::StartPending
-        } else if value.contains("STOP_PENDING") {
-            State::StopPending
-        } else if value.contains("STOPPED") {
-            State::Stopped
-        } else {
-            State::Unknown
-        }
-    }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-mod platform {
-    use super::{Action, ServiceError, State};
-
-    pub async fn status() -> Result<State, ServiceError> {
-        Ok(State::Unknown)
-    }
-
-    pub async fn action(_action: Action) -> Result<(), ServiceError> {
-        Err(ServiceError::InvalidAction)
+    } else {
+        Err(ServiceError::AdministratorRequired)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Action;
+    use std::path::Path;
+
+    use super::{Action, render};
 
     #[test]
     fn action_parser_rejects_expansive_service_operations() {
         assert_eq!(Action::parse("restart").expect("restart"), Action::Restart);
         assert_eq!(Action::parse("stop").expect("stop"), Action::Stop);
         assert!(Action::parse("uninstall").is_err());
+    }
+
+    #[test]
+    fn native_registrations_escape_paths_and_use_the_rust_daemon() {
+        let executable = Path::new("/Applications/Sempre & tools/sempre");
+        let working = Path::new("/Library/Application Support/Sempre/data");
+        let systemd = render::systemd(executable, working).expect("systemd unit");
+        assert!(
+            systemd.contains("ExecStart=\"/Applications/Sempre & tools/sempre\" --system daemon")
+        );
+        let launchd = render::launchd(executable, working).expect("launchd plist");
+        assert!(launchd.contains("Sempre &amp; tools"));
+        assert!(launchd.contains("<string>--system</string><string>daemon</string>"));
     }
 }

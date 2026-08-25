@@ -10,6 +10,8 @@ use thiserror::Error;
 use uuid::Uuid;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
+pub use restore::{RestoreTransaction, stage_restore, validate_snapshot};
+
 const METADATA_NAME: &str = ".sempre-bundle.json";
 const PORTABLE_MARKER: &str = ".sempre-portable";
 
@@ -44,6 +46,10 @@ pub enum BundleError {
     },
     #[error("invalid web configuration: {0}")]
     InvalidWebConfig(&'static str),
+    #[error("invalid snapshot metadata: {0}")]
+    InvalidMetadata(String),
+    #[error("snapshot file is missing: {0}")]
+    Missing(PathBuf),
     #[error("refuse symbolic link in snapshot: {0}")]
     SymbolicLink(PathBuf),
     #[error("archive snapshot: {0}")]
@@ -189,7 +195,7 @@ fn copy_optional_file(source: &Path, target: &Path) -> Result<(), BundleError> {
     }
 }
 
-fn copy_tree(source: &Path, target: &Path) -> Result<(), BundleError> {
+pub(crate) fn copy_tree(source: &Path, target: &Path) -> Result<(), BundleError> {
     let metadata = match source.symlink_metadata() {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -242,7 +248,7 @@ fn copy_tree(source: &Path, target: &Path) -> Result<(), BundleError> {
     Ok(())
 }
 
-fn copy_file(source: &Path, target: &Path, executable: bool) -> Result<(), BundleError> {
+pub(crate) fn copy_file(source: &Path, target: &Path, executable: bool) -> Result<(), BundleError> {
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|source_error| BundleError::Io {
             operation: "create snapshot parent directory",
@@ -452,3 +458,4 @@ mod tests {
         serde_json::from_reader(&mut file).expect("decode archive entry")
     }
 }
+mod restore;

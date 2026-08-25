@@ -1,8 +1,11 @@
 use std::{
-    fs::{self, File},
+    fs,
     io::{self, Write},
     path::Path,
 };
+
+#[cfg(unix)]
+use std::fs::File;
 
 pub fn write_atomic(path: &Path, data: &[u8], mode: u32) -> io::Result<()> {
     let parent = path

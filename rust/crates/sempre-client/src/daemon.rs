@@ -13,6 +13,14 @@ use tracing::info;
 use crate::{ClientError, VERSION, api, listener};
 
 pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(), ClientError> {
+    run_with_shutdown(mode, listen_override, None).await
+}
+
+pub(crate) async fn run_with_shutdown(
+    mode: Mode,
+    listen_override: Option<&str>,
+    external_shutdown: Option<watch::Receiver<bool>>,
+) -> Result<(), ClientError> {
     let layout = Layout::for_mode(mode)?;
     let store = Store::new(layout.clone());
     store.initialize()?;
@@ -53,7 +61,10 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
     let (shutdown_sender, shutdown_receiver) = watch::channel(false);
     let signal_sender = shutdown_sender.clone();
     let signal = tokio::spawn(async move {
-        shutdown_signal().await;
+        match external_shutdown {
+            Some(receiver) => wait_external_shutdown(receiver).await,
+            None => shutdown_signal().await,
+        }
         let _ = signal_sender.send(true);
     });
     let server_shutdown = shutdown_sender.subscribe();
@@ -91,6 +102,10 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
     let result = coordinate_tasks(shutdown_sender, server, supervisor, scheduler, tunnels).await;
     signal.abort();
     result
+}
+
+async fn wait_external_shutdown(mut receiver: watch::Receiver<bool>) {
+    while !*receiver.borrow() && receiver.changed().await.is_ok() {}
 }
 
 async fn coordinate_tasks(

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 use crate::VERSION;
@@ -26,8 +28,28 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: CoreCommand,
     },
+    /// Export or restore a portable deployment snapshot.
+    Bundle {
+        #[command(subcommand)]
+        command: BundleCommand,
+    },
     /// Print build version information.
     Version,
+    #[cfg(windows)]
+    #[command(hide = true)]
+    ServiceHost,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum BundleCommand {
+    /// Export the current deployment to a ZIP archive in a directory.
+    Export { directory: PathBuf },
+    /// Restore this extracted snapshot as the system service.
+    Restore {
+        /// Replace a different existing system deployment.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -81,6 +103,14 @@ mod tests {
             select.command,
             Command::Core {
                 command: CoreCommand::Use { .. }
+            }
+        ));
+        let restore = Arguments::try_parse_from(["sempre", "bundle", "restore", "--yes"])
+            .expect("bundle restore");
+        assert!(matches!(
+            restore.command,
+            Command::Bundle {
+                command: BundleCommand::Restore { yes: true }
             }
         ));
     }

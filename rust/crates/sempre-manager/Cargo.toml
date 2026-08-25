@@ -13,8 +13,10 @@ sempre-artifact = { path = "../sempre-artifact" }
 sempre-bundle = { path = "../sempre-bundle" }
 sempre-converter = { path = "../sempre-converter" }
 sempre-core = { path = "../sempre-core" }
+sempre-control = { path = "../sempre-control" }
 sempre-gateway = { path = "../sempre-gateway" }
 sempre-network = { path = "../sempre-network" }
+sempre-service = { path = "../sempre-service" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }
 sempre-supervisor = { path = "../sempre-supervisor" }
