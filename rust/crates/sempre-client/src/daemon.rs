@@ -62,19 +62,40 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
         .await
         .map_err(ClientError::Serve)
     });
+    let scheduler_manager = Arc::clone(&manager);
+    let scheduler_shutdown = shutdown_receiver.clone();
     let mut supervisor = tokio::spawn(async move {
         manager.run_supervisor(shutdown_receiver).await?;
+        Ok(())
+    });
+    let mut scheduler = tokio::spawn(async move {
+        scheduler_manager
+            .run_subscription_scheduler(scheduler_shutdown)
+            .await?;
         Ok(())
     });
 
     let result = tokio::select! {
         result = &mut server => {
             let _ = shutdown_sender.send(true);
-            settle_tasks(result, "API server", supervisor, "core supervisor").await
+            settle_tasks(result, "API server", [
+                (supervisor, "core supervisor"),
+                (scheduler, "subscription scheduler"),
+            ]).await
         },
         result = &mut supervisor => {
             let _ = shutdown_sender.send(true);
-            settle_tasks(result, "core supervisor", server, "API server").await
+            settle_tasks(result, "core supervisor", [
+                (server, "API server"),
+                (scheduler, "subscription scheduler"),
+            ]).await
+        },
+        result = &mut scheduler => {
+            let _ = shutdown_sender.send(true);
+            settle_tasks(result, "subscription scheduler", [
+                (server, "API server"),
+                (supervisor, "core supervisor"),
+            ]).await
         },
     };
     signal.abort();
@@ -84,12 +105,13 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
 async fn settle_tasks(
     first: Result<Result<(), ClientError>, JoinError>,
     first_name: &'static str,
-    second: JoinHandle<Result<(), ClientError>>,
-    second_name: &'static str,
+    remaining: [(JoinHandle<Result<(), ClientError>>, &'static str); 2],
 ) -> Result<(), ClientError> {
-    let first = task_result(first, first_name);
-    let second = task_result(second.await, second_name);
-    first.and(second)
+    let mut result = task_result(first, first_name);
+    for (task, name) in remaining {
+        result = result.and(task_result(task.await, name));
+    }
+    result
 }
 
 fn task_result(

@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use sempre_converter::Profile;
 use sempre_subscription::{SubscriptionError, new_profile};
@@ -17,6 +17,7 @@ use crate::api::AppState;
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/api/v1/subscription", patch(update_schedule))
         .route("/api/v1/subscriptions", get(list).post(create))
         .route(
             "/api/v1/subscriptions/{id}",
@@ -27,6 +28,28 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
             "/api/v1/subscriptions/{id}/activate",
             post(activate_profile),
         )
+}
+
+#[derive(Deserialize)]
+struct ScheduleInput {
+    interval: Option<String>,
+    auto_restart: Option<bool>,
+}
+
+async fn update_schedule(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<ScheduleInput>,
+) -> Response {
+    if input.interval.is_none() && input.auto_restart.is_none() {
+        return bad_request("subscription schedule patch is empty");
+    }
+    match state
+        .manager
+        .update_subscription_settings(input.interval.as_deref(), input.auto_restart)
+    {
+        Ok(changes) => Json(json!({ "changes": changes })).into_response(),
+        Err(error) => operation(error.to_string()),
+    }
 }
 
 #[derive(Serialize)]

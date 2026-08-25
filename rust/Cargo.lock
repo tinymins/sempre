@@ -2125,6 +2125,7 @@ name = "sempre-manager"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "humantime",
  "sempre-artifact",
  "sempre-converter",
  "sempre-core",

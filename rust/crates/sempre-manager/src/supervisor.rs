@@ -308,7 +308,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let _ = fs::remove_file(&self.store.layout().core_control);
     }
 
-    fn log_supervisor(&self, message: &str) -> Result<(), ManagerError> {
+    pub(crate) fn log_supervisor(&self, message: &str) -> Result<(), ManagerError> {
         let line = format!("{} {message}\n", Utc::now().to_rfc3339());
         append_log(&self.store.layout().manager_log, &line)?;
         Ok(())

@@ -8,6 +8,7 @@ description = "Sempre client application use cases and transactional core manage
 
 [dependencies]
 chrono.workspace = true
+humantime.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }
 sempre-converter = { path = "../sempre-converter" }
 sempre-core = { path = "../sempre-core" }

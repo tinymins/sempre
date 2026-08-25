@@ -436,3 +436,55 @@ async fn subscription_catalog_supports_authenticated_local_and_remote_creation()
         "https://server.example/share"
     );
 }
+
+#[tokio::test]
+async fn subscription_schedule_patch_persists_validated_settings() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let app = router(Arc::clone(&state));
+    let mut patch = request(
+        "PATCH",
+        "/api/v1/subscription",
+        Body::from(r#"{"interval":"12H","auto_restart":false}"#),
+        "127.0.0.1:1",
+    );
+    patch.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    patch.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(patch).await.expect("patch schedule");
+    assert_eq!(response.status(), StatusCode::OK);
+    let document = state.manager.state().expect("state");
+    assert_eq!(document.subscription.interval, "12h");
+    assert!(!document.subscription_auto_restart);
+
+    let mut invalid = request(
+        "PATCH",
+        "/api/v1/subscription",
+        Body::from(r#"{"interval":"4m"}"#),
+        "127.0.0.1:1",
+    );
+    invalid.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    invalid.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.oneshot(invalid).await.expect("reject schedule");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        state
+            .manager
+            .state()
+            .expect("unchanged state")
+            .subscription
+            .interval,
+        "12h"
+    );
+}

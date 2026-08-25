@@ -6,6 +6,7 @@ mod inventory;
 mod lifecycle;
 mod process;
 mod runtime;
+mod scheduler;
 mod subscription;
 mod supervisor;
 
@@ -39,6 +40,7 @@ pub struct Manager<R = ProcessRunner> {
     fetcher: Fetcher,
     remote: RemoteClient,
     runtime_reload: Arc<Notify>,
+    subscription_schedule_changed: Arc<Notify>,
 }
 
 impl Manager<ProcessRunner> {
@@ -65,6 +67,7 @@ impl<R: VersionRunner> Manager<R> {
             fetcher,
             remote,
             runtime_reload: Arc::new(Notify::new()),
+            subscription_schedule_changed: Arc::new(Notify::new()),
         })
     }
 
@@ -86,5 +89,13 @@ impl<R: VersionRunner> Manager<R> {
 
     pub async fn wait_runtime_reload(&self) {
         self.runtime_reload.notified().await;
+    }
+
+    fn notify_subscription_schedule_changed(&self) {
+        self.subscription_schedule_changed.notify_one();
+    }
+
+    async fn wait_subscription_schedule_changed(&self) {
+        self.subscription_schedule_changed.notified().await;
     }
 }
