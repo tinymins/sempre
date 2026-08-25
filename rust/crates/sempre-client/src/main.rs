@@ -7,6 +7,7 @@ mod custom_node_api;
 mod custom_node_cli;
 mod daemon;
 mod diagnostics_cli;
+mod direct_cli;
 mod doctor_cli;
 mod elevate;
 mod gateway_api;
@@ -174,6 +175,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
             Some(root) => daemon::run_development(&root, listen.as_deref()).await,
             None => daemon::run(mode, listen.as_deref()).await,
         },
+        Command::Run { core } => direct_cli::run(mode, core.as_deref()).await,
         Command::Core { command } => run_core(mode, command).await,
         Command::Config { command } => run_config(mode, command).await,
         Command::Subscription { command } => subscription_cli::run(mode, command, json).await,

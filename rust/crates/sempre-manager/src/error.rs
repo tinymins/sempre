@@ -67,6 +67,8 @@ pub enum ManagerError {
         status: String,
         output: String,
     },
+    #[error("foreground core {reference} exited with {status}")]
+    DirectExit { reference: String, status: String },
     #[error("downloaded {core} reports version {actual}, expected {expected}")]
     VersionMismatch {
         core: String,

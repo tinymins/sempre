@@ -152,7 +152,7 @@ impl<R: VersionRunner> Manager<R> {
     }
 }
 
-fn resolve_installed_version(
+pub(crate) fn resolve_installed_version(
     document: &Document,
     reference: &CoreRef,
 ) -> Result<String, ManagerError> {

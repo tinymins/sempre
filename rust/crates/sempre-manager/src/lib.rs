@@ -4,6 +4,7 @@ mod bundle;
 mod config;
 mod context;
 mod custom_node;
+mod direct;
 mod error;
 mod gateway;
 mod install;

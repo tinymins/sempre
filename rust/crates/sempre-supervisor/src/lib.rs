@@ -80,6 +80,28 @@ impl ManagedProcess {
         Ok(Self { child, pid, output })
     }
 
+    pub fn spawn_foreground(spec: &CommandSpec) -> Result<Self, SupervisorError> {
+        let mut command = Command::new(&spec.program);
+        command
+            .args(&spec.arguments)
+            .envs(&spec.environment)
+            .kill_on_drop(true)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        if let Some(directory) = &spec.working_directory {
+            command.current_dir(directory);
+        }
+        platform::configure_foreground(&mut command);
+        let child = command.spawn().map_err(SupervisorError::Start)?;
+        let pid = child.id().ok_or(SupervisorError::MissingPid)?;
+        Ok(Self {
+            child,
+            pid,
+            output: Vec::new(),
+        })
+    }
+
     pub const fn pid(&self) -> u32 {
         self.pid
     }

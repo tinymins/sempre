@@ -27,6 +27,24 @@ pub fn configure(command: &mut Command) {
 pub fn configure(_: &mut Command) {}
 
 #[cfg(unix)]
+pub fn configure_foreground(command: &mut Command) {
+    configure(command);
+}
+
+#[cfg(windows)]
+pub fn configure_foreground(command: &mut Command) {
+    use std::os::windows::process::CommandExt as _;
+
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    command
+        .as_std_mut()
+        .creation_flags(CREATE_NEW_PROCESS_GROUP);
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn configure_foreground(_: &mut Command) {}
+
+#[cfg(unix)]
 pub fn terminate_tree(pid: u32, force: bool) -> impl Future<Output = io::Result<()>> + Send {
     use nix::{
         errno::Errno,

@@ -62,6 +62,12 @@ pub(crate) enum Command {
         #[arg(long, hide = true)]
         development_root: Option<PathBuf>,
     },
+    /// Run one installed core in the foreground without the managed daemon.
+    Run {
+        /// Use this installed core instead of the active deployment.
+        #[arg(long)]
+        core: Option<String>,
+    },
     /// Manage installed external proxy cores.
     Core {
         #[command(subcommand)]
@@ -137,6 +143,7 @@ impl Arguments {
             Command::Daemon {
                 development_root, ..
             } => development_root.is_none(),
+            Command::Run { .. } => true,
             Command::Core { .. } => system,
             Command::Config { .. } => system,
             Command::Subscription { .. } => system,

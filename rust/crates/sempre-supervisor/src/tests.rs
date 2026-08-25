@@ -46,3 +46,19 @@ async fn terminates_the_managed_process_group() {
     assert!(status.success());
     assert!(String::from_utf8_lossy(&fs::read(stdout).expect("stdout")).contains("started"));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn foreground_process_preserves_exit_status() {
+    let spec = CommandSpec {
+        program: "/bin/sh".into(),
+        arguments: vec!["-c".into(), "exit 7".into()],
+        ..CommandSpec::default()
+    };
+    let status = ManagedProcess::spawn_foreground(&spec)
+        .expect("spawn foreground process")
+        .wait()
+        .await
+        .expect("wait for foreground process");
+    assert_eq!(status.code(), Some(7));
+}

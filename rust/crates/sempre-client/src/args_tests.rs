@@ -46,6 +46,11 @@ fn parses_core_install_and_daemon_override() {
             development_root: Some(_)
         }
     ));
+    let direct =
+        Arguments::try_parse_from(["sempre", "--portable", "run", "--core", "sing-box@stable"])
+            .expect("foreground core");
+    assert!(direct.requires_administrator());
+    assert!(matches!(direct.command, Command::Run { core: Some(_) }));
     let select =
         Arguments::try_parse_from(["sempre", "core", "use", "sing-box@stable"]).expect("use");
     assert!(matches!(
