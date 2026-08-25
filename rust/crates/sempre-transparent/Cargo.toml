@@ -1,0 +1,23 @@
+[package]
+name = "sempre-transparent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Client-only transparent proxy runtime and Linux host orchestration"
+
+[dependencies]
+ipnet.workspace = true
+sempre-converter = { path = "../sempre-converter" }
+sempre-network = { path = "../sempre-network" }
+sempre-state = { path = "../sempre-state" }
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

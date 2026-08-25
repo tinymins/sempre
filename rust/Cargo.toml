@@ -16,6 +16,7 @@ members = [
     "crates/sempre-state",
     "crates/sempre-subscription",
     "crates/sempre-supervisor",
+    "crates/sempre-transparent",
     "crates/sempre-tunnel",
     "crates/sempre-ui",
 ]
@@ -37,6 +38,7 @@ fs2 = "0.4"
 flate2 = "1.1.9"
 futures-util = "0.3"
 humantime = "2"
+ipnet = "2"
 nix = { version = "0.31", features = ["process", "signal"] }
 rand = "0.9"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }

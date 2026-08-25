@@ -22,6 +22,7 @@ use sempre_artifact::{Downloader, GithubClient};
 use sempre_core::{Registry, Target, built_in_registry};
 use sempre_state::{Document, Store};
 use sempre_subscription::{Fetcher, RemoteClient, SubscriptionStore};
+use sempre_transparent::Controller as TransparentController;
 use sempre_tunnel::Controller as TunnelController;
 use std::sync::Arc;
 use tokio::sync::Notify;
@@ -57,6 +58,7 @@ pub struct Manager<R = ProcessRunner> {
     runtime_reload: Arc<Notify>,
     subscription_schedule_changed: Arc<Notify>,
     tunnels: Arc<TunnelController>,
+    transparent: Arc<TransparentController>,
 }
 
 impl Manager<ProcessRunner> {
@@ -74,6 +76,7 @@ impl<R: VersionRunner> Manager<R> {
         let remote = RemoteClient::new()?;
         let gateway = Arc::new(sempre_gateway::Controller::new(store.layout())?);
         let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
+        let transparent = Arc::new(TransparentController::new());
         Ok(Self {
             store,
             registry: built_in_registry(),
@@ -88,6 +91,7 @@ impl<R: VersionRunner> Manager<R> {
             runtime_reload: Arc::new(Notify::new()),
             subscription_schedule_changed: Arc::new(Notify::new()),
             tunnels,
+            transparent,
         })
     }
 

@@ -37,6 +37,8 @@ pub enum ManagerError {
     #[error(transparent)]
     Supervisor(#[from] SupervisorError),
     #[error(transparent)]
+    Transparent(#[from] sempre_transparent::TransparentError),
+    #[error(transparent)]
     Tunnel(#[from] sempre_tunnel::TunnelError),
     #[error("{context}: {source}")]
     Io {

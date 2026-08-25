@@ -2247,6 +2247,7 @@ dependencies = [
  "sempre-state",
  "sempre-subscription",
  "sempre-supervisor",
+ "sempre-transparent",
  "sempre-tunnel",
  "serde",
  "serde_json",
@@ -2351,6 +2352,21 @@ version = "0.1.0"
 dependencies = [
  "nix",
  "sempre-core",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "sempre-transparent"
+version = "0.1.0"
+dependencies = [
+ "ipnet",
+ "sempre-converter",
+ "sempre-network",
+ "sempre-state",
+ "serde_json",
+ "serde_yaml",
  "tempfile",
  "thiserror",
  "tokio",

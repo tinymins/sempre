@@ -20,6 +20,7 @@ sempre-service = { path = "../sempre-service" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }
 sempre-supervisor = { path = "../sempre-supervisor" }
+sempre-transparent = { path = "../sempre-transparent" }
 sempre-tunnel = { path = "../sempre-tunnel" }
 serde.workspace = true
 serde_json.workspace = true

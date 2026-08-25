@@ -6,6 +6,7 @@ use chrono::Utc;
 use sempre_core::{CommandSpec, ControlSpec, CoreRef};
 use sempre_state::{Deployment, DesiredState};
 use sempre_supervisor::{ManagedProcess, SupervisorError, append_log};
+use sempre_transparent::Plan as TransparentPlan;
 use sha2::{Digest, Sha256};
 use tokio::{sync::watch, time::sleep};
 
@@ -21,10 +22,11 @@ struct RuntimePlan {
     runtime_config: PathBuf,
     runtime_config_hash: String,
     control: Option<ControlSpec>,
+    transparent: TransparentPlan,
 }
 
 enum ProcessEvent {
-    Healthy,
+    Healthy(Result<(), sempre_transparent::TransparentError>),
     Reload,
     Shutdown,
     Exited(Result<ExitStatus, SupervisorError>),
@@ -54,12 +56,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         loop {
             if *shutdown.borrow() {
                 self.stop_gateway().await;
+                self.transparent.cleanup().await?;
                 state::mark_intentional_exit(self, true)?;
                 return Ok(());
             }
             let document = self.store.read()?;
             if document.desired_state == DesiredState::Stopped {
                 self.stop_gateway().await;
+                self.transparent.cleanup().await?;
                 state::mark_inactive(self, true)?;
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
@@ -69,6 +73,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             if document.active.is_none() {
                 self.stop_gateway().await;
+                self.transparent.cleanup().await?;
                 state::mark_inactive(self, false)?;
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
@@ -143,38 +148,41 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             Ok(process) => process,
             Err(error) => {
                 self.stop_gateway().await;
+                let error = with_cleanup_failure(&error, self.transparent.cleanup().await);
                 let retry = self.handle_process_failure(plan, "startup failed", &error, true)?;
                 return Ok(CycleResult::Failed {
                     retry_immediately: retry,
                 });
             }
         };
-        let setup = state::mark_started(self, plan, process.pid())
-            .and_then(|()| self.write_control(plan.control.as_ref()))
-            .and_then(|()| {
-                self.log_supervisor(&format!(
-                    "started {} with PID {}",
-                    deployment_label(&plan.deployment),
-                    process.pid()
-                ))
-            });
+        let setup = self.mark_runtime_started(plan, process.pid());
         if let Err(error) = setup {
             let _ = process.terminate(STOP_GRACE).await;
             self.stop_gateway().await;
+            if let Err(cleanup) = self.transparent.cleanup().await {
+                self.log_supervisor(&format!("transparent proxy cleanup failed: {cleanup}"))?;
+            }
             self.remove_control();
             return Err(error);
         }
 
-        match wait_startup(self, shutdown, &mut process, startup_grace).await {
-            ProcessEvent::Healthy => {
-                let healthy = state::mark_healthy(self, plan).and_then(|()| {
-                    self.log_supervisor(&format!("healthy {}", deployment_label(&plan.deployment)))
-                });
-                if let Err(error) = healthy {
+        match wait_startup(self, shutdown, &mut process, plan, startup_grace).await {
+            ProcessEvent::Healthy(Ok(())) => {
+                if let Err(error) = self.mark_runtime_healthy(plan) {
                     let _ = process.terminate(STOP_GRACE).await;
+                    if let Err(cleanup) = self.transparent.cleanup().await {
+                        self.log_supervisor(&format!(
+                            "transparent proxy cleanup failed: {cleanup}"
+                        ))?;
+                    }
                     self.remove_control();
                     return Err(error);
                 }
+            }
+            ProcessEvent::Healthy(Err(error)) => {
+                return self
+                    .fail_transparent_startup(plan, &mut process, &error)
+                    .await;
             }
             ProcessEvent::Reload => {
                 self.stop_process(&mut process, false).await?;
@@ -186,8 +194,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             ProcessEvent::Exited(result) => {
                 self.stop_gateway().await;
+                let cleanup = self.transparent.cleanup().await;
                 self.remove_control();
-                let error = exit_result(result);
+                let exit = exit_result(result);
+                let error = with_cleanup_failure(&exit, cleanup);
                 let retry = self.handle_process_failure(plan, "startup failed", &error, true)?;
                 return Ok(CycleResult::Failed {
                     retry_immediately: retry,
@@ -206,14 +216,16 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             ProcessEvent::Exited(result) => {
                 self.stop_gateway().await;
+                let cleanup = self.transparent.cleanup().await;
                 self.remove_control();
-                let error = exit_result(result);
+                let exit = exit_result(result);
+                let error = with_cleanup_failure(&exit, cleanup);
                 self.handle_process_failure(plan, "core exited", &error, false)?;
                 Ok(CycleResult::Failed {
                     retry_immediately: false,
                 })
             }
-            ProcessEvent::Healthy => unreachable!("running process has no startup timer"),
+            ProcessEvent::Healthy(_) => unreachable!("running process has no startup timer"),
         }
     }
 
@@ -251,6 +263,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .map_err(|error| ManagerError::io("reset core control directory", error))?;
         }
         let runtime = adapter.prepare_runtime(&config, &control_directory)?;
+        let transparent = if let Some(profile_id) = document.active_profile_id.as_deref() {
+            let catalog = self.subscriptions.read()?;
+            let profile = catalog
+                .profiles
+                .iter()
+                .find(|profile| profile.id == profile_id)
+                .ok_or_else(|| ManagerError::ProfileNotFound(profile_id.into()))?;
+            sempre_transparent::prepare(&deployment.core, profile, &runtime.config)?
+        } else {
+            TransparentPlan::default()
+        };
         let reference = CoreRef {
             core: deployment.core.clone(),
             repository: deployment.repository.clone(),
@@ -270,6 +293,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             runtime_config: runtime.config,
             runtime_config_hash,
             control: runtime.control,
+            transparent,
         })
     }
 
@@ -280,12 +304,48 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<(), ManagerError> {
         let transition = state::mark_stopping(self);
         self.stop_gateway().await;
+        let transparent = self.transparent.cleanup().await;
         let terminated = process.terminate(STOP_GRACE).await;
         self.remove_control();
         transition?;
+        let state = state::mark_intentional_exit(self, service_stopped);
+        transparent?;
         terminated?;
-        state::mark_intentional_exit(self, service_stopped)?;
-        Ok(())
+        state
+    }
+
+    fn mark_runtime_healthy(&self, plan: &RuntimePlan) -> Result<(), ManagerError> {
+        state::mark_healthy(self, plan).and_then(|()| {
+            self.log_supervisor(&format!("healthy {}", deployment_label(&plan.deployment)))
+        })
+    }
+
+    fn mark_runtime_started(&self, plan: &RuntimePlan, pid: u32) -> Result<(), ManagerError> {
+        state::mark_started(self, plan, pid)
+            .and_then(|()| self.write_control(plan.control.as_ref()))
+            .and_then(|()| {
+                self.log_supervisor(&format!(
+                    "started {} with PID {pid}",
+                    deployment_label(&plan.deployment)
+                ))
+            })
+    }
+
+    async fn fail_transparent_startup(
+        &self,
+        plan: &RuntimePlan,
+        process: &mut ManagedProcess,
+        error: &sempre_transparent::TransparentError,
+    ) -> Result<CycleResult, ManagerError> {
+        let _ = process.terminate(STOP_GRACE).await;
+        self.stop_gateway().await;
+        let error = with_cleanup_failure(error, self.transparent.cleanup().await);
+        self.remove_control();
+        let retry =
+            self.handle_process_failure(plan, "transparent proxy startup failed", &error, true)?;
+        Ok(CycleResult::Failed {
+            retry_immediately: retry,
+        })
     }
 
     fn handle_process_failure(
@@ -335,13 +395,22 @@ async fn wait_startup<R: VersionRunner + ValidationRunner>(
     manager: &Manager<R>,
     shutdown: &mut watch::Receiver<bool>,
     process: &mut ManagedProcess,
+    plan: &RuntimePlan,
     grace: Duration,
 ) -> ProcessEvent {
+    if plan.transparent.enabled() {
+        return tokio::select! {
+            result = manager.transparent.apply(&plan.transparent) => ProcessEvent::Healthy(result),
+            result = process.wait() => ProcessEvent::Exited(result),
+            () = manager.wait_runtime_reload() => ProcessEvent::Reload,
+            () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,
+        };
+    }
     tokio::select! {
         result = process.wait() => ProcessEvent::Exited(result),
         () = manager.wait_runtime_reload() => ProcessEvent::Reload,
         () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,
-        () = sleep(grace) => ProcessEvent::Healthy,
+        () = sleep(grace) => ProcessEvent::Healthy(Ok(())),
     }
 }
 
@@ -390,6 +459,17 @@ fn exit_result(result: Result<ExitStatus, SupervisorError>) -> String {
         Ok(status) if status.success() => "exited successfully".into(),
         Ok(status) => status.to_string(),
         Err(error) => error.to_string(),
+    }
+}
+
+fn with_cleanup_failure(
+    error: &impl ToString,
+    cleanup: Result<(), sempre_transparent::TransparentError>,
+) -> String {
+    let error = error.to_string();
+    match cleanup {
+        Ok(()) => error,
+        Err(cleanup) => format!("{error}; transparent proxy cleanup failed: {cleanup}"),
     }
 }
 
