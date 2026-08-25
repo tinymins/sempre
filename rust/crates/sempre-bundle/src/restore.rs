@@ -15,6 +15,21 @@ struct SnapshotMetadata {
     kind: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BundleKind {
+    Release,
+    Snapshot,
+}
+
+impl BundleKind {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Release => "release",
+            Self::Snapshot => "snapshot",
+        }
+    }
+}
+
 pub struct RestoreTransaction {
     operations: Vec<Swap>,
     committed: bool,
@@ -29,6 +44,14 @@ struct Swap {
 }
 
 pub fn validate_snapshot(root: &Path) -> Result<(), BundleError> {
+    validate(root, BundleKind::Snapshot)
+}
+
+pub fn validate_release(root: &Path) -> Result<(), BundleError> {
+    validate(root, BundleKind::Release)
+}
+
+fn validate(root: &Path, expected: BundleKind) -> Result<(), BundleError> {
     let metadata_path = root.join(METADATA_NAME);
     let data = fs::read(&metadata_path).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
@@ -46,10 +69,12 @@ pub fn validate_snapshot(root: &Path) -> Result<(), BundleError> {
             name: "snapshot metadata",
             source,
         })?;
-    if metadata.schema != 1 || metadata.kind != "snapshot" {
+    if metadata.schema != 1 || metadata.kind != expected.name() {
         return Err(BundleError::InvalidMetadata(format!(
-            "expected schema 1 snapshot, found schema {} {}",
-            metadata.schema, metadata.kind
+            "expected schema 1 {}, found schema {} {}",
+            expected.name(),
+            metadata.schema,
+            metadata.kind
         )));
     }
     let marker = root.join(PORTABLE_MARKER);
@@ -60,7 +85,19 @@ pub fn validate_snapshot(root: &Path) -> Result<(), BundleError> {
 }
 
 pub fn stage_restore(source: &Layout, target: &Layout) -> Result<RestoreTransaction, BundleError> {
-    validate_snapshot(&source.root)?;
+    stage(source, target, BundleKind::Snapshot)
+}
+
+pub fn stage_install(source: &Layout, target: &Layout) -> Result<RestoreTransaction, BundleError> {
+    stage(source, target, BundleKind::Release)
+}
+
+fn stage(
+    source: &Layout,
+    target: &Layout,
+    kind: BundleKind,
+) -> Result<RestoreTransaction, BundleError> {
+    validate(&source.root, kind)?;
     let mut transaction = RestoreTransaction {
         operations: Vec::new(),
         committed: false,
@@ -347,6 +384,31 @@ mod tests {
                 .all(|path| !path.to_string_lossy().contains(".sempre-stage-")
                     && !path.to_string_lossy().contains(".sempre-backup-"))
         );
+    }
+
+    #[test]
+    fn release_and_snapshot_metadata_are_not_interchangeable() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let root = temporary.path();
+        fs::write(root.join(PORTABLE_MARKER), b"").expect("portable marker");
+
+        fs::write(
+            root.join(METADATA_NAME),
+            br#"{"schema":1,"kind":"release"}"#,
+        )
+        .expect("release metadata");
+        validate_release(root).expect("valid release");
+        let error = validate_snapshot(root).expect_err("release is not a snapshot");
+        assert!(error.to_string().contains("expected schema 1 snapshot"));
+
+        fs::write(
+            root.join(METADATA_NAME),
+            br#"{"schema":1,"kind":"snapshot"}"#,
+        )
+        .expect("snapshot metadata");
+        validate_snapshot(root).expect("valid snapshot");
+        let error = validate_release(root).expect_err("snapshot is not a release");
+        assert!(error.to_string().contains("expected schema 1 release"));
     }
 
     fn walk(root: &tempfile::TempDir) -> Vec<PathBuf> {

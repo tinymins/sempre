@@ -1,5 +1,6 @@
 use std::{fs, io, path::Path};
 
+use sempre_bundle::BundleKind;
 use sempre_service::State;
 use sempre_state::{Document, Layout, Mode, Runtime};
 
@@ -11,19 +12,45 @@ impl<R: VersionRunner> Manager<R> {
         target: &Layout,
         allow_replace: bool,
     ) -> Result<(), ManagerError> {
+        self.deploy_bundle(target, allow_replace, BundleKind::Snapshot)
+            .await
+    }
+
+    pub async fn install_release(
+        &self,
+        target: &Layout,
+        allow_replace: bool,
+    ) -> Result<(), ManagerError> {
+        self.deploy_bundle(target, allow_replace, BundleKind::Release)
+            .await
+    }
+
+    async fn deploy_bundle(
+        &self,
+        target: &Layout,
+        allow_replace: bool,
+        kind: BundleKind,
+    ) -> Result<(), ManagerError> {
         let source = self.store.layout();
         if source.mode != Mode::Portable {
-            return Err(ManagerError::InvalidOperation(
-                "bundle restore must run from an extracted portable snapshot".into(),
-            ));
+            return Err(ManagerError::InvalidOperation(format!(
+                "{} deployment must run from an extracted portable bundle",
+                kind.name()
+            )));
         }
-        sempre_bundle::validate_snapshot(&source.root)?;
+        match kind {
+            BundleKind::Release => sempre_bundle::validate_release(&source.root)?,
+            BundleKind::Snapshot => sempre_bundle::validate_snapshot(&source.root)?,
+        }
         sempre_control::WebConfigStore::new(&source.web_config).read()?;
         sempre_service::require_installation_privileges()?;
         require_replacement_confirmation(source, target, allow_replace)?;
         prepare_command_registration(target)?;
         let _operation = self.store.acquire_operation()?;
-        let mut transaction = sempre_bundle::stage_restore(source, target)?;
+        let mut transaction = match kind {
+            BundleKind::Release => sempre_bundle::stage_install(source, target)?,
+            BundleKind::Snapshot => sempre_bundle::stage_restore(source, target)?,
+        };
         let previous_service = sempre_service::status().await?;
         if !matches!(previous_service, State::NotInstalled | State::Stopped) {
             sempre_service::stop().await?;

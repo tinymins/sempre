@@ -10,7 +10,10 @@ use thiserror::Error;
 use uuid::Uuid;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-pub use restore::{RestoreTransaction, stage_restore, validate_snapshot};
+pub use restore::{
+    BundleKind, RestoreTransaction, stage_install, stage_restore, validate_release,
+    validate_snapshot,
+};
 
 const METADATA_NAME: &str = ".sempre-bundle.json";
 const PORTABLE_MARKER: &str = ".sempre-portable";
