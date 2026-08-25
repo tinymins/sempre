@@ -3,6 +3,7 @@ mod args;
 mod daemon;
 mod runtime_api;
 mod subscription_api;
+mod system_api;
 
 use std::io;
 

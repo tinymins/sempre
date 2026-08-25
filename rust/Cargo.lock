@@ -2055,6 +2055,7 @@ dependencies = [
  "sempre-control",
  "sempre-converter",
  "sempre-manager",
+ "sempre-network",
  "sempre-state",
  "sempre-subscription",
  "serde",
@@ -2139,6 +2140,19 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "sempre-network"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "thiserror",
 ]
 
 [[package]]

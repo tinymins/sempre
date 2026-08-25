@@ -7,6 +7,7 @@ members = [
     "crates/sempre-control",
     "crates/sempre-core",
     "crates/sempre-manager",
+    "crates/sempre-network",
     "crates/sempre-server",
     "crates/sempre-state",
     "crates/sempre-subscription",
@@ -16,7 +17,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.95"
 license = "MIT"
 version = "0.1.0"
 

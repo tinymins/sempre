@@ -17,6 +17,7 @@ clap.workspace = true
 sempre-control = { path = "../sempre-control" }
 sempre-converter = { path = "../sempre-converter" }
 sempre-manager = { path = "../sempre-manager" }
+sempre-network = { path = "../sempre-network" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }
 serde.workspace = true

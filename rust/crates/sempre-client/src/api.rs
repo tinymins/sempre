@@ -20,11 +20,11 @@ const DAEMON_TOKEN_HEADER: &str = "x-sempre-daemon-token";
 
 pub(crate) struct AppState {
     pub(crate) manager: Arc<Manager>,
-    web: WebConfigStore,
+    pub(crate) web: WebConfigStore,
     auth: AuthStore,
     daemon_token: String,
-    bind: String,
-    local_url: String,
+    pub(crate) bind: String,
+    pub(crate) local_url: String,
 }
 
 impl AppState {
@@ -64,6 +64,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         )
         .merge(crate::subscription_api::router())
         .merge(crate::runtime_api::router())
+        .merge(crate::system_api::router())
         .layer(middleware::from_fn_with_state(state.clone(), security))
         .with_state(state)
 }
@@ -435,5 +436,7 @@ pub(crate) fn api_error(
         .into_response()
 }
 
+#[cfg(test)]
+mod system_tests;
 #[cfg(test)]
 mod tests;

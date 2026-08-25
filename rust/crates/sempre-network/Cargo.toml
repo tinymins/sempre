@@ -1,0 +1,19 @@
+[package]
+name = "sempre-network"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Cross-platform network inventory and connectivity diagnostics for Sempre"
+
+[dependencies]
+chrono.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sysinfo.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
