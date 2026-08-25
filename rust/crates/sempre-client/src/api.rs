@@ -397,6 +397,8 @@ mod custom_node_tests;
 #[cfg(test)]
 mod gateway_tests;
 #[cfg(test)]
+mod subscription_tests;
+#[cfg(test)]
 mod system_tests;
 #[cfg(test)]
 mod tests;
