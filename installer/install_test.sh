@@ -43,7 +43,8 @@ case "\$url" in
   *) printf 'archive' >"\$output" ;;
 esac
 EOF
-  sed -i "s/__PLATFORM__/$([ "$platform" = Darwin ] && printf darwin || printf linux)/g; s/__ARCH__/$([ "$architecture" = arm64 ] && printf arm64 || printf amd64)/g" "$commands/curl"
+  sed "s/__PLATFORM__/$([ "$platform" = Darwin ] && printf darwin || printf linux)/g; s/__ARCH__/$([ "$architecture" = arm64 ] && printf arm64 || printf amd64)/g" "$commands/curl" >"$commands/curl.rendered"
+  mv "$commands/curl.rendered" "$commands/curl"
   cat >"$commands/sha256sum" <<EOF
 #!/bin/sh
 printf '%s  %s\n' '$hash' "\$1"
