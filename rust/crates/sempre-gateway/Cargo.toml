@@ -10,6 +10,7 @@ description = "Validated LAN gateway configuration and host preparation for Semp
 chrono.workspace = true
 humantime.workspace = true
 regex.workspace = true
+reqwest.workspace = true
 sempre-network = { path = "../sempre-network" }
 sempre-state = { path = "../sempre-state" }
 serde.workspace = true

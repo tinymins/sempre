@@ -1,0 +1,404 @@
+use std::{net::Ipv4Addr, sync::Arc, time::Duration};
+
+use serde::Serialize;
+use tokio::{
+    io::{AsyncReadExt as _, AsyncWriteExt as _},
+    net::{TcpListener, TcpStream, UdpSocket, lookup_host},
+    sync::watch,
+    task::{JoinHandle, JoinSet},
+    time::timeout,
+};
+
+use crate::model::DnsConfig;
+use crate::{
+    GatewayError,
+    dns_wire::{
+        TYPE_HTTPS, answer_ipv4_addresses, build_query, format_answers, fqdn, parse_question,
+        record_number, response_with_code,
+    },
+};
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DnsDebugResult {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub record_type: String,
+    pub upstream: String,
+    pub answers: Vec<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+}
+
+pub(crate) struct DnsServer {
+    shutdown: watch::Sender<bool>,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+#[derive(Clone)]
+struct Resolver {
+    config: DnsConfig,
+    domestic_cidrs: Vec<(Ipv4Addr, u8)>,
+}
+
+struct Resolved {
+    packet: Vec<u8>,
+    upstream: String,
+}
+
+impl DnsServer {
+    pub(crate) async fn start(config: DnsConfig) -> Result<Self, GatewayError> {
+        let resolver = Resolver::new(config)?;
+        let mut udp = Vec::new();
+        let mut tcp = Vec::new();
+        for host in &resolver.config.listen_hosts {
+            let address = format!("{host}:{}", resolver.config.listen_port);
+            udp.push(
+                UdpSocket::bind(&address).await.map_err(|error| {
+                    GatewayError::io(format!("listen DNS UDP {address}"), error)
+                })?,
+            );
+            tcp.push(
+                TcpListener::bind(&address).await.map_err(|error| {
+                    GatewayError::io(format!("listen DNS TCP {address}"), error)
+                })?,
+            );
+        }
+        let (shutdown, _) = watch::channel(false);
+        let mut tasks = Vec::with_capacity(udp.len() + tcp.len());
+        for socket in udp {
+            tasks.push(tokio::spawn(serve_udp(
+                socket,
+                resolver.clone(),
+                shutdown.subscribe(),
+            )));
+        }
+        for listener in tcp {
+            tasks.push(tokio::spawn(serve_tcp(
+                listener,
+                resolver.clone(),
+                shutdown.subscribe(),
+            )));
+        }
+        Ok(Self { shutdown, tasks })
+    }
+
+    pub(crate) async fn stop(self) {
+        let _ = self.shutdown.send(true);
+        for task in self.tasks {
+            let _ = task.await;
+        }
+    }
+}
+
+pub(crate) async fn debug_query(
+    config: DnsConfig,
+    name: &str,
+    record_type: &str,
+) -> Result<DnsDebugResult, GatewayError> {
+    Resolver::new(config)?.debug_query(name, record_type).await
+}
+
+impl Resolver {
+    fn new(config: DnsConfig) -> Result<Self, GatewayError> {
+        let domestic_cidrs = config
+            .domestic_cidrs
+            .iter()
+            .map(|value| parse_cidr(value))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            config,
+            domestic_cidrs,
+        })
+    }
+
+    async fn debug_query(
+        &self,
+        name: &str,
+        record_type: &str,
+    ) -> Result<DnsDebugResult, GatewayError> {
+        let (record_type, number) = record_number(record_type)?;
+        let packet = build_query(name, number)?;
+        let resolved = self.resolve(&packet).await?;
+        Ok(DnsDebugResult {
+            name: fqdn(name),
+            record_type,
+            upstream: resolved.upstream,
+            answers: format_answers(&resolved.packet)?,
+            detail: String::new(),
+        })
+    }
+
+    async fn resolve(&self, packet: &[u8]) -> Result<Resolved, GatewayError> {
+        let question = parse_question(packet)?;
+        let Some(question) = question else {
+            return Ok(Resolved {
+                packet: response_with_code(packet, 0)?,
+                upstream: String::new(),
+            });
+        };
+        if self.config.reject_https && question.record_type == TYPE_HTTPS {
+            return Ok(Resolved {
+                packet: response_with_code(packet, 3)?,
+                upstream: "reject".into(),
+            });
+        }
+        if let Some(upstream) = self.match_rule_upstream(&question.name) {
+            return self.exchange(packet, &self.named_upstream(&upstream)).await;
+        }
+        if self.config.strategy == "rules-first" {
+            return self.exchange(packet, &self.config.remote_upstream).await;
+        }
+        let local = self.exchange(packet, self.first_local_upstream()).await;
+        if local
+            .as_ref()
+            .is_ok_and(|response| self.domestic_response(&response.packet))
+        {
+            return local;
+        }
+        match self.exchange(packet, &self.config.remote_upstream).await {
+            Ok(remote) => Ok(remote),
+            Err(remote_error) => local.or(Err(remote_error)),
+        }
+    }
+
+    async fn exchange(&self, packet: &[u8], upstream: &str) -> Result<Resolved, GatewayError> {
+        let address = lookup_host(upstream)
+            .await
+            .map_err(|error| GatewayError::io(format!("resolve DNS upstream {upstream}"), error))?
+            .next()
+            .ok_or_else(|| GatewayError::invalid(format!("DNS upstream {upstream:?} is empty")))?;
+        let socket = UdpSocket::bind("0.0.0.0:0")
+            .await
+            .map_err(|error| GatewayError::io("bind DNS upstream socket", error))?;
+        socket
+            .connect(address)
+            .await
+            .map_err(|error| GatewayError::io(format!("connect DNS upstream {upstream}"), error))?;
+        socket
+            .send(packet)
+            .await
+            .map_err(|error| GatewayError::io(format!("send DNS query to {upstream}"), error))?;
+        let mut response = vec![0_u8; u16::MAX as usize];
+        let count = timeout(Duration::from_secs(5), socket.recv(&mut response))
+            .await
+            .map_err(|_| GatewayError::invalid(format!("DNS upstream {upstream} timed out")))?
+            .map_err(|error| {
+                GatewayError::io(format!("receive DNS response from {upstream}"), error)
+            })?;
+        response.truncate(count);
+        if response.get(..2) != packet.get(..2) {
+            return Err(GatewayError::invalid(format!(
+                "DNS upstream {upstream} returned a mismatched transaction"
+            )));
+        }
+        Ok(Resolved {
+            packet: response,
+            upstream: upstream.into(),
+        })
+    }
+
+    fn first_local_upstream(&self) -> &str {
+        self.config
+            .local_upstreams
+            .first()
+            .map_or(&self.config.remote_upstream, String::as_str)
+    }
+
+    fn named_upstream(&self, value: &str) -> String {
+        match value {
+            "local" => self.first_local_upstream().into(),
+            "remote" | "" => self.config.remote_upstream.clone(),
+            value => value.into(),
+        }
+    }
+
+    fn match_rule_upstream(&self, name: &str) -> Option<String> {
+        self.config
+            .rule_sets
+            .iter()
+            .filter(|rule_set| rule_set.enabled)
+            .find_map(|rule_set| {
+                rule_set
+                    .rules
+                    .iter()
+                    .any(|rule| rule_matches_domain(rule, name))
+                    .then(|| rule_set.upstream.clone())
+            })
+    }
+
+    fn domestic_response(&self, packet: &[u8]) -> bool {
+        answer_ipv4_addresses(packet).is_ok_and(|addresses| {
+            addresses.into_iter().any(|address| {
+                self.domestic_cidrs
+                    .iter()
+                    .any(|(network, prefix)| in_prefix(address, *network, *prefix))
+            })
+        })
+    }
+}
+
+async fn serve_udp(socket: UdpSocket, resolver: Resolver, mut shutdown: watch::Receiver<bool>) {
+    let socket = Arc::new(socket);
+    let mut buffer = vec![0_u8; u16::MAX as usize];
+    let mut requests = JoinSet::new();
+    loop {
+        tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    requests.abort_all();
+                    while requests.join_next().await.is_some() {}
+                    return;
+                }
+            }
+            Some(_) = requests.join_next(), if !requests.is_empty() => {}
+            result = socket.recv_from(&mut buffer) => {
+                let Ok((count, peer)) = result else { return; };
+                let request = buffer[..count].to_vec();
+                let socket = Arc::clone(&socket);
+                let resolver = resolver.clone();
+                requests.spawn(async move {
+                    let response = resolver.resolve(&request).await
+                        .map_or_else(|_| response_with_code(&request, 2).unwrap_or_default(), |value| value.packet);
+                    if !response.is_empty() { let _ = socket.send_to(&response, peer).await; }
+                });
+            }
+        }
+    }
+}
+
+async fn serve_tcp(listener: TcpListener, resolver: Resolver, mut shutdown: watch::Receiver<bool>) {
+    let mut connections = JoinSet::new();
+    loop {
+        tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    connections.abort_all();
+                    while connections.join_next().await.is_some() {}
+                    return;
+                }
+            }
+            Some(_) = connections.join_next(), if !connections.is_empty() => {}
+            accepted = listener.accept() => {
+                let Ok((stream, _)) = accepted else { return; };
+                let resolver = resolver.clone();
+                connections.spawn(async move { let _ = serve_tcp_connection(stream, resolver).await; });
+            }
+        }
+    }
+}
+
+async fn serve_tcp_connection(
+    mut stream: TcpStream,
+    resolver: Resolver,
+) -> Result<(), GatewayError> {
+    let mut length = [0_u8; 2];
+    timeout(Duration::from_secs(5), stream.read_exact(&mut length))
+        .await
+        .map_err(|_| GatewayError::invalid("DNS TCP read timed out"))?
+        .map_err(|error| GatewayError::io("read DNS TCP length", error))?;
+    let mut request = vec![0_u8; usize::from(u16::from_be_bytes(length))];
+    stream
+        .read_exact(&mut request)
+        .await
+        .map_err(|error| GatewayError::io("read DNS TCP query", error))?;
+    let response = resolver.resolve(&request).await.map_or_else(
+        |_| response_with_code(&request, 2).unwrap_or_default(),
+        |value| value.packet,
+    );
+    let length = u16::try_from(response.len())
+        .map_err(|_| GatewayError::invalid("DNS TCP response exceeds 65535 bytes"))?;
+    stream
+        .write_all(&length.to_be_bytes())
+        .await
+        .map_err(|error| GatewayError::io("write DNS TCP response length", error))?;
+    stream
+        .write_all(&response)
+        .await
+        .map_err(|error| GatewayError::io("write DNS TCP response", error))
+}
+
+fn rule_matches_domain(rule: &str, name: &str) -> bool {
+    let rule = rule.trim().to_ascii_lowercase();
+    if rule.is_empty() || rule.starts_with('#') {
+        return false;
+    }
+    let (kind, payload) = rule
+        .split_once(',')
+        .map_or(("domain-suffix", rule.as_str()), |(kind, payload)| {
+            (kind.trim(), payload.trim())
+        });
+    let payload = payload.trim_end_matches('.');
+    let name = name.trim_end_matches('.').to_ascii_lowercase();
+    match kind {
+        "domain" => name == payload,
+        "domain-keyword" => name.contains(payload),
+        _ => name == payload || name.ends_with(&format!(".{payload}")),
+    }
+}
+
+fn parse_cidr(value: &str) -> Result<(Ipv4Addr, u8), GatewayError> {
+    let (address, prefix) = value
+        .split_once('/')
+        .ok_or_else(|| GatewayError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
+    let address = address
+        .parse()
+        .map_err(|_| GatewayError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
+    let prefix = prefix
+        .parse::<u8>()
+        .ok()
+        .filter(|prefix| *prefix <= 32)
+        .ok_or_else(|| GatewayError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
+    Ok((address, prefix))
+}
+
+fn in_prefix(address: Ipv4Addr, network: Ipv4Addr, prefix: u8) -> bool {
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    u32::from(address) & mask == u32::from(network) & mask
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn domain_rules_match_exact_keyword_and_suffix() {
+        assert!(rule_matches_domain("domain,example.com", "example.com."));
+        assert!(rule_matches_domain("domain-keyword,ample", "example.com."));
+        assert!(rule_matches_domain("example.com", "www.example.com."));
+        assert!(!rule_matches_domain(
+            "domain,example.com",
+            "www.example.com."
+        ));
+    }
+
+    #[tokio::test]
+    async fn debug_query_exchanges_with_the_selected_udp_upstream() {
+        let upstream = UdpSocket::bind("127.0.0.1:0").await.expect("upstream");
+        let address = upstream.local_addr().expect("upstream address");
+        let responder = tokio::spawn(async move {
+            let mut query = [0_u8; 512];
+            let (count, peer) = upstream.recv_from(&mut query).await.expect("query");
+            let mut response = query[..count].to_vec();
+            response[2] |= 0x80;
+            response[3] |= 0x80;
+            response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+            response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 10, 0, 0, 1]);
+            upstream.send_to(&response, peer).await.expect("response");
+        });
+        let config = DnsConfig {
+            local_upstreams: vec![address.to_string()],
+            remote_upstream: address.to_string(),
+            ..DnsConfig::default()
+        };
+        let result = debug_query(config, "example.com", "A")
+            .await
+            .expect("debug query");
+        responder.await.expect("responder");
+        assert_eq!(result.upstream, address.to_string());
+        assert!(result.answers[0].ends_with("A 10.0.0.1"));
+    }
+}

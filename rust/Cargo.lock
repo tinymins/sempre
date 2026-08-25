@@ -2204,6 +2204,7 @@ dependencies = [
  "chrono",
  "humantime",
  "regex",
+ "reqwest",
  "sempre-network",
  "sempre-state",
  "serde",

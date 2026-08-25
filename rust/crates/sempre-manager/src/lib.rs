@@ -50,7 +50,7 @@ pub struct Manager<R = ProcessRunner> {
     subscriptions: SubscriptionStore,
     fetcher: Fetcher,
     remote: RemoteClient,
-    gateway: sempre_gateway::Store,
+    gateway: Arc<sempre_gateway::Controller>,
     runtime_reload: Arc<Notify>,
     subscription_schedule_changed: Arc<Notify>,
     tunnels: Arc<TunnelController>,
@@ -69,8 +69,7 @@ impl<R: VersionRunner> Manager<R> {
         subscriptions.initialize()?;
         let fetcher = Fetcher::new(subscriptions.clone())?;
         let remote = RemoteClient::new()?;
-        let gateway = sempre_gateway::Store::new(store.layout());
-        gateway.initialize()?;
+        let gateway = Arc::new(sempre_gateway::Controller::new(store.layout())?);
         let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
         Ok(Self {
             store,

@@ -122,6 +122,33 @@ async fn gateway_routes_expose_defaults_validation_and_safe_host_plans() {
 }
 
 #[tokio::test]
+async fn gateway_runtime_operations_return_domain_errors_without_services() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let app = router(state);
+    let query = json_request(
+        "POST",
+        "/api/v1/gateway/dns-query",
+        r#"{"name":"example.com","type":"INVALID"}"#,
+        &token,
+    );
+    assert_eq!(
+        app.clone().oneshot(query).await.expect("query").status(),
+        StatusCode::BAD_REQUEST
+    );
+    let revoke = json_request(
+        "POST",
+        "/api/v1/gateway/leases/revoke",
+        r#"{"mac":"00:01:02:03:04:05"}"#,
+        &token,
+    );
+    assert_eq!(
+        app.oneshot(revoke).await.expect("revoke").status(),
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
 async fn gateway_update_persists_normalized_configuration() {
     let root = tempfile::tempdir().expect("temporary directory");
     let (state, token) = test_state(&root);

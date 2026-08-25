@@ -53,11 +53,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let mut backoff = Duration::from_secs(1);
         loop {
             if *shutdown.borrow() {
+                self.stop_gateway().await;
                 state::mark_intentional_exit(self, true)?;
                 return Ok(());
             }
             let document = self.store.read()?;
             if document.desired_state == DesiredState::Stopped {
+                self.stop_gateway().await;
                 state::mark_inactive(self, true)?;
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
@@ -66,6 +68,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 continue;
             }
             if document.active.is_none() {
+                self.stop_gateway().await;
                 state::mark_inactive(self, false)?;
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
@@ -76,6 +79,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             let plan = match self.resolve_runtime_plan().await {
                 Ok(plan) => plan,
                 Err(error) => {
+                    self.stop_gateway().await;
                     self.log_supervisor(&format!("resolve deployment failed: {error}"))?;
                     if state::record_failure(
                         self,
@@ -124,6 +128,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         startup_grace: Duration,
     ) -> Result<CycleResult, ManagerError> {
         self.log_supervisor(&format!("starting {}", deployment_label(&plan.deployment)))?;
+        if let Err(error) = self.start_gateway().await {
+            let retry =
+                self.handle_process_failure(plan, "gateway startup failed", &error, true)?;
+            return Ok(CycleResult::Failed {
+                retry_immediately: retry,
+            });
+        }
         let mut process = match ManagedProcess::spawn(
             &plan.spec,
             &self.store.layout().core_stdout_log,
@@ -131,6 +142,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         ) {
             Ok(process) => process,
             Err(error) => {
+                self.stop_gateway().await;
                 let retry = self.handle_process_failure(plan, "startup failed", &error, true)?;
                 return Ok(CycleResult::Failed {
                     retry_immediately: retry,
@@ -148,6 +160,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             });
         if let Err(error) = setup {
             let _ = process.terminate(STOP_GRACE).await;
+            self.stop_gateway().await;
             self.remove_control();
             return Err(error);
         }
@@ -172,6 +185,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 return Ok(CycleResult::Shutdown);
             }
             ProcessEvent::Exited(result) => {
+                self.stop_gateway().await;
                 self.remove_control();
                 let error = exit_result(result);
                 let retry = self.handle_process_failure(plan, "startup failed", &error, true)?;
@@ -191,6 +205,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 Ok(CycleResult::Shutdown)
             }
             ProcessEvent::Exited(result) => {
+                self.stop_gateway().await;
                 self.remove_control();
                 let error = exit_result(result);
                 self.handle_process_failure(plan, "core exited", &error, false)?;
@@ -264,6 +279,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         service_stopped: bool,
     ) -> Result<(), ManagerError> {
         let transition = state::mark_stopping(self);
+        self.stop_gateway().await;
         let terminated = process.terminate(STOP_GRACE).await;
         self.remove_control();
         transition?;
