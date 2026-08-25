@@ -5,6 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "Rust local daemon and CLI for managing external proxy cores"
+build = "build.rs"
+
+[package.metadata.winresource]
+CompanyName = "Sempre contributors"
+FileDescription = "Sempre proxy core lifecycle manager"
+InternalName = "sempre"
+OriginalFilename = "sempre.exe"
+ProductName = "Sempre"
 
 [[bin]]
 name = "sempre"
@@ -46,6 +54,9 @@ nix = { workspace = true, features = ["user"] }
 [dev-dependencies]
 tempfile.workspace = true
 zip.workspace = true
+
+[build-dependencies]
+winresource = "0.1.31"
 
 [lints]
 workspace = true
