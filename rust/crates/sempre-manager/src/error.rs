@@ -18,6 +18,8 @@ pub enum ManagerError {
     #[error(transparent)]
     Artifact(#[from] ArtifactError),
     #[error(transparent)]
+    Bundle(#[from] sempre_bundle::BundleError),
+    #[error(transparent)]
     Subscription(#[from] SubscriptionError),
     #[error(transparent)]
     Gateway(#[from] sempre_gateway::GatewayError),

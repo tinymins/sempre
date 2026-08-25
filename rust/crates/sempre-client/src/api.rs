@@ -75,6 +75,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .merge(crate::system_api::router())
         .merge(crate::tunnel_api::router())
         .merge(crate::gateway_api::router())
+        .merge(crate::bundle_api::router())
         .merge(crate::web_ui_api::router())
         .layer(middleware::from_fn_with_state(state.clone(), security))
         .fallback(crate::web_ui_api::static_file)

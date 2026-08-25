@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/sempre-artifact",
+    "crates/sempre-bundle",
     "crates/sempre-converter",
     "crates/sempre-converter-cli",
     "crates/sempre-client",

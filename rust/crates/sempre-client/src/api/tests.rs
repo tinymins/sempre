@@ -78,6 +78,48 @@ async fn health_is_public_and_inventory_requires_authentication() {
 }
 
 #[tokio::test]
+async fn bundle_export_streams_an_authenticated_archive_and_cleans_it_on_drop() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let runtime = state.manager.store().layout().runtime.clone();
+    let app = router(state);
+    let mut export = request("GET", "/api/v1/bundle/export", Body::empty(), "127.0.0.1:1");
+    export.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.oneshot(export).await.expect("bundle export");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE),
+        Some(&HeaderValue::from_static("application/zip"))
+    );
+    assert!(
+        response
+            .headers()
+            .get(header::CONTENT_DISPOSITION)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.contains("sempre-bundle-"))
+    );
+    assert_eq!(bundle_archives(&runtime), 1);
+    drop(response);
+    assert_eq!(bundle_archives(&runtime), 0);
+}
+
+fn bundle_archives(runtime: &std::path::Path) -> usize {
+    std::fs::read_dir(runtime)
+        .expect("runtime directory")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("sempre-bundle-")
+        })
+        .count()
+}
+
+#[tokio::test]
 async fn core_auto_diagnosis_and_update_routes_use_the_rust_manager() {
     let root = tempfile::tempdir().expect("temporary directory");
     let (state, token) = test_state(&root);

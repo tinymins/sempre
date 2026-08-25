@@ -1,5 +1,6 @@
 mod api;
 mod args;
+mod bundle_api;
 mod core_management_api;
 mod custom_node_api;
 mod daemon;

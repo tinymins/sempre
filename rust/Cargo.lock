@@ -2098,6 +2098,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-bundle"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "sempre-state",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "uuid",
+ "zip",
+]
+
+[[package]]
 name = "sempre-client"
 version = "0.1.0"
 dependencies = [
@@ -2222,6 +2236,7 @@ dependencies = [
  "chrono",
  "humantime",
  "sempre-artifact",
+ "sempre-bundle",
  "sempre-converter",
  "sempre-core",
  "sempre-gateway",
