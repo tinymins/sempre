@@ -98,6 +98,8 @@ pub(crate) enum Command {
         #[arg(long)]
         follow: bool,
     },
+    /// Run installation, core, configuration, runtime, and network diagnostics.
+    Doctor,
     /// Open the authenticated control UI in the default browser.
     Open,
     /// Print build version information.
@@ -126,7 +128,7 @@ impl Arguments {
             Command::Service { command } => !matches!(command, ServiceCommand::Status),
             Command::Runtime { .. } => system,
             Command::Update => system,
-            Command::Status | Command::Logs { .. } | Command::Open => system,
+            Command::Status | Command::Logs { .. } | Command::Doctor | Command::Open => system,
             Command::Version => false,
             #[cfg(windows)]
             Command::ServiceHost => false,
@@ -409,6 +411,11 @@ mod tests {
         let system_core =
             Arguments::try_parse_from(["sempre", "core", "list"]).expect("system core list");
         assert!(system_core.requires_administrator());
+        let portable_doctor =
+            Arguments::try_parse_from(["sempre", "--portable", "doctor"]).expect("doctor");
+        assert!(!portable_doctor.requires_administrator());
+        let system_doctor = Arguments::try_parse_from(["sempre", "doctor"]).expect("doctor");
+        assert!(system_doctor.requires_administrator());
         let development = Arguments::try_parse_from([
             "sempre",
             "daemon",

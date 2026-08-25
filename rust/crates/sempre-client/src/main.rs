@@ -7,6 +7,7 @@ mod custom_node_api;
 mod custom_node_cli;
 mod daemon;
 mod diagnostics_cli;
+mod doctor_cli;
 mod elevate;
 mod gateway_api;
 mod listener;
@@ -85,6 +86,8 @@ pub(crate) enum ClientError {
     },
     #[error("managed runtime: {0}")]
     Runtime(String),
+    #[error("Sempre doctor found {0} failed check(s)")]
+    Doctor(usize),
     #[error("encode JSON output: {0}")]
     Json(#[from] serde_json::Error),
 }
@@ -176,6 +179,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         }
         Command::Status => diagnostics_cli::status(mode, json).await,
         Command::Logs { follow } => diagnostics_cli::logs(mode, follow).await,
+        Command::Doctor => doctor_cli::run(mode, json).await,
         Command::Open => diagnostics_cli::open(mode),
     }
 }
