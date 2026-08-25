@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
     Json, Router,
+    extract::DefaultBodyLimit,
     extract::{ConnectInfo, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
@@ -9,7 +10,7 @@ use axum::{
     routing::{get, post},
 };
 use sempre_control::{API_MAJOR, AuthStore, WebConfigStore, token_matches};
-use sempre_manager::Manager;
+use sempre_manager::{MAX_CONFIG_SIZE, Manager};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -53,6 +54,14 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/cores/install", post(core_install))
         .route("/api/v1/cores/use", post(core_use))
         .route("/api/v1/cores/remove", post(core_remove))
+        .route(
+            "/api/v1/configs/current",
+            get(config_get).put(config_write_removed),
+        )
+        .route(
+            "/api/v1/configs/validate",
+            post(config_validate).layer(DefaultBodyLimit::max(MAX_CONFIG_SIZE + (64 << 10))),
+        )
         .layer(middleware::from_fn_with_state(state.clone(), security))
         .with_state(state)
 }
@@ -224,6 +233,53 @@ async fn core_remove(
         Err(error) => api_error(
             StatusCode::BAD_REQUEST,
             "CORE_REMOVE_FAILED",
+            error.to_string(),
+        ),
+    }
+}
+
+async fn config_get(State(state): State<Arc<AppState>>) -> Response {
+    match state.manager.current_config() {
+        Ok(config) => Json(config).into_response(),
+        Err(error) => api_error(
+            StatusCode::BAD_REQUEST,
+            "CONFIG_UNAVAILABLE",
+            error.to_string(),
+        ),
+    }
+}
+
+async fn config_write_removed() -> Response {
+    api_error(
+        StatusCode::GONE,
+        "DIRECT_CONFIG_REMOVED",
+        "generated configurations are read-only; edit a subscription profile instead",
+    )
+}
+
+#[derive(Deserialize)]
+struct ConfigValidateInput {
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ConfigValidateOutput {
+    valid: bool,
+}
+
+async fn config_validate(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<ConfigValidateInput>,
+) -> Response {
+    match state
+        .manager
+        .validate_config_content(input.content.as_bytes())
+        .await
+    {
+        Ok(()) => Json(ConfigValidateOutput { valid: true }).into_response(),
+        Err(error) => api_error(
+            StatusCode::BAD_REQUEST,
+            "CONFIG_VALIDATION_FAILED",
             error.to_string(),
         ),
     }

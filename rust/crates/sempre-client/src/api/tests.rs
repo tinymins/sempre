@@ -222,3 +222,46 @@ async fn authenticated_core_selection_uses_the_manager_transaction() {
         StatusCode::BAD_REQUEST
     );
 }
+
+#[tokio::test]
+async fn current_configuration_is_read_only_and_requires_a_selected_config() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let app = router(state);
+    let mut get_config = request(
+        "GET",
+        "/api/v1/configs/current",
+        Body::empty(),
+        "127.0.0.1:1",
+    );
+    get_config.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(get_config)
+            .await
+            .expect("get config")
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let mut write_config = request(
+        "PUT",
+        "/api/v1/configs/current",
+        Body::empty(),
+        "127.0.0.1:1",
+    );
+    write_config.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.oneshot(write_config).await.expect("write config");
+    assert_eq!(response.status(), StatusCode::GONE);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let value: serde_json::Value = serde_json::from_slice(&body).expect("error JSON");
+    assert_eq!(value["error"]["code"], "DIRECT_CONFIG_REMOVED");
+}

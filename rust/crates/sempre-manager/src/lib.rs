@@ -1,3 +1,4 @@
+mod config;
 mod error;
 mod install;
 mod inventory;
@@ -8,6 +9,7 @@ use sempre_artifact::{Downloader, GithubClient};
 use sempre_core::{Registry, Target, built_in_registry};
 use sempre_state::{Document, Store};
 
+pub use config::{CurrentConfig, MAX_CONFIG_SIZE};
 pub use error::ManagerError;
 pub use install::InstallResult;
 pub use inventory::{CoreInventory, InstalledCore};

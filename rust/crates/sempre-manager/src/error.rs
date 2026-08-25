@@ -74,6 +74,12 @@ pub enum ManagerError {
         #[source]
         source: Box<ManagerError>,
     },
+    #[error("no core is selected; select an installed core first")]
+    NoSelectedCore,
+    #[error("selected core has no configuration")]
+    NoConfiguration,
+    #[error("configuration exceeds {limit} bytes")]
+    ConfigurationTooLarge { limit: usize },
 }
 
 impl ManagerError {

@@ -24,7 +24,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let version = resolve_installed_version(&before, &reference)?;
         let config_hash = before.configs.get(&reference.core).cloned();
         if let Some(hash) = &config_hash {
-            self.validate_configuration(&reference, &version, hash)
+            let config = self.store.layout().config(&reference.core, hash);
+            self.validate_config_path(&reference, &version, &config)
                 .await
                 .map_err(|source| ManagerError::CandidateRejected {
                     reference: reference.to_string(),
@@ -90,28 +91,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
         .into();
         Ok(change)
-    }
-
-    async fn validate_configuration(
-        &self,
-        reference: &CoreRef,
-        version: &str,
-        hash: &str,
-    ) -> Result<(), ManagerError> {
-        let adapter = self.registry.get(&reference.core)?;
-        let binary = self.store.layout().core_binary(
-            &reference.core,
-            reference.repository.as_deref(),
-            version,
-        );
-        let config = self.store.layout().config(&reference.core, hash);
-        let data = tempfile::Builder::new()
-            .prefix("validate-")
-            .tempdir_in(&self.store.layout().runtime)
-            .map_err(|error| ManagerError::io("create validation directory", error))?;
-        self.runner
-            .validate(adapter.as_ref(), &binary, &config, data.path())
-            .await
     }
 }
 
