@@ -2038,9 +2038,12 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "sempre-artifact",
+ "sempre-converter",
  "sempre-core",
  "sempre-state",
+ "sempre-subscription",
  "serde",
+ "serde_json",
  "sha2",
  "tempfile",
  "thiserror",

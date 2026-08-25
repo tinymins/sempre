@@ -3,6 +3,7 @@ use std::{io, path::PathBuf};
 use sempre_artifact::ArtifactError;
 use sempre_core::{ReferenceError, RegistryError};
 use sempre_state::StateError;
+use sempre_subscription::SubscriptionError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -15,6 +16,10 @@ pub enum ManagerError {
     Core(#[from] RegistryError),
     #[error(transparent)]
     Artifact(#[from] ArtifactError),
+    #[error(transparent)]
+    Subscription(#[from] SubscriptionError),
+    #[error("compile subscription profile: {0}")]
+    Compile(#[from] sempre_converter::CompileError),
     #[error("{context}: {source}")]
     Io {
         context: String,
@@ -80,6 +85,8 @@ pub enum ManagerError {
     NoConfiguration,
     #[error("configuration exceeds {limit} bytes")]
     ConfigurationTooLarge { limit: usize },
+    #[error("subscription profile {0:?} was not found")]
+    ProfileNotFound(String),
 }
 
 impl ManagerError {

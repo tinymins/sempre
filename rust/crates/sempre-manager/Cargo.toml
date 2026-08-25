@@ -9,9 +9,12 @@ description = "Sempre client application use cases and transactional core manage
 [dependencies]
 chrono.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }
+sempre-converter = { path = "../sempre-converter" }
 sempre-core = { path = "../sempre-core" }
 sempre-state = { path = "../sempre-state" }
+sempre-subscription = { path = "../sempre-subscription" }
 serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true

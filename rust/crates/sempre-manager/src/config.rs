@@ -85,6 +85,16 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         content: &[u8],
         build: ConfigBuild,
     ) -> Result<CoreChange, ManagerError> {
+        self.activate_config_content_updating(content, build, |_, _| {})
+            .await
+    }
+
+    pub(crate) async fn activate_config_content_updating(
+        &self,
+        content: &[u8],
+        build: ConfigBuild,
+        update: impl FnOnce(&mut Document, bool),
+    ) -> Result<CoreChange, ManagerError> {
         if content.len() > MAX_CONFIG_SIZE {
             return Err(ManagerError::ConfigurationTooLarge {
                 limit: MAX_CONFIG_SIZE,
@@ -163,6 +173,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 change.needs_restart = true;
             }
             change.changed = config_changed || deployment_changed;
+            update(document, change.changed);
             change.previous_detail = short_hash(&old_hash);
             change.current_detail = short_hash(&hash);
             Ok(())
