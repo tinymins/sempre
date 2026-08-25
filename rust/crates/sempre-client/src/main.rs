@@ -5,6 +5,7 @@ mod bundle_api;
 mod core_management_api;
 mod custom_node_api;
 mod daemon;
+mod diagnostics_cli;
 mod elevate;
 mod gateway_api;
 mod listener;
@@ -168,7 +169,12 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Command::Bundle { command } => run_bundle(mode, command).await,
         Command::Service { command } => run_service(command).await,
         Command::Runtime { command } => runtime_cli::run(mode, command, json).await,
-        Command::Update => run_core_update(mode, None).await,
+        Command::Update => {
+            subscription_cli::run(mode, args::SubscriptionCommand::Update { id: None }, json).await
+        }
+        Command::Status => diagnostics_cli::status(mode, json).await,
+        Command::Logs { follow } => diagnostics_cli::logs(mode, follow).await,
+        Command::Open => diagnostics_cli::open(mode),
     }
 }
 

@@ -83,8 +83,18 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: RuntimeCommand,
     },
-    /// Update every installed core channel.
+    /// Refresh, compile, validate, and stage the active subscription profile.
     Update,
+    /// Print deployment, service, runtime, and subscription status.
+    Status,
+    /// Print manager and managed-core logs.
+    Logs {
+        /// Continue printing appended log records until interrupted.
+        #[arg(long)]
+        follow: bool,
+    },
+    /// Open the authenticated control UI in the default browser.
+    Open,
     /// Print build version information.
     Version,
     #[cfg(windows)]
@@ -110,6 +120,7 @@ impl Arguments {
             Command::Service { command } => !matches!(command, ServiceCommand::Status),
             Command::Runtime { .. } => system,
             Command::Update => system,
+            Command::Status | Command::Logs { .. } | Command::Open => system,
             Command::Version => false,
             #[cfg(windows)]
             Command::ServiceHost => false,
