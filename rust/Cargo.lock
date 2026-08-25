@@ -2113,6 +2113,7 @@ dependencies = [
  "sempre-network",
  "sempre-state",
  "sempre-subscription",
+ "sempre-tunnel",
  "sempre-ui",
  "serde",
  "serde_json",
@@ -2207,6 +2208,7 @@ dependencies = [
  "sempre-state",
  "sempre-subscription",
  "sempre-supervisor",
+ "sempre-tunnel",
  "serde",
  "serde_json",
  "sha2",
@@ -2301,6 +2303,25 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "sempre-tunnel"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "humantime",
+ "regex",
+ "sempre-artifact",
+ "sempre-core",
+ "sempre-state",
+ "sempre-supervisor",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]

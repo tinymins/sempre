@@ -126,6 +126,52 @@ async fn core_auto_diagnosis_and_update_routes_use_the_rust_manager() {
 }
 
 #[tokio::test]
+async fn tunnel_routes_read_and_persist_validated_rust_configuration() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let app = router(state);
+    let mut status = request("GET", "/api/v1/tunnels", Body::empty(), "127.0.0.1:1");
+    status.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(status).await.expect("status");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let value: serde_json::Value = serde_json::from_slice(&body).expect("status JSON");
+    assert_eq!(value["config"]["schema"], 1);
+    assert_eq!(value["binary"]["version"], "10.5.5");
+
+    let mut update = request(
+        "PUT",
+        "/api/v1/tunnels",
+        Body::from(r#"{"schema":1,"instances":[]}"#),
+        "127.0.0.1:1",
+    );
+    update.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    update.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.oneshot(update).await.expect("update");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let value: serde_json::Value = serde_json::from_slice(&body).expect("update JSON");
+    assert_eq!(
+        value["status"]["config"]["instances"],
+        serde_json::json!([])
+    );
+    assert_eq!(value["core_restart_requested"], false);
+}
+
+#[tokio::test]
 async fn daemon_token_is_rejected_off_loopback_and_same_origin_login_works() {
     let root = tempfile::tempdir().expect("temporary directory");
     let (state, token) = test_state(&root);

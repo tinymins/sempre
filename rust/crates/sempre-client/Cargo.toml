@@ -23,6 +23,7 @@ sempre-manager = { path = "../sempre-manager" }
 sempre-network = { path = "../sempre-network" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }
+sempre-tunnel = { path = "../sempre-tunnel" }
 sempre-ui = { path = "../sempre-ui" }
 serde.workspace = true
 serde_json.workspace = true

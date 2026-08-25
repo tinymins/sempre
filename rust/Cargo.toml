@@ -13,6 +13,7 @@ members = [
     "crates/sempre-state",
     "crates/sempre-subscription",
     "crates/sempre-supervisor",
+    "crates/sempre-tunnel",
     "crates/sempre-ui",
 ]
 resolver = "2"

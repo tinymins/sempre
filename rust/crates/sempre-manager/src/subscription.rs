@@ -41,6 +41,14 @@ struct RenderedProfile {
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
+    pub(crate) async fn recompile_subscription_profile(
+        &self,
+        id: &str,
+    ) -> Result<(CoreChange, SubscriptionRender), ManagerError> {
+        let _operation = self.store.acquire_operation()?;
+        self.prepare_subscription_locked(id, false, false).await
+    }
+
     pub fn clear_subscription_cache(&self) -> Result<CoreChange, ManagerError> {
         let _operation = self.store.acquire_operation()?;
         self.subscriptions.clear_cache()?;

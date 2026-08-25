@@ -12,6 +12,7 @@ mod subscription_debug_api;
 mod subscription_profile_debug_api;
 mod subscription_tools_api;
 mod system_api;
+mod tunnel_api;
 mod web_ui_api;
 
 use std::io;

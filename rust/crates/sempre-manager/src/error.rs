@@ -23,6 +23,8 @@ pub enum ManagerError {
     Compile(#[from] sempre_converter::CompileError),
     #[error(transparent)]
     Supervisor(#[from] SupervisorError),
+    #[error(transparent)]
+    Tunnel(#[from] sempre_tunnel::TunnelError),
     #[error("{context}: {source}")]
     Io {
         context: String,

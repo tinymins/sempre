@@ -58,7 +58,7 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
     });
     let server_shutdown = shutdown_sender.subscribe();
     let server_layout = layout.clone();
-    let mut server = tokio::spawn(listener::run(
+    let server = tokio::spawn(listener::run(
         listener,
         app,
         endpoint_state,
@@ -68,25 +68,45 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
         rebind_requests,
         server_shutdown,
     ));
+    let supervisor_manager = Arc::clone(&manager);
     let scheduler_manager = Arc::clone(&manager);
+    let tunnel_manager = Arc::clone(&manager);
     let scheduler_shutdown = shutdown_receiver.clone();
-    let mut supervisor = tokio::spawn(async move {
-        manager.run_supervisor(shutdown_receiver).await?;
+    let supervisor = tokio::spawn(async move {
+        supervisor_manager.run_supervisor(shutdown_receiver).await?;
         Ok(())
     });
-    let mut scheduler = tokio::spawn(async move {
+    let scheduler = tokio::spawn(async move {
         scheduler_manager
             .run_subscription_scheduler(scheduler_shutdown)
             .await?;
         Ok(())
     });
+    let tunnel_shutdown = shutdown_sender.subscribe();
+    let tunnels = tokio::spawn(async move {
+        tunnel_manager.run_tunnels(tunnel_shutdown).await?;
+        Ok(())
+    });
 
-    let result = tokio::select! {
+    let result = coordinate_tasks(shutdown_sender, server, supervisor, scheduler, tunnels).await;
+    signal.abort();
+    result
+}
+
+async fn coordinate_tasks(
+    shutdown_sender: watch::Sender<bool>,
+    mut server: JoinHandle<Result<(), ClientError>>,
+    mut supervisor: JoinHandle<Result<(), ClientError>>,
+    mut scheduler: JoinHandle<Result<(), ClientError>>,
+    mut tunnels: JoinHandle<Result<(), ClientError>>,
+) -> Result<(), ClientError> {
+    tokio::select! {
         result = &mut server => {
             let _ = shutdown_sender.send(true);
             settle_tasks(result, "API server", [
                 (supervisor, "core supervisor"),
                 (scheduler, "subscription scheduler"),
+                (tunnels, "tunnel supervisor"),
             ]).await
         },
         result = &mut supervisor => {
@@ -94,6 +114,7 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
             settle_tasks(result, "core supervisor", [
                 (server, "API server"),
                 (scheduler, "subscription scheduler"),
+                (tunnels, "tunnel supervisor"),
             ]).await
         },
         result = &mut scheduler => {
@@ -101,17 +122,24 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
             settle_tasks(result, "subscription scheduler", [
                 (server, "API server"),
                 (supervisor, "core supervisor"),
+                (tunnels, "tunnel supervisor"),
             ]).await
         },
-    };
-    signal.abort();
-    result
+        result = &mut tunnels => {
+            let _ = shutdown_sender.send(true);
+            settle_tasks(result, "tunnel supervisor", [
+                (server, "API server"),
+                (supervisor, "core supervisor"),
+                (scheduler, "subscription scheduler"),
+            ]).await
+        },
+    }
 }
 
-async fn settle_tasks(
+async fn settle_tasks<const N: usize>(
     first: Result<Result<(), ClientError>, JoinError>,
     first_name: &'static str,
-    remaining: [(JoinHandle<Result<(), ClientError>>, &'static str); 2],
+    remaining: [(JoinHandle<Result<(), ClientError>>, &'static str); N],
 ) -> Result<(), ClientError> {
     let mut result = task_result(first, first_name);
     for (task, name) in remaining {

@@ -1,32 +1,25 @@
 [package]
-name = "sempre-manager"
+name = "sempre-tunnel"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Sempre client application use cases and transactional core management"
+description = "Validated wstunnel installation and multi-instance supervision for Sempre"
 
 [dependencies]
 chrono.workspace = true
 humantime.workspace = true
+regex.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }
-sempre-converter = { path = "../sempre-converter" }
 sempre-core = { path = "../sempre-core" }
 sempre-state = { path = "../sempre-state" }
-sempre-subscription = { path = "../sempre-subscription" }
 sempre-supervisor = { path = "../sempre-supervisor" }
-sempre-tunnel = { path = "../sempre-tunnel" }
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
-sysinfo.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-uuid.workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true
+url.workspace = true
 
 [lints]
 workspace = true

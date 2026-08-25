@@ -12,12 +12,14 @@ mod scheduler;
 mod subscription;
 mod subscription_tools;
 mod supervisor;
+mod tunnel;
 mod update;
 
 use sempre_artifact::{Downloader, GithubClient};
 use sempre_core::{Registry, Target, built_in_registry};
 use sempre_state::{Document, Store};
 use sempre_subscription::{Fetcher, RemoteClient, SubscriptionStore};
+use sempre_tunnel::Controller as TunnelController;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -49,6 +51,7 @@ pub struct Manager<R = ProcessRunner> {
     remote: RemoteClient,
     runtime_reload: Arc<Notify>,
     subscription_schedule_changed: Arc<Notify>,
+    tunnels: Arc<TunnelController>,
 }
 
 impl Manager<ProcessRunner> {
@@ -64,6 +67,7 @@ impl<R: VersionRunner> Manager<R> {
         subscriptions.initialize()?;
         let fetcher = Fetcher::new(subscriptions.clone())?;
         let remote = RemoteClient::new()?;
+        let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
         Ok(Self {
             store,
             registry: built_in_registry(),
@@ -76,6 +80,7 @@ impl<R: VersionRunner> Manager<R> {
             remote,
             runtime_reload: Arc::new(Notify::new()),
             subscription_schedule_changed: Arc::new(Notify::new()),
+            tunnels,
         })
     }
 
