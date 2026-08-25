@@ -1,5 +1,6 @@
 mod api;
 mod args;
+mod custom_node_api;
 mod daemon;
 mod runtime_api;
 mod subscription_api;

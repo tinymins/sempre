@@ -140,6 +140,10 @@ pub struct CustomNode {
     #[serde(default)]
     pub name: String,
     pub proxy: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

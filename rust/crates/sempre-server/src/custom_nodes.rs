@@ -139,6 +139,8 @@ pub(crate) async fn load_selected(
                     .to_string(),
                 name: row.try_get("name").map_err(ApiError::internal)?,
                 proxy: row.try_get("proxy").map_err(ApiError::internal)?,
+                created_at: None,
+                updated_at: None,
             })
         })
         .collect()

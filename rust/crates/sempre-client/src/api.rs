@@ -63,6 +63,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             post(config_validate).layer(DefaultBodyLimit::max(MAX_CONFIG_SIZE + (64 << 10))),
         )
         .merge(crate::subscription_api::router())
+        .merge(crate::custom_node_api::router())
         .merge(crate::runtime_api::router())
         .merge(crate::system_api::router())
         .layer(middleware::from_fn_with_state(state.clone(), security))
@@ -436,6 +437,8 @@ pub(crate) fn api_error(
         .into_response()
 }
 
+#[cfg(test)]
+mod custom_node_tests;
 #[cfg(test)]
 mod system_tests;
 #[cfg(test)]

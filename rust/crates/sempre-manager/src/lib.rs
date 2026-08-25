@@ -1,5 +1,6 @@
 mod config;
 mod context;
+mod custom_node;
 mod error;
 mod install;
 mod inventory;
