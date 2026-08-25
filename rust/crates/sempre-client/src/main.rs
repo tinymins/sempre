@@ -13,6 +13,7 @@ mod elevate;
 mod gateway_api;
 mod listener;
 mod local_api;
+mod portable_cli;
 mod runtime_api;
 mod runtime_args;
 mod runtime_cli;
@@ -34,7 +35,9 @@ mod windows_service_host;
 
 use std::{fs, io, path::PathBuf};
 
-use args::{Arguments, BundleCommand, Command, ConfigCommand, CoreCommand, ServiceCommand};
+use args::{
+    Arguments, BundleCommand, Command, ConfigCommand, CoreCommand, PortableCommand, ServiceCommand,
+};
 use clap::Parser;
 use sempre_control::ControlError;
 use sempre_manager::{Manager, ManagerError};
@@ -107,6 +110,13 @@ fn main() {
         .init();
     let raw_arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     let arguments = Arguments::parse();
+    let mode = match portable_cli::resolve_mode(&arguments) {
+        Ok(mode) => mode,
+        Err(error) => {
+            eprintln!("ERROR: {error}");
+            std::process::exit(1);
+        }
+    };
     #[cfg(windows)]
     if matches!(arguments.command, Command::ServiceHost) {
         if let Err(error) = windows_service_host::dispatch() {
@@ -115,7 +125,7 @@ fn main() {
         }
         return;
     }
-    match elevate::ensure(&arguments, &raw_arguments) {
+    match elevate::ensure(&arguments, &raw_arguments, mode) {
         Ok(elevate::Outcome::Continue) => {}
         Ok(elevate::Outcome::Exit(code)) => std::process::exit(code),
         Err(error) => {
@@ -127,19 +137,14 @@ fn main() {
         .enable_all()
         .build()
         .expect("build Sempre runtime");
-    if let Err(error) = runtime.block_on(run(arguments)) {
+    if let Err(error) = runtime.block_on(run(arguments, mode)) {
         eprintln!("ERROR: {error}");
         std::process::exit(1);
     }
 }
 
-async fn run(arguments: Arguments) -> Result<(), ClientError> {
+async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
     let json = arguments.json;
-    let mode = if arguments.portable {
-        Mode::Portable
-    } else {
-        Mode::System
-    };
     match arguments.command {
         Command::Install {
             yes,
@@ -184,6 +189,11 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Command::Ui { command } => web_ui_cli::run_ui(mode, command, json).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
         Command::Service { command } => run_service(command).await,
+        Command::Portable { command } => match command {
+            PortableCommand::Run => portable_cli::run(mode).await,
+            PortableCommand::Enable => portable_cli::set_marker(true),
+            PortableCommand::Disable => portable_cli::set_marker(false),
+        },
         Command::Runtime { command } => runtime_cli::run(mode, command, json).await,
         Command::Update => {
             subscription_cli::run(mode, args::SubscriptionCommand::Update { id: None }, json).await

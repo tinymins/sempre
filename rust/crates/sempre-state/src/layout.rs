@@ -1,5 +1,7 @@
 use std::{
-    env, fs, io,
+    env, fs,
+    fs::OpenOptions,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -11,6 +13,8 @@ pub enum Mode {
     Portable,
     Development,
 }
+
+pub const PORTABLE_MARKER: &str = ".sempre-portable";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Layout {
@@ -60,6 +64,72 @@ pub enum LayoutError {
     DevelopmentRootRequired,
     #[error("create layout directory {path}: {source}")]
     CreateDirectory { path: PathBuf, source: io::Error },
+    #[error("{operation} portable marker {path}: {source}")]
+    PortableMarker {
+        operation: &'static str,
+        path: PathBuf,
+        source: io::Error,
+    },
+}
+
+impl Mode {
+    pub fn current() -> Result<Self, LayoutError> {
+        let executable = env::current_exe().map_err(LayoutError::CurrentExecutable)?;
+        Self::for_executable(&executable)
+    }
+
+    pub fn for_executable(executable: &Path) -> Result<Self, LayoutError> {
+        if portable_marker_enabled(executable)? {
+            Ok(Self::Portable)
+        } else {
+            Ok(Self::System)
+        }
+    }
+}
+
+pub fn portable_marker_path(executable: &Path) -> PathBuf {
+    executable
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(PORTABLE_MARKER)
+}
+
+pub fn portable_marker_enabled(executable: &Path) -> Result<bool, LayoutError> {
+    let path = portable_marker_path(executable);
+    match fs::metadata(&path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(LayoutError::PortableMarker {
+            operation: "inspect",
+            path,
+            source,
+        }),
+    }
+}
+
+pub fn set_portable_marker(executable: &Path, enabled: bool) -> Result<PathBuf, LayoutError> {
+    let path = portable_marker_path(executable);
+    if enabled {
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => Ok(path),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(path),
+            Err(source) => Err(LayoutError::PortableMarker {
+                operation: "create",
+                path,
+                source,
+            }),
+        }
+    } else {
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(path),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(path),
+            Err(source) => Err(LayoutError::PortableMarker {
+                operation: "remove",
+                path,
+                source,
+            }),
+        }
+    }
 }
 
 impl Layout {
@@ -365,5 +435,28 @@ mod tests {
         layout.ensure().expect("ensure layout");
         assert!(layout.subscription_cache.is_dir());
         assert!(layout.tunnel_logs.is_dir());
+    }
+
+    #[test]
+    fn portable_marker_selects_mode_and_changes_idempotently() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let executable = temporary.path().join(executable_name("sempre"));
+        assert_eq!(
+            Mode::for_executable(&executable).expect("system mode"),
+            Mode::System
+        );
+        let marker = set_portable_marker(&executable, true).expect("enable portable marker");
+        set_portable_marker(&executable, true).expect("enable portable marker twice");
+        assert_eq!(marker, temporary.path().join(PORTABLE_MARKER));
+        assert_eq!(
+            Mode::for_executable(&executable).expect("portable mode"),
+            Mode::Portable
+        );
+        set_portable_marker(&executable, false).expect("disable portable marker");
+        set_portable_marker(&executable, false).expect("disable portable marker twice");
+        assert_eq!(
+            Mode::for_executable(&executable).expect("system mode"),
+            Mode::System
+        );
     }
 }

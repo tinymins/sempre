@@ -9,13 +9,13 @@ use crate::runtime_args::{
 fn system_and_portable_modes_are_mutually_exclusive() {
     assert!(Arguments::try_parse_from(["sempre", "--system", "--portable", "version"]).is_err());
     let status = Arguments::try_parse_from(["sempre", "service", "status"]).expect("status");
-    assert!(!status.requires_administrator());
+    assert!(!status.requires_administrator(Mode::System));
     let restart = Arguments::try_parse_from(["sempre", "service", "restart"]).expect("restart");
-    assert!(restart.requires_administrator());
+    assert!(restart.requires_administrator(Mode::System));
     let runtime =
         Arguments::try_parse_from(["sempre", "--portable", "--json", "runtime", "status"])
             .expect("portable runtime status");
-    assert!(!runtime.requires_administrator());
+    assert!(!runtime.requires_administrator(Mode::Portable));
     assert!(runtime.json);
 }
 
@@ -49,7 +49,7 @@ fn parses_core_install_and_daemon_override() {
     let direct =
         Arguments::try_parse_from(["sempre", "--portable", "run", "--core", "sing-box@stable"])
             .expect("foreground core");
-    assert!(direct.requires_administrator());
+    assert!(direct.requires_administrator(Mode::Portable));
     assert!(matches!(direct.command, Command::Run { core: Some(_) }));
     let select =
         Arguments::try_parse_from(["sempre", "core", "use", "sing-box@stable"]).expect("use");
@@ -68,14 +68,14 @@ fn parses_core_install_and_daemon_override() {
         }
     ));
     let install = Arguments::try_parse_from(["sempre", "install", "--yes"]).expect("install");
-    assert!(install.requires_administrator());
+    assert!(install.requires_administrator(Mode::System));
     assert!(matches!(
         install.command,
         Command::Install { yes: true, .. }
     ));
     let uninstall =
         Arguments::try_parse_from(["sempre", "uninstall", "--purge", "--yes"]).expect("uninstall");
-    assert!(uninstall.requires_administrator());
+    assert!(uninstall.requires_administrator(Mode::System));
     assert!(matches!(
         uninstall.command,
         Command::Uninstall {
@@ -238,17 +238,17 @@ fn parses_advanced_runtime_commands() {
 #[test]
 fn administrator_boundary_matches_mutating_system_commands() {
     let version = Arguments::try_parse_from(["sempre", "version"]).expect("version");
-    assert!(!version.requires_administrator());
+    assert!(!version.requires_administrator(Mode::System));
     let portable_core = Arguments::try_parse_from(["sempre", "--portable", "core", "list"])
         .expect("portable core list");
-    assert!(!portable_core.requires_administrator());
+    assert!(!portable_core.requires_administrator(Mode::Portable));
     let system_core = Arguments::try_parse_from(["sempre", "core", "list"]).expect("core list");
-    assert!(system_core.requires_administrator());
+    assert!(system_core.requires_administrator(Mode::System));
     let portable_doctor =
         Arguments::try_parse_from(["sempre", "--portable", "doctor"]).expect("doctor");
-    assert!(!portable_doctor.requires_administrator());
+    assert!(!portable_doctor.requires_administrator(Mode::Portable));
     let system_doctor = Arguments::try_parse_from(["sempre", "doctor"]).expect("doctor");
-    assert!(system_doctor.requires_administrator());
+    assert!(system_doctor.requires_administrator(Mode::System));
     let development = Arguments::try_parse_from([
         "sempre",
         "daemon",
@@ -256,7 +256,14 @@ fn administrator_boundary_matches_mutating_system_commands() {
         ".cache/sempre-dev/runtime",
     ])
     .expect("development daemon");
-    assert!(!development.requires_administrator());
+    assert!(!development.requires_administrator(Mode::Development));
     let portable = Arguments::try_parse_from(["sempre", "--portable", "daemon"]).expect("daemon");
-    assert!(portable.requires_administrator());
+    assert!(portable.requires_administrator(Mode::Portable));
+
+    let portable_run =
+        Arguments::try_parse_from(["sempre", "portable", "run"]).expect("portable run");
+    assert!(portable_run.requires_administrator(Mode::Portable));
+    let portable_enable =
+        Arguments::try_parse_from(["sempre", "portable", "enable"]).expect("portable enable");
+    assert!(!portable_enable.requires_administrator(Mode::System));
 }

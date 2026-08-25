@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sempre_state::{Document, Layout, Runtime, write_atomic};
+use sempre_state::{Document, Layout, PORTABLE_MARKER, Runtime, write_atomic};
 use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
@@ -16,7 +16,6 @@ pub use restore::{
 };
 
 const METADATA_NAME: &str = ".sempre-bundle.json";
-const PORTABLE_MARKER: &str = ".sempre-portable";
 
 #[derive(Debug)]
 pub struct Export {

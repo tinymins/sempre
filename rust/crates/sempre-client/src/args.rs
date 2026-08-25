@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use sempre_state::Mode;
 
 use crate::{VERSION, runtime_args::RuntimeCommand};
 
@@ -108,6 +109,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: ServiceCommand,
     },
+    /// Run Sempre portably or manage automatic portable-mode selection.
+    Portable {
+        #[command(subcommand)]
+        command: PortableCommand,
+    },
     /// Inspect and control the managed proxy-core runtime.
     Runtime {
         #[command(subcommand)]
@@ -135,8 +141,8 @@ pub(crate) enum Command {
 }
 
 impl Arguments {
-    pub fn requires_administrator(&self) -> bool {
-        let system = !self.portable;
+    pub fn requires_administrator(&self, mode: Mode) -> bool {
+        let system = mode == Mode::System;
         match &self.command {
             Command::Install { .. } => true,
             Command::Uninstall { .. } => true,
@@ -154,6 +160,7 @@ impl Arguments {
                 BundleCommand::Restore { .. } => true,
             },
             Command::Service { command } => !matches!(command, ServiceCommand::Status),
+            Command::Portable { command } => matches!(command, PortableCommand::Run),
             Command::Runtime { .. } => system,
             Command::Update => system,
             Command::Status | Command::Logs { .. } | Command::Doctor | Command::Open => system,
@@ -162,6 +169,16 @@ impl Arguments {
             Command::ServiceHost => false,
         }
     }
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum PortableCommand {
+    /// Start the portable daemon and open its Web UI when ready.
+    Run,
+    /// Select portable mode by default for this executable directory.
+    Enable,
+    /// Select system mode by default for this executable directory.
+    Disable,
 }
 
 #[derive(Debug, Subcommand)]

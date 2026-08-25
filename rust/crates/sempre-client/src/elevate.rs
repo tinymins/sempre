@@ -1,5 +1,6 @@
 use std::{ffi::OsString, io, process::Command};
 
+use sempre_state::Mode;
 use thiserror::Error;
 
 use crate::args::Arguments;
@@ -39,8 +40,9 @@ pub enum ElevationError {
 pub fn ensure(
     arguments: &Arguments,
     raw_arguments: &[OsString],
+    mode: Mode,
 ) -> Result<Outcome, ElevationError> {
-    if !arguments.requires_administrator() {
+    if !arguments.requires_administrator(mode) {
         return Ok(Outcome::Continue);
     }
     platform_ensure(arguments.elevated, raw_arguments)
