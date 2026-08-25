@@ -224,6 +224,50 @@ async fn authenticated_core_selection_uses_the_manager_transaction() {
 }
 
 #[tokio::test]
+async fn runtime_routes_report_status_and_stable_readiness_errors() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let app = router(state);
+    let mut status = request(
+        "GET",
+        "/api/v1/runtime/status",
+        Body::empty(),
+        "127.0.0.1:1",
+    );
+    status.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(status).await.expect("runtime status");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let value: serde_json::Value = serde_json::from_slice(&body).expect("status JSON");
+    assert_eq!(value["runtime_state"], "idle");
+    assert_eq!(value["actions"]["start"]["allowed"], false);
+
+    let mut start = request(
+        "POST",
+        "/api/v1/runtime/start",
+        Body::empty(),
+        "127.0.0.1:1",
+    );
+    start.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.oneshot(start).await.expect("runtime start");
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let value: serde_json::Value = serde_json::from_slice(&body).expect("error JSON");
+    assert_eq!(value["error"]["code"], "RUNTIME_NOT_READY");
+    assert_eq!(value["error"]["details"]["status"]["runtime_state"], "idle");
+}
+
+#[tokio::test]
 async fn current_configuration_is_read_only_and_requires_a_selected_config() {
     let root = tempfile::tempdir().expect("temporary directory");
     let (state, token) = test_state(&root);

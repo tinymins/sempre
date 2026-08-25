@@ -194,7 +194,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 }
 
-fn configuration_target(document: &Document) -> Result<(CoreRef, String), ManagerError> {
+pub(crate) fn configuration_target(document: &Document) -> Result<(CoreRef, String), ManagerError> {
     let selection = document
         .selected
         .as_ref()

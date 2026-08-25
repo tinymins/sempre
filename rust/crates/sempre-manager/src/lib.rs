@@ -5,12 +5,15 @@ mod install;
 mod inventory;
 mod lifecycle;
 mod process;
+mod runtime;
 mod subscription;
 
 use sempre_artifact::{Downloader, GithubClient};
 use sempre_core::{Registry, Target, built_in_registry};
 use sempre_state::{Document, Store};
 use sempre_subscription::{Fetcher, RemoteClient, SubscriptionStore};
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 pub use config::{CurrentConfig, MAX_CONFIG_SIZE};
 pub use context::{ConfigurationContext, ConfigurationTarget, RunningCore};
@@ -19,6 +22,7 @@ pub use install::InstallResult;
 pub use inventory::{CoreInventory, InstalledCore};
 pub use lifecycle::CoreChange;
 pub use process::{ProcessRunner, ValidationRunner, VersionRunner};
+pub use runtime::{RuntimeActionAvailability, RuntimeActions, RuntimeDeployment, RuntimeStatus};
 pub use subscription::SubscriptionRender;
 
 const USER_AGENT: &str = concat!("Sempre/", env!("CARGO_PKG_VERSION"));
@@ -33,6 +37,7 @@ pub struct Manager<R = ProcessRunner> {
     subscriptions: SubscriptionStore,
     fetcher: Fetcher,
     remote: RemoteClient,
+    runtime_reload: Arc<Notify>,
 }
 
 impl Manager<ProcessRunner> {
@@ -58,6 +63,7 @@ impl<R: VersionRunner> Manager<R> {
             subscriptions,
             fetcher,
             remote,
+            runtime_reload: Arc::new(Notify::new()),
         })
     }
 
@@ -71,5 +77,13 @@ impl<R: VersionRunner> Manager<R> {
 
     pub fn subscriptions(&self) -> &SubscriptionStore {
         &self.subscriptions
+    }
+
+    pub fn request_runtime_reload(&self) {
+        self.runtime_reload.notify_one();
+    }
+
+    pub async fn wait_runtime_reload(&self) {
+        self.runtime_reload.notified().await;
     }
 }

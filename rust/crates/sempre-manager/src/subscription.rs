@@ -45,27 +45,29 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         id: &str,
     ) -> Result<(CoreChange, SubscriptionRender), ManagerError> {
-        self.prepare_subscription(id, false).await
+        let _operation = self.store.acquire_operation()?;
+        self.prepare_subscription_locked(id, false, true).await
     }
 
     pub async fn activate_subscription_profile(
         &self,
         id: &str,
     ) -> Result<(CoreChange, SubscriptionRender), ManagerError> {
-        self.prepare_subscription(id, true).await
+        let _operation = self.store.acquire_operation()?;
+        self.prepare_subscription_locked(id, true, true).await
     }
 
-    async fn prepare_subscription(
+    async fn prepare_subscription_locked(
         &self,
         id: &str,
         activate: bool,
+        refresh: bool,
     ) -> Result<(CoreChange, SubscriptionRender), ManagerError> {
-        let _operation = self.store.acquire_operation()?;
         let catalog = self.subscriptions.read()?;
         let profile = find_profile(&catalog, id)?.clone();
         let document = self.store.read()?;
         let mut rendered = self
-            .render_subscription(&catalog, &profile, &document, true)
+            .render_subscription(&catalog, &profile, &document, refresh)
             .await?;
         let now = Utc::now();
         let active = activate || document.active_profile_id.as_deref() == Some(id);
@@ -114,6 +116,49 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             change.message = "subscription profile refreshed, validated, and staged".into();
         }
         Ok((change, rendered.render))
+    }
+
+    pub(crate) async fn prepare_active_subscription_for_runtime_locked(
+        &self,
+    ) -> Result<(), ManagerError> {
+        let document = self.store.read()?;
+        let Some(id) = document.active_profile_id.as_deref() else {
+            return Ok(());
+        };
+        let catalog = self.subscriptions.read()?;
+        let profile = find_profile(&catalog, id)?;
+        let (target, _) = self.subscription_target(&document)?;
+        let expected = config_build(profile, &target)?;
+        if document
+            .selected
+            .as_ref()
+            .and_then(|selected| document.config_builds.get(&selected.core))
+            == Some(&expected)
+        {
+            return Ok(());
+        }
+        self.prepare_subscription_locked(id, false, false).await?;
+        Ok(())
+    }
+
+    pub(crate) fn active_profile_config_pending(&self, document: &Document) -> bool {
+        let Some(id) = document.active_profile_id.as_deref() else {
+            return false;
+        };
+        let Some(selected) = document.selected.as_ref() else {
+            return false;
+        };
+        let Ok(catalog) = self.subscriptions.read() else {
+            return false;
+        };
+        let Ok(profile) = find_profile(&catalog, id) else {
+            return false;
+        };
+        let Ok((target, _)) = self.subscription_target(document) else {
+            return false;
+        };
+        config_build(profile, &target)
+            .is_ok_and(|expected| document.config_builds.get(&selected.core) != Some(&expected))
     }
 
     async fn render_subscription(

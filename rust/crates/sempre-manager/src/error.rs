@@ -87,6 +87,10 @@ pub enum ManagerError {
     ConfigurationTooLarge { limit: usize },
     #[error("subscription profile {0:?} was not found")]
     ProfileNotFound(String),
+    #[error("runtime is not ready: {0}")]
+    RuntimeNotReady(String),
+    #[error("{message}")]
+    RuntimeAction { code: &'static str, message: String },
 }
 
 impl ManagerError {
@@ -94,6 +98,13 @@ impl ManagerError {
         Self::Io {
             context: context.into(),
             source,
+        }
+    }
+
+    pub fn runtime_action_code(&self) -> Option<&'static str> {
+        match self {
+            Self::RuntimeAction { code, .. } => Some(code),
+            _ => None,
         }
     }
 }

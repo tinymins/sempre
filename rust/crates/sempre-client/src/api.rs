@@ -63,6 +63,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             post(config_validate).layer(DefaultBodyLimit::max(MAX_CONFIG_SIZE + (64 << 10))),
         )
         .merge(crate::subscription_api::router())
+        .merge(crate::runtime_api::router())
         .layer(middleware::from_fn_with_state(state.clone(), security))
         .with_state(state)
 }
@@ -417,7 +418,11 @@ struct ErrorBody {
     message: String,
 }
 
-fn api_error(status: StatusCode, code: &'static str, message: impl Into<String>) -> Response {
+pub(crate) fn api_error(
+    status: StatusCode,
+    code: &'static str,
+    message: impl Into<String>,
+) -> Response {
     (
         status,
         Json(ErrorEnvelope {

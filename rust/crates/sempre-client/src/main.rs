@@ -1,6 +1,7 @@
 mod api;
 mod args;
 mod daemon;
+mod runtime_api;
 mod subscription_api;
 
 use std::io;
