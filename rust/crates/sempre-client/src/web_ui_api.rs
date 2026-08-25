@@ -28,10 +28,11 @@ struct WebPatch {
 }
 
 async fn web_get(State(state): State<Arc<AppState>>) -> Response {
+    let endpoint = state.endpoint.get();
     match state.web.read() {
         Ok(config) => Json(json!({
-            "listen": state.bind,
-            "local_url": state.local_url,
+            "listen": endpoint.bind,
+            "local_url": endpoint.local_url,
             "password_set": config.password_protected(),
             "password_warning": !config.password_protected(),
         }))
@@ -44,16 +45,21 @@ async fn web_patch(State(state): State<Arc<AppState>>, Json(input): Json<WebPatc
     if input.listen.is_none() && input.password.is_none() {
         return invalid("web configuration patch is empty");
     }
-    if input
-        .listen
-        .as_deref()
-        .is_some_and(|listen| listen != state.bind)
+    let mut endpoint = state.endpoint.get();
+    if let Some(listen) = input.listen.as_deref()
+        && listen != endpoint.bind
     {
-        return error(
-            StatusCode::CONFLICT,
-            "WEB_REBIND_UNAVAILABLE",
-            "live listener rebinding is not available in the Rust daemon yet",
-        );
+        let Some(rebind) = &state.rebind else {
+            return error(
+                StatusCode::CONFLICT,
+                "WEB_REBIND_UNAVAILABLE",
+                "web listener is not managed by this process",
+            );
+        };
+        endpoint = match rebind.request(listen).await {
+            Ok(endpoint) => endpoint,
+            Err(error) => return operation(error),
+        };
     }
     let reauthenticate = input.password.is_some();
     if let Some(password) = input.password {
@@ -75,8 +81,8 @@ async fn web_patch(State(state): State<Arc<AppState>>, Json(input): Json<WebPatc
         Err(error) => return internal(error.to_string()),
     };
     Json(json!({
-        "listen": state.bind,
-        "local_url": state.local_url,
+        "listen": endpoint.bind,
+        "local_url": endpoint.local_url,
         "password_set": config.password_protected(),
         "reauthenticate": reauthenticate,
     }))

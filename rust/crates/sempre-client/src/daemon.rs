@@ -10,7 +10,7 @@ use tokio::{
 };
 use tracing::info;
 
-use crate::{ClientError, VERSION, api};
+use crate::{ClientError, VERSION, api, listener};
 
 pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(), ClientError> {
     let layout = Layout::for_mode(mode)?;
@@ -37,13 +37,17 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
     public_endpoint.write(&layout.endpoint)?;
 
     let manager = Arc::new(Manager::new(store)?);
-    let state = Arc::new(api::AppState::new(
+    let (rebind, rebind_requests) = listener::channel();
+    let mut app_state = api::AppState::new(
         Arc::clone(&manager),
-        web,
-        daemon_endpoint.token,
+        web.clone(),
+        daemon_endpoint.token.clone(),
         bind.clone(),
         local_url.clone(),
-    ));
+    );
+    app_state.attach_rebind(rebind);
+    let endpoint_state = app_state.endpoint.clone();
+    let state = Arc::new(app_state);
     let app = api::router(state);
     info!(%bind, %local_url, mode = ?mode, "Sempre Rust client daemon listening");
     let (shutdown_sender, shutdown_receiver) = watch::channel(false);
@@ -53,15 +57,17 @@ pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(),
         let _ = signal_sender.send(true);
     });
     let server_shutdown = shutdown_sender.subscribe();
-    let mut server = tokio::spawn(async move {
-        axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-        )
-        .with_graceful_shutdown(shutdown_requested(server_shutdown))
-        .await
-        .map_err(ClientError::Serve)
-    });
+    let server_layout = layout.clone();
+    let mut server = tokio::spawn(listener::run(
+        listener,
+        app,
+        endpoint_state,
+        web,
+        daemon_endpoint,
+        server_layout,
+        rebind_requests,
+        server_shutdown,
+    ));
     let scheduler_manager = Arc::clone(&manager);
     let scheduler_shutdown = shutdown_receiver.clone();
     let mut supervisor = tokio::spawn(async move {
@@ -138,12 +144,6 @@ impl Drop for DiscoveryGuard {
         for path in &self.paths {
             let _ = fs::remove_file(path);
         }
-    }
-}
-
-async fn shutdown_requested(mut shutdown: watch::Receiver<bool>) {
-    if !*shutdown.borrow() {
-        let _ = shutdown.changed().await;
     }
 }
 

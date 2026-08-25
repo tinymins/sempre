@@ -29,6 +29,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
     };
     let layout = state.manager.store().layout();
     let ui_installed = sempre_ui::Store::new(&layout.ui).current().is_ok();
+    let endpoint = state.endpoint.get();
     let mode = match layout.mode {
         sempre_state::Mode::System => "system",
         sempre_state::Mode::Portable => "portable",
@@ -63,7 +64,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         "last_error": document.last_error,
         "web": {
             "listen": web.listen,
-            "local_url": state.local_url,
+            "local_url": endpoint.local_url,
             "password_set": web.password_protected(),
             "password_warning": !web.password_protected(),
         },

@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::VERSION;
+use crate::listener::{EndpointStore, RebindHandle};
 
 const DAEMON_TOKEN_HEADER: &str = "x-sempre-daemon-token";
 
@@ -23,8 +24,8 @@ pub(crate) struct AppState {
     pub(crate) web: WebConfigStore,
     pub(crate) auth: AuthStore,
     daemon_token: String,
-    pub(crate) bind: String,
-    pub(crate) local_url: String,
+    pub(crate) endpoint: EndpointStore,
+    pub(crate) rebind: Option<RebindHandle>,
 }
 
 impl AppState {
@@ -40,9 +41,13 @@ impl AppState {
             web,
             auth: AuthStore::default(),
             daemon_token,
-            bind,
-            local_url,
+            endpoint: EndpointStore::new(bind, local_url),
+            rebind: None,
         }
+    }
+
+    pub(crate) fn attach_rebind(&mut self, rebind: RebindHandle) {
+        self.rebind = Some(rebind);
     }
 }
 
@@ -104,12 +109,13 @@ async fn health(State(state): State<Arc<AppState>>) -> Response {
             );
         }
     };
+    let endpoint = state.endpoint.get();
     Json(Health {
         status: "ok",
         version: VERSION,
         api_major: API_MAJOR,
-        bind: state.bind.clone(),
-        local_url: state.local_url.clone(),
+        bind: endpoint.bind,
+        local_url: endpoint.local_url,
         runtime: document.runtime.state,
         password_required,
     })
