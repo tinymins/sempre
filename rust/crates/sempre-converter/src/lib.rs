@@ -1,3 +1,4 @@
+mod defaults;
 mod editor;
 mod icons;
 mod model;
@@ -6,6 +7,10 @@ mod renderer;
 mod rule_set;
 mod target;
 
+pub use defaults::{
+    Defaults, EditorDefaults, effective_profile, recommended_defaults, recommended_editor_defaults,
+    system_defaults,
+};
 pub use model::{
     CompileRequest, CompileResult, CustomNode, Diagnostic, EditorConfig, FieldDiff, LocalProxy,
     ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source, SourceSnapshot,
@@ -39,11 +44,11 @@ pub enum CompileError {
 }
 
 pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> {
-    let profile = editor::apply(&request.profile)?;
     let mut target = Target::parse(&request.target.format)?;
     if !request.target.core.trim().is_empty() {
         target.core.clone_from(&request.target.core);
     }
+    let profile = defaults::effective_profile(editor::apply(&request.profile)?, &target);
     let snapshots: HashMap<&str, &SourceSnapshot> = request
         .snapshots
         .iter()

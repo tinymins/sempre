@@ -361,13 +361,23 @@ async fn subscription_catalog_supports_authenticated_local_and_remote_creation()
     );
     let response = app.clone().oneshot(list).await.expect("list profiles");
     assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), 64 * 1024)
+    let body = to_bytes(response.into_body(), 1024 * 1024)
         .await
         .expect("body");
     let catalog: serde_json::Value = serde_json::from_slice(&body).expect("catalog JSON");
     assert_eq!(catalog["profiles"].as_array().map(Vec::len), Some(1));
     assert_eq!(catalog["configuration_context"]["key"], "common");
     assert_eq!(catalog["schedule"]["interval"], "24h");
+    assert_eq!(
+        catalog["defaults"]["groups"].as_array().map(Vec::len),
+        Some(24)
+    );
+    assert_eq!(
+        catalog["editor_defaults"]["by_core"]
+            .as_object()
+            .map(serde_json::Map::len),
+        Some(6)
+    );
 
     let mut candidate = catalog["profiles"][0].clone();
     candidate["sources"] = serde_json::json!([{

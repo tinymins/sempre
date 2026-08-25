@@ -19,6 +19,8 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/subscription", patch(update_schedule))
         .route("/api/v1/subscriptions", get(list).post(create))
+        .route("/api/v1/subscriptions/defaults", get(defaults))
+        .route("/api/v1/subscriptions/cache/clear", post(clear_cache))
         .route(
             "/api/v1/subscriptions/{id}",
             get(get_profile).put(save).patch(rename).delete(remove),
@@ -60,6 +62,8 @@ struct CatalogOutput {
     schedule: sempre_state::Subscription,
     auto_restart: bool,
     targets: Vec<sempre_converter::Target>,
+    defaults: sempre_converter::Defaults,
+    editor_defaults: sempre_converter::EditorDefaults,
     configuration_context: sempre_manager::ConfigurationContext,
 }
 
@@ -83,9 +87,34 @@ async fn list(State(state): State<Arc<AppState>>) -> Response {
         schedule: document.subscription,
         auto_restart: document.subscription_auto_restart,
         targets: sempre_converter::available_targets(),
+        defaults: sempre_converter::system_defaults(),
+        editor_defaults: sempre_converter::recommended_editor_defaults(),
         configuration_context,
     })
     .into_response()
+}
+
+async fn defaults() -> Response {
+    let profile = new_profile("");
+    Json(json!({
+        "profile": profile,
+        "defaults": sempre_converter::system_defaults(),
+        "editor_defaults": sempre_converter::recommended_editor_defaults(),
+        "targets": sempre_converter::available_targets(),
+        "source_defaults": {
+            "id": "", "type": "url", "enabled": true,
+            "url": "", "remark": "", "prefix": "", "content": "",
+            "user_agent": "clash.meta", "fetch_mode": "auto"
+        }
+    }))
+    .into_response()
+}
+
+async fn clear_cache(State(state): State<Arc<AppState>>) -> Response {
+    match state.manager.clear_subscription_cache() {
+        Ok(change) => Json(change).into_response(),
+        Err(error) => operation(error.to_string()),
+    }
 }
 
 #[derive(Deserialize)]

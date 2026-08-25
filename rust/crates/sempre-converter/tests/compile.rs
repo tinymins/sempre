@@ -50,6 +50,30 @@ fn clash_output_round_trips_as_yaml() {
 }
 
 #[test]
+fn system_switches_apply_ohmywrt_defaults_during_compilation() {
+    let mut input = request("clash-meta");
+    for key in [
+        "use_system_groups",
+        "use_system_rules",
+        "use_system_filters",
+        "use_system_dns",
+        "use_system_custom_config",
+    ] {
+        input.profile.extra.insert(key.into(), json!(true));
+    }
+    let result = compile(&input).expect("compile with system defaults");
+    let document: Value = serde_yaml::from_str(&result.content).expect("valid YAML output");
+    assert_eq!(document["proxy-groups"].as_array().map(Vec::len), Some(24));
+    assert_eq!(
+        document["rule-providers"]
+            .as_object()
+            .map(serde_json::Map::len),
+        Some(23)
+    );
+    assert!(result.content.contains("GoogleCIDRv2"));
+}
+
+#[test]
 fn missing_snapshot_is_rejected_without_network_fallback() {
     let mut input = request("sing-box-v13");
     input.snapshots.clear();

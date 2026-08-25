@@ -41,6 +41,16 @@ struct RenderedProfile {
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
+    pub fn clear_subscription_cache(&self) -> Result<CoreChange, ManagerError> {
+        let _operation = self.store.acquire_operation()?;
+        self.subscriptions.clear_cache()?;
+        Ok(CoreChange {
+            changed: true,
+            message: "subscription fetch cache cleared".into(),
+            ..CoreChange::default()
+        })
+    }
+
     pub async fn refresh_subscription_profile(
         &self,
         id: &str,
