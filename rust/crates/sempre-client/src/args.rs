@@ -68,6 +68,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: SubscriptionCommand,
     },
+    /// Manage reusable custom proxy nodes.
+    CustomNode {
+        #[command(subcommand)]
+        command: CustomNodeCommand,
+    },
     /// Export or restore a portable deployment snapshot.
     Bundle {
         #[command(subcommand)]
@@ -113,6 +118,7 @@ impl Arguments {
             Command::Core { .. } => system,
             Command::Config { .. } => system,
             Command::Subscription { .. } => system,
+            Command::CustomNode { .. } => system,
             Command::Bundle { command } => match command {
                 BundleCommand::Export { .. } => system,
                 BundleCommand::Restore { .. } => true,
@@ -194,6 +200,18 @@ pub(crate) enum SubscriptionCommand {
     Status,
     /// Remove cached remote subscription responses.
     ClearCache,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CustomNodeCommand {
+    /// List saved custom nodes.
+    List,
+    /// Create a custom node from a `CustomNode` or proxy JSON file.
+    Add { file: PathBuf },
+    /// Replace a custom node from a `CustomNode` or proxy JSON file.
+    Update { id: String, file: PathBuf },
+    /// Remove an unreferenced custom node.
+    Remove { id: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -362,6 +380,21 @@ mod tests {
             import.command,
             Command::Config {
                 command: ConfigCommand::Import { .. }
+            }
+        ));
+        let custom = Arguments::try_parse_from([
+            "sempre",
+            "--portable",
+            "custom-node",
+            "update",
+            "node-id",
+            "node.json",
+        ])
+        .expect("custom node update");
+        assert!(matches!(
+            custom.command,
+            Command::CustomNode {
+                command: CustomNodeCommand::Update { .. }
             }
         ));
     }

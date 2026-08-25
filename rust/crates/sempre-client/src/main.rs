@@ -4,6 +4,7 @@ mod bootstrap;
 mod bundle_api;
 mod core_management_api;
 mod custom_node_api;
+mod custom_node_cli;
 mod daemon;
 mod diagnostics_cli;
 mod elevate;
@@ -85,7 +86,7 @@ pub(crate) enum ClientError {
     #[error("managed runtime: {0}")]
     Runtime(String),
     #[error("encode JSON output: {0}")]
-    Json(#[source] serde_json::Error),
+    Json(#[from] serde_json::Error),
 }
 
 fn main() {
@@ -166,6 +167,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Command::Core { command } => run_core(mode, command).await,
         Command::Config { command } => run_config(mode, command).await,
         Command::Subscription { command } => subscription_cli::run(mode, command, json).await,
+        Command::CustomNode { command } => custom_node_cli::run(mode, command, json),
         Command::Bundle { command } => run_bundle(mode, command).await,
         Command::Service { command } => run_service(command).await,
         Command::Runtime { command } => runtime_cli::run(mode, command, json).await,
