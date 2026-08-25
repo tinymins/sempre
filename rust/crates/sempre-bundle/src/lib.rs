@@ -10,6 +10,7 @@ use thiserror::Error;
 use uuid::Uuid;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
+pub use deploy::{DeployComponent, stage_deploy};
 pub use restore::{
     BundleKind, RestoreTransaction, stage_install, stage_restore, validate_release,
     validate_snapshot,
@@ -464,6 +465,7 @@ mod tests {
         serde_json::from_reader(&mut file).expect("decode archive entry")
     }
 }
+mod deploy;
 mod release;
 mod restore;
 

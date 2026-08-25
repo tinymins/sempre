@@ -31,16 +31,16 @@ impl BundleKind {
 }
 
 pub struct RestoreTransaction {
-    operations: Vec<Swap>,
-    committed: bool,
+    pub(super) operations: Vec<Swap>,
+    pub(super) committed: bool,
 }
 
-struct Swap {
-    target: PathBuf,
-    staged: Option<PathBuf>,
-    backup: PathBuf,
-    had_target: bool,
-    activated: bool,
+pub(super) struct Swap {
+    pub(super) target: PathBuf,
+    pub(super) staged: Option<PathBuf>,
+    pub(super) backup: PathBuf,
+    pub(super) had_target: bool,
+    pub(super) activated: bool,
 }
 
 pub fn validate_snapshot(root: &Path) -> Result<(), BundleError> {
@@ -128,6 +128,13 @@ fn stage(
 }
 
 impl RestoreTransaction {
+    pub(super) const fn empty() -> Self {
+        Self {
+            operations: Vec::new(),
+            committed: false,
+        }
+    }
+
     pub fn activate(&mut self) -> Result<(), BundleError> {
         for operation in &mut self.operations {
             if let Err(error) = operation.activate() {
@@ -168,7 +175,7 @@ impl Drop for RestoreTransaction {
 }
 
 impl Swap {
-    fn stage(
+    pub(super) fn stage(
         source: &Path,
         target: &Path,
         required: bool,
@@ -231,6 +238,16 @@ impl Swap {
         })
     }
 
+    pub(super) fn prepared(target: &Path, staged: PathBuf) -> Self {
+        Self {
+            target: target.to_path_buf(),
+            backup: unique_sibling(target, "backup"),
+            staged: Some(staged),
+            had_target: false,
+            activated: false,
+        }
+    }
+
     fn activate(&mut self) -> Result<(), BundleError> {
         self.had_target = match self.target.symlink_metadata() {
             Ok(_) => true,
@@ -282,7 +299,7 @@ impl Swap {
     }
 }
 
-fn unique_sibling(target: &Path, kind: &str) -> PathBuf {
+pub(super) fn unique_sibling(target: &Path, kind: &str) -> PathBuf {
     let name = target.file_name().unwrap_or_default().to_string_lossy();
     target.with_file_name(format!(".{name}.sempre-{kind}-{}", Uuid::new_v4()))
 }
@@ -295,7 +312,7 @@ fn rename(source: &Path, target: &Path, operation: &'static str) -> Result<(), B
     })
 }
 
-fn remove_path(path: &Path) -> Result<(), BundleError> {
+pub(super) fn remove_path(path: &Path) -> Result<(), BundleError> {
     let metadata = match path.symlink_metadata() {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
