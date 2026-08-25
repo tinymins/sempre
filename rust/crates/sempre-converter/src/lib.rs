@@ -7,8 +7,9 @@ mod rule_set;
 mod target;
 
 pub use model::{
-    CompileRequest, CompileResult, CustomNode, Diagnostic, FieldDiff, Profile, Proxy, ProxyGroup,
-    SourceSnapshot,
+    CompileRequest, CompileResult, CustomNode, Diagnostic, EditorConfig, FieldDiff, LocalProxy,
+    ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source, SourceSnapshot,
+    TransparentProxy,
 };
 pub use parser::{ParseResult, parse_subscription};
 pub use rule_set::convert_clash_rule_set;

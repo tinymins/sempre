@@ -2084,6 +2084,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-subscription"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "fs2",
+ "rand 0.9.5",
+ "sempre-converter",
+ "sempre-state",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
