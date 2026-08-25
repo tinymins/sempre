@@ -18,8 +18,8 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/api/v1/gateway/validate", post(validate))
         .route("/api/v1/gateway/host-plan", post(host_plan))
         .route("/api/v1/gateway/host-apply", post(host_apply))
-        .route("/api/v1/gateway/dns-query", post(dns_query))
-        .route("/api/v1/gateway/leases/revoke", post(lease_revoke))
+        .route("/api/v1/gateway/dns/query", post(dns_query))
+        .route("/api/v1/gateway/dhcp/leases/revoke", post(lease_revoke))
 }
 
 async fn status(State(state): State<Arc<AppState>>) -> Response {

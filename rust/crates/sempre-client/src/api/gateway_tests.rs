@@ -128,7 +128,7 @@ async fn gateway_runtime_operations_return_domain_errors_without_services() {
     let app = router(state);
     let query = json_request(
         "POST",
-        "/api/v1/gateway/dns-query",
+        "/api/v1/gateway/dns/query",
         r#"{"name":"example.com","type":"INVALID"}"#,
         &token,
     );
@@ -138,7 +138,7 @@ async fn gateway_runtime_operations_return_domain_errors_without_services() {
     );
     let revoke = json_request(
         "POST",
-        "/api/v1/gateway/leases/revoke",
+        "/api/v1/gateway/dhcp/leases/revoke",
         r#"{"mac":"00:01:02:03:04:05"}"#,
         &token,
     );
