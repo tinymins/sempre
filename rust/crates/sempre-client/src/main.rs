@@ -166,6 +166,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Command::Bundle { command } => run_bundle(mode, command).await,
         Command::Service { command } => run_service(command).await,
         Command::Runtime { command } => runtime_cli::run(mode, command, json).await,
+        Command::Update => run_core_update(mode, None).await,
     }
 }
 
@@ -315,6 +316,9 @@ async fn run_core(mode: Mode, command: CoreCommand) -> Result<(), ClientError> {
             };
             println!("{}@{} {action}.", result.core, result.version);
         }
+        CoreCommand::Update { reference } => {
+            return run_core_update(mode, reference.as_deref()).await;
+        }
         CoreCommand::List => {
             let inventory = manager.core_inventory()?;
             if inventory.installed.is_empty() {
@@ -330,6 +334,25 @@ async fn run_core(mode: Mode, command: CoreCommand) -> Result<(), ClientError> {
                 }
             }
         }
+        CoreCommand::Current => {
+            let inventory = manager.core_inventory()?;
+            let selected = inventory.selected.map_or_else(
+                || "none".into(),
+                |value| reference_label(&value.core, value.repository.as_deref(), &value.reference),
+            );
+            let active = inventory.active.map_or_else(
+                || "none".into(),
+                |value| {
+                    format!(
+                        "{} ({})",
+                        reference_label(&value.core, value.repository.as_deref(), &value.reference),
+                        value.version
+                    )
+                },
+            );
+            println!("Selected: {selected}");
+            println!("Active: {active}");
+        }
         CoreCommand::Use { reference } => {
             let change = manager.select_core(&reference).await?;
             println!("{}", change.message);
@@ -343,6 +366,36 @@ async fn run_core(mode: Mode, command: CoreCommand) -> Result<(), ClientError> {
         }
     }
     Ok(())
+}
+
+async fn run_core_update(mode: Mode, reference: Option<&str>) -> Result<(), ClientError> {
+    let manager = Manager::new(Store::new(Layout::for_mode(mode)?))?;
+    for change in manager.update_cores(reference.unwrap_or("")).await? {
+        print_change(&change);
+    }
+    Ok(())
+}
+
+fn print_change(change: &sempre_manager::CoreChange) {
+    if !change.message.is_empty() {
+        println!("{}.", change.message.trim_end_matches('.'));
+    }
+    if !change.previous_detail.is_empty() {
+        println!("Previous: {}", change.previous_detail);
+    }
+    if !change.current_detail.is_empty() {
+        println!("Current: {}", change.current_detail);
+    }
+    if change.needs_restart {
+        println!("Change staged; run 'sempre runtime restart' to apply it to a running core.");
+    }
+}
+
+fn reference_label(core: &str, repository: Option<&str>, reference: &str) -> String {
+    repository.map_or_else(
+        || format!("{core}@{reference}"),
+        |repository| format!("{core}:{repository}@{reference}"),
+    )
 }
 
 async fn run_config(mode: Mode, command: ConfigCommand) -> Result<(), ClientError> {

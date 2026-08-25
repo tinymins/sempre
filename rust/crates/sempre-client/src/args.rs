@@ -78,6 +78,8 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: RuntimeCommand,
     },
+    /// Update every installed core channel.
+    Update,
     /// Print build version information.
     Version,
     #[cfg(windows)]
@@ -101,6 +103,7 @@ impl Arguments {
             },
             Command::Service { command } => !matches!(command, ServiceCommand::Status),
             Command::Runtime { .. } => system,
+            Command::Update => system,
             Command::Version => false,
             #[cfg(windows)]
             Command::ServiceHost => false,
@@ -124,8 +127,12 @@ pub(crate) enum BundleCommand {
 pub(crate) enum CoreCommand {
     /// Install an exact version or stable channel.
     Install { reference: String },
+    /// Update all installed channels or one explicit channel reference.
+    Update { reference: Option<String> },
     /// List installed core versions.
     List,
+    /// Print the selected and active core deployments.
+    Current,
     /// Select an installed core channel or exact version.
     Use { reference: String },
     /// Remove an unreferenced installed core version.
@@ -269,6 +276,29 @@ mod tests {
                 ..
             }
         ));
+        assert!(
+            Arguments::try_parse_from([
+                "sempre",
+                "install",
+                "--subscription=https://example.com/sub",
+                "--subscription-file=subscription.txt",
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn parses_core_update_and_config_import() {
+        let update =
+            Arguments::try_parse_from(["sempre", "core", "update"]).expect("update every channel");
+        assert!(matches!(
+            update.command,
+            Command::Core {
+                command: CoreCommand::Update { reference: None }
+            }
+        ));
+        let update = Arguments::try_parse_from(["sempre", "update"]).expect("global update");
+        assert!(matches!(update.command, Command::Update));
         let import = Arguments::try_parse_from([
             "sempre",
             "--portable",
@@ -283,15 +313,6 @@ mod tests {
                 command: ConfigCommand::Import { .. }
             }
         ));
-        assert!(
-            Arguments::try_parse_from([
-                "sempre",
-                "install",
-                "--subscription=https://example.com/sub",
-                "--subscription-file=subscription.txt",
-            ])
-            .is_err()
-        );
     }
 
     #[test]
