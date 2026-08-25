@@ -28,6 +28,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         Err(error) => return internal(error.to_string()),
     };
     let layout = state.manager.store().layout();
+    let ui_installed = sempre_ui::Store::new(&layout.ui).current().is_ok();
     let mode = match layout.mode {
         sempre_state::Mode::System => "system",
         sempre_state::Mode::Portable => "portable",
@@ -67,7 +68,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
             "password_warning": !web.password_protected(),
         },
         "ui": {
-            "installed": false,
+            "installed": ui_installed,
             "metadata": null,
         },
         "capabilities": {},

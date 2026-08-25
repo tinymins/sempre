@@ -5,6 +5,7 @@ mod daemon;
 mod runtime_api;
 mod subscription_api;
 mod system_api;
+mod web_ui_api;
 
 use std::io;
 

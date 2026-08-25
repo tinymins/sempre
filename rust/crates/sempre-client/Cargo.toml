@@ -20,17 +20,19 @@ sempre-manager = { path = "../sempre-manager" }
 sempre-network = { path = "../sempre-network" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }
+sempre-ui = { path = "../sempre-ui" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-tower.workspace = true
 
 [lints]
 workspace = true

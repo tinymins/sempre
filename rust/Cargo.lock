@@ -2058,12 +2058,14 @@ dependencies = [
  "sempre-network",
  "sempre-state",
  "sempre-subscription",
+ "sempre-ui",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
  "tower",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -2227,6 +2229,17 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "sempre-ui"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
