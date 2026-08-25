@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use sempre_state::Mode;
 
 use crate::{VERSION, runtime_args::RuntimeCommand};
@@ -328,6 +328,14 @@ pub(crate) enum ServiceCommand {
         #[arg(long)]
         yes: bool,
     },
+    /// Deploy one component from portable mode into an existing system service.
+    Deploy {
+        #[arg(value_enum)]
+        component: ServiceDeployComponent,
+        /// Replace different system data without prompting.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Remove the native service registration while retaining Sempre data.
     Uninstall,
     /// Start the native service.
@@ -338,6 +346,25 @@ pub(crate) enum ServiceCommand {
     Restart,
     /// Print the native service state.
     Status,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub(crate) enum ServiceDeployComponent {
+    All,
+    Core,
+    Bin,
+    Data,
+}
+
+impl From<ServiceDeployComponent> for sempre_manager::DeployComponent {
+    fn from(value: ServiceDeployComponent) -> Self {
+        match value {
+            ServiceDeployComponent::All => Self::All,
+            ServiceDeployComponent::Core => Self::Core,
+            ServiceDeployComponent::Bin => Self::Bin,
+            ServiceDeployComponent::Data => Self::Data,
+        }
+    }
 }
 
 #[cfg(test)]

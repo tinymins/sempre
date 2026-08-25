@@ -188,7 +188,7 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
         Command::Web { command } => web_ui_cli::run_web(mode, command, json).await,
         Command::Ui { command } => web_ui_cli::run_ui(mode, command, json).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
-        Command::Service { command } => run_service(command).await,
+        Command::Service { command } => run_service(mode, command).await,
         Command::Portable { command } => match command {
             PortableCommand::Run => portable_cli::run(mode).await,
             PortableCommand::Enable => portable_cli::set_marker(true),
@@ -205,7 +205,7 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
     }
 }
 
-async fn run_service(command: ServiceCommand) -> Result<(), ClientError> {
+async fn run_service(mode: Mode, command: ServiceCommand) -> Result<(), ClientError> {
     match command {
         ServiceCommand::Install { yes } => {
             run_install(
@@ -219,6 +219,20 @@ async fn run_service(command: ServiceCommand) -> Result<(), ClientError> {
                 },
             )
             .await
+        }
+        ServiceCommand::Deploy { component, yes } => {
+            if mode != Mode::Portable {
+                return Err(ClientError::Runtime(
+                    "service deploy is only available in portable mode".into(),
+                ));
+            }
+            let source = Layout::for_mode(mode)?;
+            let target = Layout::for_mode(Mode::System)?;
+            let manager = Manager::new(Store::new(source))?;
+            let component = sempre_manager::DeployComponent::from(component);
+            manager.deploy_component(&target, component, yes).await?;
+            println!("System service {} deployment completed.", component.name());
+            Ok(())
         }
         ServiceCommand::Uninstall => {
             let layout = Layout::for_mode(Mode::System)?;

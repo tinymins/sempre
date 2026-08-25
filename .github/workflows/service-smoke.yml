@@ -57,6 +57,10 @@ jobs:
             return 1
           }
           wait_runtime running running
+          sudo ./smoke/sempre --portable service deploy core | grep -q 'core deployment completed'
+          wait_runtime running running
+          sudo ./smoke/sempre --portable service deploy data | grep -q 'data deployment completed'
+          wait_runtime running running
           sudo ./smoke/sempre --system runtime stop >/dev/null
           wait_runtime stopped stopped
           sudo ./smoke/sempre --portable service restart
@@ -100,6 +104,12 @@ jobs:
             }
             throw "managed core did not reach ${Desired}/${State}: $runtimeStatus"
           }
+          Wait-RuntimeState running running
+          $coreDeploy = ./smoke/sempre.exe --portable service deploy core | Out-String
+          if ($coreDeploy -notmatch 'core deployment completed') { throw "core deployment failed: $coreDeploy" }
+          Wait-RuntimeState running running
+          $dataDeploy = ./smoke/sempre.exe --portable service deploy data | Out-String
+          if ($dataDeploy -notmatch 'data deployment completed') { throw "data deployment failed: $dataDeploy" }
           Wait-RuntimeState running running
           ./smoke/sempre.exe --system runtime stop | Out-Null
           Wait-RuntimeState stopped stopped

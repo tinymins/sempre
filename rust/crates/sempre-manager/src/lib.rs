@@ -1,6 +1,7 @@
 mod application_uninstall;
 mod auto_config;
 mod bundle;
+mod component_deploy;
 mod config;
 mod context;
 mod custom_node;
@@ -42,6 +43,7 @@ pub use inventory::{CoreInventory, InstalledCore};
 pub use lifecycle::CoreChange;
 pub use process::{ProcessRunner, ValidationRunner, VersionRunner};
 pub use runtime::{RuntimeActionAvailability, RuntimeActions, RuntimeDeployment, RuntimeStatus};
+pub use sempre_bundle::DeployComponent;
 pub use sempre_bundle::Export as BundleExport;
 pub use service_deploy::uninstall_system_service;
 pub use subscription::SubscriptionRender;

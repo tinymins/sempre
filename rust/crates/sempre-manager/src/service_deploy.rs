@@ -99,7 +99,7 @@ impl<R: VersionRunner> Manager<R> {
     }
 }
 
-fn require_replacement_confirmation(
+pub(super) fn require_replacement_confirmation(
     source: &Layout,
     target: &Layout,
     allow_replace: bool,
@@ -155,7 +155,7 @@ fn same_file(left: &Path, right: &Path) -> Result<bool, ManagerError> {
     Ok(left == right)
 }
 
-async fn restore_registration_after_rollback(target: &Layout, previous: State) {
+pub(super) async fn restore_registration_after_rollback(target: &Layout, previous: State) {
     if previous == State::NotInstalled {
         let _ = sempre_service::uninstall().await;
     } else {
@@ -164,7 +164,7 @@ async fn restore_registration_after_rollback(target: &Layout, previous: State) {
     }
 }
 
-async fn restore_service_state(previous: State) {
+pub(super) async fn restore_service_state(previous: State) {
     if matches!(previous, State::Running | State::StartPending) {
         let _ = sempre_service::start().await;
     } else if matches!(previous, State::Stopped | State::StopPending) {
@@ -173,7 +173,7 @@ async fn restore_service_state(previous: State) {
 }
 
 #[cfg(unix)]
-fn prepare_command_registration(layout: &Layout) -> Result<(), ManagerError> {
+pub(super) fn prepare_command_registration(layout: &Layout) -> Result<(), ManagerError> {
     match fs::read_link(&layout.command_executable) {
         Ok(target) if target == layout.service_executable => Ok(()),
         Ok(_) => Err(ManagerError::InvalidOperation(format!(
@@ -192,7 +192,7 @@ fn prepare_command_registration(layout: &Layout) -> Result<(), ManagerError> {
 }
 
 #[cfg(unix)]
-fn register_command(layout: &Layout) -> Result<bool, ManagerError> {
+pub(super) fn register_command(layout: &Layout) -> Result<bool, ManagerError> {
     if fs::read_link(&layout.command_executable).is_ok() {
         return Ok(false);
     }
@@ -227,12 +227,12 @@ pub(super) fn unregister_command(layout: &Layout) -> Result<(), ManagerError> {
 }
 
 #[cfg(windows)]
-fn prepare_command_registration(_: &Layout) -> Result<(), ManagerError> {
+pub(super) fn prepare_command_registration(_: &Layout) -> Result<(), ManagerError> {
     Ok(())
 }
 
 #[cfg(windows)]
-fn register_command(_: &Layout) -> Result<bool, ManagerError> {
+pub(super) fn register_command(_: &Layout) -> Result<bool, ManagerError> {
     Ok(false)
 }
 

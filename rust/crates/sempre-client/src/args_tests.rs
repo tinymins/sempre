@@ -266,4 +266,18 @@ fn administrator_boundary_matches_mutating_system_commands() {
     let portable_enable =
         Arguments::try_parse_from(["sempre", "portable", "enable"]).expect("portable enable");
     assert!(!portable_enable.requires_administrator(Mode::System));
+
+    let deploy =
+        Arguments::try_parse_from(["sempre", "--portable", "service", "deploy", "data", "--yes"])
+            .expect("service data deploy");
+    assert!(deploy.requires_administrator(Mode::Portable));
+    assert!(matches!(
+        deploy.command,
+        Command::Service {
+            command: ServiceCommand::Deploy {
+                component: ServiceDeployComponent::Data,
+                yes: true,
+            }
+        }
+    ));
 }
