@@ -2,7 +2,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use thiserror::Error;
 
-use crate::{Capabilities, CommandSpec, CompilerTarget, Definition, RunSpec, Stability, Target};
+use crate::{
+    AssetSelection, Capabilities, CommandSpec, CompilerTarget, Definition, RunSpec, Stability,
+    Target,
+};
 
 pub trait Adapter: Send + Sync {
     fn id(&self) -> &'static str;
@@ -10,6 +13,11 @@ pub trait Adapter: Send + Sync {
     fn definition(&self) -> Definition;
     fn capabilities(&self, version: Option<&str>, target: &Target) -> Capabilities;
     fn executable_name(&self, target: &Target) -> Result<String, RegistryError>;
+    fn package_assets(
+        &self,
+        version: &str,
+        target: &Target,
+    ) -> Result<AssetSelection, RegistryError>;
     fn version_command(&self, binary: &str) -> CommandSpec;
     fn parse_version(&self, output: &str) -> Result<String, RegistryError>;
     fn compiler_target(

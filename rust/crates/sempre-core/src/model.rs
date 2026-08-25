@@ -86,6 +86,12 @@ pub struct Package {
     pub format: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetSelection {
+    pub names: Vec<String>,
+    pub format: String,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CommandSpec {
     pub program: PathBuf,

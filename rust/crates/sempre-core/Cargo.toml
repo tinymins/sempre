@@ -7,6 +7,7 @@ license.workspace = true
 description = "External proxy-core contracts, capabilities, and command planning"
 
 [dependencies]
+regex.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
