@@ -2,6 +2,7 @@
 members = [
     "crates/sempre-artifact",
     "crates/sempre-bundle",
+    "crates/sempre-build",
     "crates/sempre-converter",
     "crates/sempre-converter-cli",
     "crates/sempre-client",

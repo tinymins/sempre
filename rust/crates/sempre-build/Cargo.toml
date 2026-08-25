@@ -1,0 +1,32 @@
+[package]
+name = "sempre-build"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Native Rust release builder for Sempre"
+
+[[bin]]
+name = "sempre-build"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+clap.workspace = true
+sempre-artifact = { path = "../sempre-artifact" }
+sempre-bundle = { path = "../sempre-bundle" }
+sempre-control = { path = "../sempre-control" }
+sempre-core = { path = "../sempre-core" }
+sempre-state = { path = "../sempre-state" }
+sempre-subscription = { path = "../sempre-subscription" }
+sempre-tunnel = { path = "../sempre-tunnel" }
+sempre-ui = { path = "../sempre-ui" }
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true
