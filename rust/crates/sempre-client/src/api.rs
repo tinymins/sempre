@@ -51,6 +51,8 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/auth/login", post(login))
         .route("/api/v1/cores", get(cores))
         .route("/api/v1/cores/install", post(core_install))
+        .route("/api/v1/cores/use", post(core_use))
+        .route("/api/v1/cores/remove", post(core_remove))
         .layer(middleware::from_fn_with_state(state.clone(), security))
         .with_state(state)
 }
@@ -194,6 +196,34 @@ async fn core_install(
         Err(error) => api_error(
             StatusCode::BAD_REQUEST,
             "CORE_INSTALL_FAILED",
+            error.to_string(),
+        ),
+    }
+}
+
+async fn core_use(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<CoreInstallInput>,
+) -> Response {
+    match state.manager.select_core(&input.reference).await {
+        Ok(change) => Json(change).into_response(),
+        Err(error) => api_error(
+            StatusCode::BAD_REQUEST,
+            "CORE_SELECTION_FAILED",
+            error.to_string(),
+        ),
+    }
+}
+
+async fn core_remove(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<CoreInstallInput>,
+) -> Response {
+    match state.manager.remove_core(&input.reference) {
+        Ok(change) => Json(change).into_response(),
+        Err(error) => api_error(
+            StatusCode::BAD_REQUEST,
+            "CORE_REMOVE_FAILED",
             error.to_string(),
         ),
     }

@@ -67,14 +67,34 @@ impl Store {
     where
         F: FnOnce(&mut Document) -> Result<(), StateValidationError>,
     {
-        self.with_lock(|| {
+        self.update_checked(|document| {
+            update(document)?;
+            Ok(())
+        })
+    }
+
+    pub fn update_checked<E, F>(&self, update: F) -> Result<Document, E>
+    where
+        E: From<StateError>,
+        F: FnOnce(&mut Document) -> Result<(), E>,
+    {
+        let file = open_lock(&self.layout.state_lock).map_err(E::from)?;
+        file.lock_exclusive()
+            .map_err(StateError::Lock)
+            .map_err(E::from)?;
+        let result = (|| {
             let mut document = self.read_unlocked()?;
             update(&mut document)?;
             document.updated_at = Utc::now();
-            document.validate()?;
+            document
+                .validate()
+                .map_err(StateError::from)
+                .map_err(E::from)?;
             self.write_unlocked(&document)?;
             Ok(document)
-        })
+        })();
+        let _ = file.unlock();
+        result
     }
 
     pub fn acquire_instance(&self) -> Result<Lease, StateError> {
@@ -197,5 +217,26 @@ mod tests {
             store.read(),
             Err(StateError::Validate(StateValidationError::Schema(99)))
         ));
+    }
+
+    #[test]
+    fn checked_update_preserves_state_when_domain_validation_fails() {
+        #[derive(Debug, thiserror::Error)]
+        enum TestError {
+            #[error(transparent)]
+            State(#[from] StateError),
+            #[error("rejected")]
+            Rejected,
+        }
+
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let store = Store::new(Layout::at(temporary.path()));
+        let initial = store.initialize().expect("initialize state");
+        let result = store.update_checked(|document| {
+            document.desired_state = DesiredState::Stopped;
+            Err(TestError::Rejected)
+        });
+        assert!(matches!(result, Err(TestError::Rejected)));
+        assert_eq!(store.read().expect("read state"), initial);
     }
 }

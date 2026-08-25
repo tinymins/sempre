@@ -156,3 +156,69 @@ async fn cross_origin_login_requires_an_administrator_password() {
         StatusCode::FORBIDDEN
     );
 }
+
+#[tokio::test]
+async fn authenticated_core_selection_uses_the_manager_transaction() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    state
+        .manager
+        .store()
+        .update(|document| {
+            let source = &mut document.core_mut("sing-box").default;
+            source.installed.insert(
+                "1.2.3".into(),
+                sempre_state::Installation {
+                    explicit: false,
+                    digest: "a".repeat(64),
+                    source: "https://example.invalid/sing-box.zip".into(),
+                    installed_at: chrono::Utc::now(),
+                },
+            );
+            source.channels.insert("stable".into(), "1.2.3".into());
+            Ok(())
+        })
+        .expect("seed installation");
+    let app = router(state);
+    let mut select = request(
+        "POST",
+        "/api/v1/cores/use",
+        Body::from(r#"{"reference":"sing-box@stable"}"#),
+        "127.0.0.1:1",
+    );
+    select.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    select.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(select).await.expect("select core");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let value: serde_json::Value = serde_json::from_slice(&body).expect("change JSON");
+    assert_eq!(value["Changed"], true);
+    assert_eq!(value["NeedsRestart"], false);
+
+    let mut remove = request(
+        "POST",
+        "/api/v1/cores/remove",
+        Body::from(r#"{"reference":"sing-box@1.2.3"}"#),
+        "127.0.0.1:1",
+    );
+    remove.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    remove.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    assert_eq!(
+        app.oneshot(remove).await.expect("remove core").status(),
+        StatusCode::BAD_REQUEST
+    );
+}

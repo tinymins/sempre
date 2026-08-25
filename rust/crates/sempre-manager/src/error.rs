@@ -31,6 +31,17 @@ pub enum ManagerError {
     },
     #[error("{0} version command timed out after 30 seconds")]
     VersionTimeout(String),
+    #[error("{core} {operation} timed out after 30 seconds")]
+    CommandTimeout {
+        core: String,
+        operation: &'static str,
+    },
+    #[error("{core} rejected the configuration with {status}: {output}")]
+    ValidationCommand {
+        core: String,
+        status: String,
+        output: String,
+    },
     #[error("downloaded {core} reports version {actual}, expected {expected}")]
     VersionMismatch {
         core: String,
@@ -44,6 +55,24 @@ pub enum ManagerError {
         reference: String,
         existing: String,
         candidate: String,
+    },
+    #[error("{0} is not installed; install it first")]
+    NotInstalled(String),
+    #[error("cannot remove {reference}: it is {usage}")]
+    CoreInUse {
+        reference: String,
+        usage: &'static str,
+    },
+    #[error("core state changed while {operation} {reference}; retry the command")]
+    CoreStateChanged {
+        operation: &'static str,
+        reference: String,
+    },
+    #[error("candidate {reference} rejected the active configuration: {source}")]
+    CandidateRejected {
+        reference: String,
+        #[source]
+        source: Box<ManagerError>,
     },
 }
 

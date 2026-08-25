@@ -88,6 +88,17 @@ async fn run_core(mode: Mode, command: CoreCommand) -> Result<(), ClientError> {
                 }
             }
         }
+        CoreCommand::Use { reference } => {
+            let change = manager.select_core(&reference).await?;
+            println!("{}", change.message);
+            if !change.current_detail.is_empty() {
+                println!("{}", change.current_detail);
+            }
+        }
+        CoreCommand::Remove { reference } => {
+            let change = manager.remove_core(&reference)?;
+            println!("{}", change.message);
+        }
     }
     Ok(())
 }

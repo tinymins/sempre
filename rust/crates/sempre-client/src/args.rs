@@ -36,6 +36,10 @@ pub(crate) enum CoreCommand {
     Install { reference: String },
     /// List installed core versions.
     List,
+    /// Select an installed core channel or exact version.
+    Use { reference: String },
+    /// Remove an unreferenced installed core version.
+    Remove { reference: String },
 }
 
 #[cfg(test)]
@@ -70,6 +74,14 @@ mod tests {
         assert!(matches!(
             daemon.command,
             Command::Daemon { listen: Some(_) }
+        ));
+        let select = Arguments::try_parse_from(["sempre", "core", "use", "sing-box@stable"])
+            .expect("core use");
+        assert!(matches!(
+            select.command,
+            Command::Core {
+                command: CoreCommand::Use { .. }
+            }
         ));
     }
 }
