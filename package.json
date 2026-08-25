@@ -16,7 +16,7 @@
     "test": "bun --cwd=ui run test && bun --cwd=site run test && sh installer/install_test.sh",
     "build:ui": "bun --cwd=ui run build",
     "build:site": "bun --cwd=site run build",
-    "build": "go run ./cmd/build",
+    "build": "cargo run --manifest-path=rust/Cargo.toml -p sempre-build --",
     "build:server": "cargo build --manifest-path=rust/Cargo.toml --release -p sempre-server"
   }
 }

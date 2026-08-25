@@ -31,7 +31,10 @@ use sempre_subscription::SubscriptionError;
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
-pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub(crate) const VERSION: &str = match option_env!("SEMPRE_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 #[derive(Debug, Error)]
 pub(crate) enum ClientError {
