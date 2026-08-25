@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use sempre_converter::{
     CompileRequest, FieldDiff, ParseResult, PreviewNode, Profile, Source, Target, compile,
-    parse_subscription, preview_nodes,
+    parse_subscription, preview_nodes, trace_node_steps,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -91,6 +91,27 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 ))
                 .into()
             })
+    }
+
+    pub async fn trace_subscription_node_steps(
+        &self,
+        id: &str,
+        name: &str,
+        format: &str,
+    ) -> Result<serde_json::Value, ManagerError> {
+        let _operation = self.store.acquire_operation()?;
+        let catalog = self.subscriptions.read()?;
+        let profile = find_profile(&catalog, id)?.clone();
+        if profile_mode(&profile) == "remote" {
+            return Err(sempre_subscription::SubscriptionError::Invalid(
+                "remote profiles do not expose editable node traces".into(),
+            )
+            .into());
+        }
+        let request = self
+            .load_profile_request(profile, catalog.custom_nodes, Target::parse(format)?, true)
+            .await?;
+        Ok(trace_node_steps(&request, name)?)
     }
 
     pub async fn test_subscription_source(
@@ -189,6 +210,11 @@ mod tests {
             .await
             .expect("trace");
         assert!(trace.represented);
+        let steps = manager
+            .trace_subscription_node_steps(&profile_id, "edge", "sing-box-v13")
+            .await
+            .expect("trace steps");
+        assert_eq!(steps["steps"][6]["type"], "convert");
         let tested = manager
             .test_subscription_source(
                 serde_json::from_value(json!({

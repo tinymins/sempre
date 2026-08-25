@@ -12,7 +12,7 @@ pub use defaults::{
     Defaults, EditorDefaults, effective_profile, recommended_defaults, recommended_editor_defaults,
     system_defaults,
 };
-pub use inspection::{PreviewNode, preview_nodes};
+pub use inspection::{PreviewNode, preview_nodes, trace_node_steps};
 pub use model::{
     CompileRequest, CompileResult, CustomNode, Diagnostic, EditorConfig, FieldDiff, LocalProxy,
     ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source, SourceSnapshot,
@@ -41,6 +41,8 @@ pub enum CompileError {
     InvalidCustomNode(String),
     #[error("invalid editor field {field:?}: {detail}")]
     InvalidEditor { field: &'static str, detail: String },
+    #[error("inspect subscription nodes: {0}")]
+    Inspection(String),
     #[error("render output failed: {0}")]
     Render(String),
 }

@@ -20,6 +20,7 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
             post(preview_nodes),
         )
         .route("/api/v1/subscriptions/{id}/trace", post(trace))
+        .route("/api/v1/subscriptions/{id}/trace-node", post(trace_node))
         .route("/api/v1/subscriptions/source/test", post(source_test))
 }
 
@@ -82,6 +83,21 @@ async fn trace(
     match state
         .manager
         .trace_subscription_node(&id, &input.name, &input.format)
+        .await
+    {
+        Ok(trace) => Json(trace).into_response(),
+        Err(error) => operation(error.to_string()),
+    }
+}
+
+async fn trace_node(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<TraceInput>,
+) -> Response {
+    match state
+        .manager
+        .trace_subscription_node_steps(&id, &input.name, &input.format)
         .await
     {
         Ok(trace) => Json(trace).into_response(),
