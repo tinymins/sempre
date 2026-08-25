@@ -4,11 +4,11 @@ This workspace contains the shared subscription converter, the multi-user Sempre
 
 The converter is a pure boundary: `Profile + SourceSnapshot + Target -> CompileResult`. It does not perform HTTP requests, database access, environment reads, or process management. `sempre-server` owns authentication, PostgreSQL persistence, SSRF-safe source fetching, last-known-good snapshots, artifacts, memberships, and public share manifests. It does not install, start, or supervise proxy cores.
 
-`sempre-state` owns the new Rust client's filesystem layout, validated persistent state, atomic writes, and single-instance leases. The Rust client intentionally starts with a new state schema; the project-level backend rewrite does not migrate legacy Go state.
+`sempre-state` owns the client's filesystem layout, validated persistent state, atomic writes, and single-instance leases. The project does not migrate state from pre-Rust releases.
 
-`sempre-client` produces the replacement `sempre` binary. Its current migration slice owns mode selection, state initialization, single-instance enforcement, signal shutdown, and the public health endpoint. It is not wired into release artifacts until the protected local API and core lifecycle have migrated.
+`sempre-client` produces the release `sempre` binary and owns the CLI, local API, native service lifecycle, core supervision, subscription scheduling, tunnels, gateway services, and transparent-network orchestration.
 
-The integration boundary and current local-compiler migration gate are tracked
+The shared local/server conversion boundary is documented
 in [`docs/rust-subscription-integration.md`](../docs/rust-subscription-integration.md).
 
 ## Local server

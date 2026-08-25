@@ -24,7 +24,7 @@ SagerNet, Project X, MetaCubeX, or their respective projects.
 ## Why
 
 Sempre replaces platform-specific wrapper scripts and third-party service
-hosts with one Go binary and a separately replaceable Web UI:
+hosts with one Rust binary and a separately replaceable Web UI:
 
 ```text
 Browser / CLI
@@ -280,10 +280,10 @@ without fetching remote sources. Explicit and scheduled subscription refreshes
 update remote snapshots and make the other cores' compiled configurations
 stale until they are selected again.
 
-The Go conversion pipeline accepts Clash YAML/JSON proxy lists and lenient
+The shared Rust conversion pipeline accepts Clash YAML/JSON proxy lists and lenient
 Base64 URI subscriptions. It parses VLESS, VMess, Shadowsocks, Trojan,
 Hysteria, Hysteria 2, TUIC, and AnyTLS nodes, then produces Clash, Clash Meta,
-or sing-box v1.11/v1.12/v1.13 configurations. Linux gateway profiles default
+clash-rs, sing-box v1.11-v1.14, Xray, V2Ray, or dae configurations. Linux gateway profiles default
 to TUN router mode. The selected core version and host platform choose the
 format used for an active profile. Rule-provider YAML is fetched
 and embedded for sing-box, so generated configurations do not depend on a
@@ -296,11 +296,11 @@ Each subscription response is limited to 32 MiB and may be downloaded through
 HTTP or HTTPS. Redirects remain restricted to those schemes. Fetches retry up
 to three times and use a persistent last-known-good cache keyed by URL,
 User-Agent, and fetch mode. Raw responses and generated configurations are
-stored by content hash. With a selected core, a save must also pass that real
-core's configuration check before it is staged. Failed downloads, conversion,
-validation, resolve, or startup retain the previous deployment. Subscription
-data is stored with restricted permissions and URLs are omitted from normal
-status output and logs.
+stored by content hash. Profile edits are persisted locally without fetching,
+compiling, or validating a core; explicit refresh or runtime startup performs
+that work. Failed downloads, conversion, validation, resolve, or startup retain
+the previous deployment. Subscription data uses restricted permissions and URLs
+are omitted from normal status output and logs.
 
 Automatic checks for enabled URL sources in the active profile run every 24
 hours by default. The global interval has a five-minute minimum. A changed
@@ -557,25 +557,22 @@ bun start
 
 The aggregated command prints prefixed logs and serves the development API at
 `http://127.0.0.1:33212`, the control UI at `http://127.0.0.1:5173`, and the
-website at `http://127.0.0.1:4174`. The frontend projects use Vite HMR; Go
-changes are rebuilt and restarted automatically. See
+website at `http://127.0.0.1:4174`. The frontend projects use Vite HMR; Cargo
+Watch rebuilds and restarts the Rust development daemon. See
 [`DEVELOPMENT.md`](DEVELOPMENT.md) for isolated-state behavior, individual
 commands, debugging, and validation.
 
 ## Build
 
-Go 1.25 or newer and Bun 1.3.14 are required. The backend build is pure Go and
-uses `CGO_ENABLED=0`.
+Rust 1.95 or newer and Bun 1.3.14 are required.
 
 ```text
 bun bootstrap
 bun run lint
 bun run tsc
 bun run test
-go test ./...
-go test -race ./...
-go vet ./...
-go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+cargo test --manifest-path=rust/Cargo.toml --workspace
+cargo clippy --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings
 bun run build
 ```
 
@@ -587,8 +584,8 @@ stable sing-box, Mihomo, Xray, and V2Ray snapshots for their target platform.
 Windows resources use an `asInvoker` manifest; UAC is requested at runtime only
 for privileged commands.
 
-Tagged release builds use Go 1.25.13, derive their embedded build date from the
-Git commit timestamp, publish per-target CycloneDX SBOMs, and attach GitHub
+Tagged release builds use Rust 1.95, derive reproducible metadata from the Git
+revision, publish per-target CycloneDX SBOMs, and attach GitHub
 artifact attestations. Release binaries are currently unsigned at the operating
 system level.
 

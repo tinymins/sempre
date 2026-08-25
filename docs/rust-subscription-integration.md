@@ -35,25 +35,15 @@ activation, rollback, and runtime lifecycle.
 | Remote client | Implemented | Same-origin artifact enforcement, exact target/hash verification, read-only local display, server edit link, local validation/staging path |
 | Site operations | Implemented | Artifact preview and diagnostics, custom-node management, membership/share management, artifact access counts |
 
-## Migration gate
+## Local integration
 
-The local Sempre profile compiler remains the existing Go compiler. It is not
-silently switched to the Rust CLI in this change. The Go compiler currently has
-deeper native DNS, transparent-network, and private-access mappings, while the
-release builder does not yet package a cross-platform `sempre-converter`
-worker. Replacing it before both conditions are fixed would regress existing
-local profiles.
+The local daemon and multi-user server now call `sempre-converter` as a Rust
+library. There is no worker process or fallback compiler. The same profile,
+snapshot, custom-node, and target contract therefore produces both local and
+published artifacts.
 
-The local backend may switch only after all of these checks pass:
-
-1. Rust output is fixture-equivalent to the Go compiler for the complete
-   semantic field matrix in `docs/core-capability-matrix.md`.
-2. The release builder packages and verifies the worker for every supported OS
-   and architecture.
-3. Local compilation fails explicitly on a missing or incompatible worker; it
-   never silently falls back and produces a different artifact.
-4. Existing core-binary validation, staging, activation, and rollback tests pass
-   unchanged against Rust-produced artifacts.
-
-This gate keeps the shared-core direction explicit without misrepresenting a
-remote/server milestone as a completed local compiler replacement.
+Local profile saves remain persistence-only. Explicit refresh and runtime
+startup fetch snapshots, compile with the shared core, validate against the
+selected external core binary, and atomically stage the result. Missing inputs
+or validation failures preserve the saved draft and the last working runtime
+deployment.

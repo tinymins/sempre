@@ -1,17 +1,18 @@
 # Project Context and Stack
 
-Sempre is a cross-platform Go service and CLI that manages proxy cores, generated configurations, persisted state, native services, and the authenticated Web control plane on Windows, Linux, and macOS.
+Sempre is a cross-platform Rust service and CLI that manages proxy cores, generated configurations, persisted state, native services, and the authenticated Web control plane on Windows, Linux, and macOS. The same workspace also contains a core-free multi-user subscription server.
 
-- Go 1.25 or newer implements the CLI, daemon, core lifecycle, platform integration, and build tooling.
+- Rust 1.95 or newer implements the CLI, daemon, shared converter, multi-user server, core lifecycle, platform integration, and build tooling.
 - Bun 1.3.14 drives repository orchestration and the frontend toolchains.
 - `ui/` is the official React, TypeScript, Vite, and Tailwind CSS v4 control UI.
 - `site/` is an independent TypeScript and Vite static website; it does not use the React component library or control-plane application architecture.
 
 ## Architecture and Ownership
 
-- `cmd/sempre` is the production entry point, while `cmd/develop` provides the isolated development entry point and `cmd/build` owns release artifact assembly.
-- `internal/app` owns application orchestration and the Web API. Core capabilities, subscription parsing, and configuration compilation belong in `internal/core` and `internal/subscription` rather than UI or transport handlers.
-- `internal/supervisor` owns managed-process lifecycle. Native service, filesystem layout, elevation, and transparent-network behavior belong in their platform integration packages.
+- `rust/crates/sempre-client` owns the production CLI, local daemon, authenticated Web API, core lifecycle, native service integration, and platform orchestration.
+- `rust/crates/sempre-converter` owns pure subscription parsing and configuration compilation. It must remain free of HTTP, persistence, environment, and process-management side effects.
+- `rust/crates/sempre-server` owns the core-free multi-user service, authentication, persistence, fetching, published artifacts, memberships, and shares. It must never install or start a proxy core.
+- `rust/crates/sempre-state` owns local filesystem layout and persistent state. `rust/crates/sempre-build` owns release artifact assembly.
 - `ui/` consumes the versioned control-plane API and owns authenticated control experiences. `site/` is public presentation and must remain independent of daemon state and APIs.
 - Keep canonical state and configuration ownership at the existing domain boundary. Do not duplicate business rules across the CLI, API, UI, or individual core adapters.
 - For platform-sensitive changes, inspect the Windows, Linux, macOS, Unix, and fallback implementations that share the affected contract. Do not make a single-platform fix that silently breaks another supported target.
@@ -35,7 +36,7 @@ Sempre is a cross-platform Go service and CLI that manages proxy cores, generate
 
 ## Code Organization
 
-- Keep every handwritten source file at or below 500 physical lines. This limit includes handwritten tests and applies to Go, TypeScript, TSX, JavaScript, JSX, CSS, and other handwritten source formats.
+- Keep every handwritten source file at or below 500 physical lines. This limit includes handwritten tests and applies to Rust, TypeScript, TSX, JavaScript, JSX, CSS, and other handwritten source formats.
 - Generated files, lockfiles, build artifacts, and third-party code are excluded from the 500-line limit.
 - Existing files above 500 lines are grandfathered but may only shrink. A change must not increase their physical line count.
 - When a task would otherwise grow an oversized file, place the new responsibility in a cohesive module instead of extending the existing file. Do not perform unrelated splitting or refactoring.
@@ -44,8 +45,7 @@ Sempre is a cross-platform Go service and CLI that manages proxy cores, generate
 
 - Define verifiable success criteria before implementation and use the narrowest meaningful checks while iterating.
 - After every code change, run both `bun run lint` and `bun run tsc` before reporting completion.
-- Run focused tests for the affected behavior. For cross-module or platform-boundary Go changes, run `go test ./...` and `go vet ./...`.
-- Run `go test -race ./...` for concurrency, managed-process lifecycle, or native service-management changes.
+- Run focused tests for the affected behavior. For Rust changes, run `bun run rust:lint` and `bun run rust:test`; use platform-native CI for OS-specific service and network behavior.
 - Run the relevant Vitest suite for `ui/` or `site/` behavior, and perform browser verification when rendered appearance or interaction is part of the requested outcome.
 - Run `bun run build` for release, packaged-resource, export, bundling, or cross-platform artifact changes.
 - Documentation-only changes require content review and `git diff --check`; do not run product builds or test suites for them.
@@ -62,5 +62,5 @@ Sempre is a cross-platform Go service and CLI that manages proxy cores, generate
 
 ## Development Servers
 
-- Use the repository-level `bun start` process for local development. It runs the Go development server through Air and both frontend projects through Vite.
-- Do not restart running backend or frontend development processes after code changes. Air rebuilds and restarts the Go process, while the `ui/` and `site/` Vite servers use HMR.
+- Use the repository-level `bun start` process for local development. It runs the Rust development daemon through Cargo Watch and both frontend projects through Vite.
+- Do not restart running backend or frontend development processes after code changes. Cargo Watch rebuilds and restarts the Rust process, while the `ui/` and `site/` Vite servers use HMR.
