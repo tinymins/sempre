@@ -3,6 +3,7 @@ mod args;
 mod core_management_api;
 mod custom_node_api;
 mod daemon;
+mod gateway_api;
 mod listener;
 mod runtime_api;
 mod runtime_control_api;

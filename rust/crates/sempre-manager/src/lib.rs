@@ -3,6 +3,7 @@ mod config;
 mod context;
 mod custom_node;
 mod error;
+mod gateway;
 mod install;
 mod inventory;
 mod lifecycle;
@@ -49,6 +50,7 @@ pub struct Manager<R = ProcessRunner> {
     subscriptions: SubscriptionStore,
     fetcher: Fetcher,
     remote: RemoteClient,
+    gateway: sempre_gateway::Store,
     runtime_reload: Arc<Notify>,
     subscription_schedule_changed: Arc<Notify>,
     tunnels: Arc<TunnelController>,
@@ -67,6 +69,8 @@ impl<R: VersionRunner> Manager<R> {
         subscriptions.initialize()?;
         let fetcher = Fetcher::new(subscriptions.clone())?;
         let remote = RemoteClient::new()?;
+        let gateway = sempre_gateway::Store::new(store.layout());
+        gateway.initialize()?;
         let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
         Ok(Self {
             store,
@@ -78,6 +82,7 @@ impl<R: VersionRunner> Manager<R> {
             subscriptions,
             fetcher,
             remote,
+            gateway,
             runtime_reload: Arc::new(Notify::new()),
             subscription_schedule_changed: Arc::new(Notify::new()),
             tunnels,

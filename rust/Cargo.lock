@@ -2109,6 +2109,7 @@ dependencies = [
  "sempre-control",
  "sempre-converter",
  "sempre-core-control",
+ "sempre-gateway",
  "sempre-manager",
  "sempre-network",
  "sempre-state",
@@ -2197,6 +2198,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-gateway"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "humantime",
+ "regex",
+ "sempre-network",
+ "sempre-state",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "sempre-manager"
 version = "0.1.0"
 dependencies = [
@@ -2205,6 +2222,8 @@ dependencies = [
  "sempre-artifact",
  "sempre-converter",
  "sempre-core",
+ "sempre-gateway",
+ "sempre-network",
  "sempre-state",
  "sempre-subscription",
  "sempre-supervisor",

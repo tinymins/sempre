@@ -74,6 +74,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .merge(crate::runtime_events_api::router())
         .merge(crate::system_api::router())
         .merge(crate::tunnel_api::router())
+        .merge(crate::gateway_api::router())
         .merge(crate::web_ui_api::router())
         .layer(middleware::from_fn_with_state(state.clone(), security))
         .fallback(crate::web_ui_api::static_file)
@@ -392,6 +393,8 @@ pub(crate) fn api_error(
 
 #[cfg(test)]
 mod custom_node_tests;
+#[cfg(test)]
+mod gateway_tests;
 #[cfg(test)]
 mod system_tests;
 #[cfg(test)]

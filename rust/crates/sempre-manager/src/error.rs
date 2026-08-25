@@ -19,6 +19,10 @@ pub enum ManagerError {
     Artifact(#[from] ArtifactError),
     #[error(transparent)]
     Subscription(#[from] SubscriptionError),
+    #[error(transparent)]
+    Gateway(#[from] sempre_gateway::GatewayError),
+    #[error(transparent)]
+    Network(#[from] sempre_network::NetworkError),
     #[error("compile subscription profile: {0}")]
     Compile(#[from] sempre_converter::CompileError),
     #[error(transparent)]

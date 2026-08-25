@@ -19,6 +19,7 @@ sempre-artifact = { path = "../sempre-artifact" }
 sempre-control = { path = "../sempre-control" }
 sempre-converter = { path = "../sempre-converter" }
 sempre-core-control = { path = "../sempre-core-control" }
+sempre-gateway = { path = "../sempre-gateway" }
 sempre-manager = { path = "../sempre-manager" }
 sempre-network = { path = "../sempre-network" }
 sempre-state = { path = "../sempre-state" }
