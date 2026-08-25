@@ -2,10 +2,10 @@
   "name": "sempre-workspace",
   "private": true,
   "scripts": {
-    "bootstrap": "go mod download && go tool air -v && bun install --cwd=ui --frozen-lockfile && bun install --cwd=site --frozen-lockfile",
+    "bootstrap": "cargo fetch --manifest-path=rust/Cargo.toml && cargo install cargo-watch --locked && bun install --cwd=ui --frozen-lockfile && bun install --cwd=site --frozen-lockfile",
     "prestart": "bun run scripts/development-addresses.ts",
     "start": "bun run --parallel \"dev:*\"",
-    "dev:api": "go tool air -c .air.toml",
+    "dev:api": "cargo watch -C rust -w crates -w Cargo.toml -w Cargo.lock -x \"run -p sempre-client -- daemon --development-root ../.cache/sempre-dev/runtime --listen 127.0.0.1:33212\"",
     "dev:ui": "bun --cwd=ui run dev",
     "dev:site": "bun --cwd=site run dev",
     "server": "cargo run --manifest-path=rust/Cargo.toml -p sempre-server",

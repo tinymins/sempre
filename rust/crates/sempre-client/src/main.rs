@@ -105,7 +105,13 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         }
         #[cfg(windows)]
         Command::ServiceHost => unreachable!("service host is dispatched before the async runtime"),
-        Command::Daemon { listen } => daemon::run(mode, listen.as_deref()).await,
+        Command::Daemon {
+            listen,
+            development_root,
+        } => match development_root {
+            Some(root) => daemon::run_development(&root, listen.as_deref()).await,
+            None => daemon::run(mode, listen.as_deref()).await,
+        },
         Command::Core { command } => run_core(mode, command).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
     }

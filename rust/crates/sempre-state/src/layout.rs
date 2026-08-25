@@ -9,6 +9,7 @@ use thiserror::Error;
 pub enum Mode {
     System,
     Portable,
+    Development,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,6 +56,8 @@ pub enum LayoutError {
     CurrentExecutable(#[source] io::Error),
     #[error("required environment variable {0} is not set")]
     MissingEnvironment(&'static str),
+    #[error("development mode requires an explicit isolated root")]
+    DevelopmentRootRequired,
     #[error("create layout directory {path}: {source}")]
     CreateDirectory { path: PathBuf, source: io::Error },
 }
@@ -69,7 +72,21 @@ impl Layout {
                 layout.instance_lock = Self::system()?.instance_lock;
                 Ok(layout)
             }
+            Mode::Development => Err(LayoutError::DevelopmentRootRequired),
         }
+    }
+
+    pub fn development_at(root: &Path) -> Self {
+        let executable = root.join(executable_name("sempre"));
+        let home = root.join(".sempre");
+        Self::new(
+            Mode::Development,
+            root,
+            &home,
+            &home.join("logs"),
+            &home.join("run"),
+            &executable,
+        )
     }
 
     pub fn portable_at(executable: &Path) -> Self {
@@ -304,6 +321,16 @@ mod tests {
         assert_eq!(layout.mode, Mode::Portable);
         assert_eq!(layout.home, temporary.path().join(".sempre"));
         assert_eq!(layout.runtime, layout.home.join("run"));
+    }
+
+    #[test]
+    fn development_layout_is_isolated_and_explicit() {
+        let root = Path::new("/tmp/sempre-development");
+        let layout = Layout::development_at(root);
+        assert_eq!(layout.mode, Mode::Development);
+        assert_eq!(layout.root, root);
+        assert_eq!(layout.home, root.join(".sempre"));
+        assert_eq!(layout.instance_lock, root.join(".sempre/run/instance.lock"));
     }
 
     #[test]

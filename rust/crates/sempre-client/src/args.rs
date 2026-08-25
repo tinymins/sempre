@@ -22,6 +22,9 @@ pub(crate) enum Command {
         /// Override the persisted listen address for this process.
         #[arg(long)]
         listen: Option<String>,
+        /// Use an isolated development data root with no native-service authority.
+        #[arg(long, hide = true)]
+        development_root: Option<PathBuf>,
     },
     /// Manage installed external proxy cores.
     Core {
@@ -91,11 +94,21 @@ mod tests {
                 command: CoreCommand::Install { .. }
             }
         ));
-        let daemon = Arguments::try_parse_from(["sempre", "daemon", "--listen", "127.0.0.1:44000"])
-            .expect("daemon");
+        let daemon = Arguments::try_parse_from([
+            "sempre",
+            "daemon",
+            "--listen",
+            "127.0.0.1:44000",
+            "--development-root",
+            ".cache/sempre-dev/runtime",
+        ])
+        .expect("daemon");
         assert!(matches!(
             daemon.command,
-            Command::Daemon { listen: Some(_) }
+            Command::Daemon {
+                listen: Some(_),
+                development_root: Some(_)
+            }
         ));
         let select = Arguments::try_parse_from(["sempre", "core", "use", "sing-box@stable"])
             .expect("core use");

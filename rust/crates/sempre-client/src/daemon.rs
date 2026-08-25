@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, validate_listen};
 use sempre_manager::Manager;
@@ -13,15 +17,21 @@ use tracing::info;
 use crate::{ClientError, VERSION, api, listener};
 
 pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(), ClientError> {
-    run_with_shutdown(mode, listen_override, None).await
+    run_with_layout(Layout::for_mode(mode)?, listen_override, None).await
 }
 
-pub(crate) async fn run_with_shutdown(
-    mode: Mode,
+pub(crate) async fn run_development(
+    root: &Path,
+    listen_override: Option<&str>,
+) -> Result<(), ClientError> {
+    run_with_layout(Layout::development_at(root), listen_override, None).await
+}
+
+pub(crate) async fn run_with_layout(
+    layout: Layout,
     listen_override: Option<&str>,
     external_shutdown: Option<watch::Receiver<bool>>,
 ) -> Result<(), ClientError> {
-    let layout = Layout::for_mode(mode)?;
     let store = Store::new(layout.clone());
     store.initialize()?;
     let _instance = store.acquire_instance()?;
@@ -57,7 +67,7 @@ pub(crate) async fn run_with_shutdown(
     let endpoint_state = app_state.endpoint.clone();
     let state = Arc::new(app_state);
     let app = api::router(state);
-    info!(%bind, %local_url, mode = ?mode, "Sempre Rust client daemon listening");
+    info!(%bind, %local_url, mode = ?layout.mode, "Sempre Rust client daemon listening");
     let (shutdown_sender, shutdown_receiver) = watch::channel(false);
     let signal_sender = shutdown_sender.clone();
     let signal = tokio::spawn(async move {

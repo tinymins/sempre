@@ -13,8 +13,8 @@ fn run_daemon(receiver: watch::Receiver<bool>) -> Result<(), Box<dyn Error>> {
         .enable_all()
         .build()?;
     runtime
-        .block_on(daemon::run_with_shutdown(
-            sempre_state::Mode::System,
+        .block_on(daemon::run_with_layout(
+            sempre_state::Layout::for_mode(sempre_state::Mode::System)?,
             None,
             Some(receiver),
         ))

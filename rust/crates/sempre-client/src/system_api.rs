@@ -33,12 +33,17 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
     let layout = state.manager.store().layout();
     let ui_installed = sempre_ui::Store::new(&layout.ui).current().is_ok();
     let endpoint = state.endpoint.get();
-    let service = sempre_service::status()
-        .await
-        .unwrap_or(sempre_service::State::Unknown);
+    let service = if layout.mode == sempre_state::Mode::Development {
+        sempre_service::State::NotInstalled
+    } else {
+        sempre_service::status()
+            .await
+            .unwrap_or(sempre_service::State::Unknown)
+    };
     let mode = match layout.mode {
         sempre_state::Mode::System => "system",
         sempre_state::Mode::Portable => "portable",
+        sempre_state::Mode::Development => "development",
     };
     let selected = document.selected.as_ref().map(|selection| {
         json!({
@@ -88,7 +93,10 @@ struct ServiceActionInput {
     action: String,
 }
 
-async fn service_action(Json(input): Json<ServiceActionInput>) -> Response {
+async fn service_action(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<ServiceActionInput>,
+) -> Response {
     let action = match sempre_service::Action::parse(&input.action) {
         Ok(action) => action,
         Err(error) => {
@@ -101,6 +109,18 @@ async fn service_action(Json(input): Json<ServiceActionInput>) -> Response {
                 .into_response();
         }
     };
+    if state.manager.store().layout().mode == sempre_state::Mode::Development {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "system service operations are unavailable in development mode"
+                }
+            })),
+        )
+            .into_response();
+    }
     match sempre_service::status().await {
         Ok(sempre_service::State::NotInstalled) => {
             return (
