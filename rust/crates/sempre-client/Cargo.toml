@@ -22,6 +22,7 @@ sempre-core-control = { path = "../sempre-core-control" }
 sempre-gateway = { path = "../sempre-gateway" }
 sempre-manager = { path = "../sempre-manager" }
 sempre-network = { path = "../sempre-network" }
+sempre-service = { path = "../sempre-service" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }
 sempre-tunnel = { path = "../sempre-tunnel" }

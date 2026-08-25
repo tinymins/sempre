@@ -7,7 +7,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use serde::Deserialize;
 use serde_json::json;
+use tokio::time::{Duration, sleep};
 
 use crate::{VERSION, api::AppState};
 
@@ -16,6 +18,7 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/api/v1/system", get(system))
         .route("/api/v1/system/network", get(network_inventory))
         .route("/api/v1/network/test", post(network_test))
+        .route("/api/v1/service/action", post(service_action))
 }
 
 async fn system(State(state): State<Arc<AppState>>) -> Response {
@@ -30,6 +33,9 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
     let layout = state.manager.store().layout();
     let ui_installed = sempre_ui::Store::new(&layout.ui).current().is_ok();
     let endpoint = state.endpoint.get();
+    let service = sempre_service::status()
+        .await
+        .unwrap_or(sempre_service::State::Unknown);
     let mode = match layout.mode {
         sempre_state::Mode::System => "system",
         sempre_state::Mode::Portable => "portable",
@@ -55,7 +61,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         "commit": option_env!("SEMPRE_COMMIT").unwrap_or(""),
         "date": option_env!("SEMPRE_BUILD_DATE").unwrap_or(""),
         "mode": mode,
-        "service": "unknown",
+        "service": service,
         "desired_state": document.desired_state,
         "runtime": document.runtime,
         "selected": selected,
@@ -75,6 +81,48 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         "capabilities": {},
     }))
     .into_response()
+}
+
+#[derive(Deserialize)]
+struct ServiceActionInput {
+    action: String,
+}
+
+async fn service_action(Json(input): Json<ServiceActionInput>) -> Response {
+    let action = match sempre_service::Action::parse(&input.action) {
+        Ok(action) => action,
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": { "code": "INVALID_SERVICE_ACTION", "message": error.to_string() }
+                })),
+            )
+                .into_response();
+        }
+    };
+    match sempre_service::status().await {
+        Ok(sempre_service::State::NotInstalled) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": { "code": "SERVICE_NOT_INSTALLED", "message": "system service is not installed" }
+                })),
+            )
+                .into_response();
+        }
+        Err(error) => return internal(error.to_string()),
+        Ok(_) => {}
+    }
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(250)).await;
+        let _ = sempre_service::action(action).await;
+    });
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({ "status": "scheduled", "action": input.action })),
+    )
+        .into_response()
 }
 
 async fn network_inventory() -> Response {

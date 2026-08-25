@@ -2112,6 +2112,7 @@ dependencies = [
  "sempre-gateway",
  "sempre-manager",
  "sempre-network",
+ "sempre-service",
  "sempre-state",
  "sempre-subscription",
  "sempre-tunnel",
@@ -2275,6 +2276,15 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "sempre-service"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

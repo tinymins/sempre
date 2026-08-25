@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use axum::{
     body::{Body, to_bytes},
     extract::ConnectInfo,
-    http::{HeaderValue, Request, StatusCode},
+    http::{HeaderValue, Request, StatusCode, header},
 };
 use sempre_control::{DaemonEndpoint, WebConfigStore};
 use sempre_manager::Manager;
@@ -55,7 +55,12 @@ async fn system_and_network_inventory_match_the_control_ui_contract() {
         .expect("system body");
     let system: serde_json::Value = serde_json::from_slice(&body).expect("system JSON");
     assert_eq!(system["mode"], "portable");
-    assert_eq!(system["service"], "unknown");
+    assert!(matches!(
+        system["service"].as_str(),
+        Some(
+            "not installed" | "stopped" | "start pending" | "running" | "stop pending" | "unknown"
+        )
+    ));
     assert_eq!(system["runtime"]["state"], "idle");
     assert_eq!(system["web"]["local_url"], "http://127.0.0.1:33211");
 
@@ -68,4 +73,29 @@ async fn system_and_network_inventory_match_the_control_ui_contract() {
     assert!(inventory["supported"].is_boolean());
     assert!(inventory["interfaces"].is_array());
     assert!(inventory["occupied_prefixes"].is_array());
+}
+
+#[tokio::test]
+async fn service_action_rejects_unsupported_operations_without_side_effects() {
+    let (_root, app, token) = fixture();
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/service/action")
+        .extension(ConnectInfo(
+            "127.0.0.1:1".parse::<SocketAddr>().expect("remote address"),
+        ))
+        .body(Body::from(r#"{"action":"uninstall"}"#))
+        .expect("request");
+    request.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    request.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    assert_eq!(
+        app.oneshot(request).await.expect("response").status(),
+        StatusCode::BAD_REQUEST
+    );
 }
