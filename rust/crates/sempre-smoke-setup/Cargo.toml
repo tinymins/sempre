@@ -1,0 +1,27 @@
+[package]
+name = "sempre-smoke-setup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Prepare Rust native-service smoke-test release fixtures"
+publish = false
+
+[[bin]]
+name = "sempre-smoke-setup"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+clap.workspace = true
+sempre-bundle = { path = "../sempre-bundle" }
+sempre-control = { path = "../sempre-control" }
+sempre-state = { path = "../sempre-state" }
+sempre-subscription = { path = "../sempre-subscription" }
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

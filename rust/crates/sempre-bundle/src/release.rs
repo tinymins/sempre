@@ -6,8 +6,8 @@ use std::{
 use sempre_state::{Document, Layout, write_atomic};
 
 use crate::{
-    BundleError, Export, METADATA_NAME, Metadata, PORTABLE_MARKER, copy_file, copy_optional_file,
-    copy_tree, write_document, write_json, write_web_config, zip_directory,
+    BundleError, Export, copy_file, copy_optional_file, copy_tree, mark_release_directory,
+    write_document, write_web_config, zip_directory,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -111,20 +111,7 @@ fn write_release_directory(
     copy_optional_file(&source.tunnels, &target.tunnels)?;
     write_document(&target.state, document)?;
     write_web_config(&source.web_config, &target.web_config)?;
-    write_json(
-        &target.root.join(METADATA_NAME),
-        &Metadata {
-            schema: 1,
-            kind: "release",
-        },
-    )?;
-    write_atomic(&target.root.join(PORTABLE_MARKER), b"", 0o600).map_err(|source_error| {
-        BundleError::Io {
-            operation: "write portable marker",
-            path: target.root.join(PORTABLE_MARKER),
-            source: source_error,
-        }
-    })?;
+    mark_release_directory(&target.root)?;
     write_installer(
         &target.root,
         target.service_executable.file_name().unwrap_or_default(),
@@ -239,7 +226,7 @@ mod tests {
             }
             let metadata: serde_json::Value = {
                 let entry = archive
-                    .by_name(&format!("{prefix}/{METADATA_NAME}"))
+                    .by_name(&format!("{prefix}/{}", crate::METADATA_NAME))
                     .expect("metadata");
                 serde_json::from_reader(entry).expect("metadata JSON")
             };

@@ -13,7 +13,7 @@ const RESTART: &str = "restart";
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeActionAvailability {
     pub allowed: bool,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub reason: String,
 }
 
@@ -27,7 +27,7 @@ pub struct RuntimeActions {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeDeployment {
     pub core: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
     #[serde(rename = "ref")]
     pub reference: String,
@@ -41,9 +41,9 @@ pub struct RuntimeFailureOutput {
     pub stage: String,
     pub error: String,
     pub occurred_at: DateTime<Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<RuntimeDeployment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rolled_back_to: Option<RuntimeDeployment>,
 }
 
@@ -52,7 +52,7 @@ pub struct RuntimeStatus {
     pub desired_state: DesiredState,
     pub runtime_state: RuntimeState,
     pub active: Option<RuntimeDeployment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<RuntimeDeployment>,
     pub pid: u32,
     pub started_at: Option<DateTime<Utc>>,
@@ -60,11 +60,11 @@ pub struct RuntimeStatus {
     pub restart_count: u32,
     pub pending: bool,
     pub last_transition: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_exit: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_failure: Option<RuntimeFailureOutput>,
     pub actions: RuntimeActions,
 }

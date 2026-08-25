@@ -144,6 +144,34 @@ async fn activation_switches_profile_and_stages_validated_configuration() {
 }
 
 #[tokio::test]
+async fn import_appends_raw_source_and_bootstraps_the_active_profile() {
+    let (_root, manager, profile_id) = fixture();
+    manager
+        .subscriptions
+        .update(|catalog| {
+            catalog.profiles[0].sources.clear();
+            Ok(())
+        })
+        .expect("clear fixture source");
+    let change = manager
+        .import_subscription_source(
+            "subscription.yaml",
+            "trojan://second@example.com:443#second",
+        )
+        .await
+        .expect("import");
+    assert!(change.changed && change.needs_restart);
+    let document = manager.state().expect("state");
+    assert_eq!(
+        document.active_profile_id.as_deref(),
+        Some(profile_id.as_str())
+    );
+    let catalog = manager.subscriptions.read().expect("catalog");
+    assert_eq!(catalog.profiles[0].sources.len(), 1);
+    assert_eq!(catalog.profiles[0].sources[0].remark, "subscription.yaml");
+}
+
+#[tokio::test]
 async fn switching_to_equivalent_profile_is_a_change_without_restart() {
     let (_root, manager, first_id) = fixture();
     let second_id = sempre_subscription::new_profile("second").id;

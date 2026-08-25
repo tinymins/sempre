@@ -10,6 +10,7 @@ use sempre_subscription::{Catalog, SubscriptionError};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use crate::{CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner};
 
@@ -41,6 +42,57 @@ struct RenderedProfile {
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
+    pub async fn import_subscription_source(
+        &self,
+        remark: &str,
+        content: &str,
+    ) -> Result<CoreChange, ManagerError> {
+        if content.len() > sempre_subscription::MAX_SOURCE_SIZE {
+            return Err(SubscriptionError::SourceTooLarge {
+                limit: sempre_subscription::MAX_SOURCE_SIZE,
+            }
+            .into());
+        }
+        let document = self.store.read()?;
+        let catalog = self.subscriptions.read()?;
+        let profile = document
+            .active_profile_id
+            .as_deref()
+            .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id))
+            .or_else(|| catalog.profiles.first())
+            .ok_or_else(|| SubscriptionError::Invalid("no subscription profile exists".into()))?;
+        if profile_mode(profile) == "remote" {
+            return Err(SubscriptionError::Invalid(
+                "remote profiles are read-only; edit the profile on its Sempre server".into(),
+            )
+            .into());
+        }
+        let profile_id = profile.id.clone();
+        let source = sempre_converter::Source {
+            id: Uuid::new_v4().to_string(),
+            kind: "raw".into(),
+            enabled: true,
+            url: String::new(),
+            remark: remark.trim().into(),
+            prefix: String::new(),
+            content: content.into(),
+            user_agent: String::new(),
+            extra: Map::new(),
+        };
+        self.subscriptions.update(|catalog| {
+            let profile = catalog
+                .profiles
+                .iter_mut()
+                .find(|profile| profile.id == profile_id)
+                .ok_or_else(|| SubscriptionError::Invalid("profile was not found".into()))?;
+            profile.sources.push(source);
+            profile.revision += 1;
+            Ok(())
+        })?;
+        let (change, _) = self.activate_subscription_profile(&profile_id).await?;
+        Ok(change)
+    }
+
     pub(crate) async fn recompile_subscription_profile(
         &self,
         id: &str,

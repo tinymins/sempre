@@ -2336,6 +2336,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-smoke-setup"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "sempre-bundle",
+ "sempre-control",
+ "sempre-state",
+ "sempre-subscription",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "sempre-state"
 version = "0.1.0"
 dependencies = [
@@ -2380,6 +2394,17 @@ dependencies = [
  "sempre-core",
  "tempfile",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "sempre-testcore"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
 ]
 

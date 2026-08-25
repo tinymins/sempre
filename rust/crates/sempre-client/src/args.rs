@@ -58,6 +58,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: CoreCommand,
     },
+    /// Import subscription input for the active profile.
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
     /// Export or restore a portable deployment snapshot.
     Bundle {
         #[command(subcommand)]
@@ -87,8 +92,9 @@ impl Arguments {
             Command::Install { .. } => true,
             Command::Daemon {
                 development_root, ..
-            } => development_root.is_none() && system,
+            } => development_root.is_none(),
             Command::Core { .. } => system,
+            Command::Config { .. } => system,
             Command::Bundle { command } => match command {
                 BundleCommand::Export { .. } => system,
                 BundleCommand::Restore { .. } => true,
@@ -124,6 +130,12 @@ pub(crate) enum CoreCommand {
     Use { reference: String },
     /// Remove an unreferenced installed core version.
     Remove { reference: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ConfigCommand {
+    /// Add a local file as a raw source and stage its converted configuration.
+    Import { file: PathBuf },
 }
 
 #[derive(Debug, Subcommand)]
@@ -257,6 +269,20 @@ mod tests {
                 ..
             }
         ));
+        let import = Arguments::try_parse_from([
+            "sempre",
+            "--portable",
+            "config",
+            "import",
+            "subscription.yaml",
+        ])
+        .expect("config import");
+        assert!(matches!(
+            import.command,
+            Command::Config {
+                command: ConfigCommand::Import { .. }
+            }
+        ));
         assert!(
             Arguments::try_parse_from([
                 "sempre",
@@ -286,5 +312,8 @@ mod tests {
         ])
         .expect("development daemon");
         assert!(!development.requires_administrator());
+        let portable =
+            Arguments::try_parse_from(["sempre", "--portable", "daemon"]).expect("portable daemon");
+        assert!(portable.requires_administrator());
     }
 }

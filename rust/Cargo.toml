@@ -20,6 +20,8 @@ members = [
     "crates/sempre-transparent",
     "crates/sempre-tunnel",
     "crates/sempre-ui",
+    "crates/sempre-testcore",
+    "crates/sempre-smoke-setup",
 ]
 resolver = "2"
 

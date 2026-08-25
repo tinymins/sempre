@@ -25,7 +25,7 @@ mod windows_service_host;
 
 use std::{fs, io, path::PathBuf};
 
-use args::{Arguments, BundleCommand, Command, CoreCommand, ServiceCommand};
+use args::{Arguments, BundleCommand, Command, ConfigCommand, CoreCommand, ServiceCommand};
 use clap::Parser;
 use sempre_control::ControlError;
 use sempre_manager::{Manager, ManagerError};
@@ -162,6 +162,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
             None => daemon::run(mode, listen.as_deref()).await,
         },
         Command::Core { command } => run_core(mode, command).await,
+        Command::Config { command } => run_config(mode, command).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
         Command::Service { command } => run_service(command).await,
         Command::Runtime { command } => runtime_cli::run(mode, command, json).await,
@@ -338,6 +339,41 @@ async fn run_core(mode: Mode, command: CoreCommand) -> Result<(), ClientError> {
         }
         CoreCommand::Remove { reference } => {
             let change = manager.remove_core(&reference)?;
+            println!("{}", change.message);
+        }
+    }
+    Ok(())
+}
+
+async fn run_config(mode: Mode, command: ConfigCommand) -> Result<(), ClientError> {
+    let manager = Manager::new(Store::new(Layout::for_mode(mode)?))?;
+    match command {
+        ConfigCommand::Import { file } => {
+            let metadata = fs::metadata(&file).map_err(|source| ClientError::Io {
+                operation: "inspect subscription source",
+                path: file.clone(),
+                source,
+            })?;
+            if !metadata.is_file() || metadata.len() > sempre_subscription::MAX_SOURCE_SIZE as u64 {
+                return Err(SubscriptionError::Invalid(format!(
+                    "subscription source must be a file at most {} bytes",
+                    sempre_subscription::MAX_SOURCE_SIZE
+                ))
+                .into());
+            }
+            let data = fs::read(&file).map_err(|source| ClientError::Io {
+                operation: "read subscription source",
+                path: file.clone(),
+                source,
+            })?;
+            let content = String::from_utf8(data).map_err(|_| {
+                SubscriptionError::Invalid("subscription source must be UTF-8".into())
+            })?;
+            let remark = file
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("imported source");
+            let change = manager.import_subscription_source(remark, &content).await?;
             println!("{}", change.message);
         }
     }

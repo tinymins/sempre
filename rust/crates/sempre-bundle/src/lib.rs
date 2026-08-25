@@ -106,6 +106,23 @@ pub fn export(
     })
 }
 
+/// Mark an already prepared portable directory as an installable release.
+pub fn mark_release_directory(root: &Path) -> Result<(), BundleError> {
+    write_bundle_marker(root, "release")
+}
+
+fn write_bundle_marker(root: &Path, kind: &'static str) -> Result<(), BundleError> {
+    write_json(
+        root.join(METADATA_NAME).as_path(),
+        &Metadata { schema: 1, kind },
+    )?;
+    write_atomic(&root.join(PORTABLE_MARKER), b"", 0o600).map_err(|source| BundleError::Io {
+        operation: "write portable marker",
+        path: root.join(PORTABLE_MARKER),
+        source,
+    })
+}
+
 fn export_directory(
     source: &Layout,
     target: &Layout,
@@ -127,20 +144,7 @@ fn export_directory(
     copy_optional_file(&source.tunnels, &target.tunnels)?;
     write_document(&target.state, document)?;
     write_web_config(&source.web_config, &target.web_config)?;
-    write_json(
-        &target.root.join(METADATA_NAME),
-        &Metadata {
-            schema: 1,
-            kind: "snapshot",
-        },
-    )?;
-    write_atomic(&target.root.join(PORTABLE_MARKER), b"", 0o600).map_err(|source_error| {
-        BundleError::Io {
-            operation: "write portable marker",
-            path: target.root.join(PORTABLE_MARKER),
-            source: source_error,
-        }
-    })?;
+    write_bundle_marker(&target.root, "snapshot")?;
     write_restore_script(&target.root)?;
     Ok(())
 }

@@ -1,4 +1,4 @@
-name: Native service smoke tests
+name: Native Rust service smoke tests
 
 on:
   push:
@@ -12,47 +12,48 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - runner: ubuntu-24.04
+            name: linux
+          - runner: windows-2025
+            name: windows
+          - runner: macos-15
+            name: macos
+    name: Service (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: 1.25.13
-          cache: true
-      - name: Build smoke deployment
+      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
+      - name: Build Rust smoke release
         shell: bash
         if: runner.os != 'Windows'
         run: |
+          cargo build --manifest-path=rust/Cargo.toml \
+            -p sempre-client -p sempre-testcore -p sempre-smoke-setup
           mkdir smoke
-          go build -o smoke/sempre ./cmd/sempre
-          go build -o smoke/testcore ./internal/integration/testcore
-          go run ./internal/integration/setup -root "$PWD/smoke" -core "$PWD/smoke/testcore"
-      - name: Exercise native service
+          cp rust/target/debug/sempre smoke/sempre
+          cargo run --manifest-path=rust/Cargo.toml -p sempre-smoke-setup -- \
+            --root "$PWD/smoke" --core "$PWD/rust/target/debug/sempre-testcore"
+      - name: Exercise native Rust service
         shell: bash
         if: runner.os != 'Windows'
         run: |
           sudo ./smoke/sempre --portable service install --yes
           sudo ./smoke/sempre --portable service install --yes
-          ./smoke/sempre service status
-          for ((attempt = 0; attempt < 50; attempt++)); do
-            if sudo ./smoke/sempre --system status | grep -q "Supervisor: running"; then
-              break
-            fi
-            sleep 0.2
-          done
-          sudo ./smoke/sempre --system doctor
+          ./smoke/sempre service status | grep -q running
           wait_runtime() {
-            local desired="$1" state="$2" runtime_status=""
-            for ((attempt = 0; attempt < 100; attempt++)); do
+            desired="$1" state="$2" runtime_status=''
+            for _ in $(seq 1 100); do
               runtime_status=$(sudo ./smoke/sempre --system runtime status 2>/dev/null || true)
-              if grep -q "Desired: $desired" <<<"$runtime_status" && grep -q "State: $state" <<<"$runtime_status"; then
+              if printf '%s\n' "$runtime_status" | grep -q "Desired: $desired" && \
+                printf '%s\n' "$runtime_status" | grep -q "State: $state"; then
                 return 0
               fi
               sleep 0.2
             done
-            printf 'managed core did not reach %s/%s:\n%s\n' "$desired" "$state" "$runtime_status" >&2
+            printf 'managed core did not reach %s/%s:\n%s\n' \
+              "$desired" "$state" "$runtime_status" >&2
             return 1
           }
           wait_runtime running running
@@ -60,8 +61,8 @@ jobs:
           wait_runtime stopped stopped
           sudo ./smoke/sempre --portable service restart
           wait_runtime stopped stopped
-          printf '%s\n' '{"proxies":[{"name":"smoke-updated","type":"socks5","server":"127.0.0.1","port":1080}]}' > smoke/config-updated.json
-          sudo ./smoke/sempre --system config import smoke/config-updated.json | grep -q "active profile compiled for sing-box"
+          printf '%s\n' 'trojan://secret@example.com:443#smoke-updated' > smoke/subscription-updated.txt
+          sudo ./smoke/sempre --system config import smoke/subscription-updated.txt | grep -q staged
           wait_runtime stopped stopped
           sudo ./smoke/sempre --system runtime start >/dev/null
           wait_runtime running running
@@ -71,27 +72,23 @@ jobs:
           sudo ./smoke/sempre --portable service start
           sudo ./smoke/sempre --portable service restart
           sudo ./smoke/sempre --portable service uninstall
-      - name: Build and exercise Windows service
+      - name: Build and exercise Windows Rust service
         shell: pwsh
         if: runner.os == 'Windows'
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
+          cargo build --manifest-path=rust/Cargo.toml `
+            -p sempre-client -p sempre-testcore -p sempre-smoke-setup
           New-Item -ItemType Directory -Path smoke
-          go build -o smoke/sempre.exe ./cmd/sempre
-          go build -o smoke/testcore.exe ./internal/integration/testcore
-          go run ./internal/integration/setup -root "$PWD/smoke" -core "$PWD/smoke/testcore.exe"
+          Copy-Item rust/target/debug/sempre.exe smoke/sempre.exe
+          cargo run --manifest-path=rust/Cargo.toml -p sempre-smoke-setup -- `
+            --root "$PWD/smoke" --core "$PWD/rust/target/debug/sempre-testcore.exe"
           ./smoke/sempre.exe --portable service install --yes
           ./smoke/sempre.exe --portable service install --yes
-          ./smoke/sempre.exe service status
-          for ($attempt = 0; $attempt -lt 50; $attempt++) {
-            $status = ./smoke/sempre.exe --system status
-            if ($status -match '^Supervisor: running') {
-              break
-            }
-            Start-Sleep -Milliseconds 200
+          if ((./smoke/sempre.exe service status | Out-String) -notmatch 'running') {
+            throw 'Sempre service is not running'
           }
-          ./smoke/sempre.exe --system doctor
           function Wait-RuntimeState([string]$Desired, [string]$State) {
             $runtimeStatus = ''
             for ($attempt = 0; $attempt -lt 100; $attempt++) {
@@ -108,9 +105,9 @@ jobs:
           Wait-RuntimeState stopped stopped
           ./smoke/sempre.exe --portable service restart
           Wait-RuntimeState stopped stopped
-          Set-Content -Path smoke/config-updated.json -NoNewline -Value '{"proxies":[{"name":"smoke-updated","type":"socks5","server":"127.0.0.1","port":1080}]}'
-          $configResult = ./smoke/sempre.exe --system config import smoke/config-updated.json | Out-String
-          if ($configResult -notmatch 'active profile compiled for sing-box') { throw "stopped config import was not compiled: $configResult" }
+          Set-Content -Path smoke/subscription-updated.txt -NoNewline -Value 'trojan://secret@example.com:443#smoke-updated'
+          $configResult = ./smoke/sempre.exe --system config import smoke/subscription-updated.txt | Out-String
+          if ($configResult -notmatch 'staged') { throw "stopped config import was not compiled: $configResult" }
           Wait-RuntimeState stopped stopped
           ./smoke/sempre.exe --system runtime start | Out-Null
           Wait-RuntimeState running running
