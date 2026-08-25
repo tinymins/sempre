@@ -1,4 +1,4 @@
-use std::{fs, net::SocketAddr, sync::Arc};
+use std::{fs, io::Write as _, net::SocketAddr, sync::Arc};
 
 use axum::{
     body::{Body, to_bytes},
@@ -168,4 +168,60 @@ async fn static_ui_serves_spa_without_exposing_metadata_or_unknown_api_routes() 
             .status(),
         StatusCode::NOT_FOUND
     );
+}
+
+fn ui_archive() -> Vec<u8> {
+    let mut data = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut data);
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file(sempre_ui::MANIFEST_NAME, options)
+            .expect("manifest");
+        zip.write_all(br#"{"schema":1,"name":"Uploaded UI","version":"1","entry":"index.html","api":{"major":1}}"#)
+            .expect("manifest data");
+        zip.start_file("index.html", options).expect("entry");
+        zip.write_all(b"<main>Uploaded UI</main>")
+            .expect("entry data");
+        zip.finish().expect("finish archive");
+    }
+    data.into_inner()
+}
+
+#[tokio::test]
+async fn ui_upload_is_immediately_served_and_can_be_removed() {
+    let (_root, app, token) = fixture();
+    let mut upload = request(
+        "POST",
+        "/api/v1/ui/upload",
+        Body::from(ui_archive()),
+        Some(&token),
+    );
+    upload.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zip"),
+    );
+    assert_eq!(
+        app.clone().oneshot(upload).await.expect("upload").status(),
+        StatusCode::OK
+    );
+    let page = app
+        .clone()
+        .oneshot(request("GET", "/", Body::empty(), None))
+        .await
+        .expect("page");
+    let body = to_bytes(page.into_body(), 4096).await.expect("page body");
+    assert_eq!(&body[..], b"<main>Uploaded UI</main>");
+    assert_eq!(
+        app.clone()
+            .oneshot(request("DELETE", "/api/v1/ui", Body::empty(), Some(&token)))
+            .await
+            .expect("remove")
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    let unavailable = app
+        .oneshot(request("GET", "/", Body::empty(), None))
+        .await
+        .expect("unavailable");
+    assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
 }

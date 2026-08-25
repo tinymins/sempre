@@ -8,12 +8,19 @@ description = "Validated Sempre control UI state and installation boundary"
 
 [dependencies]
 chrono.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sempre-state = { path = "../sempre-state" }
+sha2.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 
 [lints]
 workspace = true

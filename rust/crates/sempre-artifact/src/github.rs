@@ -97,7 +97,7 @@ impl GithubClient {
         package_from_release(adapter, &release, target)
     }
 
-    async fn release(&self, repository: &str, reference: &str) -> Result<Release> {
+    pub async fn release(&self, repository: &str, reference: &str) -> Result<Release> {
         let endpoint = release_endpoint(&self.base, repository, reference)?;
         if let Some(release) = self
             .cache

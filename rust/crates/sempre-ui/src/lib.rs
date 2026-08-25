@@ -1,3 +1,5 @@
+mod install;
+
 use std::{fs, io, path::PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -6,6 +8,9 @@ use thiserror::Error;
 
 pub const MANIFEST_NAME: &str = "sempre-ui.json";
 pub const METADATA_NAME: &str = ".sempre-source.json";
+pub const MAX_ARCHIVE_SIZE: usize = 64 << 20;
+pub const MAX_EXPANDED_SIZE: u64 = 128 << 20;
+pub const MAX_EXTRACTED_FILES: usize = 4096;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Manifest {
@@ -39,11 +44,17 @@ pub enum UiError {
     Decode(#[source] serde_json::Error),
     #[error("invalid UI installation: {0}")]
     Invalid(String),
+    #[error("write UI installation: {0}")]
+    Write(#[source] io::Error),
+    #[error("download UI: {0}")]
+    Http(#[source] reqwest::Error),
+    #[error("read UI ZIP: {0}")]
+    Zip(#[source] zip::result::ZipError),
 }
 
 #[derive(Clone, Debug)]
 pub struct Store {
-    root: PathBuf,
+    pub(crate) root: PathBuf,
 }
 
 impl Store {
@@ -71,7 +82,7 @@ impl Store {
     }
 }
 
-fn validate(manifest: &Manifest) -> Result<(), UiError> {
+pub(crate) fn validate(manifest: &Manifest) -> Result<(), UiError> {
     if manifest.schema != 1 || manifest.api.major != 1 {
         return Err(UiError::Invalid(
             "UI manifest is incompatible with Sempre API v1".into(),
