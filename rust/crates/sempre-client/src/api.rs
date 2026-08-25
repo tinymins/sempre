@@ -70,6 +70,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .merge(crate::subscription_api::router())
         .merge(crate::custom_node_api::router())
         .merge(crate::runtime_api::router())
+        .merge(crate::runtime_control_api::router())
         .merge(crate::system_api::router())
         .merge(crate::web_ui_api::router())
         .layer(middleware::from_fn_with_state(state.clone(), security))

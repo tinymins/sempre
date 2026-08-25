@@ -1815,6 +1815,8 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "rustls-platform-verifier",
+ "serde",
+ "serde_json",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -2055,6 +2057,7 @@ dependencies = [
  "sempre-artifact",
  "sempre-control",
  "sempre-converter",
+ "sempre-core-control",
  "sempre-manager",
  "sempre-network",
  "sempre-state",
@@ -2123,6 +2126,21 @@ dependencies = [
  "serde_yaml",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "sempre-core-control"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]
