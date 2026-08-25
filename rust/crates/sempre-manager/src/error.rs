@@ -113,6 +113,8 @@ pub enum ManagerError {
     InvalidOperation(String),
     #[error("replacing the existing system deployment requires --yes: {0}")]
     ConfirmationRequired(String),
+    #[error("application uninstall incomplete: {0}")]
+    UninstallIncomplete(String),
     #[error("{message}")]
     RuntimeAction { code: &'static str, message: String },
 }

@@ -207,7 +207,7 @@ fn register_command(layout: &Layout) -> Result<bool, ManagerError> {
 }
 
 #[cfg(unix)]
-fn unregister_command(layout: &Layout) -> Result<(), ManagerError> {
+pub(super) fn unregister_command(layout: &Layout) -> Result<(), ManagerError> {
     match fs::read_link(&layout.command_executable) {
         Ok(target) if target == layout.service_executable => {
             fs::remove_file(&layout.command_executable)
@@ -237,7 +237,7 @@ fn register_command(_: &Layout) -> Result<bool, ManagerError> {
 }
 
 #[cfg(windows)]
-fn unregister_command(_: &Layout) -> Result<(), ManagerError> {
+pub(super) fn unregister_command(_: &Layout) -> Result<(), ManagerError> {
     Ok(())
 }
 

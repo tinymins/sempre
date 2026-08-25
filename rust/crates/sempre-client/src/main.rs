@@ -24,6 +24,7 @@ mod subscription_tools_api;
 mod system_api;
 mod tunnel_api;
 mod ui_distribution;
+mod uninstall_cli;
 mod web_ui_api;
 mod web_ui_cli;
 #[cfg(windows)]
@@ -156,6 +157,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
             )
             .await
         }
+        Command::Uninstall { purge, yes } => uninstall_cli::run(purge, yes).await,
         Command::Version => {
             println!("Sempre {VERSION}");
             Ok(())

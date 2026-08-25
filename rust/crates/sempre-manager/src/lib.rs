@@ -1,3 +1,4 @@
+mod application_uninstall;
 mod auto_config;
 mod bundle;
 mod config;
@@ -28,6 +29,7 @@ use sempre_tunnel::Controller as TunnelController;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
+pub use application_uninstall::{ApplicationUninstall, uninstall_application};
 pub use auto_config::{
     AutoConfigApplyResult, AutoConfigCandidate, AutoConfigCheck, AutoConfigReport,
 };
