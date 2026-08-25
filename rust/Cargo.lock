@@ -1917,6 +1917,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "sempre-server"
 version = "0.1.0"
 dependencies = [

@@ -3,6 +3,7 @@ members = [
     "crates/sempre-converter",
     "crates/sempre-converter-cli",
     "crates/sempre-client",
+    "crates/sempre-core",
     "crates/sempre-server",
     "crates/sempre-state",
 ]
