@@ -23,6 +23,7 @@ axum.workspace = true
 chrono.workspace = true
 clap.workspace = true
 futures-util.workspace = true
+reqwest.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }
 sempre-bundle = { path = "../sempre-bundle" }
 sempre-control = { path = "../sempre-control" }

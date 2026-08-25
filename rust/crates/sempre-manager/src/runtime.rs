@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sempre_core::CoreRef;
 use sempre_state::{Deployment, DesiredState, Document, RuntimeFailure, RuntimeState};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use crate::{Manager, ManagerError, ValidationRunner, VersionRunner, config::configuration_target};
@@ -10,21 +10,21 @@ const START: &str = "start";
 const STOP: &str = "stop";
 const RESTART: &str = "restart";
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeActionAvailability {
     pub allowed: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub reason: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeActions {
     pub start: RuntimeActionAvailability,
     pub stop: RuntimeActionAvailability,
     pub restart: RuntimeActionAvailability,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeDeployment {
     pub core: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -36,7 +36,7 @@ pub struct RuntimeDeployment {
     pub config_hash: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeFailureOutput {
     pub stage: String,
     pub error: String,
@@ -47,7 +47,7 @@ pub struct RuntimeFailureOutput {
     pub rolled_back_to: Option<RuntimeDeployment>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeStatus {
     pub desired_state: DesiredState,
     pub runtime_state: RuntimeState,

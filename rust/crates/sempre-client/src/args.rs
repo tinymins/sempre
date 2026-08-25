@@ -6,6 +6,7 @@ use crate::VERSION;
 
 #[derive(Debug, Parser)]
 #[command(name = "sempre", version = VERSION, about = "Manage external proxy cores")]
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct Arguments {
     #[arg(long, conflicts_with = "portable", global = true)]
     pub system: bool,
@@ -13,6 +14,9 @@ pub(crate) struct Arguments {
     pub portable: bool,
     #[arg(long, hide = true, global = true)]
     pub elevated: bool,
+    /// Print supported command output as JSON.
+    #[arg(long, global = true)]
+    pub json: bool,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -64,6 +68,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: ServiceCommand,
     },
+    /// Inspect and control the managed proxy-core runtime.
+    Runtime {
+        #[command(subcommand)]
+        command: RuntimeCommand,
+    },
     /// Print build version information.
     Version,
     #[cfg(windows)]
@@ -85,6 +94,7 @@ impl Arguments {
                 BundleCommand::Restore { .. } => true,
             },
             Command::Service { command } => !matches!(command, ServiceCommand::Status),
+            Command::Runtime { .. } => system,
             Command::Version => false,
             #[cfg(windows)]
             Command::ServiceHost => false,
@@ -136,6 +146,20 @@ pub(crate) enum ServiceCommand {
     Status,
 }
 
+#[derive(Debug, Subcommand)]
+pub(crate) enum RuntimeCommand {
+    /// Print the managed runtime state.
+    Status,
+    /// Start the selected core and wait until it is running.
+    Start,
+    /// Stop the managed core and wait until it is stopped.
+    Stop,
+    /// Restart the managed core and wait for the replacement process.
+    Restart,
+    /// Schedule reconciliation without changing desired state.
+    Reload,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +175,11 @@ mod tests {
         let restart =
             Arguments::try_parse_from(["sempre", "service", "restart"]).expect("service restart");
         assert!(restart.requires_administrator());
+        let runtime =
+            Arguments::try_parse_from(["sempre", "--portable", "--json", "runtime", "status"])
+                .expect("portable runtime status");
+        assert!(!runtime.requires_administrator());
+        assert!(runtime.json);
     }
 
     #[test]

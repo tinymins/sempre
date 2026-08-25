@@ -2142,6 +2142,7 @@ dependencies = [
  "clap",
  "futures-util",
  "nix",
+ "reqwest",
  "sempre-artifact",
  "sempre-bundle",
  "sempre-control",

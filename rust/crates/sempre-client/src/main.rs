@@ -8,7 +8,9 @@ mod daemon;
 mod elevate;
 mod gateway_api;
 mod listener;
+mod local_api;
 mod runtime_api;
+mod runtime_cli;
 mod runtime_control_api;
 mod runtime_events_api;
 mod subscription_api;
@@ -55,6 +57,8 @@ pub(crate) enum ClientError {
     Ui(#[from] sempre_ui::UiError),
     #[error(transparent)]
     Service(#[from] sempre_service::ServiceError),
+    #[error(transparent)]
+    LocalApi(#[from] local_api::Error),
     #[error("deployment cancelled")]
     Cancelled,
     #[error("bind local API at {address}: {source}")]
@@ -76,6 +80,10 @@ pub(crate) enum ClientError {
         #[source]
         source: io::Error,
     },
+    #[error("managed runtime: {0}")]
+    Runtime(String),
+    #[error("encode JSON output: {0}")]
+    Json(#[source] serde_json::Error),
 }
 
 fn main() {
@@ -113,6 +121,7 @@ fn main() {
 }
 
 async fn run(arguments: Arguments) -> Result<(), ClientError> {
+    let json = arguments.json;
     let mode = if arguments.portable {
         Mode::Portable
     } else {
@@ -155,6 +164,7 @@ async fn run(arguments: Arguments) -> Result<(), ClientError> {
         Command::Core { command } => run_core(mode, command).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
         Command::Service { command } => run_service(command).await,
+        Command::Runtime { command } => runtime_cli::run(mode, command, json).await,
     }
 }
 
