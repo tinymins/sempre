@@ -27,7 +27,7 @@ RuntimeDirectoryMode=0700\n\n\
 [Install]\n\
 WantedBy=multi-user.target\n",
         crate::DESCRIPTION,
-        systemd_quote(working_directory),
+        systemd_path(working_directory),
         systemd_quote(executable),
     ))
 }
@@ -72,7 +72,27 @@ fn path(value: &Path) -> Result<&str, ServiceError> {
 
 #[cfg(any(target_os = "linux", test))]
 fn systemd_quote(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+    format!(
+        "\"{}\"",
+        value
+            .replace('%', "%%")
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+    )
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn systemd_path(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'%' => "%%".into(),
+            b'/' | b'-' | b'_' | b'.' | b':' | b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' => {
+                char::from(byte).to_string()
+            }
+            _ => format!("\\x{byte:02x}"),
+        })
+        .collect()
 }
 
 #[cfg(any(target_os = "macos", test))]

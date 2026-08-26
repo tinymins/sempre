@@ -125,24 +125,33 @@ impl ManagedProcess {
                 .map_err(SupervisorError::Wait)?
                 .is_none()
         {
-            return Err(SupervisorError::Signal(error));
+            self.force_terminate().await.map_err(|fallback| {
+                SupervisorError::Signal(io::Error::other(format!(
+                    "graceful termination failed: {error}; force termination failed: {fallback}"
+                )))
+            })?;
         }
         let status = if let Ok(result) = timeout(grace, self.child.wait()).await {
             result.map_err(SupervisorError::Wait)?
         } else {
-            if platform::terminate_tree(self.pid, true).await.is_err()
-                && self
-                    .child
-                    .try_wait()
-                    .map_err(SupervisorError::Wait)?
-                    .is_none()
-            {
-                self.child.start_kill().map_err(SupervisorError::Signal)?;
-            }
+            self.force_terminate().await?;
             self.child.wait().await.map_err(SupervisorError::Wait)?
         };
         self.finish_output().await?;
         Ok(status)
+    }
+
+    async fn force_terminate(&mut self) -> Result<(), SupervisorError> {
+        if platform::terminate_tree(self.pid, true).await.is_err()
+            && self
+                .child
+                .try_wait()
+                .map_err(SupervisorError::Wait)?
+                .is_none()
+        {
+            self.child.start_kill().map_err(SupervisorError::Signal)?;
+        }
+        Ok(())
     }
 
     async fn finish_output(&mut self) -> Result<(), SupervisorError> {

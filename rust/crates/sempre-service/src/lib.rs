@@ -216,6 +216,11 @@ mod tests {
         let working = root.join("data");
         let systemd = render::systemd(&executable, &working).expect("systemd unit");
         let escaped_executable = executable.to_string_lossy().replace('\\', "\\\\");
+        let escaped_working = working
+            .to_string_lossy()
+            .replace(' ', "\\x20")
+            .replace('&', "\\x26");
+        assert!(systemd.contains(&format!("WorkingDirectory={escaped_working}")));
         assert!(systemd.contains(&format!(
             "ExecStart=\"{escaped_executable}\" --system daemon"
         )));
