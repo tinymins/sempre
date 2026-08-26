@@ -19,10 +19,10 @@ pub use model::{
     TProxyConfig, TransparentProxy, TunConfig,
 };
 pub use parser::{ParseResult, parse_subscription};
-pub use rule_set::convert_clash_rule_set;
+pub use rule_set::{convert_clash_rule_set, rule_provider_has_rules, rule_provider_snapshot_id};
 pub use target::{Target, available_targets};
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -87,11 +87,15 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
         }
     }
 
-    let selected: HashSet<&str> = profile.custom_node_ids.iter().map(String::as_str).collect();
-    for node in request
+    let custom_nodes = request
         .custom_nodes
         .iter()
-        .filter(|node| selected.contains(node.id.as_str()))
+        .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    for node in profile
+        .custom_node_ids
+        .iter()
+        .filter_map(|id| custom_nodes.get(id.as_str()).copied())
     {
         let proxy = Proxy::from_value(node.proxy.clone())
             .map_err(|_| CompileError::InvalidCustomNode(node.name.clone()))?;
@@ -115,7 +119,8 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
         })
         .collect();
 
-    let (content, field_diffs, warnings) = renderer::render(&profile, &proxies, &target)?;
+    let (content, field_diffs, warnings) =
+        renderer::render(&profile, &proxies, &target, &request.snapshots)?;
     diagnostics.extend(warnings.into_iter().map(|message| Diagnostic {
         level: "warning".into(),
         source_id: None,

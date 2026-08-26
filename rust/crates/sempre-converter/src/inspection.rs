@@ -36,12 +36,15 @@ pub fn preview_nodes(request: &CompileRequest) -> Result<Vec<PreviewNode>, Compi
             .map_err(|_| CompileError::InvalidCustomNode("manual server".into()))?;
         nodes.push(preview_proxy(proxy, 0, "manual", &[]));
     }
-    let selected: std::collections::HashSet<&str> =
-        profile.custom_node_ids.iter().map(String::as_str).collect();
-    for node in request
+    let custom_nodes = request
         .custom_nodes
         .iter()
-        .filter(|node| selected.contains(node.id.as_str()))
+        .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    for node in profile
+        .custom_node_ids
+        .iter()
+        .filter_map(|id| custom_nodes.get(id.as_str()).copied())
     {
         let proxy = Proxy::from_value(node.proxy.clone())
             .map_err(|_| CompileError::InvalidCustomNode(node.name.clone()))?;

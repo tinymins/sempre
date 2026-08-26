@@ -1,5 +1,9 @@
 use serde_json::{Map, Value, json};
 
+pub fn rule_provider_snapshot_id(tag: &str) -> String {
+    format!("rule-provider:{tag}")
+}
+
 pub fn convert_clash_rule_set(text: &str, version: u8) -> Value {
     let entries = entries(text);
     let mut domain = Vec::new();
@@ -21,15 +25,17 @@ pub fn convert_clash_rule_set(text: &str, version: u8) -> Value {
             domain.push(parts[0].to_owned());
             continue;
         }
-        match parts[0] {
-            "DOMAIN" | "+" | "HOST" => domain.push(parts[1].to_owned()),
-            "DOMAIN-SUFFIX" | "HOST-SUFFIX" => domain_suffix.push(parts[1].to_owned()),
-            "DOMAIN-KEYWORD" | "HOST-KEYWORD" => domain_keyword.push(parts[1].to_owned()),
-            "DOMAIN-REGEX" => domain_regex.push(parts[1].to_owned()),
-            "IP-CIDR" | "IP-CIDR6" => ip_cidr.push(parts[1].to_owned()),
-            "SRC-IP-CIDR" => source_ip_cidr.push(parts[1].to_owned()),
-            "DST-PORT" => parse_port(parts[1], &mut port),
-            "SRC-PORT" => parse_port(parts[1], &mut source_port),
+        let kind = parts[0].trim();
+        let value = parts[1].trim();
+        match kind {
+            "DOMAIN" | "+" | "HOST" => domain.push(value.to_owned()),
+            "DOMAIN-SUFFIX" | "HOST-SUFFIX" => domain_suffix.push(value.to_owned()),
+            "DOMAIN-KEYWORD" | "HOST-KEYWORD" => domain_keyword.push(value.to_owned()),
+            "DOMAIN-REGEX" => domain_regex.push(value.to_owned()),
+            "IP-CIDR" | "IP-CIDR6" => ip_cidr.push(value.to_owned()),
+            "SRC-IP-CIDR" => source_ip_cidr.push(value.to_owned()),
+            "DST-PORT" => parse_port(value, &mut port),
+            "SRC-PORT" => parse_port(value, &mut source_port),
             _ => {}
         }
     }
@@ -46,8 +52,21 @@ pub fn convert_clash_rule_set(text: &str, version: u8) -> Value {
     json!({ "version": version, "rules": [rule] })
 }
 
+pub(crate) fn inline_rules(text: &str) -> Option<Vec<Value>> {
+    let converted = convert_clash_rule_set(text, 4);
+    let rules = converted.get("rules")?.as_array()?.clone();
+    rules
+        .iter()
+        .any(|rule| rule.as_object().is_some_and(|rule| !rule.is_empty()))
+        .then_some(rules)
+}
+
+pub fn rule_provider_has_rules(text: &str) -> bool {
+    inline_rules(text).is_some()
+}
+
 fn entries(text: &str) -> Vec<String> {
-    match serde_yaml::from_str::<serde_yaml::Value>(text) {
+    let entries = match serde_yaml::from_str::<serde_yaml::Value>(text) {
         Ok(serde_yaml::Value::Sequence(values)) => strings(values),
         Ok(value) => value
             .get("payload")
@@ -55,7 +74,12 @@ fn entries(text: &str) -> Vec<String> {
             .cloned()
             .map(strings)
             .unwrap_or_default(),
-        Err(_) => text.lines().map(str::to_owned).collect(),
+        Err(_) => Vec::new(),
+    };
+    if entries.is_empty() {
+        text.lines().map(str::to_owned).collect()
+    } else {
+        entries
     }
 }
 
@@ -106,5 +130,16 @@ mod tests {
         assert_eq!(output["rules"][0]["port"], json!([443]));
         assert!(output["rules"][0].get("source_port").is_none());
         assert!(!output.to_string().contains("unsafe"));
+    }
+
+    #[test]
+    fn converts_plain_line_provider_documents() {
+        let output =
+            convert_clash_rule_set("DOMAIN,exact.example\nDOMAIN-SUFFIX,suffix.example", 4);
+        assert_eq!(output["rules"][0]["domain"], json!(["exact.example"]));
+        assert_eq!(
+            output["rules"][0]["domain_suffix"],
+            json!(["suffix.example"])
+        );
     }
 }

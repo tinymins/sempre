@@ -12,6 +12,7 @@ mod install;
 mod inventory;
 mod lifecycle;
 mod process;
+mod rule_provider;
 mod runtime;
 mod scheduler;
 mod service_deploy;

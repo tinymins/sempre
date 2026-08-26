@@ -78,6 +78,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             });
             snapshots.push(result.snapshot);
         }
+        let (provider_snapshots, provider_warnings) = self
+            .load_rule_provider_snapshots(&updated, &target, true)
+            .await?;
+        snapshots.extend(provider_snapshots);
         let request = CompileRequest {
             protocol: 1,
             profile: updated.clone(),
@@ -86,7 +90,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             target: target.clone(),
         };
         let nodes = preview_nodes(&request)?;
-        let render = local_render(compile(&request)?, Vec::new());
+        let render = local_render(compile(&request)?, provider_warnings);
         let effective = sempre_converter::prepare_profile(&updated, &target)?;
         Ok(ProfileDebugResult {
             profile,
@@ -123,10 +127,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 runtime_validated: false,
             });
         }
-        let request = self
+        let mut request = self
             .load_profile_request(profile, catalog.custom_nodes, target, force)
             .await?;
-        Ok(local_render(compile(&request)?, Vec::new()))
+        let (provider_snapshots, provider_warnings) = self
+            .load_rule_provider_snapshots(&request.profile, &request.target, force)
+            .await?;
+        request.snapshots.extend(provider_snapshots);
+        Ok(local_render(compile(&request)?, provider_warnings))
     }
 
     pub async fn preview_subscription_nodes(

@@ -2,63 +2,24 @@ use std::fmt::Write as _;
 
 use serde_json::{Map, Value, json};
 
-use crate::{CompileError, FieldDiff, Profile, Proxy, ProxyGroup, Target};
+use crate::{CompileError, FieldDiff, Profile, Proxy, SourceSnapshot, Target};
 
+mod assembly;
 mod config;
 mod fields;
-use fields::{consumed_keys, deep_merge};
+mod private_access;
+use fields::consumed_keys;
 
 pub(super) fn render(
     profile: &Profile,
     proxies: &[Proxy],
     target: &Target,
+    snapshots: &[SourceSnapshot],
 ) -> Result<(String, Vec<FieldDiff>, Vec<String>), CompileError> {
-    let mut outbounds = Vec::new();
-    let mut diffs = Vec::new();
-    let mut warnings = Vec::new();
-    for proxy in proxies {
-        let (outbound, diff) = convert_proxy(proxy);
-        if let Some(outbound) = outbound {
-            outbounds.push(outbound);
-        }
-        warnings.extend(diff.warnings.clone());
-        diffs.push(diff);
-    }
-    if outbounds.is_empty() {
-        return Err(CompileError::EmptyProfile);
-    }
-    let names: Vec<String> = outbounds
-        .iter()
-        .filter_map(|value| value["tag"].as_str().map(str::to_owned))
-        .collect();
-    outbounds.splice(0..0, selector_outbounds(&profile.groups, &names));
-    outbounds.push(json!({ "type": "direct", "tag": "direct" }));
-    outbounds.push(json!({ "type": "block", "tag": "reject" }));
-    if target.version == "11" {
-        outbounds.push(json!({ "type": "dns", "tag": "dns-out" }));
-    }
-    let dns = super::dns::sing_box(profile, proxies, target)?;
-    let route = config::route(profile, target, &mut warnings);
-    let mut config = json!({
-        "log": config::log(&profile.log_level),
-        "inbounds": config::inbounds(profile, target),
-        "outbounds": outbounds,
-        "dns": dns,
-        "route": route,
-        "experimental": config::management_api(profile)
-    });
-    if let Some(override_value) = profile.core_overrides.get("sing-box") {
-        deep_merge(&mut config, override_value);
-    }
-    super::dns::apply_sing_box_platform_policy(profile, target, &mut config, &mut warnings);
-    config::normalize_for_version(&mut config, target);
-    let mut content = serde_json::to_string_pretty(&config)
-        .map_err(|error| CompileError::Render(error.to_string()))?;
-    content.push('\n');
-    Ok((content, diffs, warnings))
+    assembly::render(profile, proxies, target, snapshots)
 }
 
-fn convert_proxy(proxy: &Proxy) -> (Option<Value>, FieldDiff) {
+pub(super) fn convert_proxy(proxy: &Proxy) -> (Option<Value>, FieldDiff) {
     let consumed = consumed_keys(&proxy.proxy_type);
     let mut diff = FieldDiff {
         node: proxy.name.clone(),
@@ -407,50 +368,6 @@ fn multiplex(proxy: &Proxy) -> Option<Value> {
         }
         _ => None,
     }
-}
-
-fn selector_outbounds(groups: &[ProxyGroup], names: &[String]) -> Vec<Value> {
-    let configured = if groups.is_empty() {
-        vec![ProxyGroup {
-            name: "proxy".into(),
-            group_type: "select".into(),
-            ..ProxyGroup::default()
-        }]
-    } else {
-        groups.to_vec()
-    };
-    configured
-        .into_iter()
-        .map(|group| {
-            let mut members = group.proxies;
-            if !group.readonly {
-                for name in names {
-                    if !members.contains(name) {
-                        members.push(name.clone());
-                    }
-                }
-            }
-            if members.is_empty() {
-                members.clone_from_slice(names);
-            }
-            let outbound_type = match group.group_type.as_str() {
-                "url-test" | "fallback" | "load-balance" => "urltest",
-                _ => "selector",
-            };
-            let mut value =
-                json!({ "type": outbound_type, "tag": group.name, "outbounds": members });
-            if !group.url.is_empty() {
-                value["url"] = json!(group.url);
-            }
-            if group.interval > 0 {
-                value["interval"] = json!(format!("{}s", group.interval));
-            }
-            if !group.default.is_empty() {
-                value["default"] = json!(group.default);
-            }
-            value
-        })
-        .collect()
 }
 
 fn field<'a>(proxy: &'a Proxy, key: &str) -> &'a Value {

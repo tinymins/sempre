@@ -238,7 +238,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         document: &Document,
         refresh: bool,
     ) -> Result<RenderedProfile, ManagerError> {
-        let (target, adapter_warnings) = self.subscription_target(document)?;
+        let (target, mut adapter_warnings) = self.subscription_target(document)?;
         if profile_mode(profile) == "remote" {
             let remote = self.remote.render(profile, &target).await?;
             validate_runtime_profile(&remote.profile)?;
@@ -280,6 +280,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             *source = result.source;
             snapshots.push(result.snapshot);
         }
+        let (provider_snapshots, provider_warnings) = self
+            .load_rule_provider_snapshots(&updated, &target, refresh)
+            .await?;
+        snapshots.extend(provider_snapshots);
+        adapter_warnings.extend(provider_warnings);
         let compiled = compile(&CompileRequest {
             protocol: 1,
             profile: updated.clone(),

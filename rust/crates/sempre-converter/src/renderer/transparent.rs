@@ -15,6 +15,13 @@ pub(super) fn sing_box_inbounds(profile: &Profile, target: &Target) -> Vec<Value
         if target.platform == "windows" {
             inbound["interface_name"] = json!("sing-box");
         }
+        if target.platform == "macos" && matches!(target.version.as_str(), "11" | "12") {
+            inbound["sniff"] = json!(true);
+            inbound["sniff_override_destination"] = json!(true);
+        }
+        if target.platform == "macos" && target.version == "14" {
+            inbound["dns_mode"] = json!("hijack");
+        }
         return vec![inbound];
     }
     let transparent = &profile.transparent_proxy;

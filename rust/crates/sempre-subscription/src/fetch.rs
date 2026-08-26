@@ -29,6 +29,7 @@ struct CacheEntry {
     fetched_at: DateTime<Utc>,
 }
 
+#[derive(Clone)]
 pub struct Fetcher {
     store: SubscriptionStore,
     standard: Client,
