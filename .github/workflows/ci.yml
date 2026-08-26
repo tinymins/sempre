@@ -75,7 +75,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
       - run: cargo install cargo-audit --locked
-      - run: cargo audit --file rust/Cargo.lock
+      - name: Verify ignored RSA advisory is unreachable
+        run: test -z "$(cargo tree --manifest-path=rust/Cargo.toml --workspace --target all -i rsa 2>/dev/null)"
+      # rsa is locked only through SQLx's disabled MySQL feature, is absent from
+      # every target's dependency graph, and RUSTSEC-2023-0071 has no fixed release.
+      - run: cargo audit --file rust/Cargo.lock --ignore RUSTSEC-2023-0071
 
   build:
     name: Build (${{ matrix.name }})
