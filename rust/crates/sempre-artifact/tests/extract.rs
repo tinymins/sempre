@@ -37,6 +37,42 @@ fn extracts_and_finds_zip_payload() {
 }
 
 #[test]
+fn normalizes_single_zip_payload_name() {
+    let root = tempdir().expect("temporary directory");
+    let archive = root.path().join("mihomo.zip");
+    let file = fs::File::create(&archive).expect("archive");
+    let mut writer = ZipWriter::new(file);
+    writer
+        .start_file(
+            "mihomo-windows-amd64-compatible.exe",
+            SimpleFileOptions::default(),
+        )
+        .expect("ZIP entry");
+    writer.write_all(b"binary").expect("ZIP payload");
+    writer.finish().expect("finish ZIP");
+
+    let destination = root.path().join("out");
+    extract(
+        &archive,
+        &destination,
+        &ExtractOptions {
+            format: ArchiveFormat::Zip,
+            single_file_name: Some("mihomo.exe".into()),
+        },
+    )
+    .expect("extract ZIP");
+    assert_eq!(
+        fs::read(destination.join("mihomo.exe")).expect("payload"),
+        b"binary"
+    );
+    assert!(
+        !destination
+            .join("mihomo-windows-amd64-compatible.exe")
+            .exists()
+    );
+}
+
+#[test]
 fn rejects_zip_path_traversal() {
     let root = tempdir().expect("temporary directory");
     let archive = root.path().join("evil.zip");

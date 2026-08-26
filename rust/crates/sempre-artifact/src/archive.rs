@@ -45,7 +45,14 @@ pub fn extract(path: &Path, destination: &Path, options: &ExtractOptions) -> Res
         .map_err(|error| ArtifactError::io("create extraction directory", error))?;
     secure_directory(destination)?;
     match options.format {
-        ArchiveFormat::Zip => extract_zip(path, destination),
+        ArchiveFormat::Zip => {
+            let name = options
+                .single_file_name
+                .as_ref()
+                .map(|_| single_file_name(options, "ZIP"))
+                .transpose()?;
+            extract_zip(path, destination, name)
+        }
         ArchiveFormat::TarGz => extract_tar_gz(path, destination),
         ArchiveFormat::Gzip => extract_gzip(
             path,
@@ -107,11 +114,12 @@ fn extract_gzip(path: &Path, destination: &Path, name: &str, limit: u64) -> Resu
     Ok(())
 }
 
-fn extract_zip(path: &Path, destination: &Path) -> Result<()> {
+fn extract_zip(path: &Path, destination: &Path, single_file_name: Option<&str>) -> Result<()> {
     let source = File::open(path).map_err(|error| ArtifactError::io("open ZIP", error))?;
     let mut archive =
         zip::ZipArchive::new(source).map_err(|error| ArtifactError::zip("open ZIP", error))?;
     let mut expanded = 0_u64;
+    let mut extracted_files = Vec::new();
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
@@ -137,6 +145,14 @@ fn extract_zip(path: &Path, destination: &Path) -> Result<()> {
         let mode = entry.unix_mode().unwrap_or(0o600);
         let size = entry.size();
         write_limited(&target, &mut entry, mode, size)?;
+        extracted_files.push(target);
+    }
+    if let (Some(name), [path]) = (single_file_name, extracted_files.as_slice()) {
+        let normalized = path.with_file_name(name);
+        if path != &normalized {
+            fs::rename(path, &normalized)
+                .map_err(|error| ArtifactError::io("normalize ZIP payload name", error))?;
+        }
     }
     Ok(())
 }
