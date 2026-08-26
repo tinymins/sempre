@@ -198,8 +198,6 @@ pub(crate) fn require_administrator() -> Result<(), ServiceError> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::{Action, render};
 
     #[test]
@@ -211,13 +209,17 @@ mod tests {
 
     #[test]
     fn native_registrations_escape_paths_and_use_the_rust_daemon() {
-        let executable = Path::new("/Applications/Sempre & tools/sempre");
-        let working = Path::new("/Library/Application Support/Sempre/data");
-        let systemd = render::systemd(executable, working).expect("systemd unit");
-        assert!(
-            systemd.contains("ExecStart=\"/Applications/Sempre & tools/sempre\" --system daemon")
-        );
-        let launchd = render::launchd(executable, working).expect("launchd plist");
+        let root = std::env::current_dir()
+            .expect("current directory")
+            .join("Sempre & tools");
+        let executable = root.join("sempre");
+        let working = root.join("data");
+        let systemd = render::systemd(&executable, &working).expect("systemd unit");
+        let escaped_executable = executable.to_string_lossy().replace('\\', "\\\\");
+        assert!(systemd.contains(&format!(
+            "ExecStart=\"{escaped_executable}\" --system daemon"
+        )));
+        let launchd = render::launchd(&executable, &working).expect("launchd plist");
         assert!(launchd.contains("Sempre &amp; tools"));
         assert!(launchd.contains("<string>--system</string><string>daemon</string>"));
     }
