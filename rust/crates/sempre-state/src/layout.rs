@@ -423,9 +423,9 @@ mod tests {
         let official = layout.core_binary("sing-box", None, "1.2.3");
         let custom = layout.core_binary("sing-box", Some("tinymins/sing-box"), "1.2.3");
         assert_ne!(official, custom);
-        assert!(custom.ends_with(Path::new(
-            "sing-box/sources/tinymins/sing-box/1.2.3/sing-box"
-        )));
+        let expected =
+            Path::new("sing-box/sources/tinymins/sing-box/1.2.3").join(executable_name("sing-box"));
+        assert!(custom.ends_with(expected));
     }
 
     #[test]
