@@ -406,6 +406,7 @@ fn make_executable(path: &Path) -> Result<(), ManagerError> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn make_executable(_: &Path) -> Result<(), ManagerError> {
     Ok(())
 }
@@ -418,6 +419,7 @@ fn secure_directory(path: &Path) -> Result<(), ManagerError> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn secure_directory(_: &Path) -> Result<(), ManagerError> {
     Ok(())
 }

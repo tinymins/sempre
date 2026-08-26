@@ -209,6 +209,7 @@ fn make_executable(path: &Path) -> Result<(), BuildError> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn make_executable(_: &Path) -> Result<(), BuildError> {
     Ok(())
 }

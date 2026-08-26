@@ -259,6 +259,7 @@ fn set_directory_permissions(core: &str, path: &Path) -> Result<(), RegistryErro
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn set_directory_permissions(_: &str, _: &Path) -> Result<(), RegistryError> {
     Ok(())
 }
@@ -271,6 +272,7 @@ fn set_file_permissions(core: &str, path: &Path) -> Result<(), RegistryError> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn set_file_permissions(_: &str, _: &Path) -> Result<(), RegistryError> {
     Ok(())
 }

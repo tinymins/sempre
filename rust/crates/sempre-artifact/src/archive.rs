@@ -271,6 +271,7 @@ fn secure_directory(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn secure_directory(_: &Path) -> Result<()> {
     Ok(())
 }

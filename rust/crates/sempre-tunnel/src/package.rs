@@ -169,6 +169,7 @@ fn make_executable(path: &Path) -> Result<(), TunnelError> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn make_executable(_path: &Path) -> Result<(), TunnelError> {
     Ok(())
 }

@@ -127,6 +127,7 @@ fn make_executable(path: &std::path::Path) -> Result<(), BuildError> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn make_executable(_: &std::path::Path) -> Result<(), BuildError> {
     Ok(())
 }
