@@ -235,17 +235,17 @@ mod tests {
             "--output",
             "artifacts",
             "--version",
-            "v2.0.1",
+            "v2.0.2",
         ])
         .expect("package");
         assert!(matches!(package.task, Some(Task::Package)));
         assert_eq!(package.output, PathBuf::from("artifacts"));
-        assert_eq!(package.version.as_deref(), Some("v2.0.1"));
+        assert_eq!(package.version.as_deref(), Some("v2.0.2"));
     }
 
     #[test]
     fn release_version_defaults_to_workspace_version_and_allows_tag_override() {
-        assert_eq!(release_version(None), "2.0.1");
-        assert_eq!(release_version(Some("v2.0.1".into())), "v2.0.1");
+        assert_eq!(release_version(None), "2.0.2");
+        assert_eq!(release_version(Some("v2.0.2".into())), "v2.0.2");
     }
 }
