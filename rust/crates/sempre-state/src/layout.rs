@@ -376,6 +376,7 @@ fn secure_private_directory(path: &Path) -> Result<(), LayoutError> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn secure_private_directory(_path: &Path) -> Result<(), LayoutError> {
     Ok(())
 }

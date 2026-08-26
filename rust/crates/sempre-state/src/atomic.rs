@@ -29,6 +29,7 @@ fn set_permissions(path: &Path, mode: u32) -> io::Result<()> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn set_permissions(_: &Path, _: u32) -> io::Result<()> {
     Ok(())
 }
@@ -39,6 +40,7 @@ fn sync_parent(parent: &Path) -> io::Result<()> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn sync_parent(_: &Path) -> io::Result<()> {
     Ok(())
 }
