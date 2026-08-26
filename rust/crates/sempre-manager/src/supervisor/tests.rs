@@ -132,7 +132,9 @@ async fn early_exit_rolls_back_a_pending_deployment() {
     let profiles = manager
         .subscriptions
         .update(|catalog| {
-            let candidate = sempre_subscription::new_profile("candidate");
+            catalog.profiles[0].transparent_proxy.mode = "disabled".into();
+            let mut candidate = sempre_subscription::new_profile("candidate");
+            candidate.transparent_proxy.mode = "disabled".into();
             catalog.profiles.push(candidate);
             Ok(())
         })
