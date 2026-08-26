@@ -29,7 +29,12 @@ fn setup(root: &std::path::Path, core: &std::path::Path) -> Result<(), Box<dyn s
     let store = Store::new(layout.clone());
     store.initialize()?;
     sempre_control::WebConfigStore::new(&layout.web_config).initialize()?;
-    sempre_subscription::SubscriptionStore::new(layout.clone()).initialize()?;
+    let subscriptions = sempre_subscription::SubscriptionStore::new(layout.clone());
+    subscriptions.initialize()?;
+    subscriptions.update(|catalog| {
+        catalog.profiles[0].transparent_proxy.mode = "disabled".into();
+        Ok(())
+    })?;
 
     let core_data = fs::read(core)?;
     let core_digest = format!("sha256:{:x}", Sha256::digest(&core_data));
@@ -94,5 +99,9 @@ mod tests {
         let document = Store::new(Layout::at(root.path())).read().expect("state");
         assert_eq!(document.selected.expect("selection").reference, "stable");
         assert!(document.active.is_some());
+        let catalog = sempre_subscription::SubscriptionStore::new(Layout::at(root.path()))
+            .read()
+            .expect("subscriptions");
+        assert_eq!(catalog.profiles[0].transparent_proxy.mode, "disabled");
     }
 }
