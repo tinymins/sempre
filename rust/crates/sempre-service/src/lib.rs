@@ -218,6 +218,7 @@ mod tests {
         let escaped_executable = executable.to_string_lossy().replace('\\', "\\\\");
         let escaped_working = working
             .to_string_lossy()
+            .replace('\\', "\\x5c")
             .replace(' ', "\\x20")
             .replace('&', "\\x26");
         assert!(systemd.contains(&format!("WorkingDirectory={escaped_working}")));
