@@ -181,6 +181,8 @@ fn extract_tar_gz(path: &Path, destination: &Path) -> Result<()> {
 }
 
 fn write_limited(path: &Path, source: impl Read, mode: u32, limit: u64) -> Result<u64> {
+    #[cfg(not(unix))]
+    let _ = mode;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| ArtifactError::io("create archive directory", error))?;

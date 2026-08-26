@@ -256,6 +256,8 @@ pub(crate) fn copy_tree(source: &Path, target: &Path) -> Result<(), BundleError>
 }
 
 pub(crate) fn copy_file(source: &Path, target: &Path, executable: bool) -> Result<(), BundleError> {
+    #[cfg(not(unix))]
+    let _ = executable;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|source_error| BundleError::Io {
             operation: "create snapshot parent directory",
@@ -392,6 +394,7 @@ fn archive_mode(path: &Path) -> Result<u32, BundleError> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn archive_mode(path: &Path) -> Result<u32, BundleError> {
     let executable = path.extension().is_some_and(|extension| {
         extension.eq_ignore_ascii_case("exe")

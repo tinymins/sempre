@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use std::{fs, future::Future, path::Path, pin::Pin, sync::Arc, time::Duration};
 
 use chrono::Utc;

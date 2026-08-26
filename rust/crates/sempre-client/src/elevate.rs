@@ -15,6 +15,7 @@ pub enum Outcome {
 pub enum ElevationError {
     #[error("locate current executable: {0}")]
     CurrentExecutable(#[source] io::Error),
+    #[cfg(unix)]
     #[error("resolve current executable {path}: {source}")]
     ResolveExecutable {
         path: String,

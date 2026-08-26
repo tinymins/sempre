@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use std::{fs, sync::Arc, time::Duration};
 
 use sempre_state::{Layout, Store as StateStore};

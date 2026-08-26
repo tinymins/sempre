@@ -1,6 +1,9 @@
-use std::{fs, time::Duration};
+use std::fs;
 
+#[cfg(unix)]
 use sempre_core::CommandSpec;
+#[cfg(unix)]
+use std::time::Duration;
 use tokio::io::AsyncWriteExt as _;
 
 use super::*;

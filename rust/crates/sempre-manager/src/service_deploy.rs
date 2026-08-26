@@ -227,16 +227,19 @@ pub(super) fn unregister_command(layout: &Layout) -> Result<(), ManagerError> {
 }
 
 #[cfg(windows)]
+#[allow(clippy::unnecessary_wraps)]
 pub(super) fn prepare_command_registration(_: &Layout) -> Result<(), ManagerError> {
     Ok(())
 }
 
 #[cfg(windows)]
+#[allow(clippy::unnecessary_wraps)]
 pub(super) fn register_command(_: &Layout) -> Result<bool, ManagerError> {
     Ok(false)
 }
 
 #[cfg(windows)]
+#[allow(clippy::unnecessary_wraps)]
 pub(super) fn unregister_command(_: &Layout) -> Result<(), ManagerError> {
     Ok(())
 }

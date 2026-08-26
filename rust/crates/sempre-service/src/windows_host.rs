@@ -59,7 +59,7 @@ fn run_service() -> Result<(), Box<dyn Error>> {
         _ => ServiceControlHandlerResult::NotImplemented,
     };
     let status_handle = service_control_handler::register(NAME, event_handler)?;
-    *status_slot.lock().expect("service status lock") = Some(status_handle.clone());
+    *status_slot.lock().expect("service status lock") = Some(status_handle);
     status_handle.set_service_status(service_status(
         ServiceState::Running,
         ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
