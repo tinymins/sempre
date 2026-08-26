@@ -153,12 +153,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .get(&reference.core)
                 .and_then(|current| current.runtime_key.as_ref())
                 != build.runtime_key.as_ref();
-            document
-                .configs
-                .insert(reference.core.clone(), hash.clone());
-            document
-                .config_builds
-                .insert(reference.core.clone(), build.clone());
             let deployment = Deployment {
                 core: reference.core.clone(),
                 repository: reference.repository.clone(),
@@ -172,6 +166,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 document.stage(deployment);
                 change.needs_restart = true;
             }
+            document
+                .configs
+                .insert(reference.core.clone(), hash.clone());
+            document
+                .config_builds
+                .insert(reference.core.clone(), build.clone());
             change.changed = config_changed || deployment_changed;
             update(document, change.changed);
             change.previous_detail = short_hash(&old_hash);

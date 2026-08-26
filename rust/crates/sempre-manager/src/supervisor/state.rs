@@ -74,6 +74,8 @@ pub fn mark_healthy<R: VersionRunner>(
         }
         if document.pending {
             document.previous = None;
+            document.previous_config_build = None;
+            document.previous_profile_id = None;
             document.pending = false;
         }
         document.last_error = None;
@@ -150,13 +152,15 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
         if rollback_pending && document.pending {
             if let Some(restored) = document.previous.take() {
                 failure.rolled_back_to = Some(restored.clone());
-                if failure
-                    .failed
-                    .as_ref()
-                    .is_some_and(|item| item.core == restored.core)
-                {
-                    document.config_builds.remove(&restored.core);
+                match document.previous_config_build.take() {
+                    Some(build) => {
+                        document.config_builds.insert(restored.core.clone(), build);
+                    }
+                    None => {
+                        document.config_builds.remove(&restored.core);
+                    }
                 }
+                document.active_profile_id = document.previous_profile_id.take();
                 document
                     .configs
                     .insert(restored.core.clone(), restored.config_hash.clone());
@@ -164,6 +168,8 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
                 retry = true;
             } else {
                 document.active = None;
+                document.previous_config_build = None;
+                document.active_profile_id = document.previous_profile_id.take();
             }
             document.pending = false;
         }

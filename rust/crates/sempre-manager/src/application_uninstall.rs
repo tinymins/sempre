@@ -71,6 +71,8 @@ fn reset_runtime_state(document: &mut Document) {
     document.selected = None;
     document.active = None;
     document.previous = None;
+    document.previous_config_build = None;
+    document.previous_profile_id = None;
     document.pending = false;
     document.last_error = None;
     document.cores.clear();

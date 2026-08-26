@@ -14,6 +14,10 @@ pub struct Document {
     pub selected: Option<Selection>,
     pub active: Option<Deployment>,
     pub previous: Option<Deployment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_config_build: Option<ConfigBuild>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_profile_id: Option<String>,
     pub pending: bool,
     pub last_error: Option<String>,
     pub cores: BTreeMap<String, CoreState>,
@@ -164,6 +168,8 @@ impl Default for Document {
             selected: None,
             active: None,
             previous: None,
+            previous_config_build: None,
+            previous_profile_id: None,
             pending: false,
             last_error: None,
             cores: BTreeMap::new(),
@@ -279,8 +285,13 @@ impl Document {
     }
 
     pub fn stage(&mut self, deployment: Deployment) {
-        if self.active.is_some() && !self.pending {
+        if !self.pending {
             self.previous.clone_from(&self.active);
+            self.previous_config_build = self
+                .active
+                .as_ref()
+                .and_then(|active| self.config_builds.get(&active.core).cloned());
+            self.previous_profile_id.clone_from(&self.active_profile_id);
         }
         self.active = Some(deployment);
         self.pending = true;
