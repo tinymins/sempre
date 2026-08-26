@@ -38,7 +38,7 @@ while [ \$# -gt 0 ]; do
   esac
 done
 case "\$url" in
-  */releases/latest) printf '%s' 'https://github.com/tinymins/sempre/releases/tag/v0.1.0' ;;
+  */releases/latest) printf '%s' 'https://github.com/tinymins/sempre/releases/tag/v2.0.0-beta.1' ;;
   */SHA256SUMS) printf '%s  %s\n' '$digest' 'sempre-bundle-__PLATFORM__-__ARCH__.zip' >"\$output" ;;
   *) printf 'archive' >"\$output" ;;
 esac

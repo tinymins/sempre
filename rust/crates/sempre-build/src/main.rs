@@ -15,7 +15,7 @@ use sempre_build::{BuildError, BuildInput, BuildTarget};
     about = "Build one native Sempre release target"
 )]
 struct Arguments {
-    /// Replace the Git-derived release version.
+    /// Replace the workspace release version.
     #[arg(long, global = true)]
     version: Option<String>,
     /// Write the target artifacts to this directory.
@@ -86,13 +86,7 @@ async fn build_release(
 ) -> Result<(), BuildError> {
     run_command(root, "bun", ["run", "build:ui"], &[])?;
 
-    let version =
-        version.unwrap_or_else(|| git(root, ["describe", "--tags", "--always", "--dirty"]));
-    let version = if version == "unknown" {
-        String::from("dev")
-    } else {
-        version
-    };
+    let version = release_version(version);
     let commit = git(root, ["rev-parse", "--short=12", "HEAD"]);
     let date = git(root, ["show", "-s", "--format=%cI", "HEAD"]);
     let installed_at = DateTime::parse_from_rfc3339(&date)
@@ -147,6 +141,10 @@ fn repository_root() -> Result<PathBuf, BuildError> {
         )));
     }
     Ok(root.to_path_buf())
+}
+
+fn release_version(explicit: Option<String>) -> String {
+    explicit.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned())
 }
 
 fn absolute_output(root: &Path, requested: &Path) -> Result<PathBuf, BuildError> {
@@ -243,5 +241,11 @@ mod tests {
         assert!(matches!(package.task, Some(Task::Package)));
         assert_eq!(package.output, PathBuf::from("artifacts"));
         assert_eq!(package.version.as_deref(), Some("v2.0.0"));
+    }
+
+    #[test]
+    fn release_version_defaults_to_workspace_version_and_allows_tag_override() {
+        assert_eq!(release_version(None), "2.0.0-beta.1");
+        assert_eq!(release_version(Some("v2.0.0".into())), "v2.0.0");
     }
 }
