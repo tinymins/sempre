@@ -122,7 +122,12 @@ jobs:
         shell: bash
         run: |
           mapfile -d '' assets < <(find dist -maxdepth 1 -type f -print0 | sort -z)
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "$GITHUB_REF_NAME" \
             "${assets[@]}" \
+            "${release_flags[@]}" \
             --generate-notes \
             --verify-tag
