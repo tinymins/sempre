@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn release_version_defaults_to_workspace_version_and_allows_tag_override() {
-        assert_eq!(release_version(None), "2.0.0-beta.1");
+        assert_eq!(release_version(None), "2.0.0");
         assert_eq!(release_version(Some("v2.0.0".into())), "v2.0.0");
     }
 }
