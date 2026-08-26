@@ -436,14 +436,23 @@ mod tests {
                 .by_name(&format!("{prefix}/{METADATA_NAME}"))
                 .is_ok()
         );
-        assert!(archive.by_name(&format!("{prefix}/sempre")).is_ok());
+        let (executable_name, restore_name, restore_invocation) = if cfg!(windows) {
+            ("sempre.exe", "restore.cmd", "%~dp0sempre.exe")
+        } else {
+            ("sempre", "restore.sh", "$SCRIPT_DIR/sempre")
+        };
+        assert!(
+            archive
+                .by_name(&format!("{prefix}/{executable_name}"))
+                .is_ok()
+        );
         let mut restore = archive
-            .by_name(&format!("{prefix}/restore.sh"))
+            .by_name(&format!("{prefix}/{restore_name}"))
             .expect("restore script");
         let mut restore_script = String::new();
         std::io::Read::read_to_string(&mut restore, &mut restore_script)
             .expect("read restore script");
-        assert!(restore_script.contains("$SCRIPT_DIR/sempre"));
+        assert!(restore_script.contains(restore_invocation));
         drop(restore);
         let state: Document = read_json(&mut archive, &format!("{prefix}/.sempre/state.json"));
         assert_eq!(state.runtime, Runtime::default());
