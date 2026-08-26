@@ -11,9 +11,9 @@ use uuid::Uuid;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 pub use deploy::{DeployComponent, stage_deploy};
+pub use install::stage_install;
 pub use restore::{
-    BundleKind, RestoreTransaction, stage_install, stage_restore, validate_release,
-    validate_snapshot,
+    BundleKind, RestoreTransaction, stage_restore, validate_release, validate_snapshot,
 };
 
 const METADATA_NAME: &str = ".sempre-bundle.json";
@@ -478,6 +478,7 @@ mod tests {
     }
 }
 mod deploy;
+mod install;
 mod release;
 mod restore;
 

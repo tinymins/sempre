@@ -58,7 +58,7 @@ impl<R: VersionRunner> Manager<R> {
         }
         sempre_control::WebConfigStore::new(&source.web_config).read()?;
         sempre_service::require_installation_privileges()?;
-        require_replacement_confirmation(source, target, allow_replace)?;
+        require_bundle_replacement_confirmation(kind, source, target, allow_replace)?;
         prepare_command_registration(target)?;
         let _operation = self.store.acquire_operation()?;
         let mut transaction = match kind {
@@ -97,6 +97,18 @@ impl<R: VersionRunner> Manager<R> {
         transaction.commit()?;
         Ok(())
     }
+}
+
+fn require_bundle_replacement_confirmation(
+    kind: BundleKind,
+    source: &Layout,
+    target: &Layout,
+    allow_replace: bool,
+) -> Result<(), ManagerError> {
+    if kind == BundleKind::Release {
+        return Ok(());
+    }
+    require_replacement_confirmation(source, target, allow_replace)
 }
 
 pub(super) fn require_replacement_confirmation(
@@ -286,6 +298,31 @@ mod tests {
         ));
         require_replacement_confirmation(&source, &target, true)
             .expect("explicit replacement confirmation");
+    }
+
+    #[test]
+    fn release_install_never_requests_data_replacement() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let source = Layout::at(&temporary.path().join("source"));
+        let target = Layout::system_at(&temporary.path().join("target"));
+        Store::new(source.clone())
+            .initialize()
+            .expect("source state");
+        let target_store = Store::new(target.clone());
+        target_store.initialize().expect("target state");
+        target_store
+            .update(|document| {
+                document.desired_state = DesiredState::Stopped;
+                Ok(())
+            })
+            .expect("different target state");
+
+        require_bundle_replacement_confirmation(BundleKind::Release, &source, &target, false)
+            .expect("release preserves existing data");
+        assert!(matches!(
+            require_bundle_replacement_confirmation(BundleKind::Snapshot, &source, &target, false),
+            Err(ManagerError::ConfirmationRequired(_))
+        ));
     }
 
     #[cfg(unix)]

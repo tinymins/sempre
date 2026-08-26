@@ -88,10 +88,6 @@ pub fn stage_restore(source: &Layout, target: &Layout) -> Result<RestoreTransact
     stage(source, target, BundleKind::Snapshot)
 }
 
-pub fn stage_install(source: &Layout, target: &Layout) -> Result<RestoreTransaction, BundleError> {
-    stage(source, target, BundleKind::Release)
-}
-
 fn stage(
     source: &Layout,
     target: &Layout,
@@ -305,11 +301,34 @@ pub(super) fn unique_sibling(target: &Path, kind: &str) -> PathBuf {
 }
 
 fn rename(source: &Path, target: &Path, operation: &'static str) -> Result<(), BundleError> {
-    fs::rename(source, target).map_err(|source_error| BundleError::Io {
+    rename_with_retry(source, target).map_err(|source_error| BundleError::Io {
         operation,
         path: source.to_path_buf(),
         source: source_error,
     })
+}
+
+#[cfg(not(windows))]
+fn rename_with_retry(source: &Path, target: &Path) -> io::Result<()> {
+    fs::rename(source, target)
+}
+
+#[cfg(windows)]
+fn rename_with_retry(source: &Path, target: &Path) -> io::Result<()> {
+    use std::{thread, time::Duration};
+
+    const ATTEMPTS: usize = 40;
+    const DELAY: Duration = Duration::from_millis(50);
+    for attempt in 1..=ATTEMPTS {
+        match fs::rename(source, target) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied && attempt < ATTEMPTS => {
+                thread::sleep(DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("rename retry loop always returns")
 }
 
 pub(super) fn remove_path(path: &Path) -> Result<(), BundleError> {
@@ -340,6 +359,32 @@ pub(super) fn remove_path(path: &Path) -> Result<(), BundleError> {
 mod tests {
     use super::*;
     use sempre_state::Store;
+
+    #[cfg(windows)]
+    #[test]
+    fn rename_retries_transient_windows_file_locks() {
+        use std::{fs::OpenOptions, os::windows::fs::OpenOptionsExt as _, thread, time::Duration};
+
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let source = temporary.path().join("source");
+        let target = temporary.path().join("target");
+        fs::create_dir_all(&source).expect("source directory");
+        let executable = source.join("core.exe");
+        fs::write(&executable, b"executable").expect("source executable");
+        let locked = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&executable)
+            .expect("exclusive file handle");
+        let release = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            drop(locked);
+        });
+
+        rename(&source, &target, "rename locked directory").expect("retry rename");
+        release.join().expect("release file handle");
+        assert!(target.join("core.exe").is_file());
+    }
 
     #[test]
     fn restore_transaction_rolls_back_and_commits_complete_snapshots() {
