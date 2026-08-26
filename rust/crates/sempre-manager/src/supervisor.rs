@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf, process::ExitStatus, time::Duration};
 
 use chrono::Utc;
 use sempre_core::{CommandSpec, ControlSpec, CoreRef};
-use sempre_state::{Deployment, DesiredState};
+use sempre_state::{Deployment, DesiredState, Document};
 use sempre_supervisor::{ManagedProcess, SupervisorError, append_log};
 use sempre_transparent::Plan as TransparentPlan;
 use sha2::{Digest, Sha256};
@@ -54,16 +54,20 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<(), ManagerError> {
         let mut backoff = Duration::from_secs(1);
         loop {
+            let document = self.store.read()?;
             if *shutdown.borrow() {
                 self.stop_gateway().await;
-                self.transparent.cleanup().await?;
+                if transparent_cleanup_required(&document) {
+                    self.transparent.cleanup().await?;
+                }
                 state::mark_intentional_exit(self, true)?;
                 return Ok(());
             }
-            let document = self.store.read()?;
             if document.desired_state == DesiredState::Stopped {
                 self.stop_gateway().await;
-                self.transparent.cleanup().await?;
+                if transparent_cleanup_required(&document) {
+                    self.transparent.cleanup().await?;
+                }
                 state::mark_inactive(self, true)?;
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
@@ -73,7 +77,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             if document.active.is_none() {
                 self.stop_gateway().await;
-                self.transparent.cleanup().await?;
+                if transparent_cleanup_required(&document) {
+                    self.transparent.cleanup().await?;
+                }
                 state::mark_inactive(self, false)?;
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
@@ -480,6 +486,10 @@ fn next_backoff(current: Duration) -> Duration {
 
 fn deployment_label(deployment: &Deployment) -> String {
     format!("{}@{}", deployment.core, deployment.version)
+}
+
+fn transparent_cleanup_required(document: &Document) -> bool {
+    document.active.is_some() || document.runtime.core.is_some()
 }
 
 fn path_text(path: &std::path::Path) -> Result<&str, ManagerError> {

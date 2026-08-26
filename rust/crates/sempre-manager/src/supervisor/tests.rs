@@ -87,6 +87,15 @@ fn fixture(script: &str) -> (tempfile::TempDir, Arc<Manager<FakeRunner>>) {
     (root, manager)
 }
 
+#[test]
+fn transparent_cleanup_requires_owned_runtime_evidence() {
+    let mut document = sempre_state::Document::default();
+    assert!(!transparent_cleanup_required(&document));
+
+    document.runtime.core = Some("sing-box".into());
+    assert!(transparent_cleanup_required(&document));
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn supervisor_starts_commits_and_stops_the_real_process() {
