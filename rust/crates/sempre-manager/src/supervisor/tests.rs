@@ -38,6 +38,13 @@ fn fixture(script: &str) -> (tempfile::TempDir, Arc<Manager<FakeRunner>>) {
     let manager = Arc::new(
         Manager::with_runner(Store::new(Layout::at(root.path())), FakeRunner).expect("manager"),
     );
+    manager
+        .subscriptions
+        .update(|catalog| {
+            catalog.profiles[0].transparent_proxy.mode = "disabled".into();
+            Ok(())
+        })
+        .expect("disable transparent proxy");
     let hash = "a".repeat(64);
     manager
         .store
