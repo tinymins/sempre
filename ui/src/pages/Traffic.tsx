@@ -68,7 +68,7 @@ export function Traffic() {
     label: locale === 'zh-CN' ? `每月 ${index + 1} 日` : `Day ${index + 1}`,
   }))
   const retentionMonthOptions = [
-    ...[1, 3, 6, 12, 24, 36, 60].map((value) => ({ value, label: locale === 'zh-CN' ? `${value} 个月` : `${value} months` })),
+    ...[1, 3, 6, 12, 24, 36, 60].map((value) => ({ value, label: locale === 'zh-CN' ? `${value} 个周期` : `${value} cycles` })),
     { value: UNLIMITED, label: t('unlimited'), disabled: settings.max_bytes === null },
   ]
   const timeUnlimited = settings.reset_day === null ? settings.retention_hours === null : settings.retention_months === null

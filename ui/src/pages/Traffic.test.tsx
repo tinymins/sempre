@@ -35,7 +35,8 @@ describe('Traffic', () => {
     expect(screen.getByText('Backend history storage')).toBeInTheDocument()
     expect(screen.getByText('1.0 KiB / 64.0 MiB')).toBeInTheDocument()
     expect(screen.getByText('3 days')).toBeInTheDocument()
-    expect(screen.getByText('Rolling retention')).toBeInTheDocument()
+    expect(screen.getByText('History period')).toBeInTheDocument()
+    expect(screen.getByText('Rolling window')).toBeInTheDocument()
   })
 
   it('renders a monthly traffic reset day', async () => {
@@ -49,9 +50,10 @@ describe('Traffic', () => {
     }))
     renderTraffic()
 
-    expect(await screen.findByText('Monthly reset')).toBeInTheDocument()
+    expect(await screen.findByText('Monthly billing cycle')).toBeInTheDocument()
     expect(screen.getByText('Day 21')).toBeInTheDocument()
-    expect(screen.getByText('12 months')).toBeInTheDocument()
+    expect(screen.getByText('Retained billing cycles')).toBeInTheDocument()
+    expect(screen.getByText('12 cycles')).toBeInTheDocument()
     expect(screen.getByText('80 B / Unlimited')).toBeInTheDocument()
     expect(screen.getByText('Total history storage limit')).toBeInTheDocument()
     expect(screen.getByText(/All retained months share one total history storage limit/)).toBeInTheDocument()
