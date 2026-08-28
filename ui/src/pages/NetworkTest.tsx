@@ -24,7 +24,7 @@ export function NetworkTest() {
   })
   const results = report.data?.results.length ? report.data.results : defaultResults
   const okResults = results.filter((item) => item.ok)
-  const averageLatency = okResults.length ? Math.round(okResults.reduce((sum, item) => sum + item.latency_ms, 0) / okResults.length) : 0
+  const averageRequestDuration = okResults.length ? Math.round(okResults.reduce((sum, item) => sum + item.latency_ms, 0) / okResults.length) : 0
   const domesticIP = results.find((item) => item.id === 'domestic-ip')?.ip || '-'
   const foreignIP = results.find((item) => item.id === 'foreign-ip')?.ip || '-'
   const columns = useMemo<Array<TableColumn<NetworkTestResult>>>(() => [
@@ -41,7 +41,7 @@ export function NetworkTest() {
       render: (_value, record) => report.isFetching ? <Tag color="processing">{t('loading')}...</Tag> : <Tag color={record.ok ? 'success' : 'error'} icon={record.ok ? <CheckCircle2 /> : <XCircle />}>{record.ok ? t('reachable') : t('unreachable')}</Tag>,
     },
     {
-      title: t('latency'),
+      title: t('requestDuration'),
       dataIndex: 'latency_ms',
       width: 120,
       align: 'right',
@@ -76,7 +76,7 @@ export function NetworkTest() {
     </div>
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       <Metric icon={CheckCircle2} label={t('reachable')} value={`${okResults.length}/${results.length}`} tone="green" />
-      <Metric icon={Clock3} label={t('averageLatency')} value={averageLatency ? `${averageLatency} ms` : '-'} tone="amber" />
+      <Metric icon={Clock3} label={t('averageRequestDuration')} value={averageRequestDuration ? `${averageRequestDuration} ms` : '-'} tone="amber" />
       <Metric icon={Activity} label={t('domesticIP')} value={domesticIP} tone="cyan" />
       <Metric icon={Globe2} label={t('foreignIP')} value={foreignIP} tone="blue" />
     </div>

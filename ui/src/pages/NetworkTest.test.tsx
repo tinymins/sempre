@@ -38,6 +38,8 @@ describe('NetworkTest', () => {
 
     expect(screen.getByText('Baidu')).toBeInTheDocument()
     expect(screen.getByText('Google')).toBeInTheDocument()
+    expect(screen.getByText('Request duration')).toBeInTheDocument()
+    expect(screen.getByText('Average request duration')).toBeInTheDocument()
     expect(screen.getAllByText('Loading...')).toHaveLength(4)
     expect(await screen.findAllByText('183.131.177.101')).toHaveLength(2)
     expect(screen.getAllByText('144.34.229.119')).toHaveLength(2)
