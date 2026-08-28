@@ -27,7 +27,6 @@ use crate::traffic_rotation::{MAX_RETENTION_HOURS, MIN_MAX_BYTES};
 
 const SCHEMA: u32 = 1;
 const BUCKET_MILLIS: i64 = 60_000;
-
 #[derive(Debug, Error)]
 pub(crate) enum TrafficError {
     #[error("read traffic history {path}: {source}")]
@@ -64,7 +63,6 @@ pub(crate) enum TrafficDimension {
     Outbound,
     Process,
 }
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct StoredRecord {
     time: i64,
@@ -73,21 +71,18 @@ struct StoredRecord {
     download: i64,
     upload: i64,
 }
-
 #[derive(Debug, Deserialize, Serialize)]
 struct Document {
     schema: u32,
     settings: TrafficSettings,
     records: Vec<StoredRecord>,
 }
-
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct RecordKey {
     time: i64,
     dimension: TrafficDimension,
     label: String,
 }
-
 #[derive(Clone, Copy, Debug, Default)]
 struct Totals {
     download: i64,
@@ -198,8 +193,11 @@ impl TrafficStore {
         &self,
         since: i64,
         dimension: TrafficDimension,
+        now: i64,
     ) -> Result<TrafficHistory, TrafficError> {
         let inner = self.lock()?;
+        let since = traffic_rotation::summary_cutoff(&inner.settings, now)
+            .map_or(since, |cutoff| since.max(cutoff));
         let mut totals = HashMap::<String, Totals>::new();
         for (key, value) in &inner.records {
             if key.time < since || key.dimension != dimension {
@@ -272,7 +270,9 @@ impl TrafficStore {
 }
 
 fn rotate(inner: &mut Inner, now: i64) -> bool {
-    let cutoff = traffic_rotation::cutoff(&inner.settings, now);
+    let Some(cutoff) = traffic_rotation::storage_cutoff(&inner.settings, now) else {
+        return false;
+    };
     let previous = inner.records.len();
     inner.records.retain(|key, _| key.time >= cutoff);
     inner.records.len() != previous
@@ -280,7 +280,12 @@ fn rotate(inner: &mut Inner, now: i64) -> bool {
 
 fn persist(path: &Path, inner: &mut Inner) -> Result<(), TrafficError> {
     let mut data = encoded(inner)?;
-    while data.len() as u64 > inner.settings.max_bytes && !inner.records.is_empty() {
+    while inner
+        .settings
+        .max_bytes
+        .is_some_and(|limit| data.len() as u64 > limit)
+        && !inner.records.is_empty()
+    {
         let oldest = inner
             .records
             .keys()
@@ -353,7 +358,11 @@ async fn history(
     State(state): State<Arc<AppState>>,
     Query(query): Query<HistoryQuery>,
 ) -> Response {
-    result(state.traffic.history(query.since, query.dimension))
+    result(
+        state
+            .traffic
+            .history(query.since, query.dimension, Utc::now().timestamp_millis()),
+    )
 }
 
 async fn update_settings(
@@ -365,10 +374,10 @@ async fn update_settings(
         .update_settings(settings, Utc::now().timestamp_millis())
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(TrafficError::Rotation(_)) => api::api_error(
+        Err(TrafficError::Rotation(error)) => api::api_error(
             StatusCode::BAD_REQUEST,
             "INVALID_TRAFFIC_SETTINGS",
-            "traffic history rotation settings are outside the supported range",
+            error.to_string(),
         ),
         Err(error) => internal_error(&error),
     }
@@ -430,16 +439,17 @@ mod tests {
         store
             .update_settings(
                 TrafficSettings {
-                    retention_hours: 1,
+                    retention_hours: Some(1),
                     reset_day: None,
-                    max_bytes: MIN_MAX_BYTES,
+                    retention_months: Some(12),
+                    max_bytes: Some(MIN_MAX_BYTES),
                 },
                 7_200_000,
             )
             .expect("settings");
         let reopened = TrafficStore::open(path).expect("reopened store");
         let history = reopened
-            .history(0, TrafficDimension::Host)
+            .history(0, TrafficDimension::Host, 7_200_000)
             .expect("history");
         assert_eq!(history.totals.len(), 1);
         assert_eq!(history.totals[0].label, "new.example");
@@ -465,14 +475,17 @@ mod tests {
         store
             .update_settings(
                 TrafficSettings {
-                    retention_hours: MAX_RETENTION_HOURS,
+                    retention_hours: Some(MAX_RETENTION_HOURS),
                     reset_day: None,
-                    max_bytes: MIN_MAX_BYTES,
+                    retention_months: Some(12),
+                    max_bytes: Some(MIN_MAX_BYTES),
                 },
                 20 * BUCKET_MILLIS,
             )
             .expect("settings");
-        let history = store.history(0, TrafficDimension::Host).expect("history");
+        let history = store
+            .history(0, TrafficDimension::Host, 20 * BUCKET_MILLIS)
+            .expect("history");
         assert!(u64::try_from(history.storage_bytes).expect("storage size") <= MIN_MAX_BYTES);
         assert!(history.totals.len() < 20);
         assert!(

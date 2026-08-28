@@ -42,7 +42,7 @@ describe('Traffic', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).includes('/runtime/events')) return new Response('')
       return Response.json({
-        settings: { retention_hours: 24, reset_day: 21, max_bytes: 32 * 1024 * 1024 },
+        settings: { retention_hours: 24, reset_day: 21, max_bytes: null },
         storage_bytes: 80,
         totals: [],
       })
@@ -51,6 +51,9 @@ describe('Traffic', () => {
 
     expect(await screen.findByText('Monthly reset')).toBeInTheDocument()
     expect(screen.getByText('Day 21')).toBeInTheDocument()
+    expect(screen.getByText('12 months')).toBeInTheDocument()
+    expect(screen.getByText('80 B / Unlimited')).toBeInTheDocument()
+    expect(screen.getByText('Time retention and maximum storage cannot both be unlimited.')).toBeInTheDocument()
   })
 })
 

@@ -3,26 +3,31 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const DEFAULT_RETENTION_HOURS: u32 = 24;
+const DEFAULT_RETENTION_MONTHS: u16 = 12;
 const DEFAULT_MAX_BYTES: u64 = 32 * 1024 * 1024;
 const MIN_RETENTION_HOURS: u32 = 1;
 pub(crate) const MAX_RETENTION_HOURS: u32 = 24 * 30;
+const MIN_RETENTION_MONTHS: u16 = 1;
+const MAX_RETENTION_MONTHS: u16 = 120;
 pub(crate) const MIN_MAX_BYTES: u64 = 1024 * 1024;
 const MAX_MAX_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub(crate) struct TrafficSettings {
-    pub retention_hours: u32,
-    #[serde(default)]
+    pub retention_hours: Option<u32>,
     pub reset_day: Option<u8>,
-    pub max_bytes: u64,
+    pub retention_months: Option<u16>,
+    pub max_bytes: Option<u64>,
 }
 
 impl Default for TrafficSettings {
     fn default() -> Self {
         Self {
-            retention_hours: DEFAULT_RETENTION_HOURS,
+            retention_hours: Some(DEFAULT_RETENTION_HOURS),
             reset_day: None,
-            max_bytes: DEFAULT_MAX_BYTES,
+            retention_months: Some(DEFAULT_RETENTION_MONTHS),
+            max_bytes: Some(DEFAULT_MAX_BYTES),
         }
     }
 }
@@ -33,12 +38,19 @@ pub(crate) enum RotationError {
     Retention,
     #[error("reset_day must be between 1 and 31")]
     ResetDay,
+    #[error("retention_months must be between {MIN_RETENTION_MONTHS} and {MAX_RETENTION_MONTHS}")]
+    RetentionMonths,
     #[error("max_bytes must be between {MIN_MAX_BYTES} and {MAX_MAX_BYTES}")]
     MaximumSize,
+    #[error("traffic history must keep either a time limit or a storage limit")]
+    Unbounded,
 }
 
 pub(crate) fn validate(settings: &TrafficSettings) -> Result<(), RotationError> {
-    if !(MIN_RETENTION_HOURS..=MAX_RETENTION_HOURS).contains(&settings.retention_hours) {
+    if settings
+        .retention_hours
+        .is_some_and(|hours| !(MIN_RETENTION_HOURS..=MAX_RETENTION_HOURS).contains(&hours))
+    {
         return Err(RotationError::Retention);
     }
     if settings
@@ -47,22 +59,53 @@ pub(crate) fn validate(settings: &TrafficSettings) -> Result<(), RotationError> 
     {
         return Err(RotationError::ResetDay);
     }
-    if !(MIN_MAX_BYTES..=MAX_MAX_BYTES).contains(&settings.max_bytes) {
+    if settings
+        .retention_months
+        .is_some_and(|months| !(MIN_RETENTION_MONTHS..=MAX_RETENTION_MONTHS).contains(&months))
+    {
+        return Err(RotationError::RetentionMonths);
+    }
+    if settings
+        .max_bytes
+        .is_some_and(|bytes| !(MIN_MAX_BYTES..=MAX_MAX_BYTES).contains(&bytes))
+    {
         return Err(RotationError::MaximumSize);
+    }
+    let time_limited = settings.reset_day.map_or_else(
+        || settings.retention_hours.is_some(),
+        |_| settings.retention_months.is_some(),
+    );
+    if !time_limited && settings.max_bytes.is_none() {
+        return Err(RotationError::Unbounded);
     }
     Ok(())
 }
 
-pub(crate) fn cutoff(settings: &TrafficSettings, now: i64) -> i64 {
+pub(crate) fn storage_cutoff(settings: &TrafficSettings, now: i64) -> Option<i64> {
     settings.reset_day.map_or_else(
-        || now - i64::from(settings.retention_hours) * 3_600_000,
-        |day| monthly_cutoff(now, day).unwrap_or(now),
+        || {
+            settings
+                .retention_hours
+                .map(|hours| now - i64::from(hours) * 3_600_000)
+        },
+        |day| {
+            settings
+                .retention_months
+                .and_then(|months| monthly_cutoff(now, day, months))
+        },
     )
 }
 
-fn monthly_cutoff(now: i64, day: u8) -> Option<i64> {
+pub(crate) fn summary_cutoff(settings: &TrafficSettings, now: i64) -> Option<i64> {
+    settings.reset_day.map_or_else(
+        || storage_cutoff(settings, now),
+        |day| monthly_cutoff(now, day, 1),
+    )
+}
+
+fn monthly_cutoff(now: i64, day: u8, months: u16) -> Option<i64> {
     let local_now = DateTime::from_timestamp_millis(now)?.with_timezone(&Local);
-    let reset_date = monthly_reset_date(local_now.date_naive(), day)?;
+    let reset_date = monthly_retention_date(local_now.date_naive(), day, months)?;
     (0..24).find_map(|hour| {
         let local_time = reset_date.and_hms_opt(hour, 0, 0)?;
         Local
@@ -70,6 +113,11 @@ fn monthly_cutoff(now: i64, day: u8) -> Option<i64> {
             .earliest()
             .map(|value| value.timestamp_millis())
     })
+}
+
+fn monthly_retention_date(now: NaiveDate, day: u8, months: u16) -> Option<NaiveDate> {
+    monthly_reset_date(now, day)?
+        .checked_sub_months(Months::new(u32::from(months.saturating_sub(1))))
 }
 
 fn monthly_reset_date(now: NaiveDate, day: u8) -> Option<NaiveDate> {
@@ -121,11 +169,20 @@ mod tests {
     }
 
     #[test]
+    fn monthly_retention_includes_configured_number_of_cycles() {
+        assert_eq!(
+            monthly_retention_date(NaiveDate::from_ymd_opt(2026, 8, 28).unwrap(), 21, 12),
+            NaiveDate::from_ymd_opt(2025, 9, 21)
+        );
+    }
+
+    #[test]
     fn rejects_invalid_reset_days() {
         let settings = TrafficSettings {
-            retention_hours: 24,
+            retention_hours: Some(24),
             reset_day: Some(0),
-            max_bytes: DEFAULT_MAX_BYTES,
+            retention_months: Some(12),
+            max_bytes: Some(DEFAULT_MAX_BYTES),
         };
         assert!(matches!(validate(&settings), Err(RotationError::ResetDay)));
     }
@@ -136,5 +193,19 @@ mod tests {
             serde_json::from_str(r#"{"retention_hours":72,"max_bytes":33554432}"#)
                 .expect("legacy settings");
         assert_eq!(settings.reset_day, None);
+        assert_eq!(settings.retention_hours, Some(72));
+        assert_eq!(settings.retention_months, Some(12));
+        assert_eq!(settings.max_bytes, Some(DEFAULT_MAX_BYTES));
+    }
+
+    #[test]
+    fn rejects_completely_unbounded_storage() {
+        let settings = TrafficSettings {
+            retention_hours: None,
+            reset_day: Some(21),
+            retention_months: None,
+            max_bytes: None,
+        };
+        assert!(matches!(validate(&settings), Err(RotationError::Unbounded)));
     }
 }

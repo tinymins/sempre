@@ -1,9 +1,10 @@
 export type TrafficDimension = 'device' | 'user' | 'host' | 'outbound' | 'process'
 
 export interface TrafficSettings {
-  retention_hours: number
+  retention_hours: number | null
   reset_day: number | null
-  max_bytes: number
+  retention_months: number | null
+  max_bytes: number | null
 }
 
 export interface TrafficHistory {
