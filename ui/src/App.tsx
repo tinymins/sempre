@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Login } from './components/Login'
 import { Spinner } from './components/ui'
 import { useSession } from './lib/session'
+import { ThemeProvider } from './lib/theme'
 import { NetworkTest } from './pages/NetworkTest'
 
 const Shell = lazy(() => import('./components/Shell').then((module) => ({ default: module.Shell })))
@@ -21,6 +22,10 @@ const AcmeShowcase = import.meta.env.DEV ? lazy(() => import('./pages/AcmeShowca
 const ServerApp = lazy(() => import('./features/server/ServerApp').then((module) => ({ default: module.ServerApp })))
 
 export function App() {
+  return <ThemeProvider><AppContent /></ThemeProvider>
+}
+
+function AppContent() {
   const { session } = useSession()
   if (window.location.hash.startsWith('#/server')) return <Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><ServerApp /></Suspense>
   const isDevShowcase = Boolean(AcmeShowcase) && window.location.hash.startsWith('#/components')

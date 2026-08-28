@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App } from './App'
 import { I18nProvider } from './lib/i18n'
 import { SessionProvider } from './lib/session'
+import { initializeTheme } from './lib/theme'
 import './index.css'
+
+initializeTheme()
 
 const queryClient = new QueryClient({
   defaultOptions: {

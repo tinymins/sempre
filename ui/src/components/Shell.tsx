@@ -5,12 +5,11 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
+import { useTheme } from '../lib/theme'
 import type { SystemStatus } from '../lib/types'
 import { cn } from '../lib/cn'
 import { AcmeContentBoundary } from './AcmeContentBoundary'
 import { Badge, Button } from './ui'
-
-type Theme = 'system' | 'light' | 'dark'
 
 const SIDEBAR_COLLAPSED_KEY = 'sempre.sidebar.collapsed'
 
@@ -20,18 +19,13 @@ export function Shell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [passwordWarningDismissed, setPasswordWarningDismissed] = useState(false)
   const [desktopCollapsed, setDesktopCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true')
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('sempre.theme') as Theme) || 'system')
+  const { theme, setTheme } = useTheme()
   const system = useQuery({
     queryKey: ['system'],
     queryFn: () => api<SystemStatus>(session!, '/system'),
     enabled: Boolean(session),
     refetchInterval: 5000,
   })
-  useEffect(() => {
-    localStorage.setItem('sempre.theme', theme)
-    const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
-    document.documentElement.classList.toggle('dark', dark)
-  }, [theme])
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(desktopCollapsed))
   }, [desktopCollapsed])

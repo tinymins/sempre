@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -40,7 +40,9 @@ const runtimeStatus = {
 describe('App', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    localStorage.removeItem('sempre.theme')
     localStorage.setItem('sempre.locale', 'en')
+    document.documentElement.classList.remove('dark')
   })
 
   afterEach(() => {
@@ -53,6 +55,32 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Sempre' })).toBeInTheDocument()
     expect(screen.getByLabelText('Sempre address')).toHaveValue(window.location.origin)
     expect(screen.getByRole('button', { name: /Connect/ })).toBeInTheDocument()
+  })
+
+  it('follows the system dark theme before authentication', async () => {
+    let systemDark = true
+    let onChange: (() => void) | undefined
+    vi.stubGlobal('matchMedia', vi.fn((query: string): MediaQueryList => ({
+      get matches() { return query === '(prefers-color-scheme: dark)' && systemDark },
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+        onChange = () => typeof listener === 'function' ? listener(new Event('change')) : listener.handleEvent(new Event('change'))
+      },
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    })))
+
+    render(<QueryClientProvider client={new QueryClient()}><I18nProvider><SessionProvider><App /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
+    expect(screen.getByRole('heading', { name: 'Sempre' })).toBeInTheDocument()
+
+    systemDark = false
+    act(() => onChange?.())
+    expect(document.documentElement).not.toHaveClass('dark')
   })
 
   it('enters the lazy shell after login under StrictMode when the core is unavailable', async () => {
