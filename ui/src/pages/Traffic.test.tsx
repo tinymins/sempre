@@ -37,6 +37,7 @@ describe('Traffic', () => {
     expect(screen.getByText('3 days')).toBeInTheDocument()
     expect(screen.getByText('History period')).toBeInTheDocument()
     expect(screen.getByText('Rolling window')).toBeInTheDocument()
+    expect(screen.getByText('Rolling window length')).toBeInTheDocument()
   })
 
   it('renders a monthly traffic reset day', async () => {
