@@ -135,6 +135,14 @@ export interface Connection {
 }
 export interface ConnectionSnapshot { download_total: number; upload_total: number; connections: Connection[] }
 
+export type TrafficDimension = 'device' | 'user' | 'host' | 'outbound' | 'process'
+export interface TrafficSettings { retention_hours: number; max_bytes: number }
+export interface TrafficHistory {
+  settings: TrafficSettings
+  storage_bytes: number
+  totals: Array<{ label: string; download: number; upload: number }>
+}
+
 export interface NetworkTestResult {
   id: string
   name: string

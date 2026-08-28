@@ -10,7 +10,9 @@ use serde_json::{Value, json};
 use thiserror::Error;
 use url::Url;
 
-pub use model::{ConnectionSnapshot, Overview, Proxy, ProxyProvider, Rule};
+pub use model::{
+    Connection, ConnectionMetadata, ConnectionSnapshot, Overview, Proxy, ProxyProvider, Rule,
+};
 
 const MAX_METADATA_SIZE: u64 = 64 << 10;
 const MAX_RESPONSE_SIZE: usize = 16 << 20;

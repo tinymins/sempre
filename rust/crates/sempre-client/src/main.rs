@@ -25,6 +25,8 @@ mod subscription_debug_api;
 mod subscription_profile_debug_api;
 mod subscription_tools_api;
 mod system_api;
+mod traffic_collector;
+mod traffic_history;
 mod tunnel_api;
 mod ui_distribution;
 mod uninstall_cli;
@@ -69,6 +71,8 @@ pub(crate) enum ClientError {
     Bundle(#[from] sempre_bundle::BundleError),
     #[error(transparent)]
     Ui(#[from] sempre_ui::UiError),
+    #[error(transparent)]
+    TrafficHistory(#[from] traffic_history::TrafficError),
     #[error(transparent)]
     Service(#[from] sempre_service::ServiceError),
     #[error(transparent)]

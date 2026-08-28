@@ -23,6 +23,7 @@ pub(crate) struct AppState {
     pub(crate) manager: Arc<Manager>,
     pub(crate) web: WebConfigStore,
     pub(crate) auth: AuthStore,
+    pub(crate) traffic: Arc<crate::traffic_history::TrafficStore>,
     daemon_token: String,
     pub(crate) endpoint: EndpointStore,
     pub(crate) rebind: Option<RebindHandle>,
@@ -35,15 +36,19 @@ impl AppState {
         daemon_token: String,
         bind: String,
         local_url: String,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, crate::traffic_history::TrafficError> {
+        let traffic = Arc::new(crate::traffic_history::TrafficStore::open(
+            manager.store().layout().traffic_history.clone(),
+        )?);
+        Ok(Self {
             manager,
             web,
             auth: AuthStore::default(),
+            traffic,
             daemon_token,
             endpoint: EndpointStore::new(bind, local_url),
             rebind: None,
-        }
+        })
     }
 
     pub(crate) fn attach_rebind(&mut self, rebind: RebindHandle) {
@@ -72,6 +77,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .merge(crate::runtime_api::router())
         .merge(crate::runtime_control_api::router())
         .merge(crate::runtime_events_api::router())
+        .merge(crate::traffic_history::router())
         .merge(crate::system_api::router())
         .merge(crate::tunnel_api::router())
         .merge(crate::gateway_api::router())

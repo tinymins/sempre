@@ -62,11 +62,11 @@ pub(crate) async fn run_with_layout(
         daemon_endpoint.token.clone(),
         bind.clone(),
         local_url.clone(),
-    );
+    )?;
     app_state.attach_rebind(rebind);
     let endpoint_state = app_state.endpoint.clone();
     let state = Arc::new(app_state);
-    let app = api::router(state);
+    let app = api::router(Arc::clone(&state));
     info!(%bind, %local_url, mode = ?layout.mode, "Sempre Rust client daemon listening");
     let (shutdown_sender, shutdown_receiver) = watch::channel(false);
     let signal_sender = shutdown_sender.clone();
@@ -92,6 +92,8 @@ pub(crate) async fn run_with_layout(
     let supervisor_manager = Arc::clone(&manager);
     let scheduler_manager = Arc::clone(&manager);
     let tunnel_manager = Arc::clone(&manager);
+    let traffic_store = Arc::clone(&state.traffic);
+    let traffic_control = layout.core_control.clone();
     let scheduler_shutdown = shutdown_receiver.clone();
     let supervisor = tokio::spawn(async move {
         supervisor_manager.run_supervisor(shutdown_receiver).await?;
@@ -108,8 +110,21 @@ pub(crate) async fn run_with_layout(
         tunnel_manager.run_tunnels(tunnel_shutdown).await?;
         Ok(())
     });
+    let traffic_shutdown = shutdown_sender.subscribe();
+    let traffic = tokio::spawn(async move {
+        crate::traffic_collector::run(traffic_store, traffic_control, traffic_shutdown).await;
+        Ok(())
+    });
 
-    let result = coordinate_tasks(shutdown_sender, server, supervisor, scheduler, tunnels).await;
+    let result = coordinate_tasks(
+        shutdown_sender,
+        server,
+        supervisor,
+        scheduler,
+        tunnels,
+        traffic,
+    )
+    .await;
     signal.abort();
     result
 }
@@ -124,6 +139,7 @@ async fn coordinate_tasks(
     mut supervisor: JoinHandle<Result<(), ClientError>>,
     mut scheduler: JoinHandle<Result<(), ClientError>>,
     mut tunnels: JoinHandle<Result<(), ClientError>>,
+    mut traffic: JoinHandle<Result<(), ClientError>>,
 ) -> Result<(), ClientError> {
     tokio::select! {
         result = &mut server => {
@@ -132,6 +148,7 @@ async fn coordinate_tasks(
                 (supervisor, "core supervisor"),
                 (scheduler, "subscription scheduler"),
                 (tunnels, "tunnel supervisor"),
+                (traffic, "traffic collector"),
             ]).await
         },
         result = &mut supervisor => {
@@ -140,6 +157,7 @@ async fn coordinate_tasks(
                 (server, "API server"),
                 (scheduler, "subscription scheduler"),
                 (tunnels, "tunnel supervisor"),
+                (traffic, "traffic collector"),
             ]).await
         },
         result = &mut scheduler => {
@@ -148,6 +166,7 @@ async fn coordinate_tasks(
                 (server, "API server"),
                 (supervisor, "core supervisor"),
                 (tunnels, "tunnel supervisor"),
+                (traffic, "traffic collector"),
             ]).await
         },
         result = &mut tunnels => {
@@ -156,6 +175,16 @@ async fn coordinate_tasks(
                 (server, "API server"),
                 (supervisor, "core supervisor"),
                 (scheduler, "subscription scheduler"),
+                (traffic, "traffic collector"),
+            ]).await
+        },
+        result = &mut traffic => {
+            let _ = shutdown_sender.send(true);
+            settle_tasks(result, "traffic collector", [
+                (server, "API server"),
+                (supervisor, "core supervisor"),
+                (scheduler, "subscription scheduler"),
+                (tunnels, "tunnel supervisor"),
             ]).await
         },
     }

@@ -75,6 +75,13 @@ impl EventStream {
             }
         }
     }
+
+    pub async fn next_connections(&mut self) -> Result<crate::ConnectionSnapshot, ControlError> {
+        let value = self.next_json().await?;
+        serde_json::from_value::<crate::model::RawConnections>(value)
+            .map(Into::into)
+            .map_err(ControlError::Decode)
+    }
 }
 
 #[cfg(test)]

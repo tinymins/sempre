@@ -20,13 +20,16 @@ fn fixture() -> (tempfile::TempDir, Router, String) {
     web.initialize().expect("web config");
     let endpoint = DaemonEndpoint::new("http://127.0.0.1:33211").expect("endpoint");
     let token = endpoint.token.clone();
-    let state = Arc::new(AppState::new(
-        manager,
-        web,
-        endpoint.token,
-        "127.0.0.1:33211".into(),
-        "http://127.0.0.1:33211".into(),
-    ));
+    let state = Arc::new(
+        AppState::new(
+            manager,
+            web,
+            endpoint.token,
+            "127.0.0.1:33211".into(),
+            "http://127.0.0.1:33211".into(),
+        )
+        .expect("app state"),
+    );
     (root, router(state), token)
 }
 
