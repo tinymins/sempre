@@ -337,8 +337,12 @@ impl Adapter for BuiltInAdapter {
         runtime::prepare(self.kind, config, runtime_directory)
     }
 
-    fn auto_config_candidates(&self, target: &Target) -> Vec<AutoConfigCandidate> {
-        crate::recommendation::candidates(self.kind, target)
+    fn auto_config_candidates(
+        &self,
+        target: &Target,
+        requirements: crate::AutoConfigRequirements,
+    ) -> Vec<AutoConfigCandidate> {
+        crate::recommendation::candidates(self.kind, target, requirements)
     }
 }
 

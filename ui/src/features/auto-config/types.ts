@@ -3,9 +3,12 @@ export interface AutoConfigCandidate {
   core: string
   reference: string
   configuration_mode: string
-  score: number
+  eligible: boolean
+  score: number | null
+  score_breakdown: Array<{ id: string; points: number; maximum: number }>
   reasons: string[]
   warnings?: string[]
+  blockers?: string[]
   installed: boolean
   selected: boolean
 }

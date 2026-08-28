@@ -150,13 +150,29 @@ pub struct Definition {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AutoConfigScore {
+    pub id: String,
+    pub points: u16,
+    pub maximum: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AutoConfigRequirements {
+    pub private_dns: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AutoConfigCandidate {
     pub id: String,
     pub core: String,
     pub reference: String,
     pub configuration_mode: String,
-    pub score: i32,
+    pub eligible: bool,
+    pub score: Option<u16>,
+    pub score_breakdown: Vec<AutoConfigScore>,
     pub reasons: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub blockers: Vec<String>,
 }

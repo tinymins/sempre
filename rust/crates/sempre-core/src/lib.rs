@@ -11,8 +11,9 @@ mod runtime;
 pub use builtins::{BuiltInAdapter, BuiltInKind, built_in_registry};
 pub use capabilities::{Capabilities, ProtocolCapability};
 pub use model::{
-    AssetSelection, AutoConfigCandidate, CommandSpec, CompilerTarget, ControlProtocol, ControlSpec,
-    Definition, Package, RunSpec, RuntimeSpec, Stability, Target,
+    AssetSelection, AutoConfigCandidate, AutoConfigRequirements, AutoConfigScore, CommandSpec,
+    CompilerTarget, ControlProtocol, ControlSpec, Definition, Package, RunSpec, RuntimeSpec,
+    Stability, Target,
 };
 pub use reference::{CoreRef, ReferenceError, STABLE};
 pub use registry::{Adapter, Registry, RegistryError};

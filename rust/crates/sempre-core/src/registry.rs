@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 use thiserror::Error;
 
 use crate::{
-    AssetSelection, AutoConfigCandidate, Capabilities, CommandSpec, CompilerTarget, Definition,
-    RunSpec, RuntimeSpec, Stability, Target,
+    AssetSelection, AutoConfigCandidate, AutoConfigRequirements, Capabilities, CommandSpec,
+    CompilerTarget, Definition, RunSpec, RuntimeSpec, Stability, Target,
 };
 
 pub trait Adapter: Send + Sync {
@@ -32,7 +32,11 @@ pub trait Adapter: Send + Sync {
         config: &Path,
         runtime_directory: &Path,
     ) -> Result<RuntimeSpec, RegistryError>;
-    fn auto_config_candidates(&self, _target: &Target) -> Vec<AutoConfigCandidate> {
+    fn auto_config_candidates(
+        &self,
+        _target: &Target,
+        _requirements: AutoConfigRequirements,
+    ) -> Vec<AutoConfigCandidate> {
         Vec::new()
     }
 }
@@ -101,11 +105,12 @@ impl Registry {
     pub fn auto_config_candidates(
         &self,
         target: &Target,
+        requirements: AutoConfigRequirements,
     ) -> Result<Vec<AutoConfigCandidate>, RegistryError> {
         let mut candidates = Vec::new();
         let mut identifiers = std::collections::BTreeSet::new();
         for adapter in self.adapters.values() {
-            for mut candidate in adapter.auto_config_candidates(target) {
+            for mut candidate in adapter.auto_config_candidates(target, requirements) {
                 if candidate.id.is_empty() || !identifiers.insert(candidate.id.clone()) {
                     return Err(RegistryError::InvalidRecommendation(candidate.id));
                 }
@@ -120,8 +125,9 @@ impl Registry {
         }
         candidates.sort_by(|left, right| {
             right
-                .score
-                .cmp(&left.score)
+                .eligible
+                .cmp(&left.eligible)
+                .then_with(|| right.score.cmp(&left.score))
                 .then_with(|| left.id.cmp(&right.id))
         });
         Ok(candidates)

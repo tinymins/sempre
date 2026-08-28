@@ -6,22 +6,29 @@ import { SessionProvider } from '../../lib/session'
 import { AutoConfigureCard } from './AutoConfigureCard'
 
 const recommendation = {
-  id: 'sing-box/macos-standalone-v12', core: 'sing-box', reference: 'sing-box@1.12.20',
-  configuration_mode: 'macos-tun-real-ip', score: 100,
-  reasons: ['macos-standalone-compatible', 'legacy-destination-override'], warnings: ['legacy-core-version'],
-  installed: true, selected: true,
+  id: 'sing-box/macos-native-dns-v14', core: 'sing-box', reference: 'sing-box@1.14.0-beta.13',
+  configuration_mode: 'macos-tun-native-dns', eligible: true, score: 85,
+  score_breakdown: [
+    { id: 'platform', points: 30, maximum: 30 },
+    { id: 'release', points: 10, maximum: 25 },
+    { id: 'dns', points: 30, maximum: 30 },
+    { id: 'protocols', points: 15, maximum: 15 },
+  ],
+  reasons: ['platform-verified', 'native-dns-integration', 'private-dns-compatible', 'broad-protocol-support'],
+  warnings: ['preview-release'], blockers: [], installed: true, selected: false,
 }
 
 const report = {
   checked_at: '2026-08-11T00:00:00Z', platform: 'darwin', architecture: 'arm64', recommendation,
   candidates: [recommendation, {
     id: 'sing-box/macos-stable', core: 'sing-box', reference: 'sing-box@stable',
-    configuration_mode: 'macos-tun-external-dns', score: 55,
-    reasons: ['stable-release'], warnings: ['external-system-dns-required'], installed: false, selected: false,
+    configuration_mode: 'macos-tun-external-dns', eligible: false, score: null, score_breakdown: [],
+    reasons: ['platform-verified', 'stable-release'], warnings: ['external-system-dns-required'],
+    blockers: ['private-dns-requires-native-integration'], installed: true, selected: true,
   }],
   checks: [
     { id: 'platform', status: 'pass', detail: 'darwin/arm64' },
-    { id: 'system-dns-boundary', status: 'info', detail: 'Sempre does not modify macOS system DNS' },
+    { id: 'dns-requirement', status: 'pass', detail: 'active profile requires native macOS DNS integration' },
   ],
 }
 
@@ -45,13 +52,17 @@ describe('AutoConfigureCard', () => {
     renderCard()
 
     fireEvent.click(screen.getByRole('button', { name: 'Start smart diagnosis' }))
-    expect(await screen.findByText('sing-box@1.12.20')).toBeInTheDocument()
-    expect(screen.getByText('macOS TUN · Real IP · destination override')).toBeInTheDocument()
+    expect(await screen.findByText('sing-box@1.14.0-beta.13')).toBeInTheDocument()
+    expect(screen.getByText('macOS TUN · native DNS integration')).toBeInTheDocument()
+    expect(screen.getByText('DNS integration')).toBeInTheDocument()
+    expect(screen.getAllByText('30/30')).toHaveLength(2)
     expect(screen.getByText('sing-box@stable')).toBeInTheDocument()
+    expect(screen.getByText('Not applicable')).toBeInTheDocument()
+    expect(screen.getByText('Private DNS requires native macOS DNS integration; this candidate cannot route all application lookups correctly.')).toBeInTheDocument()
     expect(fetch).toHaveBeenNthCalledWith(1, 'http://sempre.test/api/v1/cores/auto/diagnose', expect.objectContaining({ method: 'POST' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply recommendation' }))
-    expect(await screen.findByText('Recommendation applied: sing-box@1.12.20')).toBeInTheDocument()
+    expect(await screen.findByText('Recommendation applied: sing-box@1.14.0-beta.13')).toBeInTheDocument()
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
     expect(fetch).toHaveBeenNthCalledWith(2, 'http://sempre.test/api/v1/cores/auto/apply', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ candidate_id: recommendation.id }),

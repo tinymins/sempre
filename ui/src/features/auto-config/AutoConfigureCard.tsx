@@ -93,10 +93,12 @@ function CheckItem({ check }: { check: AutoConfigCheck }) {
 
 function CandidateCard({ candidate, recommended = false }: { candidate: AutoConfigCandidate; recommended?: boolean }) {
   const { t } = useI18n()
-  return <div className={`rounded-md border p-3 ${recommended ? 'border-emerald-500/45 bg-emerald-500/7' : 'border-[var(--border)]'}`}>
-    <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-semibold">{candidate.reference}</span>{recommended ? <Badge tone="success">{t('recommended')}</Badge> : null}{candidate.installed ? <Badge>{t('installed')}</Badge> : null}{candidate.selected ? <Badge tone="info">{t('selected')}</Badge> : null}<span className="ml-auto text-xs text-[var(--muted)]">{t('score')} {candidate.score}</span></div>
+  return <div className={`rounded-md border p-3 ${recommended ? 'border-emerald-500/45 bg-emerald-500/7' : candidate.eligible ? 'border-[var(--border)]' : 'border-red-500/30 bg-red-500/5'}`}>
+    <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-semibold">{candidate.reference}</span>{recommended ? <Badge tone="success">{t('recommended')}</Badge> : null}{candidate.installed ? <Badge>{t('installed')}</Badge> : null}{candidate.selected ? <Badge tone="info">{t('selected')}</Badge> : null}<span className="ml-auto text-xs text-[var(--muted)]">{candidate.score === null ? t('notApplicable') : `${t('score')} ${candidate.score}/100`}</span></div>
     <p className="mt-2 text-sm">{modeLabel(candidate.configuration_mode, t)}</p>
+    {candidate.score_breakdown.length ? <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 rounded bg-[var(--surface-hover)] px-2 py-1.5 text-xs text-[var(--muted)]">{candidate.score_breakdown.map((item) => <div key={item.id} className="flex justify-between gap-2"><span>{scoreLabel(item.id, t)}</span><span className="font-mono">{item.points}/{item.maximum}</span></div>)}</div> : null}
     <ul className="mt-2 space-y-1 text-xs leading-5 text-[var(--muted)]">{candidate.reasons.map((reason) => <li key={reason}>• {reasonLabel(reason, t)}</li>)}</ul>
+    {candidate.blockers?.length ? <div className="mt-2 rounded bg-red-500/10 px-2 py-1.5 text-xs leading-5 text-red-700 dark:text-red-300">{candidate.blockers.map((blocker) => <p key={blocker}>{blockerLabel(blocker, t)}</p>)}</div> : null}
     {candidate.warnings?.length ? <div className="mt-2 rounded bg-amber-500/10 px-2 py-1.5 text-xs leading-5 text-amber-800 dark:text-amber-300">{candidate.warnings.map((warning) => <p key={warning}>{warningLabel(warning, t)}</p>)}</div> : null}
   </div>
 }
@@ -104,17 +106,25 @@ function CandidateCard({ candidate, recommended = false }: { candidate: AutoConf
 type Translate = ReturnType<typeof useI18n>['t']
 
 function checkLabel(value: string, t: Translate) {
-  return ({ platform: t('checkPlatform'), 'system-dns-boundary': t('checkDNSBoundary'), 'active-profile': t('checkActiveProfile') } as Record<string, string>)[value] || value
+  return ({ platform: t('checkPlatform'), 'dns-requirement': t('checkDNSBoundary'), 'active-profile': t('checkActiveProfile') } as Record<string, string>)[value] || value
 }
 
 function modeLabel(value: string, t: Translate) {
-  return ({ 'macos-tun-real-ip': t('modeMacRealIP'), 'macos-tun-external-dns': t('modeMacExternalDNS'), 'platform-tun': t('modePlatformTUN'), 'mihomo-tun': t('modeMihomoTUN') } as Record<string, string>)[value] || value
+  return ({ 'macos-tun-native-dns': t('modeMacNativeDNS'), 'macos-tun-real-ip': t('modeMacRealIP'), 'macos-tun-external-dns': t('modeMacExternalDNS'), 'platform-tun': t('modePlatformTUN'), 'mihomo-tun': t('modeMihomoTUN') } as Record<string, string>)[value] || value
 }
 
 function reasonLabel(value: string, t: Translate) {
-  return ({ 'macos-standalone-compatible': t('reasonMacStandalone'), 'legacy-destination-override': t('reasonLegacyOverride'), 'stable-release': t('reasonStableRelease'), 'broad-protocol-support': t('reasonBroadProtocols') } as Record<string, string>)[value] || value
+  return ({ 'platform-verified': t('reasonPlatformVerified'), 'platform-compatible': t('reasonPlatformCompatible'), 'native-dns-integration': t('reasonNativeDNS'), 'private-dns-compatible': t('reasonPrivateDNS'), 'legacy-destination-override': t('reasonLegacyOverride'), 'stable-release': t('reasonStableRelease'), 'broad-protocol-support': t('reasonBroadProtocols') } as Record<string, string>)[value] || value
 }
 
 function warningLabel(value: string, t: Translate) {
-  return ({ 'legacy-core-version': t('warningLegacyCore'), 'external-system-dns-required': t('warningExternalDNS'), 'not-verified-for-standalone-macos': t('warningMacUnverified') } as Record<string, string>)[value] || value
+  return ({ 'preview-release': t('warningPreviewRelease'), 'legacy-core-version': t('warningLegacyCore'), 'external-system-dns-required': t('warningExternalDNS'), 'not-verified-for-standalone-macos': t('warningMacUnverified') } as Record<string, string>)[value] || value
+}
+
+function blockerLabel(value: string, t: Translate) {
+  return ({ 'private-dns-requires-native-integration': t('blockerPrivateDNS') } as Record<string, string>)[value] || value
+}
+
+function scoreLabel(value: string, t: Translate) {
+  return ({ platform: t('scorePlatform'), release: t('scoreRelease'), dns: t('scoreDNS'), protocols: t('scoreProtocols') } as Record<string, string>)[value] || value
 }
