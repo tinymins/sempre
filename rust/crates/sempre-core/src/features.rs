@@ -15,6 +15,7 @@ pub const DNS_REMOTE_SERVER_NAME: &str = "dns.remote_server_name";
 pub const DNS_REMOTE_DETOUR: &str = "dns.remote_detour";
 pub const DNS_REJECT_HTTPS: &str = "dns.reject_https";
 pub const DNS_SYSTEM_TAKEOVER: &str = "dns.system_takeover";
+pub const DNS_TUN_CAPTURE: &str = "dns.tun_capture";
 pub const ROUTING_RULES: &str = "routing.rules";
 pub const ROUTING_RULE_PROVIDERS: &str = "routing.rule_providers";
 pub const ROUTING_SELECTOR: &str = "routing.selector";

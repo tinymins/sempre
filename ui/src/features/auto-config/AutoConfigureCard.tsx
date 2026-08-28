@@ -73,14 +73,20 @@ export function AutoConfigureCard() {
 function DiagnosisResult({ report }: { report: AutoConfigReport }) {
   const { t } = useI18n()
   const recommendation = report.recommendation
+  const alternatives = report.candidates.filter((candidate) => candidate.id !== recommendation?.id)
+  const requirements = [...report.requirements.required_features.map((value) => requirementLabel(`feature:${value}`, t)), ...report.requirements.required_protocols.map((value) => requirementLabel(`protocol:${value}`, t))]
   return <div className="space-y-5">
     <p className="text-sm leading-6 text-[var(--muted)]">{t('autoConfigBoundary')}</p>
+    <div className="grid gap-2 rounded-md bg-[var(--surface-hover)] px-3 py-2 text-xs sm:grid-cols-[auto_1fr]">
+      <span className="font-semibold text-[var(--muted)]">{t('evaluationPolicy')}</span><span className="font-mono">{report.policy_version}</span>
+      <span className="font-semibold text-[var(--muted)]">{t('requiredCapabilities')}</span><span>{requirements.length ? requirements.join(' · ') : t('noExtraRequirements')}</span>
+    </div>
     <div>
       <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{t('systemChecks')}</h3>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">{report.checks.map((check) => <CheckItem key={check.id} check={check} />)}</div>
     </div>
     {recommendation ? <CandidateCard candidate={recommendation} recommended /> : <div className="rounded-md border border-amber-500/35 bg-amber-500/8 p-3 text-sm text-amber-800 dark:text-amber-300">{t('noAutoRecommendation')}</div>}
-    {report.candidates.length > 1 ? <div><h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{t('alternativeChoices')}</h3><div className="mt-2 grid gap-2">{report.candidates.slice(1).map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} />)}</div></div> : null}
+    {alternatives.length ? <div><h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{t('alternativeChoices')}</h3><div className="mt-2 grid gap-2">{alternatives.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} />)}</div></div> : null}
   </div>
 }
 
@@ -97,6 +103,7 @@ function CandidateCard({ candidate, recommended = false }: { candidate: AutoConf
     <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-semibold">{candidate.reference}</span>{recommended ? <Badge tone="success">{t('recommended')}</Badge> : null}{candidate.installed ? <Badge>{t('installed')}</Badge> : null}{candidate.selected ? <Badge tone="info">{t('selected')}</Badge> : null}<span className="ml-auto text-xs text-[var(--muted)]">{candidate.score === null ? t('notApplicable') : `${t('score')} ${candidate.score}/100`}</span></div>
     <p className="mt-2 text-sm">{modeLabel(candidate.configuration_mode, t)}</p>
     {candidate.score_breakdown.length ? <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 rounded bg-[var(--surface-hover)] px-2 py-1.5 text-xs text-[var(--muted)]">{candidate.score_breakdown.map((item) => <div key={item.id} className="flex justify-between gap-2"><span>{scoreLabel(item.id, t)}</span><span className="font-mono">{item.points}/{item.maximum}</span></div>)}</div> : null}
+    {candidate.matched_requirements.length ? <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">{t('matchedRequirements')}: {candidate.matched_requirements.map((value) => requirementLabel(value, t)).join(' · ')}</p> : null}
     <ul className="mt-2 space-y-1 text-xs leading-5 text-[var(--muted)]">{candidate.reasons.map((reason) => <li key={reason}>• {reasonLabel(reason, t)}</li>)}</ul>
     {candidate.blockers?.length ? <div className="mt-2 rounded bg-red-500/10 px-2 py-1.5 text-xs leading-5 text-red-700 dark:text-red-300">{candidate.blockers.map((blocker) => <p key={blocker}>{blockerLabel(blocker, t)}</p>)}</div> : null}
     {candidate.warnings?.length ? <div className="mt-2 rounded bg-amber-500/10 px-2 py-1.5 text-xs leading-5 text-amber-800 dark:text-amber-300">{candidate.warnings.map((warning) => <p key={warning}>{warningLabel(warning, t)}</p>)}</div> : null}
@@ -114,17 +121,25 @@ function modeLabel(value: string, t: Translate) {
 }
 
 function reasonLabel(value: string, t: Translate) {
-  return ({ 'platform-verified': t('reasonPlatformVerified'), 'platform-compatible': t('reasonPlatformCompatible'), 'native-dns-integration': t('reasonNativeDNS'), 'private-dns-compatible': t('reasonPrivateDNS'), 'legacy-destination-override': t('reasonLegacyOverride'), 'stable-release': t('reasonStableRelease'), 'broad-protocol-support': t('reasonBroadProtocols') } as Record<string, string>)[value] || value
+  return ({ 'platform-verified': t('reasonPlatformVerified'), 'platform-compatible': t('reasonPlatformCompatible'), 'platform-experimental': t('reasonPlatformExperimental'), 'native-dns-integration': t('reasonNativeDNS'), 'requirements-evaluated': t('reasonRequirementsEvaluated'), 'legacy-destination-override': t('reasonLegacyOverride'), 'stable-release': t('reasonStableRelease') } as Record<string, string>)[value] || value
 }
 
 function warningLabel(value: string, t: Translate) {
-  return ({ 'preview-release': t('warningPreviewRelease'), 'legacy-core-version': t('warningLegacyCore'), 'external-system-dns-required': t('warningExternalDNS'), 'not-verified-for-standalone-macos': t('warningMacUnverified') } as Record<string, string>)[value] || value
+  return ({ 'preview-release': t('warningPreviewRelease'), 'legacy-core-version': t('warningLegacyCore'), 'external-system-dns-required': t('warningExternalDNS'), 'not-fully-verified': t('warningMacUnverified') } as Record<string, string>)[value] || value
 }
 
 function blockerLabel(value: string, t: Translate) {
-  return ({ 'private-dns-requires-native-integration': t('blockerPrivateDNS') } as Record<string, string>)[value] || value
+  if (value.startsWith('missing-feature:')) return `${t('blockerMissingFeature')}: ${requirementLabel(`feature:${value.slice('missing-feature:'.length)}`, t)}`
+  if (value.startsWith('missing-protocol:')) return `${t('blockerMissingProtocol')}: ${value.slice('missing-protocol:'.length)}`
+  return value
 }
 
 function scoreLabel(value: string, t: Translate) {
   return ({ platform: t('scorePlatform'), release: t('scoreRelease'), dns: t('scoreDNS'), protocols: t('scoreProtocols') } as Record<string, string>)[value] || value
+}
+
+function requirementLabel(value: string, t: Translate) {
+  if (value.startsWith('protocol:')) return `${t('protocolRequirement')} ${value.slice('protocol:'.length)}`
+  const feature = value.startsWith('feature:') ? value.slice('feature:'.length) : value
+  return ({ 'transparent.tun': t('requirementTun'), 'transparent.tproxy': t('requirementTProxy'), 'transparent.ebpf': t('requirementEBPF'), 'transparent.interface_policy': t('requirementInterfaces'), private_access: t('requirementPrivateAccess'), 'dns.tun_capture': t('requirementDNSCapture') } as Record<string, string>)[feature] || feature
 }

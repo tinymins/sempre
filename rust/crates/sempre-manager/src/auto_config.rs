@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use sempre_converter::Profile;
-use sempre_core::{AutoConfigRequirements, CoreRef};
+use sempre_converter::{CustomNode, Profile};
+use sempre_core::{AutoConfigRequirements, CoreRef, features};
 use sempre_state::Document;
 use serde::Serialize;
 
@@ -27,6 +27,8 @@ pub struct AutoConfigReport {
     pub checked_at: DateTime<Utc>,
     pub platform: String,
     pub architecture: String,
+    pub policy_version: &'static str,
+    pub requirements: AutoConfigRequirements,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recommendation: Option<AutoConfigCandidate>,
     pub candidates: Vec<AutoConfigCandidate>,
@@ -47,26 +49,29 @@ impl<R: VersionRunner> Manager<R> {
             .active_profile_id
             .as_deref()
             .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id));
-        let requirements = AutoConfigRequirements {
-            private_dns: active_profile.is_some_and(profile_requires_private_dns),
-        };
+        let requirements = active_profile.map_or_else(AutoConfigRequirements::default, |profile| {
+            profile_requirements(profile, &catalog.custom_nodes)
+        });
         let registered = self
             .registry
-            .auto_config_candidates(&self.target, requirements)?;
+            .auto_config_candidates(&self.target, &requirements)?;
         let mut checks = vec![AutoConfigCheck {
             id: "platform".into(),
             status: "pass".into(),
             detail: self.target.platform(),
         }];
         if self.target.os == "darwin" {
+            let private_dns = requirements
+                .required_features
+                .contains(features::DNS_TUN_CAPTURE);
             checks.push(AutoConfigCheck {
                 id: "dns-requirement".into(),
-                status: if requirements.private_dns {
+                status: if private_dns {
                     "pass".into()
                 } else {
                     "info".into()
                 },
-                detail: if requirements.private_dns {
+                detail: if private_dns {
                     "active profile requires native macOS DNS integration".into()
                 } else {
                     "active profile does not require private DNS integration".into()
@@ -101,6 +106,8 @@ impl<R: VersionRunner> Manager<R> {
             checked_at: Utc::now(),
             platform: self.target.os.clone(),
             architecture: self.target.arch.clone(),
+            policy_version: sempre_core::AUTO_CONFIG_POLICY_VERSION,
+            requirements,
             recommendation: candidates
                 .iter()
                 .find(|candidate| candidate.candidate.eligible)
@@ -177,13 +184,28 @@ fn profile_has_inputs(profile: &Profile) -> bool {
         || profile.sources.iter().any(|source| source.enabled)
 }
 
-fn profile_requires_private_dns(profile: &Profile) -> bool {
-    profile
+fn profile_requirements(profile: &Profile, custom_nodes: &[CustomNode]) -> AutoConfigRequirements {
+    let mut requirements = AutoConfigRequirements::default();
+    match profile.transparent_proxy.mode.as_str() {
+        "tun-router" => requirements.require_feature(features::TRANSPARENT_TUN),
+        "tproxy" => requirements.require_feature(features::TRANSPARENT_TPROXY),
+        "ebpf-router" => requirements.require_feature(features::TRANSPARENT_EBPF),
+        _ => {}
+    }
+    if !matches!(
+        profile.transparent_proxy.interface_mode.as_str(),
+        "" | "all"
+    ) {
+        requirements.require_feature(features::TRANSPARENT_INTERFACES);
+    }
+
+    let private_access_enabled = profile
         .private_access
         .get("enabled")
         .and_then(serde_json::Value::as_bool)
-        == Some(true)
-        && profile
+        == Some(true);
+    let private_connectors = if private_access_enabled {
+        profile
             .private_access
             .get("connectors")
             .and_then(serde_json::Value::as_array)
@@ -195,18 +217,54 @@ fn profile_requires_private_dns(profile: &Profile) -> bool {
                     .and_then(serde_json::Value::as_bool)
                     != Some(false)
             })
-            .any(|connector| {
-                connector
-                    .get("dns")
-                    .and_then(serde_json::Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .any(|dns| {
-                        dns.get("server")
-                            .and_then(serde_json::Value::as_str)
-                            .is_some_and(|server| !server.trim().is_empty())
-                    })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if !private_connectors.is_empty() {
+        requirements.require_feature(features::PRIVATE_ACCESS);
+    }
+    if private_connectors.iter().any(|connector| {
+        connector
+            .get("dns")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|dns| {
+                dns.get("server")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|server| !server.trim().is_empty())
             })
+    }) {
+        requirements.require_feature(features::DNS_TUN_CAPTURE);
+    }
+
+    let editor_servers = editor_servers(profile);
+    for value in profile.manual_servers.iter().chain(editor_servers.iter()) {
+        if let Some(protocol) = value.get("type").and_then(serde_json::Value::as_str) {
+            requirements.require_protocol(normalize_protocol(protocol));
+        }
+    }
+    for node in custom_nodes
+        .iter()
+        .filter(|node| profile.custom_node_ids.contains(&node.id))
+    {
+        if let Some(protocol) = node.proxy.get("type").and_then(serde_json::Value::as_str) {
+            requirements.require_protocol(normalize_protocol(protocol));
+        }
+    }
+    requirements
+}
+
+fn editor_servers(profile: &Profile) -> Vec<serde_json::Value> {
+    serde_json::from_str(&profile.editor.servers).unwrap_or_default()
+}
+
+fn normalize_protocol(protocol: &str) -> &str {
+    match protocol {
+        "ss" => "shadowsocks",
+        value => value,
+    }
 }
 
 fn reference_installed(document: &Document, reference: &CoreRef) -> bool {
@@ -248,15 +306,13 @@ mod tests {
         let report = manager.diagnose_core_configuration().expect("diagnosis");
         assert!(!report.candidates.is_empty());
         if manager.target.os == "darwin" {
-            assert_eq!(
-                report
-                    .recommendation
-                    .as_ref()
-                    .expect("recommendation")
-                    .candidate
-                    .reference,
-                "sing-box@stable"
-            );
+            let recommendation = &report
+                .recommendation
+                .as_ref()
+                .expect("recommendation")
+                .candidate;
+            assert_eq!(recommendation.reference, "sing-box@stable");
+            assert_eq!(recommendation.score, Some(93));
         }
         assert_eq!(
             report.checks.last().expect("profile check").status,
@@ -290,6 +346,7 @@ mod tests {
                     "enabled": true,
                     "connectors": [{
                         "type": "wireguard",
+                        "endpoint": { "private_key": "test", "peers": [] },
                         "dns": [{ "server": "10.8.28.1", "domainSuffixes": ["example.test"] }]
                     }]
                 });
@@ -305,9 +362,26 @@ mod tests {
             .expect("activate profile");
 
         let report = manager.diagnose_core_configuration().expect("diagnosis");
+        assert_eq!(
+            report.policy_version,
+            sempre_core::AUTO_CONFIG_POLICY_VERSION
+        );
+        assert!(
+            report
+                .requirements
+                .required_features
+                .contains(features::PRIVATE_ACCESS)
+        );
+        assert!(
+            report
+                .requirements
+                .required_features
+                .contains(features::DNS_TUN_CAPTURE)
+        );
         let recommendation = report.recommendation.expect("recommendation");
         assert_eq!(recommendation.candidate.id, "sing-box/macos-native-dns-v14");
         assert!(recommendation.candidate.eligible);
+        assert_eq!(recommendation.candidate.score, Some(70));
         assert!(
             report
                 .candidates
@@ -320,5 +394,35 @@ mod tests {
             .await
             .expect_err("ineligible candidate");
         assert!(error.to_string().contains("is incompatible"));
+    }
+
+    #[test]
+    fn requirements_cover_runtime_mode_interfaces_and_known_protocols() {
+        let mut profile = Profile::default();
+        profile.transparent_proxy.mode = "tproxy".into();
+        profile.transparent_proxy.interface_mode = "include".into();
+        profile.editor.servers = json!([
+            { "name": "one", "type": "ss", "server": "127.0.0.1", "port": 1 },
+            { "name": "two", "type": "vless", "server": "127.0.0.1", "port": 2 }
+        ])
+        .to_string();
+
+        let requirements = profile_requirements(&profile, &[]);
+        assert_eq!(
+            requirements.required_features,
+            [
+                features::TRANSPARENT_INTERFACES,
+                features::TRANSPARENT_TPROXY
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+        );
+        assert_eq!(
+            requirements.required_protocols,
+            ["shadowsocks".to_owned(), "vless".to_owned()]
+                .into_iter()
+                .collect()
+        );
     }
 }

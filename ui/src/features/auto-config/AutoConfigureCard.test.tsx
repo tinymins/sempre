@@ -7,24 +7,27 @@ import { AutoConfigureCard } from './AutoConfigureCard'
 
 const recommendation = {
   id: 'sing-box/macos-native-dns-v14', core: 'sing-box', reference: 'sing-box@1.14.0-beta.13',
-  configuration_mode: 'macos-tun-native-dns', eligible: true, score: 85,
+  configuration_mode: 'macos-tun-native-dns', eligible: true, score: 70,
   score_breakdown: [
-    { id: 'platform', points: 30, maximum: 30 },
+    { id: 'platform', points: 15, maximum: 30 },
     { id: 'release', points: 10, maximum: 25 },
     { id: 'dns', points: 30, maximum: 30 },
     { id: 'protocols', points: 15, maximum: 15 },
   ],
-  reasons: ['platform-verified', 'native-dns-integration', 'private-dns-compatible', 'broad-protocol-support'],
-  warnings: ['preview-release'], blockers: [], installed: true, selected: false,
+  matched_requirements: ['feature:transparent.tun', 'feature:private_access', 'feature:dns.tun_capture'],
+  reasons: ['platform-compatible', 'native-dns-integration', 'requirements-evaluated'],
+  warnings: ['preview-release', 'not-fully-verified'], blockers: [], installed: true, selected: false,
 }
 
 const report = {
-  checked_at: '2026-08-11T00:00:00Z', platform: 'darwin', architecture: 'arm64', recommendation,
+  checked_at: '2026-08-11T00:00:00Z', platform: 'darwin', architecture: 'arm64', policy_version: 'constraint-utility-v1',
+  requirements: { required_features: ['dns.tun_capture', 'private_access', 'transparent.tun'], required_protocols: [] }, recommendation,
   candidates: [recommendation, {
     id: 'sing-box/macos-stable', core: 'sing-box', reference: 'sing-box@stable',
     configuration_mode: 'macos-tun-external-dns', eligible: false, score: null, score_breakdown: [],
+    matched_requirements: ['feature:transparent.tun'],
     reasons: ['platform-verified', 'stable-release'], warnings: ['external-system-dns-required'],
-    blockers: ['private-dns-requires-native-integration'], installed: true, selected: true,
+    blockers: ['missing-feature:dns.tun_capture', 'missing-feature:private_access'], installed: true, selected: true,
   }],
   checks: [
     { id: 'platform', status: 'pass', detail: 'darwin/arm64' },
@@ -53,12 +56,14 @@ describe('AutoConfigureCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Start smart diagnosis' }))
     expect(await screen.findByText('sing-box@1.14.0-beta.13')).toBeInTheDocument()
+    expect(screen.getByText('constraint-utility-v1')).toBeInTheDocument()
     expect(screen.getByText('macOS TUN · native DNS integration')).toBeInTheDocument()
-    expect(screen.getByText('DNS integration')).toBeInTheDocument()
-    expect(screen.getAllByText('30/30')).toHaveLength(2)
+    expect(screen.getByText('DNS integrity')).toBeInTheDocument()
+    expect(screen.getByText('30/30')).toBeInTheDocument()
     expect(screen.getByText('sing-box@stable')).toBeInTheDocument()
     expect(screen.getByText('Not applicable')).toBeInTheDocument()
-    expect(screen.getByText('Private DNS requires native macOS DNS integration; this candidate cannot route all application lookups correctly.')).toBeInTheDocument()
+    expect(screen.getByText('Missing required capability: TUN DNS capture')).toBeInTheDocument()
+    expect(screen.getByText('Missing required capability: Private access')).toBeInTheDocument()
     expect(fetch).toHaveBeenNthCalledWith(1, 'http://sempre.test/api/v1/cores/auto/diagnose', expect.objectContaining({ method: 'POST' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply recommendation' }))
@@ -67,6 +72,22 @@ describe('AutoConfigureCard', () => {
     expect(fetch).toHaveBeenNthCalledWith(2, 'http://sempre.test/api/v1/cores/auto/apply', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ candidate_id: recommendation.id }),
     }))
+  })
+
+  it('shows every rejected candidate when no recommendation is eligible', async () => {
+    const rejected = {
+      ...report,
+      recommendation: undefined,
+      candidates: report.candidates.map((candidate) => ({ ...candidate, eligible: false, score: null, score_breakdown: [] })),
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(rejected)))
+    renderCard()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start smart diagnosis' }))
+    expect(await screen.findByText('No automatic configuration candidate satisfies the active profile.')).toBeInTheDocument()
+    expect(screen.getByText('sing-box@1.14.0-beta.13')).toBeInTheDocument()
+    expect(screen.getByText('sing-box@stable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Apply recommendation' })).toBeDisabled()
   })
 })
 

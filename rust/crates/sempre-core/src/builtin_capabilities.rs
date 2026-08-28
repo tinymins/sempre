@@ -50,6 +50,9 @@ fn sing_box(version: Option<&str>, target: &Target) -> Capabilities {
     if target.os != "darwin" {
         features.push(f::DNS_FAKE_IP.into());
     }
+    if target.os != "darwin" || compiler == "14" {
+        features.push(f::DNS_TUN_CAPTURE.into());
+    }
     if target.os == "linux" || target.os.is_empty() {
         features.extend(strings(&[
             f::DNS_SYSTEM_TAKEOVER,
@@ -89,6 +92,9 @@ fn sing_box(version: Option<&str>, target: &Target) -> Capabilities {
 fn mihomo(target: &Target) -> Capabilities {
     let mut features = clash_features();
     features.push(f::TRANSPARENT_TUN.into());
+    if target.os != "darwin" {
+        features.push(f::DNS_TUN_CAPTURE.into());
+    }
     if target.os == "linux" || target.os.is_empty() {
         features.extend(strings(&[f::TRANSPARENT_TPROXY, f::TRANSPARENT_INTERFACES]));
     }
@@ -291,5 +297,29 @@ fn protocol(name: &str, transports: &[&str], security: &[&str]) -> ProtocolCapab
         transports: strings(transports),
         security: strings(security),
         minimum_version: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn macos_dns_capture_is_version_derived() {
+        let target = Target {
+            os: "darwin".into(),
+            arch: "arm64".into(),
+            amd64_level: 0,
+        };
+        assert!(
+            capabilities(BuiltInKind::SingBox, Some("1.14.0-beta.13"), &target)
+                .features
+                .contains(&f::DNS_TUN_CAPTURE.into())
+        );
+        assert!(
+            !capabilities(BuiltInKind::SingBox, Some("1.13.4"), &target)
+                .features
+                .contains(&f::DNS_TUN_CAPTURE.into())
+        );
     }
 }

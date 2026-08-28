@@ -1,3 +1,4 @@
+mod assessment;
 mod builtin_capabilities;
 mod builtins;
 mod capabilities;
@@ -8,10 +9,12 @@ mod reference;
 mod registry;
 mod runtime;
 
+pub use assessment::AUTO_CONFIG_POLICY_VERSION;
 pub use builtins::{BuiltInAdapter, BuiltInKind, built_in_registry};
 pub use capabilities::{Capabilities, ProtocolCapability};
 pub use model::{
-    AssetSelection, AutoConfigCandidate, AutoConfigRequirements, AutoConfigScore, CommandSpec,
+    AssetSelection, AutoConfigCandidate, AutoConfigCandidateProfile, AutoConfigDnsFallback,
+    AutoConfigRelease, AutoConfigRequirements, AutoConfigScore, AutoConfigValidation, CommandSpec,
     CompilerTarget, ControlProtocol, ControlSpec, Definition, Package, RunSpec, RuntimeSpec,
     Stability, Target,
 };

@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+};
 
 use serde::Serialize;
 
@@ -156,9 +159,50 @@ pub struct AutoConfigScore {
     pub maximum: u16,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct AutoConfigRequirements {
-    pub private_dns: bool,
+    pub required_features: BTreeSet<String>,
+    pub required_protocols: BTreeSet<String>,
+}
+
+impl AutoConfigRequirements {
+    pub fn require_feature(&mut self, feature: impl Into<String>) {
+        self.required_features.insert(feature.into());
+    }
+
+    pub fn require_protocol(&mut self, protocol: impl Into<String>) {
+        self.required_protocols.insert(protocol.into());
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AutoConfigValidation {
+    Verified,
+    Compatible,
+    Experimental,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AutoConfigRelease {
+    Stable,
+    Preview,
+    Legacy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AutoConfigDnsFallback {
+    External,
+    DestinationOverride,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoConfigCandidateProfile {
+    pub id: String,
+    pub reference: String,
+    pub configuration_mode: String,
+    pub validation: AutoConfigValidation,
+    pub release: AutoConfigRelease,
+    pub dns_fallback: AutoConfigDnsFallback,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -170,6 +214,7 @@ pub struct AutoConfigCandidate {
     pub eligible: bool,
     pub score: Option<u16>,
     pub score_breakdown: Vec<AutoConfigScore>,
+    pub matched_requirements: Vec<String>,
     pub reasons: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,

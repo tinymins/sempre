@@ -6,6 +6,7 @@ export interface AutoConfigCandidate {
   eligible: boolean
   score: number | null
   score_breakdown: Array<{ id: string; points: number; maximum: number }>
+  matched_requirements: string[]
   reasons: string[]
   warnings?: string[]
   blockers?: string[]
@@ -23,6 +24,8 @@ export interface AutoConfigReport {
   checked_at: string
   platform: string
   architecture: string
+  policy_version: string
+  requirements: { required_features: string[]; required_protocols: string[] }
   recommendation?: AutoConfigCandidate
   candidates: AutoConfigCandidate[]
   checks: AutoConfigCheck[]

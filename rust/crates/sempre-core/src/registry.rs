@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 use thiserror::Error;
 
 use crate::{
-    AssetSelection, AutoConfigCandidate, AutoConfigRequirements, Capabilities, CommandSpec,
-    CompilerTarget, Definition, RunSpec, RuntimeSpec, Stability, Target,
+    AssetSelection, AutoConfigCandidate, AutoConfigCandidateProfile, AutoConfigRequirements,
+    Capabilities, CommandSpec, CompilerTarget, Definition, RunSpec, RuntimeSpec, Stability, Target,
 };
 
 pub trait Adapter: Send + Sync {
@@ -32,11 +32,7 @@ pub trait Adapter: Send + Sync {
         config: &Path,
         runtime_directory: &Path,
     ) -> Result<RuntimeSpec, RegistryError>;
-    fn auto_config_candidates(
-        &self,
-        _target: &Target,
-        _requirements: AutoConfigRequirements,
-    ) -> Vec<AutoConfigCandidate> {
+    fn auto_config_profiles(&self, _target: &Target) -> Vec<AutoConfigCandidateProfile> {
         Vec::new()
     }
 }
@@ -105,23 +101,33 @@ impl Registry {
     pub fn auto_config_candidates(
         &self,
         target: &Target,
-        requirements: AutoConfigRequirements,
+        requirements: &AutoConfigRequirements,
     ) -> Result<Vec<AutoConfigCandidate>, RegistryError> {
         let mut candidates = Vec::new();
+        let mut assessed = Vec::new();
         let mut identifiers = std::collections::BTreeSet::new();
         for adapter in self.adapters.values() {
-            for mut candidate in adapter.auto_config_candidates(target, requirements) {
-                if candidate.id.is_empty() || !identifiers.insert(candidate.id.clone()) {
-                    return Err(RegistryError::InvalidRecommendation(candidate.id));
+            for profile in adapter.auto_config_profiles(target) {
+                if profile.id.is_empty() || !identifiers.insert(profile.id.clone()) {
+                    return Err(RegistryError::InvalidRecommendation(profile.id));
                 }
-                let reference = crate::CoreRef::parse(&candidate.reference)
-                    .map_err(|_| RegistryError::InvalidRecommendation(candidate.id.clone()))?;
+                let reference = crate::CoreRef::parse(&profile.reference)
+                    .map_err(|_| RegistryError::InvalidRecommendation(profile.id.clone()))?;
                 if reference.core != adapter.id() {
-                    return Err(RegistryError::InvalidRecommendation(candidate.id));
+                    return Err(RegistryError::InvalidRecommendation(profile.id));
                 }
-                candidate.core = adapter.id().into();
-                candidates.push(candidate);
+                let version = (!reference.is_channel()).then_some(reference.reference.as_str());
+                let capabilities = adapter.capabilities(version, target);
+                assessed.push((profile, adapter.id(), capabilities));
             }
+        }
+        for (profile, core, capabilities) in assessed {
+            candidates.push(crate::assessment::evaluate(
+                profile,
+                core,
+                &capabilities,
+                requirements,
+            ));
         }
         candidates.sort_by(|left, right| {
             right
