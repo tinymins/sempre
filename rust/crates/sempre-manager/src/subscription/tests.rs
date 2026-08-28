@@ -99,9 +99,20 @@ fn raw_source() -> Source {
 
 #[tokio::test]
 async fn refresh_validates_inactive_profile_without_deploying_it() {
-    let (_root, manager, profile_id) = fixture();
+    let (_root, manager, active_profile_id) = fixture();
+    let inactive_profile_id = sempre_subscription::new_profile("inactive").id;
+    manager
+        .subscriptions
+        .update(|catalog| {
+            let mut inactive = catalog.profiles[0].clone();
+            inactive.id.clone_from(&inactive_profile_id);
+            inactive.name = "inactive".into();
+            catalog.profiles.push(inactive);
+            Ok(())
+        })
+        .expect("add inactive profile");
     let (change, render) = manager
-        .refresh_subscription_profile(&profile_id)
+        .refresh_subscription_profile(&inactive_profile_id)
         .await
         .expect("refresh");
     assert!(change.changed && !change.needs_restart);
@@ -110,12 +121,52 @@ async fn refresh_validates_inactive_profile_without_deploying_it() {
     assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 1);
     let document = manager.state().expect("state");
     assert!(document.active.is_none());
-    assert!(document.active_profile_id.is_none());
-    let profile = &manager.subscriptions.read().expect("catalog").profiles[0];
+    assert_eq!(
+        document.active_profile_id.as_deref(),
+        Some(active_profile_id.as_str())
+    );
+    let catalog = manager.subscriptions.read().expect("catalog");
+    let profile = catalog
+        .profiles
+        .iter()
+        .find(|profile| profile.id == inactive_profile_id)
+        .expect("inactive profile");
     assert_eq!(profile.extra["last_runtime_validated"], json!(true));
     assert_eq!(
         profile.sources[0].extra["last_status"],
         Value::String("raw content".into())
+    );
+}
+
+#[test]
+fn initialization_activates_the_default_profile_and_repairs_a_stale_selection() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let manager = Manager::with_runner(Store::new(Layout::at(root.path())), FakeRunner::default())
+        .expect("manager");
+    let profile_id = manager.subscriptions.read().expect("catalog").profiles[0]
+        .id
+        .clone();
+    assert_eq!(
+        manager.state().expect("state").active_profile_id.as_deref(),
+        Some(profile_id.as_str())
+    );
+
+    manager
+        .store
+        .update(|document| {
+            document.active_profile_id = Some("missing-profile".into());
+            Ok(())
+        })
+        .expect("store stale selection");
+    let repaired = Manager::with_runner(Store::new(Layout::at(root.path())), FakeRunner::default())
+        .expect("reopen manager");
+    assert_eq!(
+        repaired
+            .state()
+            .expect("state")
+            .active_profile_id
+            .as_deref(),
+        Some(profile_id.as_str())
     );
 }
 

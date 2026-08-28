@@ -103,6 +103,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             return Ok(current);
         }
         if matches!(action, START | RESTART) {
+            self.ensure_runtime_action_preparable(&document, configuration_pending)?;
             if let Err(error) = self.prepare_active_subscription_for_runtime_locked().await {
                 self.record_runtime_preparation_failure(&error)?;
                 return Err(action_error(
@@ -174,8 +175,21 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         self.runtime_status()
     }
 
+    fn ensure_runtime_action_preparable(
+        &self,
+        document: &Document,
+        configuration_pending: bool,
+    ) -> Result<(), ManagerError> {
+        match self.runtime_deployment(document) {
+            Err(ManagerError::NoConfiguration) if configuration_pending => Ok(()),
+            Err(error) => Err(action_error("RUNTIME_NOT_READY", error.to_string())),
+            Ok(_) => Ok(()),
+        }
+    }
+
     fn runtime_status_value(&self, document: &Document) -> RuntimeStatus {
         let target = self.runtime_deployment(document);
+        let configuration_pending = self.active_profile_config_pending(document);
         let mut runtime_state = document.runtime.state;
         let mut last_error = document.runtime.last_error.clone();
         if runtime_state == RuntimeState::Idle && document.desired_state == DesiredState::Stopped {
@@ -220,12 +234,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             started_at: document.runtime.started_at,
             uptime_seconds,
             restart_count: document.runtime.restart_count,
-            pending: document.pending || self.active_profile_config_pending(document),
+            pending: document.pending || configuration_pending,
             last_transition: document.runtime.last_transition,
             last_exit: document.runtime.last_exit.clone(),
             last_error,
             last_failure: document.runtime.last_failure.clone().map(failure_value),
-            actions: runtime_actions(document, runtime_state, target.as_ref().err()),
+            actions: runtime_actions(
+                document,
+                runtime_state,
+                target.as_ref().err(),
+                configuration_pending,
+            ),
         }
     }
 
@@ -317,18 +336,21 @@ fn runtime_actions(
     document: &Document,
     state: RuntimeState,
     readiness: Option<&ManagerError>,
+    configuration_pending: bool,
 ) -> RuntimeActions {
-    let reason = readiness
-        .as_ref()
-        .map_or_else(String::new, ToString::to_string);
+    let configuration_can_be_prepared =
+        configuration_pending && matches!(readiness, Some(ManagerError::NoConfiguration));
+    let allowed = readiness.is_none() || configuration_can_be_prepared;
+    let reason = if allowed {
+        String::new()
+    } else {
+        readiness.map_or_else(String::new, ToString::to_string)
+    };
     let mut start = RuntimeActionAvailability {
-        allowed: readiness.is_none(),
+        allowed,
         reason: reason.clone(),
     };
-    let mut restart = RuntimeActionAvailability {
-        allowed: readiness.is_none(),
-        reason,
-    };
+    let mut restart = RuntimeActionAvailability { allowed, reason };
     let mut stop = RuntimeActionAvailability {
         allowed: document.desired_state == DesiredState::Running,
         reason: String::new(),

@@ -146,6 +146,34 @@ async fn start_prepares_a_stale_active_profile_from_local_inputs() {
     );
 }
 
+#[tokio::test]
+async fn start_prepares_the_default_profile_when_configuration_is_missing() {
+    let (_root, manager) = fixture();
+    manager
+        .store
+        .update(|document| {
+            document.configs.remove("sing-box");
+            Ok(())
+        })
+        .expect("remove initial configuration");
+
+    let initial = manager.runtime_status().expect("status");
+    assert!(initial.pending);
+    assert!(initial.actions.start.allowed);
+    assert!(initial.actions.start.reason.is_empty());
+
+    let starting = manager.runtime_action(START).await.expect("start");
+    assert_eq!(starting.runtime_state, RuntimeState::Starting);
+    assert!(starting.active.is_some());
+    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 1);
+    let document = manager.state().expect("state");
+    let active_profile_id = document.active_profile_id.expect("active profile");
+    assert_eq!(
+        document.config_builds["sing-box"].profile_id,
+        active_profile_id
+    );
+}
+
 #[test]
 fn status_marks_a_stale_recorded_pid_failed() {
     let (_root, manager) = fixture();

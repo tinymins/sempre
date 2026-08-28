@@ -77,9 +77,20 @@ impl Manager<ProcessRunner> {
 
 impl<R: VersionRunner> Manager<R> {
     pub fn with_runner(store: Store, runner: R) -> Result<Self, ManagerError> {
-        store.initialize()?;
+        let document = store.initialize()?;
         let subscriptions = SubscriptionStore::new(store.layout().clone());
-        subscriptions.initialize()?;
+        let catalog = subscriptions.initialize()?;
+        let active_profile_exists = document
+            .active_profile_id
+            .as_ref()
+            .is_some_and(|id| catalog.profiles.iter().any(|profile| profile.id == *id));
+        if !active_profile_exists {
+            let profile_id = catalog.profiles[0].id.clone();
+            store.update(|document| {
+                document.active_profile_id = Some(profile_id);
+                Ok(())
+            })?;
+        }
         let fetcher = Fetcher::new(subscriptions.clone())?;
         let remote = RemoteClient::new()?;
         let gateway = Arc::new(sempre_gateway::Controller::new(store.layout())?);

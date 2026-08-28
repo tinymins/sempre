@@ -26,6 +26,42 @@ fn request(format: &str) -> CompileRequest {
 }
 
 #[test]
+fn sing_box_compiles_a_direct_only_configuration_without_nodes() {
+    let result = compile(&CompileRequest {
+        protocol: 1,
+        profile: Profile::default(),
+        snapshots: vec![],
+        custom_nodes: vec![],
+        target: Target::parse("sing-box-v13").expect("target"),
+    })
+    .expect("compile direct-only sing-box configuration");
+    let document: serde_json::Value = serde_json::from_str(&result.content).expect("config JSON");
+
+    assert_eq!(result.node_count, 0);
+    assert!(document["outbounds"].as_array().is_some_and(|outbounds| {
+        outbounds.iter().any(|outbound| outbound["tag"] == "direct")
+            && outbounds.iter().any(|outbound| {
+                outbound["tag"] == "proxy" && outbound["outbounds"] == serde_json::json!(["direct"])
+            })
+    }));
+    assert_eq!(document["route"]["final"], "proxy");
+}
+
+#[test]
+fn non_sing_box_targets_still_reject_profiles_without_nodes() {
+    let error = compile(&CompileRequest {
+        protocol: 1,
+        profile: Profile::default(),
+        snapshots: vec![],
+        custom_nodes: vec![],
+        target: Target::parse("clash-meta").expect("target"),
+    })
+    .expect_err("empty Mihomo profile must fail");
+
+    assert!(error.to_string().contains("produced no usable nodes"));
+}
+
+#[test]
 fn compile_is_deterministic_and_reports_loss() {
     let first = compile(&request("sing-box-v13")).expect("first compile");
     let second = compile(&request("sing-box-v13")).expect("second compile");

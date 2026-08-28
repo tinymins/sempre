@@ -107,7 +107,7 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
         proxy.name = icons::append_icon(&proxy.name);
     }
     make_names_unique(&mut nodes);
-    if nodes.is_empty() {
+    if nodes.is_empty() && target.core != "sing-box" {
         return Err(CompileError::EmptyProfile);
     }
     let mut origins = HashMap::new();

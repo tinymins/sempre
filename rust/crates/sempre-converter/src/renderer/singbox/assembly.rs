@@ -42,9 +42,6 @@ pub(super) fn render(
         warnings.extend(diff.warnings.clone());
         diffs.push(diff);
     }
-    if names.is_empty() {
-        return Err(CompileError::EmptyProfile);
-    }
     outbounds.extend(private.outbounds.iter().cloned());
     outbounds.extend(selector_outbounds(&profile.groups, &names)?);
 
@@ -119,7 +116,9 @@ fn selector_outbounds(groups: &[ProxyGroup], names: &[String]) -> Result<Vec<Val
             .iter()
             .map(|value| normalize(value))
             .collect::<Vec<_>>();
-        if !group.readonly || group.include_all || members.is_empty() {
+        if names.is_empty() {
+            members = vec!["direct".into()];
+        } else if !group.readonly || group.include_all || members.is_empty() {
             append_unique(&mut members, names);
         }
         if members.is_empty() {
