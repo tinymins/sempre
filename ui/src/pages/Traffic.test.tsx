@@ -53,7 +53,9 @@ describe('Traffic', () => {
     expect(screen.getByText('Day 21')).toBeInTheDocument()
     expect(screen.getByText('12 months')).toBeInTheDocument()
     expect(screen.getByText('80 B / Unlimited')).toBeInTheDocument()
-    expect(screen.getByText('Time retention and maximum storage cannot both be unlimited.')).toBeInTheDocument()
+    expect(screen.getByText('Total history storage limit')).toBeInTheDocument()
+    expect(screen.getByText(/All retained months share one total history storage limit/)).toBeInTheDocument()
+    expect(screen.getByText('Time retention and the total history storage limit cannot both be unlimited.')).toBeInTheDocument()
   })
 })
 
