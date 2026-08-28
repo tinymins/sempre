@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { I18nProvider } from '../lib/i18n'
 import { SessionProvider } from '../lib/session'
+import { ThemeProvider } from '../lib/theme'
 import { Shell } from './Shell'
 
 const systemStatus = {
@@ -101,9 +102,11 @@ function renderShell() {
     <QueryClientProvider client={client}>
       <I18nProvider>
         <SessionProvider>
-          <MemoryRouter>
-            <Shell><div>Page content</div></Shell>
-          </MemoryRouter>
+          <ThemeProvider>
+            <MemoryRouter>
+              <Shell><div>Page content</div></Shell>
+            </MemoryRouter>
+          </ThemeProvider>
         </SessionProvider>
       </I18nProvider>
     </QueryClientProvider>,
