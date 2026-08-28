@@ -192,7 +192,10 @@ fn ui_store(state: &AppState) -> sempre_ui::Store {
     sempre_ui::Store::new(&state.manager.store().layout().ui)
 }
 
-pub(crate) async fn static_file(State(state): State<Arc<AppState>>, request: Request) -> Response {
+pub(crate) async fn static_file(
+    State(state): State<Arc<AppState>>,
+    mut request: Request,
+) -> Response {
     if request.uri().path().starts_with("/api/v1/") {
         return error(
             StatusCode::NOT_FOUND,
@@ -220,6 +223,8 @@ pub(crate) async fn static_file(State(state): State<Arc<AppState>>, request: Req
     let candidate = root.join(requested);
     let (target, index) = if candidate.is_file() {
         (candidate, requested == "index.html")
+    } else if requested.starts_with("assets/") {
+        return StatusCode::NOT_FOUND.into_response();
     } else {
         (root.join("index.html"), true)
     };
@@ -231,6 +236,10 @@ pub(crate) async fn static_file(State(state): State<Arc<AppState>>, request: Req
         )
             .into_response();
     }
+    if index {
+        request.headers_mut().remove(header::IF_MODIFIED_SINCE);
+        request.headers_mut().remove(header::IF_NONE_MATCH);
+    }
     let mut response = match ServeFile::new(target).oneshot(request).await {
         Ok(response) => response.map(Body::new),
         Err(error) => return internal(error.to_string()),
@@ -238,11 +247,15 @@ pub(crate) async fn static_file(State(state): State<Arc<AppState>>, request: Req
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static(if index {
-            "no-cache"
+            "no-store"
         } else {
             "public, max-age=31536000, immutable"
         }),
     );
+    if index {
+        response.headers_mut().remove(header::LAST_MODIFIED);
+        response.headers_mut().remove(header::ETAG);
+    }
     response
 }
 

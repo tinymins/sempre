@@ -139,9 +139,27 @@ async fn static_ui_serves_spa_without_exposing_metadata_or_unknown_api_routes() 
         .await
         .expect("SPA");
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    assert!(!response.headers().contains_key(header::LAST_MODIFIED));
     let body = to_bytes(response.into_body(), 4096)
         .await
         .expect("SPA body");
+    assert_eq!(&body[..], b"<main>Sempre UI</main>");
+
+    let mut conditional = request("GET", "/", Body::empty(), None);
+    conditional.headers_mut().insert(
+        header::IF_MODIFIED_SINCE,
+        HeaderValue::from_static("Wed, 21 Oct 2099 07:28:00 GMT"),
+    );
+    let conditional = app
+        .clone()
+        .oneshot(conditional)
+        .await
+        .expect("conditional index");
+    assert_eq!(conditional.status(), StatusCode::OK);
+    let body = to_bytes(conditional.into_body(), 4096)
+        .await
+        .expect("conditional index body");
     assert_eq!(&body[..], b"<main>Sempre UI</main>");
 
     let asset = app
@@ -152,6 +170,14 @@ async fn static_ui_serves_spa_without_exposing_metadata_or_unknown_api_routes() 
     assert_eq!(
         asset.headers()[header::CACHE_CONTROL],
         "public, max-age=31536000, immutable"
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request("GET", "/assets/removed.js", Body::empty(), None))
+            .await
+            .expect("missing asset")
+            .status(),
+        StatusCode::NOT_FOUND
     );
     assert_eq!(
         app.clone()
