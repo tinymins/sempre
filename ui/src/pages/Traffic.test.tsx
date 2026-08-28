@@ -35,6 +35,22 @@ describe('Traffic', () => {
     expect(screen.getByText('Backend history storage')).toBeInTheDocument()
     expect(screen.getByText('1.0 KiB / 64.0 MiB')).toBeInTheDocument()
     expect(screen.getByText('3 days')).toBeInTheDocument()
+    expect(screen.getByText('Rolling retention')).toBeInTheDocument()
+  })
+
+  it('renders a monthly traffic reset day', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/runtime/events')) return new Response('')
+      return Response.json({
+        settings: { retention_hours: 24, reset_day: 21, max_bytes: 32 * 1024 * 1024 },
+        storage_bytes: 80,
+        totals: [],
+      })
+    }))
+    renderTraffic()
+
+    expect(await screen.findByText('Monthly reset')).toBeInTheDocument()
+    expect(screen.getByText('Day 21')).toBeInTheDocument()
   })
 })
 

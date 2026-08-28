@@ -6,12 +6,13 @@ import { useI18n } from '../lib/i18n'
 import { useRuntimeEvents } from '../lib/useRuntimeEvents'
 import { api } from '../lib/api'
 import { useSession } from '../lib/session'
-import type { RuntimeEvent, TrafficDimension, TrafficHistory, TrafficSettings } from '../lib/types'
+import type { RuntimeEvent } from '../lib/types'
+import type { TrafficDimension, TrafficHistory, TrafficSettings } from '../lib/traffic'
 import { formatBytes } from '../lib/format'
 import { Badge, Button, Card, EmptyState, Field, PageTitle, Spinner } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
 
-const DEFAULT_SETTINGS: TrafficSettings = { retention_hours: 24, max_bytes: 32 * 1024 * 1024 }
+const DEFAULT_SETTINGS: TrafficSettings = { retention_hours: 24, reset_day: null, max_bytes: 32 * 1024 * 1024 }
 
 export function Traffic() {
   const { t, locale } = useI18n()
@@ -22,12 +23,12 @@ export function Traffic() {
   const [dimension, setDimension] = useState<TrafficDimension>('host')
   const history = useQuery({
     queryKey: ['runtime', 'traffic-history', dimension],
-    queryFn: () => api<TrafficHistory>(session!, `/runtime/traffic/history?since=${Date.now() - 3600_000}&dimension=${dimension}`),
+    queryFn: () => api<TrafficHistory>(session!, `/runtime/traffic/history?since=0&dimension=${dimension}`),
     enabled: Boolean(session),
     retry: false,
     refetchInterval: 5000,
   })
-  const settings = history.data?.settings ?? DEFAULT_SETTINGS
+  const settings = history.data ? { ...DEFAULT_SETTINGS, ...history.data.settings } : DEFAULT_SETTINGS
   const updateSettings = useMutation({
     mutationFn: (next: TrafficSettings) => api<void>(session!, '/runtime/traffic/history', { method: 'PATCH', body: JSON.stringify(next) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runtime', 'traffic-history'] }),
@@ -56,6 +57,14 @@ export function Traffic() {
     { value: 1, label: `1 ${hour}` }, { value: 6, label: `6 ${hour}` }, { value: 24, label: `1 ${day}` },
     { value: 72, label: `3 ${day}` }, { value: 168, label: `7 ${day}` }, { value: 720, label: `30 ${day}` },
   ]
+  const rotationOptions = [
+    { value: 'rolling', label: t('rollingRetention') },
+    { value: 'monthly', label: t('monthlyReset') },
+  ]
+  const resetDayOptions = Array.from({ length: 31 }, (_, index) => ({
+    value: index + 1,
+    label: locale === 'zh-CN' ? `每月 ${index + 1} 日` : `Day ${index + 1}`,
+  }))
   const storageOptions = [8, 32, 64, 128, 256].map((value) => ({ value: value * 1024 * 1024, label: `${value} MiB` }))
 
   return <div className="space-y-5">
@@ -71,7 +80,10 @@ export function Traffic() {
         <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{t('trafficStorageDetail')}</p>
         <p className="mt-2 text-xs tabular-nums text-[var(--muted)]">{formatBytes(history.data?.storage_bytes ?? 0)} / {formatBytes(settings.max_bytes)}</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-          <Field label={t('retention')}><Select value={settings.retention_hours} options={retentionOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, retention_hours: Number(value) })} /></Field>
+          <Field label={t('rotationPolicy')}><Select value={settings.reset_day === null ? 'rolling' : 'monthly'} options={rotationOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, reset_day: value === 'monthly' ? 1 : null })} /></Field>
+          {settings.reset_day === null
+            ? <Field label={t('retention')}><Select value={settings.retention_hours} options={retentionOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, retention_hours: Number(value) })} /></Field>
+            : <Field label={t('monthlyResetDay')}><Select value={settings.reset_day} options={resetDayOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, reset_day: Number(value) })} /></Field>}
           <Field label={t('maximumStorage')}><Select value={settings.max_bytes} options={storageOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, max_bytes: Number(value) })} /></Field>
         </div>
         <Button className="mt-4" variant="danger" size="small" disabled={clear.isPending} onClick={() => clear.mutate()}><Trash2 size={14} />{t('clear')}</Button>

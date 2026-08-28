@@ -27,6 +27,7 @@ mod subscription_tools_api;
 mod system_api;
 mod traffic_collector;
 mod traffic_history;
+mod traffic_rotation;
 mod tunnel_api;
 mod ui_distribution;
 mod uninstall_cli;

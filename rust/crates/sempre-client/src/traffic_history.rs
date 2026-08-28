@@ -16,16 +16,17 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{api, api::AppState};
+use crate::{
+    api,
+    api::AppState,
+    traffic_rotation::{self, RotationError, TrafficSettings},
+};
+
+#[cfg(test)]
+use crate::traffic_rotation::{MAX_RETENTION_HOURS, MIN_MAX_BYTES};
 
 const SCHEMA: u32 = 1;
 const BUCKET_MILLIS: i64 = 60_000;
-const DEFAULT_RETENTION_HOURS: u32 = 24;
-const DEFAULT_MAX_BYTES: u64 = 32 * 1024 * 1024;
-const MIN_RETENTION_HOURS: u32 = 1;
-const MAX_RETENTION_HOURS: u32 = 24 * 30;
-const MIN_MAX_BYTES: u64 = 1024 * 1024;
-const MAX_MAX_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub(crate) enum TrafficError {
@@ -50,10 +51,8 @@ pub(crate) enum TrafficError {
     Lock,
     #[error("traffic history schema {0} is not supported")]
     Schema(u32),
-    #[error("retention_hours must be between {MIN_RETENTION_HOURS} and {MAX_RETENTION_HOURS}")]
-    Retention,
-    #[error("max_bytes must be between {MIN_MAX_BYTES} and {MAX_MAX_BYTES}")]
-    MaximumSize,
+    #[error(transparent)]
+    Rotation(#[from] RotationError),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -64,21 +63,6 @@ pub(crate) enum TrafficDimension {
     Host,
     Outbound,
     Process,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct TrafficSettings {
-    pub retention_hours: u32,
-    pub max_bytes: u64,
-}
-
-impl Default for TrafficSettings {
-    fn default() -> Self {
-        Self {
-            retention_hours: DEFAULT_RETENTION_HOURS,
-            max_bytes: DEFAULT_MAX_BYTES,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -159,7 +143,7 @@ impl TrafficStore {
         if document.schema != SCHEMA {
             return Err(TrafficError::Schema(document.schema));
         }
-        validate_settings(&document.settings)?;
+        traffic_rotation::validate(&document.settings)?;
         let records = document
             .records
             .into_iter()
@@ -205,7 +189,7 @@ impl TrafficStore {
             totals.download += delta.download;
             totals.upload += delta.upload;
         }
-        rotate_by_age(&mut inner, time);
+        rotate(&mut inner, time);
         inner.dirty = true;
         Ok(())
     }
@@ -248,10 +232,10 @@ impl TrafficStore {
         settings: TrafficSettings,
         now: i64,
     ) -> Result<(), TrafficError> {
-        validate_settings(&settings)?;
+        traffic_rotation::validate(&settings)?;
         let mut inner = self.lock()?;
         inner.settings = settings;
-        rotate_by_age(&mut inner, now);
+        rotate(&mut inner, now);
         inner.dirty = true;
         persist(&self.path, &mut inner)
     }
@@ -271,24 +255,27 @@ impl TrafficStore {
         Ok(())
     }
 
+    pub(crate) fn maintain(&self, now: i64) -> Result<(), TrafficError> {
+        let mut inner = self.lock()?;
+        if rotate(&mut inner, now) {
+            inner.dirty = true;
+        }
+        if inner.dirty {
+            persist(&self.path, &mut inner)?;
+        }
+        Ok(())
+    }
+
     fn lock(&self) -> Result<MutexGuard<'_, Inner>, TrafficError> {
         self.inner.lock().map_err(|_| TrafficError::Lock)
     }
 }
 
-fn validate_settings(settings: &TrafficSettings) -> Result<(), TrafficError> {
-    if !(MIN_RETENTION_HOURS..=MAX_RETENTION_HOURS).contains(&settings.retention_hours) {
-        return Err(TrafficError::Retention);
-    }
-    if !(MIN_MAX_BYTES..=MAX_MAX_BYTES).contains(&settings.max_bytes) {
-        return Err(TrafficError::MaximumSize);
-    }
-    Ok(())
-}
-
-fn rotate_by_age(inner: &mut Inner, now: i64) {
-    let cutoff = now - i64::from(inner.settings.retention_hours) * 3_600_000;
+fn rotate(inner: &mut Inner, now: i64) -> bool {
+    let cutoff = traffic_rotation::cutoff(&inner.settings, now);
+    let previous = inner.records.len();
     inner.records.retain(|key, _| key.time >= cutoff);
+    inner.records.len() != previous
 }
 
 fn persist(path: &Path, inner: &mut Inner) -> Result<(), TrafficError> {
@@ -378,7 +365,7 @@ async fn update_settings(
         .update_settings(settings, Utc::now().timestamp_millis())
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(TrafficError::Retention | TrafficError::MaximumSize) => api::api_error(
+        Err(TrafficError::Rotation(_)) => api::api_error(
             StatusCode::BAD_REQUEST,
             "INVALID_TRAFFIC_SETTINGS",
             "traffic history rotation settings are outside the supported range",
@@ -444,6 +431,7 @@ mod tests {
             .update_settings(
                 TrafficSettings {
                     retention_hours: 1,
+                    reset_day: None,
                     max_bytes: MIN_MAX_BYTES,
                 },
                 7_200_000,
@@ -478,6 +466,7 @@ mod tests {
             .update_settings(
                 TrafficSettings {
                     retention_hours: MAX_RETENTION_HOURS,
+                    reset_day: None,
                     max_bytes: MIN_MAX_BYTES,
                 },
                 20 * BUCKET_MILLIS,

@@ -146,7 +146,7 @@ pub(crate) async fn run(
                     }
                     Err(_) => break,
                 },
-                _ = flush.tick() => flush_store(&store),
+                _ = flush.tick() => maintain_store(&store),
             }
         }
         if retry_or_shutdown(&store, &mut shutdown).await {
@@ -165,13 +165,16 @@ async fn retry_or_shutdown(store: &TrafficStore, shutdown: &mut watch::Receiver<
                 false
             }
         }
-        () = tokio::time::sleep(Duration::from_secs(1)) => false,
+        () = tokio::time::sleep(Duration::from_secs(1)) => {
+            maintain_store(store);
+            false
+        },
     }
 }
 
-fn flush_store(store: &TrafficStore) {
-    if let Err(error) = store.flush() {
-        warn!(%error, "failed to persist traffic history");
+fn maintain_store(store: &TrafficStore) {
+    if let Err(error) = store.maintain(Utc::now().timestamp_millis()) {
+        warn!(%error, "failed to rotate or persist traffic history");
     }
 }
 
