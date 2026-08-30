@@ -19,7 +19,7 @@ pub(super) fn render(
     assembly::render(profile, proxies, target, snapshots)
 }
 
-pub(super) fn convert_proxy(proxy: &Proxy) -> (Option<Value>, FieldDiff) {
+pub(super) fn convert_proxy(proxy: &Proxy, target: &Target) -> (Option<Value>, FieldDiff) {
     let consumed = consumed_keys(&proxy.proxy_type);
     let mut diff = FieldDiff {
         node: proxy.name.clone(),
@@ -36,6 +36,14 @@ pub(super) fn convert_proxy(proxy: &Proxy) -> (Option<Value>, FieldDiff) {
         } else {
             diff.dropped.push(key.clone());
         }
+    }
+    if target.version == "11" && proxy.proxy_type == "anytls" {
+        diff.represented = false;
+        diff.warnings.push(format!(
+            "{}: proxy type anytls requires sing-box 1.12 or newer",
+            proxy.name
+        ));
+        return (None, diff);
     }
     let Some(mut outbound) = protocol_outbound(proxy) else {
         diff.represented = false;

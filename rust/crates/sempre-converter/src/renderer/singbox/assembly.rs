@@ -29,7 +29,7 @@ pub(super) fn render(
     let mut diffs = Vec::new();
     let mut warnings = Vec::new();
     for proxy in proxies {
-        let (converted, mut diff) = convert_proxy(proxy);
+        let (converted, mut diff) = convert_proxy(proxy, target);
         if let Some(mut outbound) = converted {
             if modern && proxy.server.parse::<IpAddr>().is_err() {
                 outbound["domain_resolver"] =

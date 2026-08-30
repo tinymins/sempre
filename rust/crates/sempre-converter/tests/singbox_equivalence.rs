@@ -168,3 +168,65 @@ fn multiplex_numeric_strings_are_normalized_for_sing_box() {
     assert_eq!(edge["multiplex"]["padding"], false);
     assert!(edge.get("flow").is_none());
 }
+
+#[test]
+fn anytls_is_omitted_from_sing_box_v11_only() {
+    let profile: Profile = serde_json::from_value(json!({
+        "manual_servers": [{
+            "name": "AnyTLS edge",
+            "type": "anytls",
+            "server": "edge.example.com",
+            "port": 443,
+            "password": "secret",
+            "sni": "edge.example.com"
+        }, {
+            "name": "SOCKS fallback",
+            "type": "socks5",
+            "server": "1.1.1.1",
+            "port": 1080
+        }]
+    }))
+    .expect("profile");
+
+    let legacy = compile(&CompileRequest {
+        protocol: 1,
+        profile: profile.clone(),
+        snapshots: vec![],
+        custom_nodes: vec![],
+        target: Target::parse("sing-box").expect("target"),
+    })
+    .expect("legacy compile");
+    let legacy_document: Value = serde_json::from_str(&legacy.content).expect("legacy config");
+    assert!(
+        !legacy_document["outbounds"]
+            .as_array()
+            .expect("outbounds")
+            .iter()
+            .any(|outbound| outbound["type"] == "anytls")
+    );
+    assert!(legacy.field_diffs.iter().any(|diff| {
+        diff.node == "AnyTLS edge"
+            && !diff.represented
+            && diff
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("1.12 or newer"))
+    }));
+
+    let modern = compile(&CompileRequest {
+        protocol: 1,
+        profile,
+        snapshots: vec![],
+        custom_nodes: vec![],
+        target: Target::parse("sing-box-v12").expect("target"),
+    })
+    .expect("modern compile");
+    let modern_document: Value = serde_json::from_str(&modern.content).expect("modern config");
+    assert!(
+        modern_document["outbounds"]
+            .as_array()
+            .expect("outbounds")
+            .iter()
+            .any(|outbound| outbound["type"] == "anytls")
+    );
+}
