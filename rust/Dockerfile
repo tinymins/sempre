@@ -3,7 +3,7 @@ WORKDIR /src/ui
 COPY ui/package.json ui/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY ui ./
-RUN bun run build
+RUN VITE_SEMPRE_SERVER=true bun run build
 
 FROM rust:1.95-bookworm AS builder
 WORKDIR /src

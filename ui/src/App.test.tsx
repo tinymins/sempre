@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { App } from './App'
+import { App, AppContent } from './App'
 import { I18nProvider } from './lib/i18n'
 import { SessionProvider } from './lib/session'
 
@@ -42,6 +42,7 @@ describe('App', () => {
     sessionStorage.clear()
     localStorage.removeItem('sempre.theme')
     localStorage.setItem('sempre.locale', 'en')
+    window.location.hash = ''
     document.documentElement.classList.remove('dark')
   })
 
@@ -55,6 +56,15 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Sempre' })).toBeInTheDocument()
     expect(screen.getByLabelText('Sempre address')).toHaveValue(window.location.origin)
     expect(screen.getByRole('button', { name: /Connect/ })).toBeInTheDocument()
+  })
+
+  it('starts with multi-user authentication in a server build', async () => {
+    render(<QueryClientProvider client={new QueryClient()}><I18nProvider><SessionProvider><AppContent serverMode /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    expect(await screen.findByRole('heading', { name: 'Sempre Server' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Email')).toBeInTheDocument()
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
   })
 
   it('follows the system dark theme before authentication', async () => {
