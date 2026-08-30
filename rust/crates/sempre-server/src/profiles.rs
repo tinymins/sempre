@@ -113,7 +113,11 @@ async fn create(
     document.revision = 1;
     document.name.clone_from(&name);
     let value = serde_json::to_value(document).map_err(ApiError::internal)?;
-    let row = sqlx::query("INSERT INTO profiles (id, owner_id, name, document) VALUES ($1, $2, $3, $4) RETURNING id, owner_id, revision, name, document, updated_at, 'owner' AS role").bind(id).bind(user.id).bind(&name).bind(value).fetch_one(&state.pool).await?;
+    let mut transaction = state.pool.begin().await?;
+    let row = sqlx::query("INSERT INTO profiles (id, owner_id, name, document) VALUES ($1, $2, $3, $4) RETURNING id, owner_id, revision, name, document, updated_at, 'owner' AS role").bind(id).bind(user.id).bind(&name).bind(&value).fetch_one(&mut *transaction).await?;
+    sqlx::query("INSERT INTO profile_revisions (profile_id, revision, name, document, created_at) VALUES ($1, 1, $2, $3, $4)")
+        .bind(id).bind(&name).bind(&value).bind(row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at").map_err(ApiError::internal)?).execute(&mut *transaction).await?;
+    transaction.commit().await?;
     Ok((StatusCode::CREATED, Json(profile_output(&row)?)))
 }
 
@@ -145,10 +149,17 @@ async fn update(
         .map_err(|_| ApiError::bad_request("profile revision is invalid"))?;
     document.name.clone_from(&name);
     let value = serde_json::to_value(document).map_err(ApiError::internal)?;
-    let row = sqlx::query("UPDATE profiles SET revision = revision + 1, name = $1, document = $2, updated_at = NOW() WHERE id = $3 AND revision = $4 RETURNING id, owner_id, revision, name, document, updated_at, CASE WHEN owner_id = $5 THEN 'owner' ELSE 'editor' END AS role").bind(&name).bind(value).bind(id).bind(expected).bind(user.id).fetch_optional(&state.pool).await?;
+    let mut transaction = state.pool.begin().await?;
+    let row = sqlx::query("UPDATE profiles SET revision = revision + 1, name = $1, document = $2, updated_at = NOW() WHERE id = $3 AND revision = $4 RETURNING id, owner_id, revision, name, document, updated_at, CASE WHEN owner_id = $5 THEN 'owner' ELSE 'editor' END AS role").bind(&name).bind(&value).bind(id).bind(expected).bind(user.id).fetch_optional(&mut *transaction).await?;
     let Some(row) = row else {
         return Err(ApiError::conflict("profile changed; reload before saving"));
     };
+    let revision: i64 = row.try_get("revision").map_err(ApiError::internal)?;
+    let updated_at: chrono::DateTime<chrono::Utc> =
+        row.try_get("updated_at").map_err(ApiError::internal)?;
+    sqlx::query("INSERT INTO profile_revisions (profile_id, revision, name, document, created_at) VALUES ($1, $2, $3, $4, $5)")
+        .bind(id).bind(revision).bind(&name).bind(&value).bind(updated_at).execute(&mut *transaction).await?;
+    transaction.commit().await?;
     profile_output(&row).map(Json)
 }
 

@@ -195,7 +195,7 @@ async fn shared_artifact(
     if token.len() < 32 || token.len() > 128 {
         return Err(ApiError::not_found("subscription"));
     }
-    let row = sqlx::query("SELECT s.id AS share_id, p.id AS profile_id, p.name, p.revision, p.updated_at, p.document, a.content, a.content_hash, a.node_count, a.created_at FROM shares s JOIN profiles p ON p.id = s.profile_id JOIN artifacts a ON a.profile_id = p.id AND a.revision = p.revision AND a.target = $2 WHERE s.token_hash = $1 AND s.enabled = TRUE AND s.revoked_at IS NULL")
+    let row = sqlx::query("SELECT s.id AS share_id, p.id AS profile_id, r.name, r.revision, r.created_at AS updated_at, r.document, a.content, a.content_hash, a.node_count, a.created_at FROM shares s JOIN profiles p ON p.id = s.profile_id JOIN artifacts a ON a.profile_id = p.id AND a.target = $2 JOIN profile_revisions r ON r.profile_id = a.profile_id AND r.revision = a.revision WHERE s.token_hash = $1 AND s.enabled = TRUE AND s.revoked_at IS NULL ORDER BY a.revision DESC LIMIT 1")
         .bind(token_hash(token)).bind(target).fetch_optional(&state.pool).await?;
     let Some(row) = row else {
         return Err(ApiError::not_found("subscription artifact"));
