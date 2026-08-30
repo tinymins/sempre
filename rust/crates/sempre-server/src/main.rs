@@ -5,6 +5,8 @@ mod error;
 mod fetch;
 mod profiles;
 mod public;
+mod publishing;
+mod refresh;
 mod stats;
 
 use std::sync::Arc;
@@ -48,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let protected = profiles::router()
         .merge(custom_nodes::router())
         .merge(stats::router())
+        .merge(refresh::router())
         .merge(auth::protected_router())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -69,12 +72,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .fallback_service(
             ServeDir::new(&web_root).fallback(ServeFile::new(web_root.join("index.html"))),
         )
-        .with_state(state);
+        .with_state(state.clone());
     let listener = tokio::net::TcpListener::bind(address).await?;
     info!(%address, "Sempre multi-user server listening");
-    axum::serve(listener, app)
+    let scheduler = tokio::spawn(refresh::run(state));
+    let result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown())
-        .await?;
+        .await;
+    scheduler.abort();
+    result?;
     Ok(())
 }
 

@@ -53,6 +53,16 @@ export interface ServerCompileResult {
   diagnostics: { level: string; source_id?: string; message: string }[]
 }
 
+export interface ServerRefreshSettings {
+  enabled: boolean
+  interval_minutes: number
+  targets: string[]
+  next_refresh_at?: string
+  last_refresh_at?: string
+  last_refresh_status: 'never' | 'running' | 'success' | 'failed'
+  last_refresh_error?: string
+}
+
 export function loadServerSession(): ServerSession | null {
   try {
     const value = localStorage.getItem(SESSION_KEY)

@@ -146,7 +146,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                     }}
                   />
                 </label>
-                <label className="flex min-h-9 items-center gap-2 self-end rounded-md border border-[var(--border)] px-3 text-sm">
+                {props.showAutoRestart !== false ? <label className="flex min-h-9 items-center gap-2 self-end rounded-md border border-[var(--border)] px-3 text-sm">
                   <Checkbox
                     checked={autoRestart}
                     onChange={(event) => {
@@ -156,7 +156,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                     }}
                   />
                   <span>{t("proxy.form.restartAfterScheduledUpdates")}</span>
-                </label>
+                </label> : null}
               </div>
             </div>
 

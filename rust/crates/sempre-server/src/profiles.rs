@@ -11,14 +11,13 @@ use serde_json::Value;
 use sqlx::Row as _;
 use uuid::Uuid;
 
-use sempre_converter::{CompileRequest, CompileResult, Profile, Target, compile};
+use sempre_converter::{CompileResult, Profile, Target};
 
 use crate::{
     AppState,
     auth::{AuthUser, CurrentUser, random_token, token_hash},
-    custom_nodes,
     error::ApiError,
-    fetch,
+    publishing,
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -185,27 +184,8 @@ async fn compile_profile(
     Path(id): Path<Uuid>,
     Json(input): Json<CompileInput>,
 ) -> Result<Json<CompileResult>, ApiError> {
-    let row = profile_row(&state, id, &user)
-        .await?
-        .ok_or_else(|| ApiError::not_found("profile"))?;
-    let revision: i64 = row.try_get("revision").map_err(ApiError::internal)?;
-    let document: Value = row.try_get("document").map_err(ApiError::internal)?;
-    let profile: Profile = serde_json::from_value(document).map_err(ApiError::internal)?;
-    let snapshots = fetch::load_snapshots(&state, id, &profile).await?;
-    let owner_id: Uuid = row.try_get("owner_id").map_err(ApiError::internal)?;
-    let custom_nodes =
-        custom_nodes::load_selected(&state, owner_id, &profile.custom_node_ids).await?;
-    let request = CompileRequest {
-        protocol: 1,
-        profile,
-        snapshots,
-        custom_nodes,
-        target: input.target,
-    };
-    let result = compile(&request).map_err(|error| ApiError::bad_request(error.to_string()))?;
-    let diagnostics = serde_json::to_value(&result.diagnostics).map_err(ApiError::internal)?;
-    sqlx::query("INSERT INTO artifacts (profile_id, revision, target, content, content_hash, node_count, diagnostics) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (profile_id, revision, target) DO UPDATE SET content = EXCLUDED.content, content_hash = EXCLUDED.content_hash, node_count = EXCLUDED.node_count, diagnostics = EXCLUDED.diagnostics, created_at = NOW()")
-        .bind(id).bind(revision).bind(&result.format).bind(&result.content).bind(&result.artifact_hash).bind(i32::try_from(result.node_count).map_err(ApiError::internal)?).bind(diagnostics).execute(&state.pool).await?;
+    require_write(&state, id, &user).await?;
+    let result = publishing::compile_target(&state, id, input.target).await?;
     Ok(Json(result))
 }
 
@@ -323,7 +303,24 @@ async fn profile_row(
     sqlx::query("SELECT p.id, p.owner_id, p.revision, p.name, p.document, p.updated_at, CASE WHEN p.owner_id = $2 THEN 'owner' ELSE pm.role END AS role FROM profiles p LEFT JOIN profile_members pm ON pm.profile_id = p.id AND pm.user_id = $2 WHERE p.id = $1 AND (p.owner_id = $2 OR pm.user_id = $2)").bind(id).bind(user.id).fetch_optional(&state.pool).await.map_err(Into::into)
 }
 
-async fn require_write(state: &AppState, id: Uuid, user: &AuthUser) -> Result<(), ApiError> {
+pub(crate) async fn require_read(
+    state: &AppState,
+    id: Uuid,
+    user: &AuthUser,
+) -> Result<(), ApiError> {
+    let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM profiles p LEFT JOIN profile_members pm ON pm.profile_id = p.id AND pm.user_id = $2 WHERE p.id = $1 AND (p.owner_id = $2 OR pm.user_id = $2))")
+        .bind(id).bind(user.id).fetch_one(&state.pool).await?;
+    if allowed {
+        Ok(())
+    } else {
+        Err(ApiError::not_found("profile"))
+    }
+}
+pub(crate) async fn require_write(
+    state: &AppState,
+    id: Uuid,
+    user: &AuthUser,
+) -> Result<(), ApiError> {
     access_exists(state, id, user, "editor").await
 }
 async fn require_owner(state: &AppState, id: Uuid, user: &AuthUser) -> Result<(), ApiError> {

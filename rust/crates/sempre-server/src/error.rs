@@ -24,6 +24,9 @@ struct ErrorBody {
 }
 
 impl ApiError {
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, "BAD_REQUEST", message)
     }

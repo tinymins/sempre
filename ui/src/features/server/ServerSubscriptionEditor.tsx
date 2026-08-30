@@ -1,12 +1,12 @@
 import { ArrowLeft, Copy, Save, Share2, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Modal, Select } from '@acme/components'
+import { Checkbox, Modal, Select } from '@acme/components'
 import { Badge, Button, Card, Field, Input, Spinner } from '../../components/ui'
 import type { SubscriptionConfigurationContext, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionTarget } from '../../lib/types'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../subscriptions/toolbox/ProxySubscribeEditor'
 import { ServerCustomNodes } from './ServerCustomNodes'
-import { serverAPI, serverTargets, type ServerCompileResult, type ServerCustomNode, type ServerMember, type ServerProfile, type ServerProfileStats, type ServerSession, type ServerShare } from './server-api'
+import { serverAPI, serverTargets, type ServerCompileResult, type ServerCustomNode, type ServerMember, type ServerProfile, type ServerProfileStats, type ServerRefreshSettings, type ServerSession, type ServerShare } from './server-api'
 
 const defaults: SubscriptionEditorConfig = {
   rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]',
@@ -37,6 +37,7 @@ export function ServerSubscriptionEditor({ session, onLogout }: { session: Serve
   const [shares, setShares] = useState<ServerShare[]>([])
   const [customNodes, setCustomNodes] = useState<ServerCustomNode[]>([])
   const [stats, setStats] = useState<ServerProfileStats | null>(null)
+  const [refreshSettings, setRefreshSettings] = useState<ServerRefreshSettings | null>(null)
   const [compileResult, setCompileResult] = useState<ServerCompileResult | null>(null)
   const [newShareURL, setNewShareURL] = useState('')
   const [memberEmail, setMemberEmail] = useState('')
@@ -56,15 +57,16 @@ export function ServerSubscriptionEditor({ session, onLogout }: { session: Serve
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([serverAPI<ServerProfile>(session, `/profiles/${id}`), serverTargets(), serverAPI<ServerCustomNode[]>(session, '/custom-nodes'), serverAPI<ServerProfileStats>(session, `/profiles/${id}/stats`)])
-      .then(async ([value, nextTargets, nodes, nextStats]) => {
+    void Promise.all([serverAPI<ServerProfile>(session, `/profiles/${id}`), serverTargets(), serverAPI<ServerCustomNode[]>(session, '/custom-nodes'), serverAPI<ServerProfileStats>(session, `/profiles/${id}/stats`), serverAPI<ServerRefreshSettings>(session, `/profiles/${id}/refresh`)])
+      .then(async ([value, nextTargets, nodes, nextStats, nextRefreshSettings]) => {
         if (cancelled) return
         value.document = normalizeDocument(value)
         setProfile(value)
         setTargets(nextTargets)
         setCustomNodes(nodes)
         setStats(nextStats)
-        if (nextTargets.length) setTarget((current) => nextTargets.some((item) => item.format === current) ? current : nextTargets[0].format)
+        setRefreshSettings(nextRefreshSettings)
+        if (nextTargets.length) setTarget(nextRefreshSettings.targets.find((format) => nextTargets.some((item) => item.format === format)) ?? nextTargets[0].format)
         await loadOwnerData(value)
       })
       .catch((reason: Error) => setNotice({ tone: 'error', message: reason.message }))
@@ -83,20 +85,50 @@ export function ServerSubscriptionEditor({ session, onLogout }: { session: Serve
   }
 
   const compile = async () => {
-    if (!profile) return
+    if (!profile || !refreshSettings) return
     setPending('compile')
     setNotice(null)
     try {
-      const result = await serverAPI<ServerCompileResult>(session, `/profiles/${profile.id}/compile`, {
-        method: 'POST', body: JSON.stringify({ target: targets.find((item) => item.format === target) ?? { format: target } }),
+      const settings = await serverAPI<ServerRefreshSettings>(session, `/profiles/${profile.id}/refresh`, {
+        method: 'PUT', body: JSON.stringify({ enabled: refreshSettings.enabled, interval_minutes: refreshSettings.interval_minutes, targets: [target] }),
       })
+      setRefreshSettings(settings)
+      const [result] = await serverAPI<ServerCompileResult[]>(session, `/profiles/${profile.id}/refresh`, { method: 'POST' })
       setCompileResult(result)
-      setNotice({ tone: 'success', message: `Compiled ${result.node_count} nodes · ${result.artifact_hash}` })
+      setRefreshSettings(await serverAPI<ServerRefreshSettings>(session, `/profiles/${profile.id}/refresh`))
+      setNotice({ tone: 'success', message: `Published ${result.node_count} nodes · ${result.artifact_hash}` })
     } catch (reason) {
       setNotice({ tone: 'error', message: reason instanceof Error ? reason.message : String(reason) })
     } finally {
       setPending('')
     }
+  }
+
+  const saveRefreshSettings = async (change: Partial<Pick<ServerRefreshSettings, 'enabled' | 'interval_minutes' | 'targets'>>) => {
+    if (!profile || !refreshSettings) return
+    const updated = await serverAPI<ServerRefreshSettings>(session, `/profiles/${profile.id}/refresh`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        enabled: change.enabled ?? refreshSettings.enabled,
+        interval_minutes: change.interval_minutes ?? refreshSettings.interval_minutes,
+        targets: change.targets ?? refreshSettings.targets,
+      }),
+    })
+    setRefreshSettings(updated)
+  }
+
+  const saveSchedule = async (change: { interval?: string }) => {
+    if (!change.interval) return
+    await saveRefreshSettings({ interval_minutes: parseInterval(change.interval) })
+  }
+
+  const changeTarget = (value: string) => {
+    setTarget(value)
+    void saveRefreshSettings({ targets: [value] }).catch((reason: Error) => setNotice({ tone: 'error', message: reason.message }))
+  }
+
+  const setRefreshEnabled = (enabled: boolean) => {
+    void saveRefreshSettings({ enabled, targets: [target] }).catch((reason: Error) => setNotice({ tone: 'error', message: reason.message }))
   }
 
   const createShare = async () => {
@@ -151,12 +183,13 @@ export function ServerSubscriptionEditor({ session, onLogout }: { session: Serve
           defaults={defaults}
           customNodes={customNodes}
           configurationContext={configurationContext}
-          schedule={{ interval: '24h', autoRestart: false }}
-          onScheduleSave={() => undefined}
+          schedule={{ interval: formatInterval(refreshSettings?.interval_minutes ?? 1440), autoRestart: false }}
+          onScheduleSave={saveSchedule}
+          showAutoRestart={false}
           onSave={saveProfile}
           onSaveStateChange={setSaveState}
           sourceDebug={false}
-          diagnostics={<ServerPublishing target={target} targets={targets} pending={pending} newShareURL={newShareURL} shares={shares} stats={stats} result={compileResult} onTarget={setTarget} onCompile={compile} onShare={profile.role === 'owner' ? createShare : undefined} />}
+          diagnostics={<ServerPublishing target={target} targets={targets} pending={pending} newShareURL={newShareURL} shares={shares} stats={stats} result={compileResult} refreshSettings={refreshSettings} onTarget={changeTarget} onCompile={compile} onRefreshEnabled={setRefreshEnabled} onShare={profile.role === 'owner' ? createShare : undefined} />}
         />
       ) : <Card className="p-5"><p className="mb-3 text-sm text-[var(--muted)]">This shared profile is read-only.</p><pre className="max-h-[70vh] overflow-auto text-xs">{JSON.stringify(profile.document, null, 2)}</pre></Card>}
       {profile.role === 'owner' ? <MemberManager members={members} email={memberEmail} role={memberRole} pending={pending === 'member'} onEmail={setMemberEmail} onRole={setMemberRole} onAdd={addMember} /> : null}
@@ -165,9 +198,9 @@ export function ServerSubscriptionEditor({ session, onLogout }: { session: Serve
   )
 }
 
-function ServerPublishing({ target, targets, pending, newShareURL, shares, stats, result, onTarget, onCompile, onShare }: { target: string; targets: SubscriptionTarget[]; pending: string; newShareURL: string; shares: ServerShare[]; stats: ServerProfileStats | null; result: ServerCompileResult | null; onTarget: (value: string) => void; onCompile: () => void; onShare?: () => void }) {
+function ServerPublishing({ target, targets, pending, newShareURL, shares, stats, result, refreshSettings, onTarget, onCompile, onRefreshEnabled, onShare }: { target: string; targets: SubscriptionTarget[]; pending: string; newShareURL: string; shares: ServerShare[]; stats: ServerProfileStats | null; result: ServerCompileResult | null; refreshSettings: ServerRefreshSettings | null; onTarget: (value: string) => void; onCompile: () => void; onRefreshEnabled: (enabled: boolean) => void; onShare?: () => void }) {
   const [preview, setPreview] = useState(false)
-  return <div className="space-y-4"><div className="flex flex-wrap items-end gap-2"><Field label="Output target"><Select className="min-w-56" value={target} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(value) => onTarget(String(value))} /></Field><Button disabled={Boolean(pending)} onClick={onCompile}>{pending === 'compile' ? <Spinner /> : null}Compile artifact</Button>{result ? <Button onClick={() => setPreview(true)}>Preview result</Button> : null}{onShare ? <Button disabled={Boolean(pending)} onClick={onShare}>{pending === 'share' ? <Spinner /> : <Share2 size={16} />}Create share link</Button> : null}</div>{newShareURL ? <div className="flex gap-2"><Input readOnly value={newShareURL} /><Button aria-label="Copy share link" onClick={() => void navigator.clipboard.writeText(newShareURL)}><Copy size={16} /></Button></div> : null}<p className="text-xs text-[var(--muted)]">{shares.length} share record(s) · {stats?.total_accesses ?? 0} artifact download(s), {stats?.today_accesses ?? 0} today. Compile the selected target before clients synchronize it.</p><Modal open={preview} title="Compiled artifact and diagnostics" footer={null} size="almost-full" onCancel={() => setPreview(false)} destroyOnClose>{result ? <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"><pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words text-xs">{result.content}</pre><div className="max-h-[70vh] space-y-3 overflow-auto text-xs"><p>{result.node_count} represented node(s) · {result.field_diffs.filter((item) => !item.represented).length} omitted</p>{result.diagnostics.map((item, index) => <p key={`${item.source_id}-${index}`} className="border-l-2 border-amber-500 pl-2">{item.message}</p>)}{result.field_diffs.filter((item) => item.dropped?.length || item.warnings?.length).map((item) => <div key={item.node} className="border-t border-[var(--border)] pt-2"><strong>{item.node}</strong><p>{item.warnings?.join('; ') || `Dropped: ${item.dropped?.join(', ')}`}</p></div>)}</div></div> : null}</Modal></div>
+  return <div className="space-y-4"><div className="flex flex-wrap items-end gap-2"><Field label="Output target"><Select className="min-w-56" value={target} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(value) => onTarget(String(value))} /></Field><Button disabled={Boolean(pending)} onClick={onCompile}>{pending === 'compile' ? <Spinner /> : null}Refresh and publish now</Button>{result ? <Button onClick={() => setPreview(true)}>Preview result</Button> : null}{onShare ? <Button disabled={Boolean(pending)} onClick={onShare}>{pending === 'share' ? <Spinner /> : <Share2 size={16} />}Create share link</Button> : null}</div><label className="flex items-center gap-2 text-sm"><Checkbox checked={refreshSettings?.enabled ?? false} onChange={(event) => onRefreshEnabled(event.target.checked)} /><span>Automatically refresh and publish this target</span></label>{refreshSettings ? <p className="text-xs text-[var(--muted)]">Last refresh: {refreshSettings.last_refresh_status}{refreshSettings.last_refresh_at ? ` · ${new Date(refreshSettings.last_refresh_at).toLocaleString()}` : ''}{refreshSettings.next_refresh_at ? ` · next ${new Date(refreshSettings.next_refresh_at).toLocaleString()}` : ''}</p> : null}{refreshSettings?.last_refresh_error ? <p role="alert" className="text-xs text-red-700 dark:text-red-300">{refreshSettings.last_refresh_error}</p> : null}{newShareURL ? <div className="flex gap-2"><Input readOnly value={newShareURL} /><Button aria-label="Copy share link" onClick={() => void navigator.clipboard.writeText(newShareURL)}><Copy size={16} /></Button></div> : null}<p className="text-xs text-[var(--muted)]">{shares.length} share record(s) · {stats?.total_accesses ?? 0} artifact download(s), {stats?.today_accesses ?? 0} today. The public link keeps serving the last successful artifact if a later draft fails.</p><Modal open={preview} title="Compiled artifact and diagnostics" footer={null} size="almost-full" onCancel={() => setPreview(false)} destroyOnClose>{result ? <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"><pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words text-xs">{result.content}</pre><div className="max-h-[70vh] space-y-3 overflow-auto text-xs"><p>{result.node_count} represented node(s) · {result.field_diffs.filter((item) => !item.represented).length} omitted</p>{result.diagnostics.map((item, index) => <p key={`${item.source_id}-${index}`} className="border-l-2 border-amber-500 pl-2">{item.message}</p>)}{result.field_diffs.filter((item) => item.dropped?.length || item.warnings?.length).map((item) => <div key={item.node} className="border-t border-[var(--border)] pt-2"><strong>{item.node}</strong><p>{item.warnings?.join('; ') || `Dropped: ${item.dropped?.join(', ')}`}</p></div>)}</div></div> : null}</Modal></div>
 }
 
 function MemberManager({ members, email, role, pending, onEmail, onRole, onAdd }: { members: ServerMember[]; email: string; role: 'viewer' | 'editor'; pending: boolean; onEmail: (value: string) => void; onRole: (value: 'viewer' | 'editor') => void; onAdd: () => void }) {
@@ -176,4 +209,17 @@ function MemberManager({ members, email, role, pending, onEmail, onRole, onAdd }
 
 function normalizeDocument(profile: ServerProfile): SubscriptionProfile {
   return { ...profile.document, id: profile.id, revision: profile.revision, name: profile.name, mode: profile.document.mode || 'local' }
+}
+
+function formatInterval(minutes: number) {
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`
+  if (minutes % 60 === 0) return `${minutes / 60}h`
+  return `${minutes}m`
+}
+
+function parseInterval(value: string) {
+  const match = value.trim().match(/^(\d+)\s*([mhd])$/i)
+  if (!match) throw new Error('Use an interval such as 30m, 12h, or 1d.')
+  const multiplier = { m: 1, h: 60, d: 1440 }[match[2].toLowerCase() as 'm' | 'h' | 'd']
+  return Number(match[1]) * multiplier
 }
