@@ -6,6 +6,7 @@ import { Badge, Button, Card, Field, Input, Spinner } from '../../components/ui'
 import type { SubscriptionConfigurationContext, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionTarget } from '../../lib/types'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../subscriptions/toolbox/ProxySubscribeEditor'
 import { ServerCustomNodes } from './ServerCustomNodes'
+import { ServerDiagnostics } from './ServerDiagnostics'
 import { serverAPI, serverTargets, type ServerCompileResult, type ServerCustomNode, type ServerMember, type ServerProfile, type ServerProfileStats, type ServerRefreshSettings, type ServerSession, type ServerShare } from './server-api'
 
 const defaults: SubscriptionEditorConfig = {
@@ -189,7 +190,7 @@ export function ServerSubscriptionEditor({ session, onLogout }: { session: Serve
           onSave={saveProfile}
           onSaveStateChange={setSaveState}
           sourceDebug={false}
-          diagnostics={<ServerPublishing target={target} targets={targets} pending={pending} newShareURL={newShareURL} shares={shares} stats={stats} result={compileResult} refreshSettings={refreshSettings} onTarget={changeTarget} onCompile={compile} onRefreshEnabled={setRefreshEnabled} onShare={profile.role === 'owner' ? createShare : undefined} />}
+          diagnostics={<><ServerPublishing target={target} targets={targets} pending={pending} newShareURL={newShareURL} shares={shares} stats={stats} result={compileResult} refreshSettings={refreshSettings} onTarget={changeTarget} onCompile={compile} onRefreshEnabled={setRefreshEnabled} onShare={profile.role === 'owner' ? createShare : undefined} /><ServerDiagnostics session={session} profileId={profile.id} sources={profile.document.sources} target={target} targets={targets} /></>}
         />
       ) : <Card className="p-5"><p className="mb-3 text-sm text-[var(--muted)]">This shared profile is read-only.</p><pre className="max-h-[70vh] overflow-auto text-xs">{JSON.stringify(profile.document, null, 2)}</pre></Card>}
       {profile.role === 'owner' ? <MemberManager members={members} email={memberEmail} role={memberRole} pending={pending === 'member'} onEmail={setMemberEmail} onRole={setMemberRole} onAdd={addMember} /> : null}

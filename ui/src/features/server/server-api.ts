@@ -63,6 +63,29 @@ export interface ServerRefreshSettings {
   last_refresh_error?: string
 }
 
+export interface ServerPreviewNode {
+  name: string
+  type: string
+  server: string
+  port: number
+  sourceIndex: number
+  sourceUrl: string
+  raw: Record<string, unknown>
+  filtered?: boolean
+  filteredBy?: string
+}
+
+export interface ServerSourceTestResult {
+  source_id: string
+  source_type: string
+  format: string
+  byte_count: number
+  content_hash: string
+  node_count: number
+  discarded_node_count: number
+  diagnostics: string[]
+}
+
 export function loadServerSession(): ServerSession | null {
   try {
     const value = localStorage.getItem(SESSION_KEY)

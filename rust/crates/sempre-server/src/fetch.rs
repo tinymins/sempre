@@ -6,7 +6,8 @@ use std::{
 
 use futures_util::StreamExt as _;
 use reqwest::{Client, StatusCode, header};
-use sempre_converter::{Profile, SourceSnapshot, parse_subscription};
+use sempre_converter::{Profile, Source, SourceSnapshot, parse_subscription};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::Row as _;
 use url::Url;
@@ -17,6 +18,68 @@ use crate::{AppState, error::ApiError};
 const MAX_SOURCE_SIZE: usize = 32 << 20;
 const MAX_REDIRECTS: usize = 5;
 const DEFAULT_USER_AGENT: &str = "clash.meta";
+
+#[derive(Debug, Serialize)]
+pub(crate) struct SourceTestResult {
+    source_id: String,
+    source_type: String,
+    format: String,
+    byte_count: usize,
+    content_hash: String,
+    node_count: usize,
+    discarded_node_count: usize,
+    diagnostics: Vec<String>,
+}
+
+pub(crate) async fn test_source(
+    state: &AppState,
+    source: &Source,
+) -> Result<SourceTestResult, ApiError> {
+    let content = match source.kind.as_str() {
+        "raw" => source.content.clone(),
+        "url" if !source.url.trim().is_empty() => {
+            let user_agent = if source.user_agent.trim().is_empty() {
+                DEFAULT_USER_AGENT
+            } else {
+                source.user_agent.trim()
+            };
+            let proxy = (source
+                .extra
+                .get("fetch_mode")
+                .and_then(serde_json::Value::as_str)
+                == Some("domestic-direct"))
+            .then_some(state.config.direct_proxy_url.as_deref())
+            .flatten();
+            fetch_source_text(&source.url, user_agent, proxy).await?
+        }
+        _ => return Err(ApiError::bad_request("source is invalid")),
+    };
+    validate_content(&content)?;
+    let parsed = parse_subscription(&content);
+    Ok(SourceTestResult {
+        source_id: source.id.clone(),
+        source_type: source.kind.clone(),
+        format: parsed.format,
+        byte_count: content.len(),
+        content_hash: format!("{:x}", Sha256::digest(content.as_bytes())),
+        node_count: parsed.nodes.len(),
+        discarded_node_count: parsed.discarded_placeholder_nodes.len(),
+        diagnostics: parsed.diagnostics,
+    })
+}
+
+pub(crate) async fn clear_snapshot(
+    state: &AppState,
+    profile_id: Uuid,
+    source_id: &str,
+) -> Result<(), ApiError> {
+    sqlx::query("DELETE FROM source_snapshots WHERE profile_id = $1 AND source_id = $2")
+        .bind(profile_id)
+        .bind(source_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(())
+}
 
 pub(crate) async fn load_snapshots(
     state: &Arc<AppState>,

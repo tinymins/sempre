@@ -1,6 +1,7 @@
 mod auth;
 mod config;
 mod custom_nodes;
+mod diagnostics;
 mod error;
 mod fetch;
 mod profiles;
@@ -49,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState { pool, config });
     let protected = profiles::router()
         .merge(custom_nodes::router())
+        .merge(diagnostics::router())
         .merge(stats::router())
         .merge(refresh::router())
         .merge(auth::protected_router())
