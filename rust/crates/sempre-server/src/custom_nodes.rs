@@ -85,12 +85,10 @@ async fn update(
     Path(id): Path<Uuid>,
     Json(input): Json<CustomNodeInput>,
 ) -> Result<Json<CustomNodeOutput>, ApiError> {
-    if visible_row(&state, id, user.id).await?.is_none() {
-        return Err(ApiError::not_found("custom node"));
-    }
     let (name, proxy, authorized) = validate_input(&state, input).await?;
-    let row = sqlx::query("UPDATE custom_nodes SET name = $1, proxy = $2, authorized_user_ids = $3, updated_at = NOW() WHERE id = $4 RETURNING id, owner_id, name, proxy, authorized_user_ids, created_at, updated_at")
-        .bind(name).bind(proxy).bind(authorized).bind(id).fetch_one(&state.pool).await?;
+    let row = sqlx::query("UPDATE custom_nodes SET name = $1, proxy = $2, authorized_user_ids = $3, updated_at = NOW() WHERE id = $4 AND owner_id = $5 RETURNING id, owner_id, name, proxy, authorized_user_ids, created_at, updated_at")
+        .bind(name).bind(proxy).bind(authorized).bind(id).bind(user.id).fetch_optional(&state.pool).await?
+        .ok_or_else(|| ApiError::not_found("custom node"))?;
     output(&row).map(Json)
 }
 
