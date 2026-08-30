@@ -45,6 +45,12 @@ export interface ServerProfileStats {
   recent_accesses: { target: string; user_agent: string; created_at: string }[]
 }
 
+export interface ServerUserStats {
+  total_profiles: number
+  total_nodes: number
+  today_requests: number
+}
+
 export interface ServerCompileResult {
   content: string
   node_count: number

@@ -18,6 +18,7 @@ export interface Props {
   showAutoRestart?: boolean;
   diagnostics: ReactNode;
   sourceDebug?: boolean;
+  readOnly?: boolean;
 }
 
 export type ProxySubscribeSaveState = {

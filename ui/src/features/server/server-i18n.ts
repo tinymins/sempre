@@ -28,3 +28,8 @@ export function useServerT() {
     (locale === 'zh-CN' ? zh : en)[key],
   )
 }
+
+export function useServerLocaleText<T>(zhCN: T, enUS: T): T {
+  const { locale } = useI18n()
+  return locale === 'zh-CN' ? zhCN : enUS
+}

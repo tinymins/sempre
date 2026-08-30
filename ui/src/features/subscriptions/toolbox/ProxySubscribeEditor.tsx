@@ -95,7 +95,8 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
 						/>
 					) : null}
 
-          <Form form={form} layout="vertical" autoComplete="off" onValuesChange={queueAutosave}>
+          <fieldset disabled={props.readOnly} className={props.readOnly ? "pointer-events-none m-0 min-w-0 border-0 p-0 opacity-80" : "m-0 min-w-0 border-0 p-0"}>
+          <Form form={form} layout="vertical" autoComplete="off" onValuesChange={props.readOnly ? undefined : queueAutosave}>
             {/* 基础信息 */}
             <div style={{ display: visibleActiveTab === "basic" ? "block" : "none" }}>
               <Form.Item label={t("proxy.form.remark")} name="remark">
@@ -363,6 +364,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
               </div>
             </div>
           </Form>
+          </fieldset>
           {visibleActiveTab === "diagnostics" ? <div>{diagnostics}</div> : null}
         <Modal
           title={t("proxy.form.serversLabel")}

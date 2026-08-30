@@ -1,7 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AcmeContentBoundary } from '../../components/AcmeContentBoundary'
 import { I18nProvider } from '../../lib/i18n'
+import { SessionProvider } from '../../lib/session'
+import { ThemeProvider } from '../../lib/theme'
 import { ServerApp } from './ServerApp'
 import { newServerProfile } from './server-api'
 
@@ -17,9 +20,13 @@ function response(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 
+function renderServerApp() {
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><I18nProvider><SessionProvider><ThemeProvider><AcmeContentBoundary><ServerApp /></AcmeContentBoundary></ThemeProvider></SessionProvider></I18nProvider></QueryClientProvider>)
+}
+
 describe('ServerApp', () => {
   beforeEach(() => {
-    window.location.hash = '#/server/subscriptions/profile-1'
+    window.location.hash = '#/subscriptions/profile-1'
     localStorage.setItem('sempre.server.session.v1', JSON.stringify({
       token: 'server-token', expiresAt: '2099-01-01T00:00:00Z', user: { id: 'user-1', email: 'viewer@example.com' },
     }))
@@ -27,6 +34,10 @@ describe('ServerApp', () => {
     const document = newServerProfile('Team profile')
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url === '/api/v1/auth/me') return response({ id: 'user-1', email: 'viewer@example.com' })
+      if (url === '/api/v1/profiles') return response([{
+        id: 'profile-1', owner_id: 'owner-1', revision: 5, name: 'Team profile', document, role: 'viewer', updated_at: '2026-08-24T00:00:00Z',
+      }])
       if (url === '/api/v1/profiles/profile-1') return response({
         id: 'profile-1', owner_id: 'owner-1', revision: 5, name: 'Team profile', document, role: 'viewer', updated_at: '2026-08-24T00:00:00Z',
       })
@@ -47,13 +58,16 @@ describe('ServerApp', () => {
   })
 
   it('opens the manifest edit route as a read-only page for viewers', async () => {
-    render(<I18nProvider><AcmeContentBoundary><ServerApp /></AcmeContentBoundary></I18nProvider>)
+    renderServerApp()
+    expect(await screen.findByRole('link', { name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Subscriptions' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Custom Nodes' })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Team profile' })).toBeInTheDocument()
-    expect(screen.getByText('viewer')).toBeInTheDocument()
+    expect(screen.getAllByText('viewer')).not.toHaveLength(0)
     expect(screen.getByText('This shared profile is read-only.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
     expect(screen.queryByText('Custom node library')).not.toBeInTheDocument()
-    expect(screen.getByText(/"name": "Team profile"/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Basic' })).toBeInTheDocument()
   })
 
   it('persists owner refresh settings and publishes immediately', async () => {
@@ -62,6 +76,10 @@ describe('ServerApp', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       requests.push({ url, init })
+      if (url === '/api/v1/auth/me') return response({ id: 'user-1', email: 'viewer@example.com' })
+      if (url === '/api/v1/profiles') return response([{
+        id: 'profile-1', owner_id: 'user-1', revision: 2, name: 'Owned profile', document, role: 'owner', updated_at: '2026-08-24T00:00:00Z',
+      }])
       if (url === '/api/v1/profiles/profile-1') return response({
         id: 'profile-1', owner_id: 'user-1', revision: 2, name: 'Owned profile', document, role: 'owner', updated_at: '2026-08-24T00:00:00Z',
       })
@@ -76,7 +94,7 @@ describe('ServerApp', () => {
       throw new Error(`Unexpected request: ${url}`)
     }))
 
-    render(<I18nProvider><AcmeContentBoundary><ServerApp /></AcmeContentBoundary></I18nProvider>)
+    renderServerApp()
     expect(screen.queryByRole('checkbox', { name: 'Restart after scheduled updates' })).not.toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: 'Diagnostics' }))
     const automatic = await screen.findByRole('checkbox', { name: 'Automatically refresh and publish this target' })
