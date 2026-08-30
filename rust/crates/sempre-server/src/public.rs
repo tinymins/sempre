@@ -124,8 +124,9 @@ async fn manifest(
     Query(query): Query<ManifestQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let target = query.target.unwrap_or_else(|| "sing-box-v13".into());
-    let parsed_target =
+    let mut parsed_target =
         Target::parse(&target).map_err(|error| ApiError::bad_request(error.to_string()))?;
+    parsed_target.standalone = true;
     let value = shared_artifact(&state, &token, &target).await?;
     let runtime = manifest_runtime(&value.document);
     let artifact_url = state

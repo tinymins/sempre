@@ -35,7 +35,11 @@ pub(crate) async fn compile_target(
     Ok(result)
 }
 
-fn compile_prepared(prepared: &PreparedCompile, target: Target) -> Result<CompileResult, ApiError> {
+fn compile_prepared(
+    prepared: &PreparedCompile,
+    mut target: Target,
+) -> Result<CompileResult, ApiError> {
+    target.standalone = true;
     let mut request = prepared.request.clone();
     request.target = target;
     let mut result = compile(&request).map_err(|error| ApiError::bad_request(error.to_string()))?;
@@ -48,8 +52,9 @@ fn compile_prepared(prepared: &PreparedCompile, target: Target) -> Result<Compil
 pub(crate) async fn compile_request(
     state: &Arc<AppState>,
     profile_id: Uuid,
-    target: Target,
+    mut target: Target,
 ) -> Result<(i64, CompileRequest), ApiError> {
+    target.standalone = true;
     let prepared = prepare_compile(state, profile_id).await?;
     let mut request = prepared.request;
     request.target = target;

@@ -21,7 +21,7 @@ fn request(format: &str) -> CompileRequest {
             content_hash: String::new(),
         }],
         custom_nodes: vec![],
-        target: Target { core: String::new(), format: format.into(), version: String::new(), platform: String::new() },
+        target: Target { core: String::new(), format: format.into(), version: String::new(), platform: String::new(), standalone: false },
     }
 }
 
@@ -209,6 +209,7 @@ fn editor_manual_servers_are_compiled_by_the_shared_core() {
             format: "sing-box-v13".into(),
             version: String::new(),
             platform: String::new(),
+            standalone: false,
         },
     })
     .expect("compile editor server");
@@ -253,6 +254,7 @@ fn sing_box_preserves_ohmywrt_protocol_conversion_semantics() {
             format: "sing-box-v13".into(),
             version: String::new(),
             platform: String::new(),
+            standalone: false,
         },
     })
     .expect("compile protocols");
@@ -308,6 +310,7 @@ fn sing_box_compiles_string_and_native_custom_rules() {
             format: "sing-box-v13".into(),
             version: String::new(),
             platform: String::new(),
+            standalone: false,
         },
     })
     .expect("compile rules");
@@ -436,4 +439,44 @@ fn disabled_transparent_mode_keeps_only_local_inbounds() {
     let result = compile(&input).expect("compile disabled mode");
     let config: Value = serde_json::from_str(&result.content).expect("sing-box JSON");
     assert_eq!(config["inbounds"].as_array().map(Vec::len), Some(2));
+}
+
+#[test]
+fn standalone_sing_box_keeps_only_deployable_inbounds_and_desktop_api() {
+    let mut input = request("sing-box-v13");
+    input.target.standalone = true;
+    input.profile.transparent_proxy.mode = "tproxy".into();
+    input.profile.transparent_proxy.tproxy.listen_port = 7893;
+    input.profile.transparent_proxy.tproxy.dns_listen_port = 1053;
+    input.profile.management_api.external_controller = "0.0.0.0:9999".into();
+    input.profile.management_api.external_ui = "/etc/sb/ui".into();
+    input.profile.management_api.secret = "controller-secret".into();
+
+    let result = compile(&input).expect("compile standalone router output");
+    let config: Value = serde_json::from_str(&result.content).expect("sing-box JSON");
+    let inbounds = config["inbounds"].as_array().expect("inbounds");
+    assert_eq!(inbounds.len(), 2);
+    assert!(inbounds.iter().any(|value| value["tag"] == "dns-in"));
+    assert!(inbounds.iter().any(|value| value["tag"] == "tproxy-in"));
+    assert_eq!(
+        config["experimental"]["clash_api"]["external_controller"],
+        "0.0.0.0:9999"
+    );
+
+    input.target = Target::parse("sing-box-v13-macos").expect("macOS target");
+    input.target.standalone = true;
+    let result = compile(&input).expect("compile standalone desktop output");
+    let config: Value = serde_json::from_str(&result.content).expect("sing-box JSON");
+    let inbounds = config["inbounds"].as_array().expect("inbounds");
+    assert_eq!(inbounds.len(), 1);
+    assert_eq!(inbounds[0]["tag"], "tun-in");
+    assert_eq!(
+        config["experimental"]["clash_api"]["external_controller"],
+        "127.0.0.1:9999"
+    );
+    assert_eq!(config["experimental"]["clash_api"]["external_ui"], "./ui");
+    assert_eq!(
+        config["experimental"]["clash_api"]["secret"],
+        "controller-secret"
+    );
 }

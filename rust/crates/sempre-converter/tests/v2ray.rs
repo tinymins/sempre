@@ -12,6 +12,7 @@ fn request(format: &str, profile: Value) -> CompileRequest {
             format: format.into(),
             version: String::new(),
             platform: String::new(),
+            standalone: false,
         },
     }
 }

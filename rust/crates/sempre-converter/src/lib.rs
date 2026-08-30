@@ -148,6 +148,7 @@ pub fn prepare_profile(profile: &Profile, target: &Target) -> Result<Profile, Co
 
 fn normalized_target(input: &Target) -> Result<Target, CompileError> {
     let mut target = Target::parse(&input.format)?;
+    target.standalone = input.standalone;
     if !input.core.trim().is_empty() {
         target.core.clone_from(&input.core);
     }

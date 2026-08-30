@@ -30,6 +30,7 @@ fn request(format: &str) -> CompileRequest {
             format: format.into(),
             version: String::new(),
             platform: String::new(),
+            standalone: false,
         },
     }
 }

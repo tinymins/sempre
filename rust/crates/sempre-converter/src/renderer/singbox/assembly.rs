@@ -76,7 +76,7 @@ pub(super) fn render(
         "outbounds": outbounds,
         "dns": dns,
         "route": route,
-        "experimental": config::experimental(profile, store_fakeip)
+        "experimental": config::experimental(profile, target, store_fakeip)
     });
     if !private.endpoints.is_empty() {
         output["endpoints"] = json!(private.endpoints);

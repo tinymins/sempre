@@ -7,7 +7,12 @@ use crate::{Profile, SourceSnapshot, Target, rule_provider_snapshot_id};
 use super::private_access::Resolved;
 
 pub(super) fn inbounds(profile: &Profile, target: &Target) -> Vec<Value> {
-    local_inbounds(profile)
+    let local = if target.standalone {
+        Vec::new()
+    } else {
+        local_inbounds(profile)
+    };
+    local
         .into_iter()
         .chain(super::super::dns::sing_box_system_inbounds(profile))
         .chain(super::super::transparent::sing_box_inbounds(
@@ -136,18 +141,37 @@ fn custom_route_rule(line: &str) -> Option<Value> {
     Some(json!({ (key): parts[1], "outbound": normalize_outbound(parts[2]) }))
 }
 
-pub(super) fn experimental(profile: &Profile, store_fakeip: bool) -> Value {
+pub(super) fn experimental(profile: &Profile, target: &Target, store_fakeip: bool) -> Value {
+    let desktop = target.standalone && target.platform != "default";
+    let external_controller = if desktop {
+        loopback_controller(&profile.management_api.external_controller)
+    } else {
+        profile.management_api.external_controller.clone()
+    };
+    let external_ui = if desktop {
+        "./ui".into()
+    } else {
+        profile.management_api.external_ui.clone()
+    };
     json!({
         "cache_file": {
             "enabled": true, "store_fakeip": store_fakeip, "store_rdrc": false
         },
         "clash_api": {
-            "external_controller": profile.management_api.external_controller,
-            "external_ui": profile.management_api.external_ui,
+            "external_controller": external_controller,
+            "external_ui": external_ui,
             "secret": profile.management_api.secret,
             "default_mode": "rule"
         }
     })
+}
+
+fn loopback_controller(value: &str) -> String {
+    let port = value
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse::<u16>().ok())
+        .unwrap_or(9999);
+    format!("127.0.0.1:{port}")
 }
 
 pub(super) fn log(level: &str) -> Value {

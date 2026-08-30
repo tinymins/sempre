@@ -11,6 +11,8 @@ pub struct Target {
     pub version: String,
     #[serde(default)]
     pub platform: String,
+    #[serde(default)]
+    pub standalone: bool,
 }
 
 impl Target {
@@ -20,6 +22,7 @@ impl Target {
             format: format.into(),
             version: String::new(),
             platform: "default".into(),
+            standalone: false,
         };
         match format {
             "clash" | "clash-meta" => return Ok(target),
