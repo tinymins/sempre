@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use argon2::{
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
@@ -6,7 +6,7 @@ use argon2::{
 };
 use axum::{
     Json, Router,
-    extract::{FromRequestParts, State},
+    extract::{ConnectInfo, FromRequestParts, State},
     http::{Request, header, request::Parts},
     middleware::Next,
     response::Response,
@@ -104,15 +104,18 @@ pub(crate) async fn register(
 }
 
 pub(crate) async fn login(
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     Json(input): Json<Credentials>,
 ) -> Result<Json<SessionOutput>, ApiError> {
     let email = normalize_email(&input.email)?;
+    ensure_login_allowed(&state, &email, remote.ip()).await?;
     let row = sqlx::query("SELECT id, password_hash FROM users WHERE email = $1")
         .bind(&email)
         .fetch_optional(&state.pool)
         .await?;
     let Some(row) = row else {
+        record_login_failure(&state, &email, remote.ip()).await?;
         return Err(ApiError::unauthorized());
     };
     let id: Uuid = row.try_get("id").map_err(ApiError::internal)?;
@@ -128,9 +131,65 @@ pub(crate) async fn login(
     .await
     .map_err(ApiError::internal)?;
     if !valid {
+        record_login_failure(&state, &email, remote.ip()).await?;
         return Err(ApiError::unauthorized());
     }
+    clear_login_failures(&state, &email).await?;
     create_session(&state, id, email).await.map(Json)
+}
+
+async fn ensure_login_allowed(
+    state: &AppState,
+    email: &str,
+    address: std::net::IpAddr,
+) -> Result<(), ApiError> {
+    for key in login_limit_keys(email, address) {
+        let blocked: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM auth_limits WHERE key_hash = $1 AND blocked_until > NOW())",
+        )
+        .bind(key)
+        .fetch_one(&state.pool)
+        .await?;
+        if blocked {
+            return Err(ApiError::too_many_requests(
+                "too many failed login attempts; try again later",
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn record_login_failure(
+    state: &AppState,
+    email: &str,
+    address: std::net::IpAddr,
+) -> Result<(), ApiError> {
+    for (key, threshold) in login_limit_keys(email, address)
+        .into_iter()
+        .zip([5_i32, 30])
+    {
+        sqlx::query("INSERT INTO auth_limits (key_hash, failed_count) VALUES ($1, 1) ON CONFLICT (key_hash) DO UPDATE SET failed_count = CASE WHEN auth_limits.window_started_at < NOW() - INTERVAL '10 minutes' THEN 1 ELSE auth_limits.failed_count + 1 END, window_started_at = CASE WHEN auth_limits.window_started_at < NOW() - INTERVAL '10 minutes' THEN NOW() ELSE auth_limits.window_started_at END, blocked_until = CASE WHEN (CASE WHEN auth_limits.window_started_at < NOW() - INTERVAL '10 minutes' THEN 1 ELSE auth_limits.failed_count + 1 END) >= $2 THEN NOW() + INTERVAL '15 minutes' ELSE auth_limits.blocked_until END, updated_at = NOW()")
+            .bind(key)
+            .bind(threshold)
+            .execute(&state.pool)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn clear_login_failures(state: &AppState, email: &str) -> Result<(), ApiError> {
+    sqlx::query("DELETE FROM auth_limits WHERE key_hash = $1")
+        .bind(token_hash(&format!("email:{email}")))
+        .execute(&state.pool)
+        .await?;
+    Ok(())
+}
+
+fn login_limit_keys(email: &str, address: std::net::IpAddr) -> [Vec<u8>; 2] {
+    [
+        token_hash(&format!("email:{email}")),
+        token_hash(&format!("ip:{address}")),
+    ]
 }
 
 pub(crate) async fn require_auth(

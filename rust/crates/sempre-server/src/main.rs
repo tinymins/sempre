@@ -4,6 +4,7 @@ mod custom_nodes;
 mod diagnostics;
 mod error;
 mod fetch;
+mod maintenance;
 mod profiles;
 mod public;
 mod publishing;
@@ -77,11 +78,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(state.clone());
     let listener = tokio::net::TcpListener::bind(address).await?;
     info!(%address, "Sempre multi-user server listening");
-    let scheduler = tokio::spawn(refresh::run(state));
-    let result = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown())
-        .await;
+    let scheduler = tokio::spawn(refresh::run(state.clone()));
+    let maintenance = tokio::spawn(maintenance::run(state));
+    let result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown())
+    .await;
     scheduler.abort();
+    maintenance.abort();
     result?;
     Ok(())
 }

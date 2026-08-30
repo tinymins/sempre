@@ -10,6 +10,7 @@ pub(crate) struct Config {
     pub public_url: Url,
     pub allow_registration: bool,
     pub session_days: i64,
+    pub access_log_retention_days: i64,
     pub web_root: PathBuf,
     pub direct_proxy_url: Option<String>,
 }
@@ -46,6 +47,16 @@ impl Config {
         if !(1..=365).contains(&session_days) {
             return Err(invalid("SEMPRE_SESSION_DAYS", &"must be between 1 and 365"));
         }
+        let access_log_retention_days = env::var("SEMPRE_ACCESS_LOG_RETENTION_DAYS")
+            .unwrap_or_else(|_| "90".into())
+            .parse::<i64>()
+            .map_err(|error| invalid("SEMPRE_ACCESS_LOG_RETENTION_DAYS", &error))?;
+        if !(1..=3650).contains(&access_log_retention_days) {
+            return Err(invalid(
+                "SEMPRE_ACCESS_LOG_RETENTION_DAYS",
+                &"must be between 1 and 3650",
+            ));
+        }
         let direct_proxy_url = env::var("DIRECT_PROXY_URL")
             .ok()
             .filter(|value| !value.trim().is_empty());
@@ -63,6 +74,7 @@ impl Config {
             public_url,
             allow_registration,
             session_days,
+            access_log_retention_days,
             web_root: env::var("SEMPRE_WEB_ROOT")
                 .map_or_else(|_| PathBuf::from("ui/dist"), PathBuf::from),
             direct_proxy_url,
