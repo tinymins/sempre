@@ -59,7 +59,7 @@ export interface ServerRefreshSettings {
   targets: string[]
   next_refresh_at?: string
   last_refresh_at?: string
-  last_refresh_status: 'never' | 'running' | 'success' | 'failed'
+  last_refresh_status: 'never' | 'running' | 'success' | 'partial' | 'stale' | 'failed'
   last_refresh_error?: string
 }
 

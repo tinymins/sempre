@@ -6,7 +6,7 @@ use std::{
 
 use futures_util::StreamExt as _;
 use reqwest::{Client, StatusCode, header};
-use sempre_converter::{Profile, Source, SourceSnapshot, parse_subscription};
+use sempre_converter::{Diagnostic, Profile, Source, SourceSnapshot, parse_subscription};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::Row as _;
@@ -29,6 +29,11 @@ pub(crate) struct SourceTestResult {
     node_count: usize,
     discarded_node_count: usize,
     diagnostics: Vec<String>,
+}
+
+pub(crate) struct SnapshotLoad {
+    pub(crate) snapshots: Vec<SourceSnapshot>,
+    pub(crate) diagnostics: Vec<Diagnostic>,
 }
 
 pub(crate) async fn test_source(
@@ -85,8 +90,9 @@ pub(crate) async fn load_snapshots(
     state: &Arc<AppState>,
     profile_id: Uuid,
     profile: &Profile,
-) -> Result<Vec<SourceSnapshot>, ApiError> {
+) -> Result<SnapshotLoad, ApiError> {
     let mut snapshots = Vec::new();
+    let mut diagnostics = Vec::new();
     for source in profile.sources.iter().filter(|source| source.enabled) {
         if source.kind == "raw" {
             validate_content(&source.content)?;
@@ -129,24 +135,38 @@ pub(crate) async fn load_snapshots(
             == Some("domestic-direct"))
         .then_some(state.config.direct_proxy_url.as_deref())
         .flatten();
-        match fetch_source_text(&source.url, user_agent, proxy).await {
+        let fetched = match fetch_source_text(&source.url, user_agent, proxy).await {
+            Ok(content) => validate_content(&content).map(|()| content),
+            Err(error) => Err(error),
+        };
+        match fetched {
             Ok(content) => {
-                validate_content(&content)?;
                 let value = snapshot(&source.id, content);
                 store_snapshot(state, profile_id, &value).await?;
                 snapshots.push(value);
             }
             Err(error) => {
+                mark_snapshot_failed(state, profile_id, &source.id, error.message()).await?;
                 let fallback = read_snapshot(state, profile_id, &source.id).await?;
-                let Some(fallback) = fallback else {
-                    return Err(error);
+                let message = if let Some(fallback) = fallback {
+                    snapshots.push(fallback);
+                    "source refresh failed; using last-known-good snapshot"
+                } else {
+                    "source refresh failed; omitted because no snapshot is available"
                 };
-                tracing::warn!(profile_id = %profile_id, source_id = %source.id, error = ?error, "using last-known-good source snapshot");
-                snapshots.push(fallback);
+                tracing::warn!(profile_id = %profile_id, source_id = %source.id, error = ?error, message);
+                diagnostics.push(Diagnostic {
+                    level: "warning".into(),
+                    source_id: Some(source.id.clone()),
+                    message: message.into(),
+                });
             }
         }
     }
-    Ok(snapshots)
+    Ok(SnapshotLoad {
+        snapshots,
+        diagnostics,
+    })
 }
 
 async fn fetch_source_text(
@@ -339,6 +359,21 @@ async fn store_snapshot(
 ) -> Result<(), ApiError> {
     sqlx::query("INSERT INTO source_snapshots (profile_id, source_id, content, content_hash, fetched_at, last_status, last_error) VALUES ($1, $2, $3, $4, NOW(), 'ok', NULL) ON CONFLICT (profile_id, source_id) DO UPDATE SET content = EXCLUDED.content, content_hash = EXCLUDED.content_hash, fetched_at = EXCLUDED.fetched_at, last_status = 'ok', last_error = NULL")
         .bind(profile_id).bind(&snapshot.source_id).bind(&snapshot.content).bind(&snapshot.content_hash).execute(&state.pool).await?;
+    Ok(())
+}
+
+async fn mark_snapshot_failed(
+    state: &AppState,
+    profile_id: Uuid,
+    source_id: &str,
+    error: &str,
+) -> Result<(), ApiError> {
+    sqlx::query("UPDATE source_snapshots SET last_status = 'failed', last_error = $1 WHERE profile_id = $2 AND source_id = $3")
+        .bind(error.chars().take(1000).collect::<String>())
+        .bind(profile_id)
+        .bind(source_id)
+        .execute(&state.pool)
+        .await?;
     Ok(())
 }
 

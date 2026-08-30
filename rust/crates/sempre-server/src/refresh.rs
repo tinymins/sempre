@@ -87,12 +87,12 @@ async fn refresh_now(
     let targets = parse_targets(target_names)?;
     mark_running(&state, id).await?;
     match publishing::compile_targets(&state, id, targets).await {
-        Ok(results) => {
-            mark_finished(&state, id, None).await?;
-            Ok(Json(results))
+        Ok(batch) => {
+            mark_finished(&state, id, batch.partial, None).await?;
+            Ok(Json(batch.results))
         }
         Err(error) => {
-            mark_finished(&state, id, Some(error.message())).await?;
+            mark_finished(&state, id, false, Some(error.message())).await?;
             Err(error)
         }
     }
@@ -107,13 +107,14 @@ pub(crate) async fn run(state: Arc<AppState>) {
                         Ok(targets) => {
                             publishing::compile_targets(&state, refresh.profile_id, targets)
                                 .await
-                                .map(|_| ())
+                                .map(|batch| batch.partial)
                         }
                         Err(error) => Err(error),
                     };
                     if let Err(error) = mark_finished(
                         &state,
                         refresh.profile_id,
+                        result.as_ref().copied().unwrap_or(false),
                         result.as_ref().err().map(ApiError::message),
                     )
                     .await
@@ -150,16 +151,37 @@ async fn mark_running(state: &AppState, id: Uuid) -> Result<(), ApiError> {
     Ok(())
 }
 
-async fn mark_finished(state: &AppState, id: Uuid, error: Option<&str>) -> Result<(), ApiError> {
+async fn mark_finished(
+    state: &AppState,
+    id: Uuid,
+    partial: bool,
+    error: Option<&str>,
+) -> Result<(), ApiError> {
+    let has_artifacts: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM artifacts WHERE profile_id = $1)")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+    let status = refresh_status(partial, error.is_some(), has_artifacts);
     sqlx::query(
         "UPDATE profiles SET last_refresh_status = $1, last_refresh_error = $2 WHERE id = $3",
     )
-    .bind(if error.is_some() { "failed" } else { "success" })
+    .bind(status)
     .bind(error.map(|value| value.chars().take(2000).collect::<String>()))
     .bind(id)
     .execute(&state.pool)
     .await?;
     Ok(())
+}
+
+fn refresh_status(partial: bool, failed: bool, has_artifacts: bool) -> &'static str {
+    if failed {
+        if has_artifacts { "stale" } else { "failed" }
+    } else if partial {
+        "partial"
+    } else {
+        "success"
+    }
 }
 
 async fn load_settings(state: &AppState, id: Uuid) -> Result<RefreshSettings, ApiError> {
@@ -215,7 +237,7 @@ fn parse_targets(values: Vec<String>) -> Result<Vec<Target>, ApiError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_targets, validate_interval};
+    use super::{parse_targets, refresh_status, validate_interval};
 
     #[test]
     fn refresh_settings_reject_busy_intervals_and_duplicate_targets() {
@@ -223,5 +245,13 @@ mod tests {
         assert!(validate_interval(5).is_ok());
         assert!(parse_targets(vec!["sing-box-v13".into(), "sing-box-v13".into()]).is_err());
         assert!(parse_targets(vec!["sing-box-v13".into(), "clash-meta".into()]).is_ok());
+    }
+
+    #[test]
+    fn refresh_outcomes_distinguish_partial_and_preserved_artifacts() {
+        assert_eq!(refresh_status(false, false, false), "success");
+        assert_eq!(refresh_status(true, false, true), "partial");
+        assert_eq!(refresh_status(false, true, true), "stale");
+        assert_eq!(refresh_status(false, true, false), "failed");
     }
 }
