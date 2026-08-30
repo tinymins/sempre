@@ -86,6 +86,20 @@ fn clash_output_round_trips_as_yaml() {
 }
 
 #[test]
+fn clash_targets_include_legacy_runtime_compatibility_fields() {
+    let mut input = request("clash-meta");
+    input.profile.transparent_proxy.mode = "tproxy".into();
+    input.profile.transparent_proxy.tproxy.listen_port = 7893;
+    input.profile.transparent_proxy.tproxy.dns_listen_port = 1053;
+    input.profile.management_api.secret = "controller-secret".into();
+    let result = compile(&input).expect("compile clash-meta");
+    let document: Value = serde_yaml::from_str(&result.content).expect("valid YAML output");
+    assert_eq!(document["tproxy-port"], 7893);
+    assert_eq!(document["secret"], "controller-secret");
+    assert_eq!(document["global-client-fingerprint"], "chrome");
+}
+
+#[test]
 fn system_switches_apply_ohmywrt_defaults_during_compilation() {
     let mut input = request("clash-meta");
     for key in [

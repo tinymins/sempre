@@ -102,6 +102,7 @@ fn apply_meta_options(config: &mut Value) {
     object.insert("unified-delay".into(), json!(true));
     object.insert("tcp-concurrent".into(), json!(true));
     object.insert("find-process-mode".into(), json!("strict"));
+    object.insert("global-client-fingerprint".into(), json!("chrome"));
     object.insert("geodata-mode".into(), json!(true));
     object.insert("geo-auto-update".into(), json!(true));
     object.insert("geo-update-interval".into(), json!(24));
@@ -161,14 +162,21 @@ fn apply_runtime(profile: &Profile, target: &Target, final_group: &str, config: 
     if let Some(dns) = super::dns::clash(profile, target, final_group) {
         config["dns"] = dns;
     }
-    if target.core != "mihomo" && target.core != "clash-rs" {
+    let managed_core = matches!(target.core.as_str(), "mihomo" | "clash-rs");
+    let subscription_output = matches!(target.format.as_str(), "clash" | "clash-meta");
+    if !managed_core && !subscription_output {
         return;
     }
     let object = config.as_object_mut().expect("object");
-    object.insert("socks-port".into(), json!(profile.local_proxy.socks_port));
-    object.insert("port".into(), json!(profile.local_proxy.http_port));
-    object.insert("bind-address".into(), json!("127.0.0.1"));
-    object.insert("allow-lan".into(), json!(false));
+    if managed_core {
+        object.insert("socks-port".into(), json!(profile.local_proxy.socks_port));
+        object.insert("port".into(), json!(profile.local_proxy.http_port));
+        object.insert("bind-address".into(), json!("127.0.0.1"));
+        object.insert("allow-lan".into(), json!(false));
+    }
+    if !profile.management_api.secret.is_empty() {
+        object.insert("secret".into(), json!(profile.management_api.secret));
+    }
     if !profile.local_proxy.username.is_empty() {
         object.insert(
             "authentication".into(),

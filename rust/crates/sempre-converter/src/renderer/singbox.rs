@@ -78,7 +78,9 @@ fn protocol_outbound(proxy: &Proxy) -> Option<Value> {
         "vless" => {
             outbound["type"] = json!("vless");
             outbound["uuid"] = field(proxy, "uuid").clone();
-            copy(&mut outbound, proxy, &["flow"]);
+            if let Some(flow) = string_value(field(proxy, "flow")) {
+                outbound["flow"] = json!(flow);
+            }
             add_transport_tls(&mut outbound, proxy, false);
         }
         "trojan" => {
@@ -359,15 +361,25 @@ fn multiplex(proxy: &Proxy) -> Option<Value> {
         Value::Bool(true) => Some(
             json!({ "enabled": true, "protocol": "h2mux", "max_connections": 8, "min_streams": 16, "padding": true }),
         ),
-        Value::Object(options)
-            if options.get("enabled").and_then(Value::as_bool) != Some(false) =>
-        {
-            Some(
-                json!({ "enabled": true, "protocol": options.get("protocol").cloned().unwrap_or(json!("h2mux")), "max_connections": options.get("max-connections").cloned().unwrap_or(json!(8)), "min_streams": options.get("min-streams").cloned().unwrap_or(json!(16)), "padding": options.get("padding").cloned().unwrap_or(json!(true)) }),
-            )
+        Value::Object(options) if option_boolean(options.get("enabled")).unwrap_or(true) => {
+            Some(json!({
+                "enabled": true,
+                "protocol": options.get("protocol").and_then(string_value).unwrap_or("h2mux"),
+                "max_connections": options.get("max-connections").and_then(unsigned).unwrap_or(8),
+                "min_streams": options.get("min-streams").and_then(unsigned).unwrap_or(16),
+                "padding": option_boolean(options.get("padding")).unwrap_or(true)
+            }))
         }
         _ => None,
     }
+}
+
+fn option_boolean(value: Option<&Value>) -> Option<bool> {
+    value.and_then(|value| {
+        value
+            .as_bool()
+            .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+    })
 }
 
 fn field<'a>(proxy: &'a Proxy, key: &str) -> &'a Value {

@@ -141,3 +141,30 @@ fn legacy_sing_box_ignores_private_access() {
             .all(|outbound| outbound["tag"] != "private-wg")
     );
 }
+
+#[test]
+fn multiplex_numeric_strings_are_normalized_for_sing_box() {
+    let profile: Profile = serde_json::from_value(json!({
+        "manual_servers": [{
+            "name": "edge", "type": "vless", "server": "edge.example.com", "port": 443,
+            "uuid": "id", "flow": "", "smux": {
+                "enabled": "true", "max-connections": "4", "min-streams": "12", "padding": "false"
+            }
+        }]
+    }))
+    .expect("profile");
+    let result = compile(&CompileRequest {
+        protocol: 1,
+        profile,
+        snapshots: vec![],
+        custom_nodes: vec![],
+        target: Target::parse("sing-box-v13").expect("target"),
+    })
+    .expect("compile");
+    let document: Value = serde_json::from_str(&result.content).expect("JSON");
+    let edge = &document["outbounds"][2];
+    assert_eq!(edge["multiplex"]["max_connections"], 4);
+    assert_eq!(edge["multiplex"]["min_streams"], 12);
+    assert_eq!(edge["multiplex"]["padding"], false);
+    assert!(edge.get("flow").is_none());
+}
