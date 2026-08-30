@@ -81,6 +81,30 @@ jobs:
       # every target's dependency graph, and RUSTSEC-2023-0071 has no fixed release.
       - run: cargo audit --file rust/Cargo.lock --ignore RUSTSEC-2023-0071
 
+  server-container:
+    name: Multi-user server container
+    runs-on: ubuntu-24.04
+    env:
+      POSTGRES_PASSWORD: ci-password
+      SEMPRE_PUBLIC_URL: http://127.0.0.1:8787/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build and start the multi-user server
+        run: docker compose -p sempre-server-ci -f rust/compose.yml up --build --detach --wait
+      - name: Verify publishing keeps the last successful artifact
+        run: sh rust/scripts/server_smoke.sh
+      - name: Verify the server does not run a proxy core
+        run: |
+          docker top sempre-server-ci-server-1 | tee /tmp/sempre-server-processes
+          test "$(grep -c sempre-server /tmp/sempre-server-processes)" -eq 1
+          ! grep -E 'sing-box|mihomo|xray|v2ray|clash-rs|dae' /tmp/sempre-server-processes
+      - name: Show service logs
+        if: always()
+        run: docker compose -p sempre-server-ci -f rust/compose.yml logs
+      - name: Stop the isolated stack
+        if: always()
+        run: docker compose -p sempre-server-ci -f rust/compose.yml down --volumes
+
   build:
     name: Build (${{ matrix.name }})
     needs: [rust, frontend]

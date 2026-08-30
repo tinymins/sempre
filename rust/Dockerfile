@@ -5,18 +5,20 @@ RUN bun install --frozen-lockfile
 COPY ui ./
 RUN bun run build
 
-FROM rust:1.94-bookworm AS builder
+FROM rust:1.95-bookworm AS builder
 WORKDIR /src
 COPY rust ./rust
 RUN cargo build --manifest-path=rust/Cargo.toml --release -p sempre-server
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates \
+    && apt-get install --no-install-recommends -y ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /src/rust/target/release/sempre-server /usr/local/bin/sempre-server
 COPY --from=web-builder /src/ui/dist /usr/share/sempre/ui
 ENV SEMPRE_WEB_ROOT=/usr/share/sempre/ui
 USER 65532:65532
 EXPOSE 8787
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=6 \
+    CMD ["curl", "--fail", "--silent", "http://127.0.0.1:8787/api/v1/health"]
 ENTRYPOINT ["sempre-server"]

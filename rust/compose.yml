@@ -31,6 +31,12 @@ services:
       RUST_LOG: ${RUST_LOG:-sempre_server=info,tower_http=info}
     ports:
       - "${SEMPRE_PORT:-8787}:8787"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8787/api/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
 
 volumes:
   postgres-data:
