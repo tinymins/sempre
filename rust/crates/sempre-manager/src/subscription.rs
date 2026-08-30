@@ -35,10 +35,10 @@ pub struct SubscriptionRender {
     pub runtime_validated: bool,
 }
 
-struct RenderedProfile {
-    render: SubscriptionRender,
-    updated: Profile,
-    target: Target,
+pub(crate) struct RenderedProfile {
+    pub(crate) render: SubscriptionRender,
+    pub(crate) updated: Profile,
+    pub(crate) target: Target,
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
@@ -239,13 +239,28 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         refresh: bool,
     ) -> Result<RenderedProfile, ManagerError> {
         let (target, mut adapter_warnings) = self.subscription_target(document)?;
+        self.render_subscription_for_target(
+            catalog,
+            profile,
+            target,
+            &mut adapter_warnings,
+            refresh,
+        )
+        .await
+    }
+
+    pub(crate) async fn render_subscription_for_target(
+        &self,
+        catalog: &Catalog,
+        profile: &Profile,
+        target: Target,
+        adapter_warnings: &mut Vec<String>,
+        refresh: bool,
+    ) -> Result<RenderedProfile, ManagerError> {
         if profile_mode(profile) == "remote" {
             let remote = self.remote.render(profile, &target).await?;
             validate_runtime_profile(&remote.profile)?;
-            let warnings = adapter_warnings
-                .into_iter()
-                .chain(remote.warnings)
-                .collect();
+            let warnings = adapter_warnings.drain(..).chain(remote.warnings).collect();
             return Ok(RenderedProfile {
                 render: SubscriptionRender {
                     format: remote.target.format,
@@ -293,7 +308,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             target: target.clone(),
         })?;
         Ok(RenderedProfile {
-            render: local_render(compiled, adapter_warnings),
+            render: local_render(compiled, std::mem::take(adapter_warnings)),
             updated,
             target,
         })
@@ -306,8 +321,16 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         if document.selected.is_none() {
             return Err(ManagerError::NoSelectedCore);
         }
-        let context = self.configuration_context()?;
-        let configuration = context.target.ok_or(ManagerError::NoSelectedCore)?;
+        let (reference, version) = crate::config::configuration_target(document)?;
+        self.subscription_target_for(&reference, &version)
+    }
+
+    pub(crate) fn subscription_target_for(
+        &self,
+        reference: &sempre_core::CoreRef,
+        version: &str,
+    ) -> Result<(Target, Vec<String>), ManagerError> {
+        let configuration = self.configuration_target_for(reference, version)?;
         let compiler = configuration.compiler_target;
         let mut target = Target::parse(&compiler.format)?;
         target.core = configuration.core;
@@ -382,7 +405,10 @@ fn validate_runtime_profile(profile: &Profile) -> Result<(), ManagerError> {
     Ok(())
 }
 
-fn config_build(profile: &Profile, target: &Target) -> Result<ConfigBuild, ManagerError> {
+pub(crate) fn config_build(
+    profile: &Profile,
+    target: &Target,
+) -> Result<ConfigBuild, ManagerError> {
     Ok(ConfigBuild {
         profile_id: profile.id.clone(),
         profile_revision: profile.revision,
@@ -419,7 +445,7 @@ fn canonical(value: Value) -> Value {
     }
 }
 
-fn record_compilation(
+pub(crate) fn record_compilation(
     store: &sempre_subscription::SubscriptionStore,
     original: &Profile,
     updated: Profile,

@@ -30,6 +30,26 @@ pub struct RunningCore {
 }
 
 impl<R: VersionRunner> Manager<R> {
+    pub(crate) fn configuration_target_for(
+        &self,
+        reference: &CoreRef,
+        version: &str,
+    ) -> Result<ConfigurationTarget, ManagerError> {
+        let adapter = self.registry.get(&reference.core)?;
+        let compiler_target = adapter.compiler_target(Some(version), &self.target)?;
+        let key_data = format!(
+            "{}|{}|{}|{}",
+            reference.core, version, compiler_target.format, compiler_target.platform
+        );
+        let key = format!("{:x}", Sha256::digest(key_data.as_bytes()));
+        Ok(ConfigurationTarget {
+            core: reference.core.clone(),
+            version: version.into(),
+            compiler_target,
+            key,
+        })
+    }
+
     pub fn configuration_context(&self) -> Result<ConfigurationContext, ManagerError> {
         let document = self.store.read()?;
         let running = document.active.as_ref().map(|active| RunningCore {
@@ -67,20 +87,10 @@ impl<R: VersionRunner> Manager<R> {
         .cloned()
         .ok_or_else(|| ManagerError::NotInstalled(reference.to_string()))?;
         let adapter = self.registry.get(&reference.core)?;
-        let compiler_target = adapter.compiler_target(Some(&version), &self.target)?;
-        let key_data = format!(
-            "{}|{}|{}|{}",
-            reference.core, version, compiler_target.format, compiler_target.platform
-        );
-        let key = format!("{:x}", Sha256::digest(key_data.as_bytes()));
+        let target = self.configuration_target_for(&reference, &version)?;
         Ok(ConfigurationContext {
-            key: key.clone(),
-            target: Some(ConfigurationTarget {
-                core: reference.core,
-                version: version.clone(),
-                compiler_target,
-                key,
-            }),
+            key: target.key.clone(),
+            target: Some(target),
             running,
             platform: std::env::consts::OS.into(),
             capabilities: adapter.capabilities(Some(&version), &self.target),

@@ -1,4 +1,8 @@
-use std::{fs, io::Write, path::Path};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use sempre_core::CoreRef;
 use sempre_state::{ConfigBuild, Deployment, Document, Selection};
@@ -13,6 +17,20 @@ pub const MAX_CONFIG_SIZE: usize = 32 << 20;
 pub struct CurrentConfig {
     pub hash: String,
     pub content: String,
+}
+
+pub(crate) struct PreparedConfig {
+    pub(crate) hash: String,
+    path: PathBuf,
+    created: bool,
+}
+
+impl PreparedConfig {
+    pub(crate) fn discard(self) {
+        if self.created {
+            let _ = fs::remove_file(self.path);
+        }
+    }
 }
 
 impl<R: VersionRunner> Manager<R> {
@@ -80,29 +98,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .await
     }
 
-    pub async fn activate_config_content(
+    pub(crate) async fn prepare_config_content_for(
         &self,
+        reference: &CoreRef,
+        version: &str,
         content: &[u8],
-        build: ConfigBuild,
-    ) -> Result<CoreChange, ManagerError> {
-        self.activate_config_content_updating(content, build, |_, _| {})
-            .await
-    }
-
-    pub(crate) async fn activate_config_content_updating(
-        &self,
-        content: &[u8],
-        build: ConfigBuild,
-        update: impl FnOnce(&mut Document, bool),
-    ) -> Result<CoreChange, ManagerError> {
+    ) -> Result<PreparedConfig, ManagerError> {
         if content.len() > MAX_CONFIG_SIZE {
             return Err(ManagerError::ConfigurationTooLarge {
                 limit: MAX_CONFIG_SIZE,
             });
         }
-        let _config = self.store.acquire_config()?;
-        let before = self.store.read()?;
-        let (reference, version) = configuration_target(&before)?;
         let mut candidate = tempfile::Builder::new()
             .prefix("config-candidate-")
             .suffix(".json")
@@ -114,7 +120,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         candidate
             .flush()
             .map_err(|error| ManagerError::io("flush configuration candidate", error))?;
-        self.validate_config_path(&reference, &version, candidate.path())
+        self.validate_config_path(reference, version, candidate.path())
             .await?;
 
         let hash = format!("{:x}", Sha256::digest(content));
@@ -132,6 +138,35 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .map_err(|error| ManagerError::io("store configuration", error))?;
             true
         };
+        Ok(PreparedConfig {
+            hash,
+            path,
+            created,
+        })
+    }
+
+    pub async fn activate_config_content(
+        &self,
+        content: &[u8],
+        build: ConfigBuild,
+    ) -> Result<CoreChange, ManagerError> {
+        self.activate_config_content_updating(content, build, |_, _| {})
+            .await
+    }
+
+    pub(crate) async fn activate_config_content_updating(
+        &self,
+        content: &[u8],
+        build: ConfigBuild,
+        update: impl FnOnce(&mut Document, bool),
+    ) -> Result<CoreChange, ManagerError> {
+        let _config = self.store.acquire_config()?;
+        let before = self.store.read()?;
+        let (reference, version) = configuration_target(&before)?;
+        let prepared = self
+            .prepare_config_content_for(&reference, &version, content)
+            .await?;
+        let hash = prepared.hash.clone();
 
         let mut change = CoreChange::default();
         let update = self.store.update_checked(|document| {
@@ -179,9 +214,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             Ok(())
         });
         if let Err(error) = update {
-            if created {
-                let _ = fs::remove_file(path);
-            }
+            prepared.discard();
             return Err(error);
         }
         change.message = if change.changed {

@@ -22,22 +22,21 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let reference = self.normalized_reference(value)?;
         let before = self.store.read()?;
         let version = resolve_installed_version(&before, &reference)?;
-        let config_hash = before.configs.get(&reference.core).cloned();
-        if let Some(hash) = &config_hash {
-            let config = self.store.layout().config(&reference.core, hash);
-            self.validate_config_path(&reference, &version, &config)
-                .await
-                .map_err(|source| ManagerError::CandidateRejected {
-                    reference: reference.to_string(),
-                    source: Box::new(source),
-                })?;
-        }
+        let _config = before
+            .configs
+            .get(&reference.core)
+            .map(|_| self.store.acquire_config())
+            .transpose()?;
+        let config = Box::pin(self.prepare_selection_config(&before, &reference, &version)).await?;
 
         let mut change = CoreChange::default();
-        self.store.update_checked(|document| {
+        let update = self.store.update_checked(|document| {
             let current_version = resolve_installed_version(document, &reference)?;
             if current_version != version
-                || document.configs.get(&reference.core) != config_hash.as_ref()
+                || document.selected != before.selected
+                || document.active_profile_id != before.active_profile_id
+                || document.configs.get(&reference.core) != config.previous_hash.as_ref()
+                || document.config_builds.get(&reference.core) != config.previous_build.as_ref()
             {
                 return Err(ManagerError::CoreStateChanged {
                     operation: "selecting",
@@ -62,7 +61,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 document.selected = Some(selection);
                 change.changed = true;
             }
-            let Some(config_hash) = &config_hash else {
+            let Some(config_hash) = &config.candidate_hash else {
                 change.current_detail = format!("{reference} (waiting for configuration)");
                 return Ok(());
             };
@@ -82,8 +81,26 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 change.needs_restart = true;
                 document.stage(deployment);
             }
+            document
+                .configs
+                .insert(reference.core.clone(), config_hash.clone());
+            match &config.candidate_build {
+                Some(build) => {
+                    document
+                        .config_builds
+                        .insert(reference.core.clone(), build.clone());
+                }
+                None => {
+                    document.config_builds.remove(&reference.core);
+                }
+            }
             Ok(())
-        })?;
+        });
+        if let Err(error) = update {
+            config.discard();
+            return Err(error);
+        }
+        config.record(self)?;
         change.message = if change.changed {
             "selected core changed"
         } else {

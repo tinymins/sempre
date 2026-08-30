@@ -15,6 +15,7 @@ mod process;
 mod rule_provider;
 mod runtime;
 mod scheduler;
+mod selection_config;
 mod service_deploy;
 mod subscription;
 mod subscription_mutation;
