@@ -17,19 +17,20 @@ fn test_state(root: &tempfile::TempDir) -> (Arc<AppState>, String) {
     let manager = Arc::new(Manager::new(Store::new(layout.clone())).expect("manager"));
     let web = WebConfigStore::new(layout.web_config.clone());
     web.initialize().expect("web config");
+    let traffic = Arc::new(
+        crate::traffic_history::TrafficStore::open(layout.traffic_history).expect("traffic store"),
+    );
     let endpoint = DaemonEndpoint::new("http://127.0.0.1:33211").expect("endpoint");
     let token = endpoint.token.clone();
     (
-        Arc::new(
-            AppState::new(
-                manager,
-                web,
-                endpoint.token,
-                "127.0.0.1:33211".into(),
-                "http://127.0.0.1:33211".into(),
-            )
-            .expect("app state"),
-        ),
+        Arc::new(AppState::new(
+            manager,
+            web,
+            traffic,
+            endpoint.token,
+            "127.0.0.1:33211".into(),
+            "http://127.0.0.1:33211".into(),
+        )),
         token,
     )
 }

@@ -33,10 +33,13 @@ pub(crate) async fn run_with_layout(
     external_shutdown: Option<watch::Receiver<bool>>,
 ) -> Result<(), ClientError> {
     let store = Store::new(layout.clone());
-    store.initialize()?;
     let _instance = store.acquire_instance()?;
+    let manager = Arc::new(Manager::new(store)?);
     let web = WebConfigStore::new(&layout.web_config);
     let config = web.initialize()?;
+    let traffic = Arc::new(crate::traffic_history::TrafficStore::open(
+        layout.traffic_history.clone(),
+    )?);
     let listen = listen_override.unwrap_or(&config.listen);
     validate_listen(listen)?;
     let listener = TcpListener::bind(listen)
@@ -54,15 +57,15 @@ pub(crate) async fn run_with_layout(
     daemon_endpoint.write(&layout.daemon_control)?;
     public_endpoint.write(&layout.endpoint)?;
 
-    let manager = Arc::new(Manager::new(store)?);
     let (rebind, rebind_requests) = listener::channel();
     let mut app_state = api::AppState::new(
         Arc::clone(&manager),
         web.clone(),
+        traffic,
         daemon_endpoint.token.clone(),
         bind.clone(),
         local_url.clone(),
-    )?;
+    );
     app_state.attach_rebind(rebind);
     let endpoint_state = app_state.endpoint.clone();
     let state = Arc::new(app_state);
@@ -244,4 +247,53 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
     tokio::select! { () = interrupt => {}, () = terminate => {} }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn state_initialization_failure_precedes_bind_and_endpoint_writes() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let layout = Layout::at(root.path());
+        layout.ensure().expect("layout");
+        fs::write(&layout.state, b"{").expect("invalid state");
+        let occupied = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let listen = occupied.local_addr().expect("address").to_string();
+
+        let result = run_with_layout(layout.clone(), Some(&listen), None).await;
+
+        assert!(matches!(
+            result,
+            Err(ClientError::Manager(sempre_manager::ManagerError::State(
+                sempre_state::StateError::Migration(sempre_state::MigrationError::Decode(_))
+            )))
+        ));
+        assert!(!layout.daemon_control.exists());
+        assert!(!layout.endpoint.exists());
+    }
+
+    #[tokio::test]
+    async fn traffic_initialization_failure_precedes_bind_and_endpoint_writes() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let layout = Layout::at(root.path());
+        layout.ensure().expect("layout");
+        fs::write(&layout.traffic_history, b"{").expect("invalid traffic history");
+        let occupied = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let listen = occupied.local_addr().expect("address").to_string();
+
+        let result = run_with_layout(layout.clone(), Some(&listen), None).await;
+
+        assert!(matches!(
+            result,
+            Err(ClientError::TrafficHistory(
+                crate::traffic_history::TrafficError::Migration(
+                    sempre_state::MigrationError::Decode(_)
+                )
+            ))
+        ));
+        assert!(!layout.daemon_control.exists());
+        assert!(!layout.endpoint.exists());
+    }
 }

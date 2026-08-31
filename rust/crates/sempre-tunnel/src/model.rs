@@ -40,7 +40,7 @@ pub struct Instance {
     pub websocket_ping: String,
     #[serde(default = "default_backoff")]
     pub connection_retry_max_backoff: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default)]
     pub upgrade_path_prefix: String,
     #[serde(default)]
     pub forwards: Vec<Forward>,
@@ -96,7 +96,6 @@ pub struct Status {
 
 impl Config {
     pub fn normalize(&mut self) {
-        self.schema = SCHEMA_VERSION;
         for instance in &mut self.instances {
             instance.id = instance.id.trim().into();
             instance.name = instance.name.trim().into();
@@ -343,6 +342,7 @@ mod tests {
                 "server_url": "wss://hz.example.com:443",
                 "dns_resolvers": ["dns://192.0.2.53:53"], "prefer_ipv4": true,
                 "websocket_ping": "15s", "connection_retry_max_backoff": "30s",
+                "upgrade_path_prefix": "",
                 "forwards": [{ "id": "hz-wg", "name": "WG", "listen_port": 52001,
                     "remote_host": "127.0.0.1", "remote_port": 31088, "timeout_seconds": 0 }]
             }]

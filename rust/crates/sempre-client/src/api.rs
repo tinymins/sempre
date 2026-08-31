@@ -33,14 +33,12 @@ impl AppState {
     pub(crate) fn new(
         manager: Arc<Manager>,
         web: WebConfigStore,
+        traffic: Arc<crate::traffic_history::TrafficStore>,
         daemon_token: String,
         bind: String,
         local_url: String,
-    ) -> Result<Self, crate::traffic_history::TrafficError> {
-        let traffic = Arc::new(crate::traffic_history::TrafficStore::open(
-            manager.store().layout().traffic_history.clone(),
-        )?);
-        Ok(Self {
+    ) -> Self {
+        Self {
             manager,
             web,
             auth: AuthStore::default(),
@@ -48,7 +46,7 @@ impl AppState {
             daemon_token,
             endpoint: EndpointStore::new(bind, local_url),
             rebind: None,
-        })
+        }
     }
 
     pub(crate) fn attach_rebind(&mut self, rebind: RebindHandle) {

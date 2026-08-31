@@ -84,7 +84,8 @@ async fn update(
 }
 
 async fn validate(Json(config): Json<sempre_gateway::Config>) -> Response {
-    let errors = sempre_manager::Manager::<sempre_manager::ProcessRunner>::validate_gateway(config);
+    let errors =
+        sempre_manager::Manager::<sempre_manager::ProcessRunner>::validate_gateway(&config);
     Json(json!({ "valid": errors.is_empty(), "errors": errors })).into_response()
 }
 

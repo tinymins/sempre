@@ -13,19 +13,20 @@ use axum::{
     routing::get,
 };
 use chrono::Utc;
+use sempre_state::AppliedMigration;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
     api,
     api::AppState,
+    traffic_history_migrations,
     traffic_rotation::{self, RotationError, TrafficSettings},
 };
 
 #[cfg(test)]
 use crate::traffic_rotation::{MAX_RETENTION_HOURS, MIN_MAX_BYTES};
 
-const SCHEMA: u32 = 1;
 const BUCKET_MILLIS: i64 = 60_000;
 #[derive(Debug, Error)]
 pub(crate) enum TrafficError {
@@ -51,6 +52,8 @@ pub(crate) enum TrafficError {
     #[error("traffic history schema {0} is not supported")]
     Schema(u32),
     #[error(transparent)]
+    Migration(#[from] sempre_state::MigrationError),
+    #[error(transparent)]
     Rotation(#[from] RotationError),
 }
 
@@ -74,6 +77,7 @@ struct StoredRecord {
 #[derive(Debug, Deserialize, Serialize)]
 struct Document {
     schema: u32,
+    applied_migrations: Vec<AppliedMigration>,
     settings: TrafficSettings,
     records: Vec<StoredRecord>,
 }
@@ -116,18 +120,27 @@ pub(crate) struct TrafficHistory {
 
 impl TrafficStore {
     pub(crate) fn open(path: PathBuf) -> Result<Self, TrafficError> {
-        let document = match fs::read(&path) {
-            Ok(data) => serde_json::from_slice::<Document>(&data).map_err(|source| {
-                TrafficError::Decode {
-                    path: path.clone(),
-                    source,
-                }
-            })?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Document {
-                schema: SCHEMA,
-                settings: TrafficSettings::default(),
-                records: Vec::new(),
-            },
+        let (document, migrated) = match fs::read(&path) {
+            Ok(data) => {
+                let migration = traffic_history_migrations::run(&data)?;
+                let document =
+                    serde_json::from_value::<Document>(migration.value).map_err(|source| {
+                        TrafficError::Decode {
+                            path: path.clone(),
+                            source,
+                        }
+                    })?;
+                (document, migration.changed)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+                Document {
+                    schema: traffic_history_migrations::CURRENT_SCHEMA,
+                    applied_migrations: traffic_history_migrations::current_ledger(),
+                    settings: TrafficSettings::default(),
+                    records: Vec::new(),
+                },
+                false,
+            ),
             Err(source) => {
                 return Err(TrafficError::Read {
                     path: path.clone(),
@@ -135,10 +148,14 @@ impl TrafficStore {
                 });
             }
         };
-        if document.schema != SCHEMA {
+        if document.schema != traffic_history_migrations::CURRENT_SCHEMA {
             return Err(TrafficError::Schema(document.schema));
         }
+        traffic_history_migrations::validate_ledger(&document.applied_migrations)?;
         traffic_rotation::validate(&document.settings)?;
+        if migrated {
+            write_document(&path, &document)?;
+        }
         let records = document
             .records
             .into_iter()
@@ -303,6 +320,14 @@ fn persist(path: &Path, inner: &mut Inner) -> Result<(), TrafficError> {
     Ok(())
 }
 
+fn write_document(path: &Path, document: &Document) -> Result<(), TrafficError> {
+    let data = serde_json::to_vec(document)?;
+    sempre_state::write_atomic(path, &data, 0o600).map_err(|source| TrafficError::Write {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
 fn encoded(inner: &Inner) -> Result<Vec<u8>, TrafficError> {
     let mut records = inner
         .records
@@ -321,7 +346,8 @@ fn encoded(inner: &Inner) -> Result<Vec<u8>, TrafficError> {
             .then_with(|| left.label.cmp(&right.label))
     });
     Ok(serde_json::to_vec(&Document {
-        schema: SCHEMA,
+        schema: traffic_history_migrations::CURRENT_SCHEMA,
+        applied_migrations: traffic_history_migrations::current_ledger(),
         settings: inner.settings.clone(),
         records,
     })?)
@@ -406,93 +432,5 @@ fn internal_error(error: &TrafficError) -> Response {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn history_is_bucketed_persisted_and_rotated_by_age() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let path = root.path().join("traffic.json");
-        let store = TrafficStore::open(path.clone()).expect("store");
-        store
-            .record(
-                3_540_000,
-                vec![TrafficDelta {
-                    dimension: TrafficDimension::Host,
-                    label: "old.example".into(),
-                    download: 10,
-                    upload: 2,
-                }],
-            )
-            .expect("old record");
-        store
-            .record(
-                7_200_000,
-                vec![TrafficDelta {
-                    dimension: TrafficDimension::Host,
-                    label: "new.example".into(),
-                    download: 20,
-                    upload: 4,
-                }],
-            )
-            .expect("new record");
-        store
-            .update_settings(
-                TrafficSettings {
-                    retention_hours: Some(1),
-                    reset_day: None,
-                    retention_months: Some(12),
-                    max_bytes: Some(MIN_MAX_BYTES),
-                },
-                7_200_000,
-            )
-            .expect("settings");
-        let reopened = TrafficStore::open(path).expect("reopened store");
-        let history = reopened
-            .history(0, TrafficDimension::Host, 7_200_000)
-            .expect("history");
-        assert_eq!(history.totals.len(), 1);
-        assert_eq!(history.totals[0].label, "new.example");
-    }
-
-    #[test]
-    fn maximum_size_rotation_drops_oldest_buckets_first() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let store = TrafficStore::open(root.path().join("traffic.json")).expect("store");
-        for minute in 0..20 {
-            store
-                .record(
-                    minute * BUCKET_MILLIS,
-                    vec![TrafficDelta {
-                        dimension: TrafficDimension::Host,
-                        label: format!("{minute}-{}", "x".repeat(70_000)),
-                        download: 1,
-                        upload: 1,
-                    }],
-                )
-                .expect("record");
-        }
-        store
-            .update_settings(
-                TrafficSettings {
-                    retention_hours: Some(MAX_RETENTION_HOURS),
-                    reset_day: None,
-                    retention_months: Some(12),
-                    max_bytes: Some(MIN_MAX_BYTES),
-                },
-                20 * BUCKET_MILLIS,
-            )
-            .expect("settings");
-        let history = store
-            .history(0, TrafficDimension::Host, 20 * BUCKET_MILLIS)
-            .expect("history");
-        assert!(u64::try_from(history.storage_bytes).expect("storage size") <= MIN_MAX_BYTES);
-        assert!(history.totals.len() < 20);
-        assert!(
-            history
-                .totals
-                .iter()
-                .all(|item| !item.label.starts_with("0-"))
-        );
-    }
-}
+#[path = "traffic_history_tests.rs"]
+mod tests;

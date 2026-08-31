@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, Local, Months, NaiveDate, TimeZone};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 const DEFAULT_RETENTION_HOURS: u32 = 24;
@@ -13,12 +13,23 @@ pub(crate) const MIN_MAX_BYTES: u64 = 1024 * 1024;
 const MAX_MAX_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(default)]
 pub(crate) struct TrafficSettings {
+    #[serde(deserialize_with = "required_option")]
     pub retention_hours: Option<u32>,
+    #[serde(deserialize_with = "required_option")]
     pub reset_day: Option<u8>,
+    #[serde(deserialize_with = "required_option")]
     pub retention_months: Option<u16>,
+    #[serde(deserialize_with = "required_option")]
     pub max_bytes: Option<u64>,
+}
+
+fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::deserialize(deserializer)
 }
 
 impl Default for TrafficSettings {
@@ -188,14 +199,13 @@ mod tests {
     }
 
     #[test]
-    fn legacy_settings_default_to_rolling_retention() {
-        let settings: TrafficSettings =
-            serde_json::from_str(r#"{"retention_hours":72,"max_bytes":33554432}"#)
-                .expect("legacy settings");
-        assert_eq!(settings.reset_day, None);
-        assert_eq!(settings.retention_hours, Some(72));
-        assert_eq!(settings.retention_months, Some(12));
-        assert_eq!(settings.max_bytes, Some(DEFAULT_MAX_BYTES));
+    fn current_settings_require_the_complete_contract() {
+        assert!(
+            serde_json::from_str::<TrafficSettings>(
+                r#"{"retention_hours":72,"max_bytes":33554432}"#
+            )
+            .is_err()
+        );
     }
 
     #[test]

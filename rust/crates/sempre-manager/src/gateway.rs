@@ -11,7 +11,7 @@ impl<R: VersionRunner> Manager<R> {
         let config = self.gateway.read()?;
         let transparent_proxy = self.active_transparent_proxy();
         Ok(Status {
-            validation_errors: validation_messages(config.clone()),
+            validation_errors: validation_messages(&config),
             config,
             runtime: self.gateway.runtime_status().await,
             inventory: sempre_network::inventory().unwrap_or_default(),
@@ -29,7 +29,7 @@ impl<R: VersionRunner> Manager<R> {
         Ok((saved, reload_requested))
     }
 
-    pub fn validate_gateway(config: Config) -> Vec<String> {
+    pub fn validate_gateway(config: &Config) -> Vec<String> {
         validation_messages(config)
     }
 

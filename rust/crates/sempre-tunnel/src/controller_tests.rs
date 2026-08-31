@@ -29,10 +29,13 @@ async fn supervises_independent_tunnel_instances() {
     let config: Config = serde_json::from_value(serde_json::json!({
         "schema": 1, "instances": [{
             "id": "hz", "name": "Hangzhou", "desired_state": "running",
-            "server_url": "wss://hz.example.com", "websocket_ping": "15s",
-            "connection_retry_max_backoff": "30s", "forwards": [{
+            "server_url": "wss://hz.example.com", "dns_resolvers": [],
+            "prefer_ipv4": false, "websocket_ping": "15s",
+            "connection_retry_max_backoff": "30s", "upgrade_path_prefix": "",
+            "forwards": [{
                 "id": "hz-wg", "name": "WG", "listen_port": 52001,
-                "remote_host": "127.0.0.1", "remote_port": 31088
+                "remote_host": "127.0.0.1", "remote_port": 31088,
+                "timeout_seconds": 0
             }]
         }]
     }))

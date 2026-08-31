@@ -4,7 +4,9 @@ use chrono::Utc;
 use fs2::FileExt as _;
 use thiserror::Error;
 
-use crate::{Document, Layout, LayoutError, StateValidationError, write_atomic};
+use crate::{
+    Document, Layout, LayoutError, MigrationError, StateValidationError, migrations, write_atomic,
+};
 
 #[derive(Debug, Error)]
 pub enum StateError {
@@ -18,6 +20,8 @@ pub enum StateError {
     Read(#[source] io::Error),
     #[error("decode state: {0}")]
     Decode(#[source] serde_json::Error),
+    #[error(transparent)]
+    Migration(#[from] MigrationError),
     #[error(transparent)]
     Validate(#[from] StateValidationError),
     #[error("encode state: {0}")]
@@ -50,7 +54,12 @@ impl Store {
         self.layout.ensure()?;
         self.with_lock(|| {
             if self.layout.state.exists() {
-                self.read_unlocked()
+                let data = fs::read(&self.layout.state).map_err(StateError::Read)?;
+                let migration = migrations::run(&data)?;
+                if migration.changed {
+                    self.write_unlocked(&migration.document)?;
+                }
+                Ok(migration.document)
             } else {
                 let document = Document::default();
                 self.write_unlocked(&document)?;
@@ -134,11 +143,13 @@ impl Store {
         let data = fs::read(&self.layout.state).map_err(StateError::Read)?;
         let document: Document = serde_json::from_slice(&data).map_err(StateError::Decode)?;
         document.validate()?;
+        migrations::validate_ledger(&document.applied_migrations)?;
         Ok(document)
     }
 
     fn write_unlocked(&self, document: &Document) -> Result<(), StateError> {
         document.validate()?;
+        migrations::validate_ledger(&document.applied_migrations)?;
         let mut data = serde_json::to_vec_pretty(document).map_err(StateError::Encode)?;
         data.push(b'\n');
         write_atomic(&self.layout.state, &data, 0o600).map_err(StateError::Write)

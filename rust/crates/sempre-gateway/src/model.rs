@@ -35,7 +35,6 @@ pub struct DhcpConfig {
     pub range_start: String,
     pub range_end: String,
     pub lease_time: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
     pub domain: String,
     pub reservations: Vec<DhcpReservation>,
 }
@@ -45,7 +44,6 @@ pub struct DhcpConfig {
 pub struct DhcpReservation {
     pub mac: String,
     pub ip: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
     pub hostname: String,
 }
 
@@ -72,9 +70,7 @@ pub struct DnsRuleSet {
     pub enabled: bool,
     #[serde(rename = "type")]
     pub kind: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
     pub url: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<String>,
     pub upstream: String,
 }
@@ -82,14 +78,10 @@ pub struct DnsRuleSet {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct PveConfig {
-    #[serde(skip_serializing_if = "String::is_empty")]
     pub host: String,
     pub port: u16,
-    #[serde(skip_serializing_if = "String::is_empty")]
     pub user: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
     pub key_path: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
     pub fingerprint: String,
     pub apply_persistent: bool,
 }
@@ -195,7 +187,6 @@ impl Default for PveConfig {
 impl Config {
     pub fn normalize(&mut self) {
         let defaults = Self::default();
-        self.schema = SCHEMA_VERSION;
         if self.topology.is_empty() {
             self.topology = defaults.topology;
         }
@@ -238,7 +229,7 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<(), GatewayError> {
-        let errors = validation_messages(self.clone());
+        let errors = validation_messages(self);
         if errors.is_empty() {
             Ok(())
         } else {
@@ -247,9 +238,11 @@ impl Config {
     }
 }
 
-pub fn validation_messages(mut config: Config) -> Vec<String> {
-    config.normalize();
+pub fn validation_messages(config: &Config) -> Vec<String> {
     let mut errors = Vec::new();
+    if config.schema != SCHEMA_VERSION {
+        errors.push(format!("unsupported gateway schema {}", config.schema));
+    }
     if !matches!(config.topology.as_str(), "local-pve" | "remote-pve") {
         errors.push(format!("invalid gateway topology {:?}", config.topology));
     }
@@ -284,7 +277,7 @@ pub fn validation_messages(mut config: Config) -> Vec<String> {
         }
     }
     validate_dns(&config.dns, &mut errors);
-    validate_host_fields(&config, &mut errors);
+    validate_host_fields(config, &mut errors);
     errors
 }
 

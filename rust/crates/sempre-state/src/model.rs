@@ -5,40 +5,21 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
-pub const SCHEMA_VERSION: u32 = 1;
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PendingConfigField {
-    Sources,
-    SubscriptionContent,
-    Nodes,
-    Groups,
-    Rules,
-    RuleProviders,
-    Filters,
-    Dns,
-    PrivateAccess,
-    LocalProxy,
-    TransparentProxy,
-    ManagementApi,
-    Advanced,
-    ManualConfiguration,
-}
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Document {
     pub schema: u32,
+    pub applied_migrations: Vec<crate::AppliedMigration>,
     pub updated_at: DateTime<Utc>,
     pub selected: Option<Selection>,
     pub active: Option<Deployment>,
     pub previous: Option<Deployment>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_config_build: Option<ConfigBuild>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_profile_id: Option<String>,
     pub pending: bool,
-    pub pending_config_fields: Vec<PendingConfigField>,
+    pub pending_config_fields: Vec<crate::PendingConfigField>,
     pub last_error: Option<String>,
     pub cores: BTreeMap<String, CoreState>,
     pub configs: BTreeMap<String, String>,
@@ -184,6 +165,7 @@ impl Default for Document {
     fn default() -> Self {
         Self {
             schema: SCHEMA_VERSION,
+            applied_migrations: crate::migrations::current_ledger(),
             updated_at: Utc::now(),
             selected: None,
             active: None,
