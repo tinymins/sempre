@@ -153,7 +153,7 @@ fn v2ray_family_compiles_split_dns_and_native_override() {
 }
 
 #[test]
-fn sing_box_system_dns_takeover_is_explicit_and_linux_only() {
+fn sing_box_system_dns_takeover_supports_linux_and_managed_macos_frontend() {
     let mut input = request("sing-box-v13");
     input.profile.dns["shared"]["systemDnsTakeoverEnabled"] = json!(true);
     input.profile.dns["shared"]["systemDnsListenHosts"] = json!(["127.0.0.1"]);
@@ -177,14 +177,56 @@ fn sing_box_system_dns_takeover_is_explicit_and_linux_only() {
     }));
 
     input.target.format = "sing-box-v13-macos".into();
+    let output = compile(&input).expect("managed macOS frontend");
+    let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
+    let inbounds = output["inbounds"].as_array().expect("inbounds");
+    assert!(inbounds.iter().any(|inbound| {
+        inbound["tag"] == "sempre-dns-core-in"
+            && inbound["listen"] == "127.0.0.1"
+            && inbound["listen_port"] == 1053
+    }));
+    let tun = inbounds
+        .iter()
+        .find(|inbound| inbound["tag"] == "tun-in")
+        .expect("TUN inbound");
+    assert_eq!(tun["route_address"], json!(["198.18.0.0/15", "fc00::/18"]));
+    assert!(
+        output["dns"]["servers"]
+            .as_array()
+            .is_some_and(|servers| { servers.iter().any(|server| server["type"] == "fakeip") })
+    );
+    assert!(output["dns"]["rules"].as_array().is_some_and(|rules| {
+        rules.iter().any(|rule| {
+            rule["inbound"] == json!(["sempre-dns-core-in"]) && rule["server"] == "fakeip"
+        })
+    }));
+
+    input.profile.dns["shared"]["fakeipEnabled"] = json!(false);
+    let output = compile(&input).expect("managed macOS real-IP frontend");
+    let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
+    let tun = output["inbounds"]
+        .as_array()
+        .expect("inbounds")
+        .iter()
+        .find(|inbound| inbound["tag"] == "tun-in")
+        .expect("TUN inbound");
+    assert!(tun.get("route_address").is_none());
+    assert!(
+        output["dns"]["servers"]
+            .as_array()
+            .is_some_and(|servers| { servers.iter().all(|server| server["type"] != "fakeip") })
+    );
+
+    input.target.format = "sing-box-macos".into();
     assert!(
         compile(&input)
-            .expect_err("macOS takeover must fail")
+            .expect_err("legacy macOS frontend must fail")
             .to_string()
-            .contains("Linux system sing-box")
+            .contains("1.12 or newer")
     );
 
     input.target.format = "sing-box-v13".into();
+    input.profile.dns["shared"]["fakeipEnabled"] = json!(true);
     input.profile.dns["shared"]["localDns"] = json!("local");
     input.profile.dns["shared"]["localDnsTransport"] = json!("system");
     assert!(

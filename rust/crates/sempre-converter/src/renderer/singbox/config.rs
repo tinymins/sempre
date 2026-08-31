@@ -14,7 +14,7 @@ pub(super) fn inbounds(profile: &Profile, target: &Target) -> Vec<Value> {
     };
     local
         .into_iter()
-        .chain(super::super::dns::sing_box_system_inbounds(profile))
+        .chain(super::super::dns::sing_box_system_inbounds(profile, target))
         .chain(super::super::transparent::sing_box_inbounds(
             profile, target,
         ))
@@ -44,7 +44,7 @@ pub(super) fn route(
         .map(|snapshot| (snapshot.source_id.as_str(), snapshot.content.as_str()))
         .collect::<HashMap<_, _>>();
     let mut rule_sets = Vec::new();
-    let mut rules = super::super::dns::sing_box_system_route_rules(profile);
+    let mut rules = super::super::dns::sing_box_system_route_rules(profile, target);
     rules.extend(if target.version == "11" {
         vec![json!({ "protocol": "dns", "outbound": "dns-out" })]
     } else {

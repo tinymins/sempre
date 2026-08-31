@@ -19,7 +19,18 @@ pub(super) fn sing_box_inbounds(profile: &Profile, target: &Target) -> Vec<Value
             inbound["sniff"] = json!(true);
             inbound["sniff_override_destination"] = json!(true);
         }
-        if target.platform == "macos" && target.version == "14" {
+        let fakeip_routes = super::dns::sing_box_fakeip_route_addresses(profile, target);
+        if !fakeip_routes.is_empty() {
+            inbound["route_address"] = json!(fakeip_routes);
+        }
+        if target.platform == "macos"
+            && target.version == "14"
+            && profile
+                .dns
+                .pointer("/shared/systemDnsTakeoverEnabled")
+                .and_then(Value::as_bool)
+                != Some(true)
+        {
             inbound["dns_mode"] = json!("hijack");
         }
         return vec![inbound];

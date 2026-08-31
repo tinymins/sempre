@@ -47,18 +47,17 @@ fn sing_box(version: Option<&str>, target: &Target) -> Capabilities {
         f::MANAGEMENT_TRAFFIC,
         f::MANAGEMENT_EXTERNAL_API,
     ]);
-    if target.os != "darwin" {
+    if target.os != "darwin" || compiler != "11" {
         features.push(f::DNS_FAKE_IP.into());
     }
     if target.os != "darwin" || compiler == "14" {
         features.push(f::DNS_TUN_CAPTURE.into());
     }
+    if target.os == "linux" || target.os == "darwin" || target.os.is_empty() {
+        features.push(f::DNS_SYSTEM_TAKEOVER.into());
+    }
     if target.os == "linux" || target.os.is_empty() {
-        features.extend(strings(&[
-            f::DNS_SYSTEM_TAKEOVER,
-            f::TRANSPARENT_TPROXY,
-            f::TRANSPARENT_INTERFACES,
-        ]));
+        features.extend(strings(&[f::TRANSPARENT_TPROXY, f::TRANSPARENT_INTERFACES]));
     }
     if compiler != "11" {
         features.push(f::PRIVATE_ACCESS.into());
@@ -320,6 +319,14 @@ mod tests {
             !capabilities(BuiltInKind::SingBox, Some("1.13.4"), &target)
                 .features
                 .contains(&f::DNS_TUN_CAPTURE.into())
+        );
+        let modern = capabilities(BuiltInKind::SingBox, Some("1.13.4"), &target);
+        assert!(modern.features.contains(&f::DNS_FAKE_IP.into()));
+        assert!(modern.features.contains(&f::DNS_SYSTEM_TAKEOVER.into()));
+        assert!(
+            !capabilities(BuiltInKind::SingBox, Some("1.11.15"), &target)
+                .features
+                .contains(&f::DNS_FAKE_IP.into())
         );
     }
 }

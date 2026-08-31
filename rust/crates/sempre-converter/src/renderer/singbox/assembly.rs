@@ -61,15 +61,14 @@ pub(super) fn render(
         *rules = private_rules;
     }
     let route = config::route(profile, target, snapshots, &private, &mut warnings);
-    let store_fakeip = target.platform == "default"
-        && dns
-            .get("servers")
-            .and_then(Value::as_array)
-            .is_some_and(|servers| {
-                servers
-                    .iter()
-                    .any(|server| server.get("type").and_then(Value::as_str) == Some("fakeip"))
-            });
+    let store_fakeip = dns
+        .get("servers")
+        .and_then(Value::as_array)
+        .is_some_and(|servers| {
+            servers
+                .iter()
+                .any(|server| server.get("type").and_then(Value::as_str) == Some("fakeip"))
+        });
     let mut output = json!({
         "log": config::log(&profile.log_level),
         "inbounds": config::inbounds(profile, target),

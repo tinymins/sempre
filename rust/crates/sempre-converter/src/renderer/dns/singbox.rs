@@ -6,6 +6,8 @@ use crate::{Profile, Proxy, Target};
 
 use super::{SharedDns, native_override};
 
+const FRONTEND_DNS_INBOUND: &str = "sempre-dns-core-in";
+
 pub(super) fn render(
     profile: &Profile,
     proxies: &[Proxy],
@@ -21,7 +23,8 @@ pub(super) fn render(
     if let Some(value) = native_override(&profile.dns, key) {
         return value;
     }
-    let fakeip = shared.fakeip_enabled() && target.platform != "macos";
+    let frontend = target.platform == "macos" && shared.system_takeover();
+    let fakeip = shared.fakeip_enabled() && (target.platform != "macos" || frontend);
     let bootstrap_domains = proxies
         .iter()
         .filter(|proxy| proxy.server.parse::<IpAddr>().is_err())
@@ -41,6 +44,7 @@ pub(super) fn render(
         modern_dns(
             shared,
             fakeip,
+            frontend,
             remote_detour,
             &bootstrap_domains,
             target.version == "14",
@@ -53,6 +57,7 @@ pub(super) fn render(
 fn modern_dns(
     shared: &SharedDns,
     fakeip: bool,
+    frontend: bool,
     remote_detour: &str,
     bootstrap_domains: &[String],
     response_matching: bool,
@@ -72,7 +77,14 @@ fn modern_dns(
         remote["detour"] = json!(remote_detour);
     }
     servers.push(remote);
-    let rules = rules(shared, true, response_matching, fakeip, bootstrap_domains);
+    let rules = rules(
+        shared,
+        true,
+        response_matching,
+        fakeip,
+        frontend,
+        bootstrap_domains,
+    );
     let mut result = json!({
         "servers": servers, "rules": rules, "independent_cache": false,
         "reverse_mapping": true, "final": "remote"
@@ -111,7 +123,7 @@ fn legacy_dns(
     servers.push(remote);
     let mut result = json!({
         "disable_cache": false, "servers": servers,
-        "rules": rules(shared, false, false, fakeip, bootstrap_domains),
+        "rules": rules(shared, false, false, fakeip, false, bootstrap_domains),
         "disable_expire": false, "independent_cache": false,
         "reverse_mapping": true, "final": "remote"
     });
@@ -140,6 +152,7 @@ fn rules(
     modern: bool,
     response_matching: bool,
     fakeip: bool,
+    frontend: bool,
     bootstrap_domains: &[String],
 ) -> Vec<Value> {
     let mut rules = Vec::new();
@@ -152,6 +165,17 @@ fn rules(
     }
     if shared.reject_https() {
         rules.push(json!({ "query_type": ["HTTPS"], "action": "reject" }));
+    }
+    if frontend {
+        if fakeip {
+            rules.push(json!({
+                "inbound": [FRONTEND_DNS_INBOUND], "query_type": ["A", "AAAA"],
+                "server": "fakeip", "action": "route"
+            }));
+        }
+        rules.push(json!({
+            "inbound": [FRONTEND_DNS_INBOUND], "server": "remote", "action": "route"
+        }));
     }
     let private = [
         "127.0.0.0/8",
@@ -219,9 +243,25 @@ pub(super) fn route_policy(profile: &Profile) -> (Vec<Value>, Option<Value>) {
     (rule_sets, route)
 }
 
-pub(super) fn system_inbounds(shared: &SharedDns) -> Vec<Value> {
+pub(super) fn system_inbounds(
+    profile: &Profile,
+    target: &Target,
+    shared: &SharedDns,
+) -> Vec<Value> {
     if !shared.system_takeover() {
         return Vec::new();
+    }
+    if target.platform == "macos" {
+        let listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
+            0 => 1053,
+            port => port,
+        };
+        return vec![json!({
+            "type": "direct", "tag": FRONTEND_DNS_INBOUND,
+            "listen": "127.0.0.1",
+            "listen_port": listen_port,
+            "override_address": "1.1.1.1", "override_port": 53
+        })];
     }
     shared
         .system_dns_listen_hosts
@@ -237,9 +277,19 @@ pub(super) fn system_inbounds(shared: &SharedDns) -> Vec<Value> {
         .collect()
 }
 
-pub(super) fn system_route_rules(shared: &SharedDns) -> Vec<Value> {
+pub(super) fn system_route_rules(
+    _profile: &Profile,
+    target: &Target,
+    shared: &SharedDns,
+) -> Vec<Value> {
     if !shared.system_takeover() {
         return Vec::new();
+    }
+    if target.platform == "macos" {
+        return vec![
+            json!({ "inbound": FRONTEND_DNS_INBOUND, "action": "sniff" }),
+            json!({ "inbound": FRONTEND_DNS_INBOUND, "protocol": "dns", "action": "hijack-dns" }),
+        ];
     }
     shared
         .system_dns_listen_hosts
