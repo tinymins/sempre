@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{GatewayError, model::DnsConfig};
+use crate::{GatewayError, domain_matcher::parse_adguard_domains, model::DnsConfig};
 
 const MAX_RULE_SET_SIZE: usize = 4 << 20;
 
@@ -38,13 +38,17 @@ pub(crate) async fn resolve_rule_sets(mut config: DnsConfig) -> Result<DnsConfig
                 rule_set.name
             )));
         }
-        rule_set.rules = parse_rule_lines(&String::from_utf8_lossy(&data));
+        rule_set.rules = parse_rule_lines(&String::from_utf8_lossy(&data))?;
     }
     Ok(config)
 }
 
-fn parse_rule_lines(data: &str) -> Vec<String> {
-    data.lines()
+fn parse_rule_lines(data: &str) -> Result<Vec<String>, GatewayError> {
+    if data.lines().any(|line| line.trim().starts_with("[/")) {
+        return parse_adguard_domains(data);
+    }
+    Ok(data
+        .lines()
         .map(str::trim)
         .map(|line| line.strip_prefix("- ").unwrap_or(line))
         .map(|line| line.trim_matches(['\"', '\'']))
@@ -55,7 +59,7 @@ fn parse_rule_lines(data: &str) -> Vec<String> {
                 && !line.to_ascii_lowercase().starts_with("payload:")
         })
         .map(str::to_owned)
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -65,8 +69,17 @@ mod tests {
     #[test]
     fn parses_plain_and_yaml_payload_rules() {
         assert_eq!(
-            parse_rule_lines("payload:\n  - 'domain,example.com'\n# note\nfoo.test\n"),
+            parse_rule_lines("payload:\n  - 'domain,example.com'\n# note\nfoo.test\n")
+                .expect("rules"),
             ["domain,example.com", "foo.test"]
+        );
+    }
+
+    #[test]
+    fn parses_adguard_upstream_domain_shape() {
+        assert_eq!(
+            parse_rule_lines("127.0.0.1:1053\n[/foo.cn/bar.cn/]127.0.0.1\n").expect("rules"),
+            ["bar.cn", "foo.cn"]
         );
     }
 }

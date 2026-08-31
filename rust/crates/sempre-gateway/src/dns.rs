@@ -16,6 +16,7 @@ use crate::{
         TYPE_HTTPS, answer_ipv4_addresses, build_query, format_answers, fqdn, parse_question,
         record_number, response_with_code,
     },
+    domain_matcher::DomainMatcher,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -38,6 +39,13 @@ pub(crate) struct DnsServer {
 struct Resolver {
     config: DnsConfig,
     domestic_cidrs: Vec<(Ipv4Addr, u8)>,
+    rule_sets: Vec<ResolvedRuleSet>,
+}
+
+#[derive(Clone)]
+struct ResolvedRuleSet {
+    upstream: String,
+    matcher: DomainMatcher,
 }
 
 struct Resolved {
@@ -105,9 +113,19 @@ impl Resolver {
             .iter()
             .map(|value| parse_cidr(value))
             .collect::<Result<Vec<_>, _>>()?;
+        let rule_sets = config
+            .rule_sets
+            .iter()
+            .filter(|rule_set| rule_set.enabled)
+            .map(|rule_set| ResolvedRuleSet {
+                upstream: rule_set.upstream.clone(),
+                matcher: DomainMatcher::from_rules(&rule_set.rules),
+            })
+            .collect();
         Ok(Self {
             config,
             domestic_cidrs,
+            rule_sets,
         })
     }
 
@@ -213,17 +231,10 @@ impl Resolver {
     }
 
     fn match_rule_upstream(&self, name: &str) -> Option<String> {
-        self.config
-            .rule_sets
+        self.rule_sets
             .iter()
-            .filter(|rule_set| rule_set.enabled)
-            .find_map(|rule_set| {
-                rule_set
-                    .rules
-                    .iter()
-                    .any(|rule| rule_matches_domain(rule, name))
-                    .then(|| rule_set.upstream.clone())
-            })
+            .find(|rule_set| rule_set.matcher.matches(name))
+            .map(|rule_set| rule_set.upstream.clone())
     }
 
     fn domestic_response(&self, packet: &[u8]) -> bool {
@@ -317,25 +328,6 @@ async fn serve_tcp_connection(
         .map_err(|error| GatewayError::io("write DNS TCP response", error))
 }
 
-fn rule_matches_domain(rule: &str, name: &str) -> bool {
-    let rule = rule.trim().to_ascii_lowercase();
-    if rule.is_empty() || rule.starts_with('#') {
-        return false;
-    }
-    let (kind, payload) = rule
-        .split_once(',')
-        .map_or(("domain-suffix", rule.as_str()), |(kind, payload)| {
-            (kind.trim(), payload.trim())
-        });
-    let payload = payload.trim_end_matches('.');
-    let name = name.trim_end_matches('.').to_ascii_lowercase();
-    match kind {
-        "domain" => name == payload,
-        "domain-keyword" => name.contains(payload),
-        _ => name == payload || name.ends_with(&format!(".{payload}")),
-    }
-}
-
 fn parse_cidr(value: &str) -> Result<(Ipv4Addr, u8), GatewayError> {
     let (address, prefix) = value
         .split_once('/')
@@ -363,17 +355,6 @@ fn in_prefix(address: Ipv4Addr, network: Ipv4Addr, prefix: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn domain_rules_match_exact_keyword_and_suffix() {
-        assert!(rule_matches_domain("domain,example.com", "example.com."));
-        assert!(rule_matches_domain("domain-keyword,ample", "example.com."));
-        assert!(rule_matches_domain("example.com", "www.example.com."));
-        assert!(!rule_matches_domain(
-            "domain,example.com",
-            "www.example.com."
-        ));
-    }
 
     #[tokio::test]
     async fn debug_query_exchanges_with_the_selected_udp_upstream() {
