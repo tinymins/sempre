@@ -269,8 +269,7 @@ pub(crate) fn validate_system_dns_config(
         });
         if !valid_inbound || !valid_rules {
             return Err(TransparentError::Invalid(format!(
-                "runtime configuration is missing managed system DNS listener {host}:{}",
-                port
+                "runtime configuration is missing managed system DNS listener {host}:{port}"
             )));
         }
     }

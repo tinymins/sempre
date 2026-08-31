@@ -79,10 +79,16 @@ fn modern_dns(
     servers.push(remote);
     let rules = rules(
         shared,
-        true,
-        response_matching,
-        fakeip,
-        frontend,
+        RuleOptions {
+            modern: true,
+            response_matching,
+            fakeip,
+            frontend: match (frontend, fakeip) {
+                (true, true) => FrontendMode::FakeIp,
+                (true, false) => FrontendMode::RealIp,
+                (false, _) => FrontendMode::Disabled,
+            },
+        },
         bootstrap_domains,
     );
     let mut result = json!({
@@ -123,7 +129,7 @@ fn legacy_dns(
     servers.push(remote);
     let mut result = json!({
         "disable_cache": false, "servers": servers,
-        "rules": rules(shared, false, false, fakeip, false, bootstrap_domains),
+        "rules": rules(shared, RuleOptions { fakeip, ..RuleOptions::default() }, bootstrap_domains),
         "disable_expire": false, "independent_cache": false,
         "reverse_mapping": true, "final": "remote"
     });
@@ -147,18 +153,27 @@ fn modern_local(tag: &str, server: &str, shared: &SharedDns) -> Value {
     result
 }
 
-fn rules(
-    shared: &SharedDns,
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum FrontendMode {
+    #[default]
+    Disabled,
+    RealIp,
+    FakeIp,
+}
+
+#[derive(Clone, Copy, Default)]
+struct RuleOptions {
     modern: bool,
     response_matching: bool,
     fakeip: bool,
-    frontend: bool,
-    bootstrap_domains: &[String],
-) -> Vec<Value> {
+    frontend: FrontendMode,
+}
+
+fn rules(shared: &SharedDns, options: RuleOptions, bootstrap_domains: &[String]) -> Vec<Value> {
     let mut rules = Vec::new();
     if !bootstrap_domains.is_empty() {
         let mut rule = json!({ "domain": bootstrap_domains, "server": "bootstrap" });
-        if modern {
+        if options.modern {
             rule["action"] = json!("route");
         }
         rules.push(rule);
@@ -166,8 +181,8 @@ fn rules(
     if shared.reject_https() {
         rules.push(json!({ "query_type": ["HTTPS"], "action": "reject" }));
     }
-    if frontend {
-        if fakeip {
+    if options.frontend != FrontendMode::Disabled {
+        if options.frontend == FrontendMode::FakeIp {
             rules.push(json!({
                 "inbound": [FRONTEND_DNS_INBOUND], "query_type": ["A", "AAAA"],
                 "server": "fakeip", "action": "route"
@@ -183,19 +198,19 @@ fn rules(
         "172.16.0.0/12",
         "192.168.0.0/16",
     ];
-    if response_matching {
+    if options.response_matching {
         rules.push(json!({ "action": "evaluate", "server": "local" }));
         rules.push(json!({ "match_response": true, "ip_cidr": private, "action": "respond" }));
     } else {
         let mut rule = json!({ "ip_cidr": private, "server": "local" });
-        if modern {
+        if options.modern {
             rule["action"] = json!("route");
         }
         rules.push(rule);
     }
     if shared.cn_domain_local_dns() && shared.cn_domain_rule_set.enabled {
         let mut rule = json!({ "rule_set": ["geosite-cn"], "server": "local" });
-        if modern {
+        if options.modern {
             rule["action"] = json!("route");
         }
         rules.push(rule);
@@ -208,14 +223,14 @@ fn rules(
         } else {
             json!({ "rule_set": ["geoip-cn"], "server": "local" })
         };
-        if modern {
+        if options.modern {
             rule["action"] = json!("route");
         }
         rules.push(rule);
     }
-    if fakeip {
+    if options.fakeip {
         let mut rule = json!({ "disable_cache": false, "rewrite_ttl": shared.fakeip_ttl, "query_type": ["A", "AAAA"], "server": "fakeip" });
-        if modern {
+        if options.modern {
             rule["action"] = json!("route");
         }
         rules.push(rule);

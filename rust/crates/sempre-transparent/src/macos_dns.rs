@@ -15,6 +15,8 @@ pub(crate) struct SystemDns {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct State {
+    #[serde(default)]
+    original_upstreams: Vec<String>,
     services: Vec<ServiceState>,
 }
 
@@ -38,8 +40,13 @@ impl SystemDns {
                 "macOS DNS takeover requires system mode".into(),
             ));
         }
-        let output = command::require_success(SCUTIL, runner.run(SCUTIL, &["--dns"], None).await?)?;
-        let servers = parse_scutil_dns(&output.stdout);
+        let servers = if let Some(state) = self.read_state()? {
+            state.original_upstreams
+        } else {
+            let output =
+                command::require_success(SCUTIL, runner.run(SCUTIL, &["--dns"], None).await?)?;
+            parse_scutil_dns(&output.stdout)
+        };
         if servers.is_empty() {
             Err(TransparentError::Invalid(
                 "macOS has no usable original DNS servers".into(),
@@ -49,7 +56,11 @@ impl SystemDns {
         }
     }
 
-    pub(crate) async fn apply(&self, runner: &dyn command::Runner) -> Result<(), TransparentError> {
+    pub(crate) async fn apply(
+        &self,
+        runner: &dyn command::Runner,
+        original_upstreams: &[String],
+    ) -> Result<(), TransparentError> {
         if !self.allowed {
             return Err(TransparentError::Invalid(
                 "macOS DNS takeover requires system mode".into(),
@@ -62,8 +73,9 @@ impl SystemDns {
             ));
         }
         fs::create_dir_all(&self.state_dir)
-            .map_err(|source| self.io("create macOS DNS state directory", source))?;
+            .map_err(|source| Self::io("create macOS DNS state directory", source))?;
         self.write_state(&State {
+            original_upstreams: original_upstreams.to_vec(),
             services: services.clone(),
         })?;
         let mut changed: Vec<ServiceState> = Vec::new();
@@ -95,7 +107,7 @@ impl SystemDns {
         match fs::remove_file(self.state_path()) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(source) => Err(self.io("remove macOS DNS state", source)),
+            Err(source) => Err(Self::io("remove macOS DNS state", source)),
         }
     }
 
@@ -143,7 +155,7 @@ impl SystemDns {
         })?;
         data.push(b'\n');
         sempre_state::write_atomic(&self.state_path(), &data, 0o600)
-            .map_err(|source| self.io("write macOS DNS state", source))
+            .map_err(|source| Self::io("write macOS DNS state", source))
     }
 
     fn read_state(&self) -> Result<Option<State>, TransparentError> {
@@ -152,7 +164,7 @@ impl SystemDns {
                 TransparentError::Invalid(format!("decode macOS DNS state: {error}"))
             }),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(self.io("read macOS DNS state", source)),
+            Err(source) => Err(Self::io("read macOS DNS state", source)),
         }
     }
 
@@ -160,7 +172,7 @@ impl SystemDns {
         self.state_dir.join("network-services.json")
     }
 
-    fn io(&self, context: &str, source: io::Error) -> TransparentError {
+    fn io(context: &str, source: io::Error) -> TransparentError {
         TransparentError::Io {
             context: context.into(),
             source,

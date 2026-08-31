@@ -1,4 +1,5 @@
 mod state;
+mod wait;
 
 use std::{fs, path::PathBuf, process::ExitStatus, time::Duration};
 
@@ -8,28 +9,24 @@ use sempre_state::{Deployment, DesiredState, Document};
 use sempre_supervisor::{ManagedProcess, SupervisorError, append_log};
 use sempre_transparent::Plan as TransparentPlan;
 use sha2::{Digest, Sha256};
-use tokio::{sync::watch, time::sleep};
+use tokio::sync::watch;
 
+use crate::dns_runtime::DnsFrontendPlan;
 use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
+use wait::{ProcessEvent, RetryEvent, wait_inactive, wait_retry, wait_running, wait_startup};
 
 const STARTUP_GRACE: Duration = Duration::from_secs(10);
 const STOP_GRACE: Duration = Duration::from_secs(10);
 const MAX_BACKOFF: Duration = Duration::from_mins(1);
 
-struct RuntimePlan {
+pub(crate) struct RuntimePlan {
     deployment: Deployment,
     spec: CommandSpec,
     runtime_config: PathBuf,
     runtime_config_hash: String,
     control: Option<ControlSpec>,
     transparent: TransparentPlan,
-}
-
-enum ProcessEvent {
-    Healthy(Result<(), sempre_transparent::TransparentError>),
-    Reload,
-    Shutdown,
-    Exited(Result<ExitStatus, SupervisorError>),
+    pub(crate) dns_frontend: Option<DnsFrontendPlan>,
 }
 
 enum CycleResult {
@@ -56,6 +53,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         loop {
             let document = self.store.read()?;
             if *shutdown.borrow() {
+                self.dns_frontend.stop().await;
                 self.stop_gateway().await;
                 if transparent_cleanup_required(&document) {
                     self.transparent.cleanup().await?;
@@ -64,6 +62,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 return Ok(());
             }
             if document.desired_state == DesiredState::Stopped {
+                self.dns_frontend.stop().await;
                 self.stop_gateway().await;
                 if transparent_cleanup_required(&document) {
                     self.transparent.cleanup().await?;
@@ -76,6 +75,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 continue;
             }
             if document.active.is_none() {
+                self.dns_frontend.stop().await;
                 self.stop_gateway().await;
                 if transparent_cleanup_required(&document) {
                     self.transparent.cleanup().await?;
@@ -102,8 +102,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                         backoff = Duration::from_secs(1);
                         continue;
                     }
-                    if wait_retry(self, &mut shutdown, backoff).await {
-                        return Ok(());
+                    match wait_retry(self, &mut shutdown, backoff).await {
+                        RetryEvent::Timer => {}
+                        RetryEvent::Reload => self.cleanup_retained_frontend().await?,
+                        RetryEvent::Shutdown => {
+                            self.cleanup_retained_frontend().await?;
+                            state::mark_intentional_exit(self, true)?;
+                            return Ok(());
+                        }
                     }
                     backoff = next_backoff(backoff);
                     continue;
@@ -122,8 +128,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     if retry_immediately {
                         backoff = Duration::from_secs(1);
                     } else {
-                        if wait_retry(self, &mut shutdown, backoff).await {
-                            return Ok(());
+                        match wait_retry(self, &mut shutdown, backoff).await {
+                            RetryEvent::Timer => {}
+                            RetryEvent::Reload => self.cleanup_retained_frontend().await?,
+                            RetryEvent::Shutdown => {
+                                self.cleanup_retained_frontend().await?;
+                                state::mark_intentional_exit(self, true)?;
+                                return Ok(());
+                            }
                         }
                         backoff = next_backoff(backoff);
                     }
@@ -153,8 +165,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         ) {
             Ok(process) => process,
             Err(error) => {
-                self.stop_gateway().await;
-                let error = with_cleanup_failure(&error, self.transparent.cleanup().await);
+                let cleanup = if plan.dns_frontend.is_some() {
+                    Ok(())
+                } else {
+                    self.transparent.cleanup().await
+                };
+                let error = with_cleanup_failure(&error, cleanup);
                 let retry = self.handle_process_failure(plan, "startup failed", &error, true)?;
                 return Ok(CycleResult::Failed {
                     retry_immediately: retry,
@@ -176,6 +192,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             ProcessEvent::Healthy(Ok(())) => {
                 if let Err(error) = self.mark_runtime_healthy(plan) {
                     let _ = process.terminate(STOP_GRACE).await;
+                    self.dns_frontend.stop().await;
                     if let Err(cleanup) = self.transparent.cleanup().await {
                         self.log_supervisor(&format!(
                             "transparent proxy cleanup failed: {cleanup}"
@@ -199,6 +216,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 return Ok(CycleResult::Shutdown);
             }
             ProcessEvent::Exited(result) => {
+                self.dns_frontend.stop().await;
                 self.stop_gateway().await;
                 let cleanup = self.transparent.cleanup().await;
                 self.remove_control();
@@ -222,11 +240,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             ProcessEvent::Exited(result) => {
                 self.stop_gateway().await;
-                let cleanup = self.transparent.cleanup().await;
                 self.remove_control();
                 let exit = exit_result(result);
-                let error = with_cleanup_failure(&exit, cleanup);
-                self.handle_process_failure(plan, "core exited", &error, false)?;
+                self.dns_frontend.record_failure(&exit);
+                self.handle_process_failure(plan, "core exited", &exit, false)?;
                 Ok(CycleResult::Failed {
                     retry_immediately: false,
                 })
@@ -292,6 +309,28 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let runtime_data = fs::read(&runtime.config)
             .map_err(|error| ManagerError::io("read runtime configuration", error))?;
         let runtime_config_hash = format!("{:x}", Sha256::digest(runtime_data));
+        let dns_frontend = if let Some(system_dns) = transparent
+            .system_dns
+            .as_ref()
+            .filter(|system_dns| system_dns.managed_frontend)
+        {
+            let policy = self.load_dns_frontend_policy(&deployment.config_hash)?;
+            if policy.core_listen_port != system_dns.core_listen_port {
+                return Err(ManagerError::InvalidOperation(
+                    "managed DNS frontend and core listener ports do not match".into(),
+                ));
+            }
+            Some(DnsFrontendPlan::from_policy(
+                &deployment.config_hash,
+                policy,
+                &system_dns.original_upstreams,
+            )?)
+        } else {
+            None
+        };
+        if let Some(frontend) = &dns_frontend {
+            self.dns_frontend.configure(frontend);
+        }
         let binary = path_text(&binary)?;
         let runtime_config = path_text(&runtime.config)?;
         let data_text = path_text(&data)?;
@@ -302,6 +341,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             runtime_config_hash,
             control: runtime.control,
             transparent,
+            dns_frontend,
         })
     }
 
@@ -311,6 +351,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         service_stopped: bool,
     ) -> Result<(), ManagerError> {
         let transition = state::mark_stopping(self);
+        self.dns_frontend.stop().await;
         self.stop_gateway().await;
         let transparent = self.transparent.cleanup().await;
         let terminated = process.terminate(STOP_GRACE).await;
@@ -320,6 +361,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         transparent?;
         terminated?;
         state
+    }
+
+    async fn cleanup_retained_frontend(&self) -> Result<(), ManagerError> {
+        self.dns_frontend.stop().await;
+        self.stop_gateway().await;
+        self.transparent.cleanup().await?;
+        Ok(())
     }
 
     fn mark_runtime_healthy(&self, plan: &RuntimePlan) -> Result<(), ManagerError> {
@@ -346,6 +394,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         error: &sempre_transparent::TransparentError,
     ) -> Result<CycleResult, ManagerError> {
         let _ = process.terminate(STOP_GRACE).await;
+        self.dns_frontend.stop().await;
         self.stop_gateway().await;
         let error = with_cleanup_failure(error, self.transparent.cleanup().await);
         self.remove_control();
@@ -396,69 +445,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let line = format!("{} {message}\n", Utc::now().to_rfc3339());
         append_log(&self.store.layout().manager_log, &line)?;
         Ok(())
-    }
-}
-
-async fn wait_startup<R: VersionRunner + ValidationRunner>(
-    manager: &Manager<R>,
-    shutdown: &mut watch::Receiver<bool>,
-    process: &mut ManagedProcess,
-    plan: &RuntimePlan,
-    grace: Duration,
-) -> ProcessEvent {
-    if plan.transparent.active() {
-        return tokio::select! {
-            result = manager.transparent.apply(&plan.transparent) => ProcessEvent::Healthy(result),
-            result = process.wait() => ProcessEvent::Exited(result),
-            () = manager.wait_runtime_reload() => ProcessEvent::Reload,
-            () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,
-        };
-    }
-    tokio::select! {
-        result = process.wait() => ProcessEvent::Exited(result),
-        () = manager.wait_runtime_reload() => ProcessEvent::Reload,
-        () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,
-        () = sleep(grace) => ProcessEvent::Healthy(Ok(())),
-    }
-}
-
-async fn wait_running<R: VersionRunner + ValidationRunner>(
-    manager: &Manager<R>,
-    shutdown: &mut watch::Receiver<bool>,
-    process: &mut ManagedProcess,
-) -> ProcessEvent {
-    tokio::select! {
-        result = process.wait() => ProcessEvent::Exited(result),
-        () = manager.wait_runtime_reload() => ProcessEvent::Reload,
-        () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,
-    }
-}
-
-async fn wait_inactive<R: VersionRunner>(
-    manager: &Manager<R>,
-    shutdown: &mut watch::Receiver<bool>,
-) -> bool {
-    tokio::select! {
-        () = manager.wait_runtime_reload() => false,
-        () = shutdown_requested(shutdown) => true,
-    }
-}
-
-async fn wait_retry<R: VersionRunner>(
-    manager: &Manager<R>,
-    shutdown: &mut watch::Receiver<bool>,
-    delay: Duration,
-) -> bool {
-    tokio::select! {
-        () = manager.wait_runtime_reload() => false,
-        () = shutdown_requested(shutdown) => true,
-        () = sleep(delay) => false,
-    }
-}
-
-async fn shutdown_requested(shutdown: &mut watch::Receiver<bool>) {
-    if !*shutdown.borrow() {
-        let _ = shutdown.changed().await;
     }
 }
 

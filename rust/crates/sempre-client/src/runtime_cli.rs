@@ -322,6 +322,7 @@ mod tests {
                 stop: available(),
                 restart: available(),
             },
+            dns_frontend: sempre_manager::DnsFrontendStatus::default(),
         }
     }
 

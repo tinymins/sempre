@@ -2264,6 +2264,7 @@ version = "2.0.4"
 dependencies = [
  "chrono",
  "humantime",
+ "ipnet",
  "sempre-artifact",
  "sempre-bundle",
  "sempre-control",

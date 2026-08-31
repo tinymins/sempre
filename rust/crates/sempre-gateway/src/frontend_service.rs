@@ -34,20 +34,24 @@ mod tests {
 
     #[tokio::test]
     async fn validates_before_binding_and_stops_cleanly() {
-        let mut config = DnsConfig::default();
-        config.enabled = true;
-        config.listen_hosts = vec!["127.0.0.1".into()];
-        config.listen_port = std::net::TcpListener::bind("127.0.0.1:0")
-            .expect("port probe")
-            .local_addr()
-            .expect("port")
-            .port();
+        let config = DnsConfig {
+            enabled: true,
+            listen_hosts: vec!["127.0.0.1".into()],
+            listen_port: std::net::TcpListener::bind("127.0.0.1:0")
+                .expect("port probe")
+                .local_addr()
+                .expect("port")
+                .port(),
+            ..DnsConfig::default()
+        };
         let service = DnsService::start(config).await.expect("start DNS");
         service.stop().await;
 
-        let mut invalid = DnsConfig::default();
-        invalid.enabled = true;
-        invalid.listen_hosts = vec!["not-an-address".into()];
+        let invalid = DnsConfig {
+            enabled: true,
+            listen_hosts: vec!["not-an-address".into()],
+            ..DnsConfig::default()
+        };
         assert!(DnsService::start(invalid).await.is_err());
     }
 }

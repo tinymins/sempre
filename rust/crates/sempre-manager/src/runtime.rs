@@ -6,7 +6,7 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use crate::{
     Manager, ManagerError, RuntimePendingChange, ValidationRunner, VersionRunner,
-    config::configuration_target,
+    config::configuration_target, dns_runtime::DnsFrontendStatus,
 };
 
 const START: &str = "start";
@@ -71,6 +71,8 @@ pub struct RuntimeStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_failure: Option<RuntimeFailureOutput>,
     pub actions: RuntimeActions,
+    #[serde(default)]
+    pub dns_frontend: DnsFrontendStatus,
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
@@ -250,6 +252,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 target.as_ref().err(),
                 configuration_pending,
             ),
+            dns_frontend: self.dns_frontend.status(),
         }
     }
 

@@ -1,4 +1,7 @@
-use std::{fmt::Write as _, net::Ipv4Addr};
+use std::{
+    fmt::Write as _,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+};
 
 use crate::GatewayError;
 
@@ -171,6 +174,32 @@ pub(crate) fn answer_ipv4_addresses(packet: &[u8]) -> Result<Vec<Ipv4Addr>, Gate
             )
         })
         .collect())
+}
+
+pub(crate) fn answer_ip_addresses(packet: &[u8]) -> Result<Vec<IpAddr>, GatewayError> {
+    Ok(answer_records(packet)?
+        .into_iter()
+        .filter_map(|record| match (record.kind, record.length) {
+            (TYPE_A, 4) => Some(IpAddr::V4(Ipv4Addr::new(
+                packet[record.start],
+                packet[record.start + 1],
+                packet[record.start + 2],
+                packet[record.start + 3],
+            ))),
+            (TYPE_AAAA, 16) => Some(IpAddr::V6(Ipv6Addr::from(
+                <[u8; 16]>::try_from(&packet[record.start..record.start + 16])
+                    .expect("length checked"),
+            ))),
+            _ => None,
+        })
+        .collect())
+}
+
+pub(crate) fn response_code(packet: &[u8]) -> Result<u8, GatewayError> {
+    packet
+        .get(3)
+        .map(|flags| flags & 0x0f)
+        .ok_or_else(|| GatewayError::invalid("DNS response is shorter than its header"))
 }
 
 pub(crate) fn format_answers(packet: &[u8]) -> Result<Vec<String>, GatewayError> {

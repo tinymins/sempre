@@ -7,6 +7,7 @@ mod context;
 mod custom_node;
 mod direct;
 mod dns_frontend;
+mod dns_runtime;
 mod error;
 mod gateway;
 mod install;
@@ -41,6 +42,7 @@ pub use auto_config::{
 };
 pub use config::{CurrentConfig, MAX_CONFIG_SIZE};
 pub use context::{ConfigurationContext, ConfigurationTarget, RunningCore};
+pub use dns_runtime::DnsFrontendStatus;
 pub use error::ManagerError;
 pub use install::InstallResult;
 pub use inventory::{CoreInventory, InstalledCore};
@@ -71,6 +73,7 @@ pub struct Manager<R = ProcessRunner> {
     subscription_schedule_changed: Arc<Notify>,
     tunnels: Arc<TunnelController>,
     transparent: Arc<TransparentController>,
+    dns_frontend: Arc<dns_runtime::DnsFrontendRuntime>,
 }
 
 impl Manager<ProcessRunner> {
@@ -100,6 +103,7 @@ impl<R: VersionRunner> Manager<R> {
         let gateway = Arc::new(sempre_gateway::Controller::new(store.layout())?);
         let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
         let transparent = Arc::new(TransparentController::new(store.layout()));
+        let dns_frontend = dns_runtime::DnsFrontendRuntime::new();
         Ok(Self {
             store,
             registry: built_in_registry(),
@@ -115,6 +119,7 @@ impl<R: VersionRunner> Manager<R> {
             subscription_schedule_changed: Arc::new(Notify::new()),
             tunnels,
             transparent,
+            dns_frontend,
         })
     }
 

@@ -10,6 +10,7 @@ pub const DOMESTIC_DOMAIN_SOURCE: &str =
     "https://github.com/ohmywrt/ohmywrt/blob/master/package/base-files/files/etc/domains-min.txt";
 pub const DOMESTIC_DOMAIN_SHA256: &str =
     "80aed7f0cbe1d0292f58284f5b0b91043e09950a9019c60da96bff3a6e8ba634";
+pub const DOMESTIC_DOMAIN_COUNT: usize = 77_072;
 
 pub fn bundled_domestic_domains() -> Result<Vec<String>, GatewayError> {
     parse_adguard_domains(BUNDLED_DOMAINS_MIN)
@@ -200,7 +201,7 @@ mod tests {
             DOMESTIC_DOMAIN_SHA256
         );
         let domains = bundled_domestic_domains().expect("bundled domains");
-        assert_eq!(domains.len(), 77_072);
+        assert_eq!(domains.len(), DOMESTIC_DOMAIN_COUNT);
         assert!(domains.binary_search(&"baidu.com".into()).is_ok());
         assert!(domains.binary_search(&"qq.com".into()).is_ok());
         assert!(domains.binary_search(&"github.com".into()).is_err());

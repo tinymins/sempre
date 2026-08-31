@@ -9,6 +9,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct DnsFrontendPolicy {
     pub enabled: bool,
     pub fakeip_enabled: bool,

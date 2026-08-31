@@ -156,10 +156,17 @@ impl Controller {
             return Ok(());
         }
         self.require_root().await?;
+        if plan.system_dns.is_some() && self.macos_dns.verify(self.runner.as_ref()).await.is_ok() {
+            return Ok(());
+        }
         self.macos_dns.restore(self.runner.as_ref()).await?;
         if let Some(system_dns) = &plan.system_dns {
             self.wait_system_dns(system_dns).await?;
-            if let Err(error) = self.macos_dns.apply(self.runner.as_ref()).await {
+            if let Err(error) = self
+                .macos_dns
+                .apply(self.runner.as_ref(), &system_dns.original_upstreams)
+                .await
+            {
                 let _ = self.macos_dns.restore(self.runner.as_ref()).await;
                 return Err(error);
             }

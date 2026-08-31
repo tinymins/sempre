@@ -108,6 +108,31 @@ pub(crate) async fn debug_query(
     Resolver::new(config)?.debug_query(name, record_type).await
 }
 
+pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), GatewayError> {
+    let resolver = Resolver::new(config.clone())?;
+    let local = [
+        "baidu.com",
+        "qq.com",
+        "taobao.com",
+        "jd.com",
+        "bilibili.com",
+    ]
+    .into_iter()
+    .find(|name| resolver.selected_upstream(name) == "local")
+    .ok_or_else(|| GatewayError::invalid("managed DNS policy has no local probe domain"))?;
+    let remote = [
+        "example.com",
+        "github.com",
+        "wikipedia.org",
+        "google.com",
+        "youtube.com",
+    ]
+    .into_iter()
+    .find(|name| resolver.selected_upstream(name) == "remote")
+    .ok_or_else(|| GatewayError::invalid("managed DNS policy has no core probe domain"))?;
+    Ok((local.into(), remote.into()))
+}
+
 impl Resolver {
     fn new(config: DnsConfig) -> Result<Self, GatewayError> {
         let domestic_cidrs = config
@@ -261,6 +286,11 @@ impl Resolver {
         self.rule_sets
             .iter()
             .find(|rule_set| rule_set.matcher.matches(name))
+    }
+
+    fn selected_upstream(&self, name: &str) -> &str {
+        self.match_rule(name)
+            .map_or("remote", |rule_set| rule_set.upstream.as_str())
     }
 
     fn domestic_response(&self, packet: &[u8]) -> bool {
