@@ -155,7 +155,11 @@ impl<R: VersionRunner> Manager<R> {
                 document.subscription.last_result = None;
             } else {
                 document.subscription.url = Some(value.into());
-                record_pending_fields(document, &["sources".into()], append);
+                record_pending_fields(
+                    document,
+                    &[sempre_state::PendingConfigField::Sources],
+                    append,
+                );
             }
             Ok(())
         })?;

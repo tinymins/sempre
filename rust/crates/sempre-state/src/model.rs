@@ -7,6 +7,25 @@ use url::Url;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingConfigField {
+    Sources,
+    SubscriptionContent,
+    Nodes,
+    Groups,
+    Rules,
+    RuleProviders,
+    Filters,
+    Dns,
+    PrivateAccess,
+    LocalProxy,
+    TransparentProxy,
+    ManagementApi,
+    Advanced,
+    ManualConfiguration,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Document {
     pub schema: u32,
@@ -19,8 +38,7 @@ pub struct Document {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_profile_id: Option<String>,
     pub pending: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub pending_config_fields: Vec<String>,
+    pub pending_config_fields: Vec<PendingConfigField>,
     pub last_error: Option<String>,
     pub cores: BTreeMap<String, CoreState>,
     pub configs: BTreeMap<String, String>,

@@ -5,7 +5,7 @@ use sempre_converter::{
     CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, SourceSnapshot, Target, compile,
     parse_subscription,
 };
-use sempre_state::{ConfigBuild, Document};
+use sempre_state::{ConfigBuild, Document, PendingConfigField};
 use sempre_subscription::{Catalog, SubscriptionError};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -88,7 +88,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             profile.revision += 1;
             Ok(())
         })?;
-        self.record_pending_profile_fields(&document, profile, &["sources"])?;
+        self.record_pending_profile_fields(&document, profile, &[PendingConfigField::Sources])?;
         let (change, _) = self.activate_subscription_profile(&profile_id).await?;
         Ok(change)
     }

@@ -74,7 +74,7 @@ fn fixture(script: &str) -> (tempfile::TempDir, Arc<Manager<FakeRunner>>) {
                 config_hash: hash.clone(),
             });
             document.pending = true;
-            document.pending_config_fields = vec!["dns".into()];
+            document.pending_config_fields = vec![sempre_state::PendingConfigField::Dns];
             Ok(())
         })
         .expect("seed state");

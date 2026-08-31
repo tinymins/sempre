@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use sempre_converter::{Profile, Source};
 use sempre_core::CoreRef;
-use sempre_state::{Deployment, Document};
+use sempre_state::{Deployment, Document, PendingConfigField};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -20,7 +20,7 @@ pub enum RuntimePendingChange {
         current: String,
     },
     Configuration {
-        fields: Vec<String>,
+        fields: Vec<PendingConfigField>,
         previous_revision: Option<u64>,
         current_revision: Option<u64>,
     },
@@ -64,7 +64,7 @@ impl<R: VersionRunner> Manager<R> {
             });
         }
 
-        if configuration_pending || !document.pending_config_fields.is_empty() {
+        if !document.pending_config_fields.is_empty() {
             let profile = document
                 .active_profile_id
                 .as_deref()
@@ -85,7 +85,10 @@ impl<R: VersionRunner> Manager<R> {
     }
 }
 
-pub(crate) fn profile_changed_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
+pub(crate) fn profile_changed_fields(
+    current: &Profile,
+    candidate: &Profile,
+) -> Vec<PendingConfigField> {
     let mut fields = source_and_node_fields(current, candidate);
     fields.extend(routing_fields(current, candidate));
     fields.extend(runtime_fields(current, candidate));
@@ -93,7 +96,7 @@ pub(crate) fn profile_changed_fields(current: &Profile, candidate: &Profile) -> 
 }
 
 pub(crate) struct PendingProfileChange {
-    fields: Vec<String>,
+    fields: Vec<PendingConfigField>,
     append: bool,
 }
 
@@ -121,38 +124,34 @@ impl<R: VersionRunner> Manager<R> {
         &self,
         document: &Document,
         profile: &Profile,
-        fields: &[&str],
+        fields: &[PendingConfigField],
     ) -> Result<(), ManagerError> {
         let append = has_pending_profile_revision(document, profile);
-        let fields = fields
-            .iter()
-            .map(|field| (*field).into())
-            .collect::<Vec<_>>();
         self.store.update(|document| {
-            record_pending_fields(document, &fields, append);
+            record_pending_fields(document, fields, append);
             Ok(())
         })?;
         Ok(())
     }
 }
 
-fn source_and_node_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
+fn source_and_node_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigField> {
     let mut fields = Vec::new();
     push_changed(
         &mut fields,
-        "sources",
+        PendingConfigField::Sources,
         &source_settings(&current.sources),
         &source_settings(&candidate.sources),
     );
     push_changed(
         &mut fields,
-        "subscription_content",
+        PendingConfigField::SubscriptionContent,
         &source_snapshots(&current.sources),
         &source_snapshots(&candidate.sources),
     );
     push_changed(
         &mut fields,
-        "nodes",
+        PendingConfigField::Nodes,
         &json!([
             current.custom_node_ids,
             current.manual_servers,
@@ -167,11 +166,11 @@ fn source_and_node_fields(current: &Profile, candidate: &Profile) -> Vec<String>
     fields
 }
 
-fn routing_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
+fn routing_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigField> {
     let mut fields = Vec::new();
     push_changed(
         &mut fields,
-        "groups",
+        PendingConfigField::Groups,
         &json!([
             current.groups,
             current.editor.group,
@@ -185,7 +184,7 @@ fn routing_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
     );
     push_changed(
         &mut fields,
-        "rules",
+        PendingConfigField::Rules,
         &json!([
             current.rules,
             current.editor.rule_list,
@@ -199,13 +198,13 @@ fn routing_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
     );
     push_changed(
         &mut fields,
-        "rule_providers",
+        PendingConfigField::RuleProviders,
         &json!(current.rule_providers),
         &json!(candidate.rule_providers),
     );
     push_changed(
         &mut fields,
-        "filters",
+        PendingConfigField::Filters,
         &json!([
             current.filters,
             current.editor.filter,
@@ -220,11 +219,11 @@ fn routing_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
     fields
 }
 
-fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
+fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigField> {
     let mut fields = Vec::new();
     push_changed(
         &mut fields,
-        "dns",
+        PendingConfigField::Dns,
         &json!([
             current.dns,
             current.editor.dns_config,
@@ -238,7 +237,7 @@ fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
     );
     push_changed(
         &mut fields,
-        "private_access",
+        PendingConfigField::PrivateAccess,
         &json!([current.private_access, current.editor.private_access_config]),
         &json!([
             candidate.private_access,
@@ -247,25 +246,25 @@ fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
     );
     push_changed(
         &mut fields,
-        "local_proxy",
+        PendingConfigField::LocalProxy,
         &json!(current.local_proxy),
         &json!(candidate.local_proxy),
     );
     push_changed(
         &mut fields,
-        "transparent_proxy",
+        PendingConfigField::TransparentProxy,
         &json!(current.transparent_proxy),
         &json!(candidate.transparent_proxy),
     );
     push_changed(
         &mut fields,
-        "management_api",
+        PendingConfigField::ManagementApi,
         &json!(current.management_api),
         &json!(candidate.management_api),
     );
     push_changed(
         &mut fields,
-        "advanced",
+        PendingConfigField::Advanced,
         &json!([
             current.log_level,
             current.core_overrides,
@@ -282,17 +281,21 @@ fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<String> {
     fields
 }
 
-pub(crate) fn record_pending_fields(document: &mut Document, fields: &[String], append: bool) {
+pub(crate) fn record_pending_fields(
+    document: &mut Document,
+    fields: &[PendingConfigField],
+    append: bool,
+) {
     let mut values = if append {
         document
             .pending_config_fields
             .iter()
-            .cloned()
+            .copied()
             .collect::<BTreeSet<_>>()
     } else {
         BTreeSet::new()
     };
-    values.extend(fields.iter().cloned());
+    values.extend(fields.iter().copied());
     document.pending_config_fields = values.into_iter().collect();
 }
 
@@ -306,9 +309,14 @@ pub(crate) fn has_pending_profile_revision(document: &Document, profile: &Profil
         })
 }
 
-fn push_changed(fields: &mut Vec<String>, key: &str, current: &Value, candidate: &Value) {
+fn push_changed(
+    fields: &mut Vec<PendingConfigField>,
+    key: PendingConfigField,
+    current: &Value,
+    candidate: &Value,
+) {
     if current != candidate {
-        fields.push(key.into());
+        fields.push(key);
     }
 }
 

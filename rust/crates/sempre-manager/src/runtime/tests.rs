@@ -262,7 +262,14 @@ fn status_describes_directly_recorded_profile_changes_without_exposing_values() 
     };
     assert_eq!(previous_revision, &Some(profile.revision));
     assert_eq!(current_revision, &Some(profile.revision + 1));
-    assert_eq!(fields, &["dns", "management_api", "transparent_proxy"]);
+    assert_eq!(
+        fields,
+        &[
+            sempre_state::PendingConfigField::Dns,
+            sempre_state::PendingConfigField::TransparentProxy,
+            sempre_state::PendingConfigField::ManagementApi,
+        ]
+    );
     let encoded = serde_json::to_string(&status).expect("runtime status JSON");
     assert!(!encoded.contains("must-not-appear-in-runtime-status"));
 }

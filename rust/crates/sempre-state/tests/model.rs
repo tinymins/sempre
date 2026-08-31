@@ -18,6 +18,16 @@ fn default_document_is_valid() {
 }
 
 #[test]
+fn state_requires_the_current_pending_change_contract() {
+    let mut value = serde_json::to_value(Document::default()).expect("serialize state");
+    value
+        .as_object_mut()
+        .expect("state object")
+        .remove("pending_config_fields");
+    assert!(serde_json::from_value::<Document>(value).is_err());
+}
+
+#[test]
 fn selection_must_reference_an_installed_version() {
     let mut document = Document {
         selected: Some(Selection {

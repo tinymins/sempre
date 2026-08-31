@@ -62,7 +62,6 @@ pub struct RuntimeStatus {
     pub uptime_seconds: i64,
     pub restart_count: u32,
     pub pending: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_changes: Vec<RuntimePendingChange>,
     pub last_transition: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -76,7 +76,7 @@ impl<R: VersionRunner> Manager<R> {
         })?;
         if active_affected && document.selected.is_some() {
             self.store.update(|document| {
-                record_pending_fields(document, &["nodes".into()], append);
+                record_pending_fields(document, &[sempre_state::PendingConfigField::Nodes], append);
                 Ok(())
             })?;
         }

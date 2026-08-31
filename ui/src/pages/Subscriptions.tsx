@@ -21,7 +21,7 @@ type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
 type Notice = RuntimeActionNotice
 type Confirmation = 'refresh' | 'restart'
-type RuntimeStatusWithChanges = ManagedRuntimeStatus & { pending_changes?: RuntimePendingChange[] }
+type RuntimeStatusWithChanges = ManagedRuntimeStatus & { pending_changes: RuntimePendingChange[] }
 
 export function Subscriptions() {
   const { t } = useI18n()
@@ -371,7 +371,7 @@ export function Subscriptions() {
         title={t(confirmation === 'refresh' ? 'subscriptionUpdateConfirmTitle' : 'coreRestartConfirmTitle')}
         detail={confirmation === 'refresh'
           ? t(currentProfile?.mode === 'remote' ? 'remoteSubscriptionUpdateConfirmDetail' : 'subscriptionUpdateConfirmDetail').replace('{profile}', currentProfile?.name || t('defaultSubscriptionSet'))
-          : <RestartChangeSummary detail={t('coreRestartConfirmDetail')} changes={runtimeStatus.data?.pending_changes} />}
+          : <RestartChangeSummary detail={t('coreRestartConfirmDetail')} changes={runtimeStatus.data ? runtimeStatus.data.pending_changes : []} />}
         confirmLabel={t(confirmation === 'refresh' ? 'updateNow' : 'restartNow')}
         cancelLabel={t('cancel')}
         pending={confirmation === 'refresh' ? action.isPending : restart.isPending}

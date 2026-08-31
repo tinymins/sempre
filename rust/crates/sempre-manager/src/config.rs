@@ -155,7 +155,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 let append = document.pending;
                 crate::pending_changes::record_pending_fields(
                     document,
-                    &["manual_configuration".into()],
+                    &[sempre_state::PendingConfigField::ManualConfiguration],
                     append,
                 );
             }

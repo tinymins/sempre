@@ -2,10 +2,14 @@ import { ArrowRight, Boxes, FileSliders, Layers3 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useI18n } from '../../lib/i18n'
 
+type RuntimeConfigField =
+  | 'sources' | 'subscription_content' | 'nodes' | 'groups' | 'rules' | 'rule_providers' | 'filters'
+  | 'dns' | 'private_access' | 'local_proxy' | 'transparent_proxy' | 'management_api' | 'advanced' | 'manual_configuration'
+
 export type RuntimePendingChange =
   | { type: 'core'; previous?: string; current: string }
   | { type: 'profile'; previous?: string; current: string }
-  | { type: 'configuration'; fields: string[]; previous_revision?: number; current_revision?: number }
+  | { type: 'configuration'; fields: RuntimeConfigField[]; previous_revision?: number; current_revision?: number }
 
 const fieldKeys = {
   sources: 'changeFieldSources',
@@ -24,7 +28,7 @@ const fieldKeys = {
   manual_configuration: 'changeFieldManualConfiguration',
 } as const
 
-export function RestartChangeSummary({ detail, changes = [] }: { detail: string; changes?: RuntimePendingChange[] }) {
+export function RestartChangeSummary({ detail, changes }: { detail: string; changes: RuntimePendingChange[] }) {
   const { locale, t } = useI18n()
   if (!changes.length) return <p>{detail}</p>
   const fieldList = new Intl.ListFormat(locale === 'zh-CN' ? 'zh-CN' : 'en', { style: 'long', type: 'conjunction' })
@@ -41,9 +45,7 @@ export function RestartChangeSummary({ detail, changes = [] }: { detail: string;
               label={t(change.type === 'core' ? 'changeCore' : change.type === 'profile' ? 'changeProfile' : 'changeConfiguration')}
             >
               {change.type === 'configuration'
-                ? change.fields.length
-                  ? fieldList.format(change.fields.map((field) => t(fieldKeys[field as keyof typeof fieldKeys] ?? 'changeFieldUnknown')))
-                  : t('changeFieldUnknown')
+                ? fieldList.format(change.fields.map((field) => t(fieldKeys[field])))
                 : <Transition previous={change.previous} current={change.current} fallback={t('changeNone')} />}
             </ChangeRow>
           ))}

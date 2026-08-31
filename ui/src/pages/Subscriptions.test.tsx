@@ -99,7 +99,7 @@ describe('Subscriptions subscription sets', () => {
 	catalogRefreshResponse = undefined
 	catalogReads = 0
     runtimePending = false
-    runtimeStatusResponse = {}
+    runtimeStatusResponse = { pending_changes: [] }
     restartFinalStatus = undefined
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
@@ -393,10 +393,11 @@ describe('Subscriptions subscription sets', () => {
   it('replaces the accepted restart notice with the asynchronous rollback result', async () => {
     const restored = { core: 'sing-box', ref: 'stable', version: '1.13.18', exact_reference: 'sing-box@1.13.18', config_hash: 'a'.repeat(64) }
     const failed = { ...restored, config_hash: 'b'.repeat(64) }
-    runtimeStatusResponse = { runtime_state: 'running', active: restored }
-    restartResponse = Promise.resolve(jsonResponse({ action: 'restart', status: { runtime_state: 'stopping', active: failed, pending: true } }, 202))
+    runtimeStatusResponse = { runtime_state: 'running', active: restored, pending_changes: [] }
+    restartResponse = Promise.resolve(jsonResponse({ action: 'restart', status: { runtime_state: 'stopping', active: failed, pending: true, pending_changes: [] } }, 202))
     restartFinalStatus = {
       runtime_state: 'running', active: restored, last_exit: 'exit status 1',
+      pending_changes: [],
       last_failure: { stage: 'startup failed for sing-box@1.13.18', error: 'exit status 1', occurred_at: '2026-08-24T03:10:56Z', failed, rolled_back_to: restored },
     }
     renderPage()

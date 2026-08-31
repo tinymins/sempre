@@ -9,7 +9,8 @@ pub use layout::{
     set_portable_marker,
 };
 pub use model::{
-    ConfigBuild, CoreState, Deployment, DesiredState, Document, Installation, Runtime,
-    RuntimeFailure, RuntimeState, Selection, SourceState, StateValidationError, Subscription,
+    ConfigBuild, CoreState, Deployment, DesiredState, Document, Installation, PendingConfigField,
+    Runtime, RuntimeFailure, RuntimeState, Selection, SourceState, StateValidationError,
+    Subscription,
 };
 pub use store::{Lease, StateError, Store};
