@@ -6,6 +6,7 @@ mod config;
 mod context;
 mod custom_node;
 mod direct;
+mod dns_frontend;
 mod error;
 mod gateway;
 mod install;

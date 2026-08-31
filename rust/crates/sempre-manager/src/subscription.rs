@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use sempre_converter::{
     CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, SourceSnapshot, Target, compile,
-    parse_subscription,
+    dns_frontend_policy, parse_subscription,
 };
 use sempre_state::{ConfigBuild, Document, PendingConfigField};
 use sempre_subscription::{Catalog, SubscriptionError};
@@ -34,13 +34,12 @@ pub struct SubscriptionRender {
     pub warnings: Vec<String>,
     pub runtime_validated: bool,
 }
-
 pub(crate) struct RenderedProfile {
     pub(crate) render: SubscriptionRender,
     pub(crate) updated: Profile,
     pub(crate) target: Target,
+    pub(crate) dns_frontend_policy: Option<sempre_converter::DnsFrontendPolicy>,
 }
-
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub async fn import_subscription_source(
         &self,
@@ -92,7 +91,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let (change, _) = self.activate_subscription_profile(&profile_id).await?;
         Ok(change)
     }
-
     pub(crate) async fn recompile_subscription_profile(
         &self,
         id: &str,
@@ -100,7 +98,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let _operation = self.store.acquire_operation()?;
         self.prepare_subscription_locked(id, false, false).await
     }
-
     pub fn clear_subscription_cache(&self) -> Result<CoreChange, ManagerError> {
         let _operation = self.store.acquire_operation()?;
         self.subscriptions.clear_cache()?;
@@ -110,7 +107,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             ..CoreChange::default()
         })
     }
-
     pub async fn refresh_subscription_profile(
         &self,
         id: &str,
@@ -118,7 +114,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let _operation = self.store.acquire_operation()?;
         self.prepare_subscription_locked(id, false, true).await
     }
-
     pub async fn activate_subscription_profile(
         &self,
         id: &str,
@@ -126,7 +121,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let _operation = self.store.acquire_operation()?;
         self.prepare_subscription_locked(id, true, true).await
     }
-
     async fn prepare_subscription_locked(
         &self,
         id: &str,
@@ -145,6 +139,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let active = activate || document.active_profile_id.as_deref() == Some(id);
         let profile_changed = activate && document.active_profile_id.as_deref() != Some(id);
         let build = config_build(&rendered.updated, &rendered.target)?;
+        self.save_optional_dns_frontend_policy(
+            &rendered.render.artifact_hash,
+            rendered.dns_frontend_policy.as_ref(),
+        )?;
         let mut change = if active {
             let profile_id = id.to_owned();
             self.activate_config_content_updating(
@@ -190,7 +188,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
         Ok((change, rendered.render))
     }
-
     pub(crate) async fn prepare_active_subscription_for_runtime_locked(
         &self,
     ) -> Result<(), ManagerError> {
@@ -213,7 +210,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         self.prepare_subscription_locked(id, false, false).await?;
         Ok(())
     }
-
     pub(crate) fn active_profile_config_pending(&self, document: &Document) -> bool {
         let Some(id) = document.active_profile_id.as_deref() else {
             return false;
@@ -280,6 +276,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 },
                 updated: remote.profile,
                 target,
+                dns_frontend_policy: None,
             });
         }
 
@@ -303,6 +300,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .await?;
         snapshots.extend(provider_snapshots);
         adapter_warnings.extend(provider_warnings);
+        let dns_frontend_policy = dns_frontend_policy(&updated, &target, &snapshots)?;
+        adapter_warnings.extend(dns_frontend_policy.warnings.iter().cloned());
         let compiled = compile(&CompileRequest {
             protocol: 1,
             profile: updated.clone(),
@@ -314,6 +313,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             render: local_render(compiled, std::mem::take(adapter_warnings)),
             updated,
             target,
+            dns_frontend_policy: Some(dns_frontend_policy),
         })
     }
 

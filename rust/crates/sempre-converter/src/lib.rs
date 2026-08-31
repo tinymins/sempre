@@ -1,4 +1,5 @@
 mod defaults;
+mod domain_policy;
 mod editor;
 mod icons;
 mod inspection;
@@ -12,6 +13,7 @@ pub use defaults::{
     Defaults, EditorDefaults, effective_profile, recommended_defaults, recommended_editor_defaults,
     system_defaults,
 };
+pub use domain_policy::{DnsFrontendPolicy, dns_frontend_policy};
 pub use inspection::{PreviewNode, preview_nodes, preview_proxy, trace_node_steps};
 pub use model::{
     CompileRequest, CompileResult, CustomNode, Diagnostic, EbpfConfig, EditorConfig, FieldDiff,

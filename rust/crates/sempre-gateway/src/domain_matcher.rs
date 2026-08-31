@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use regex::Regex;
+
 use crate::GatewayError;
 
 const BUNDLED_DOMAINS_MIN: &str = include_str!("../resources/domains-min.txt");
@@ -18,6 +20,7 @@ pub(crate) struct DomainMatcher {
     exact: HashSet<String>,
     suffixes: HashSet<String>,
     keywords: Vec<String>,
+    regexes: Vec<Regex>,
 }
 
 impl DomainMatcher {
@@ -31,7 +34,10 @@ impl DomainMatcher {
 
     pub(crate) fn matches(&self, name: &str) -> bool {
         let name = normalize_query(name);
-        if self.exact.contains(&name) || self.keywords.iter().any(|value| name.contains(value)) {
+        if self.exact.contains(&name)
+            || self.keywords.iter().any(|value| name.contains(value))
+            || self.regexes.iter().any(|value| value.is_match(&name))
+        {
             return true;
         }
         suffixes(&name).any(|suffix| self.suffixes.contains(suffix))
@@ -47,10 +53,17 @@ impl DomainMatcher {
             .map_or(("domain-suffix", rule), |(kind, value)| {
                 (kind.trim(), value.trim())
             });
+        let kind = kind.to_ascii_lowercase();
+        if kind == "domain-regex" {
+            if let Ok(regex) = Regex::new(&format!("(?i:{})", value.trim())) {
+                self.regexes.push(regex);
+            }
+            return;
+        }
         let Some(value) = normalize_domain(value) else {
             return;
         };
-        match kind.to_ascii_lowercase().as_str() {
+        match kind.as_str() {
             "domain" => {
                 self.exact.insert(value);
             }
@@ -153,6 +166,7 @@ mod tests {
             "domain,exact.example".into(),
             "domain-suffix,example.com".into(),
             "domain-keyword,keyword".into(),
+            "domain-regex,^regex-[0-9]+\\.test$".into(),
         ]);
         assert!(matcher.matches("exact.example."));
         assert!(matcher.matches("WWW.EXAMPLE.COM."));
@@ -161,6 +175,7 @@ mod tests {
         assert!(matcher.matches("www.example.com."));
         assert!(!matcher.matches("notexample.com."));
         assert!(matcher.matches("has-keyword.test."));
+        assert!(matcher.matches("REGEX-42.TEST."));
     }
 
     #[test]

@@ -44,6 +44,7 @@ pub struct Layout {
     pub subscription_lock: PathBuf,
     pub gateway: PathBuf,
     pub gateway_rules: PathBuf,
+    pub dns_frontend: PathBuf,
     pub tunnels: PathBuf,
     pub tunnel_runtime: PathBuf,
     pub tunnel_logs: PathBuf,
@@ -236,6 +237,10 @@ impl Layout {
         self.configs.join(core).join(format!("{hash}.json"))
     }
 
+    pub fn dns_frontend_policy(&self, hash: &str) -> PathBuf {
+        self.dns_frontend.join(format!("{hash}.json"))
+    }
+
     fn system() -> Result<Self, LayoutError> {
         #[cfg(target_os = "linux")]
         {
@@ -327,6 +332,7 @@ impl Layout {
             subscriptions,
             gateway_rules: gateway.join("rules"),
             gateway,
+            dns_frontend: home.join("dns-frontend"),
             tunnels,
             tunnel_runtime: runtime.join("tunnels"),
             tunnel_logs: logs.join("tunnels"),
@@ -339,7 +345,7 @@ impl Layout {
         }
     }
 
-    fn directories(&self) -> [&Path; 13] {
+    fn directories(&self) -> [&Path; 14] {
         [
             &self.home,
             &self.logs,
@@ -351,6 +357,7 @@ impl Layout {
             &self.subscription_cache,
             &self.gateway,
             &self.gateway_rules,
+            &self.dns_frontend,
             &self.tools,
             &self.tunnel_runtime,
             &self.tunnel_logs,
