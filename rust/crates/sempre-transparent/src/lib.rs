@@ -1,12 +1,13 @@
 mod command;
+mod desktop_plan;
 mod document;
 mod host;
 mod macos_dns;
-mod macos_plan;
 mod nft;
 mod policy;
 mod prefix;
 mod system_dns;
+mod windows_dns;
 
 use std::{fs, io, path::Path};
 

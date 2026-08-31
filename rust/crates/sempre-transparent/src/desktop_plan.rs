@@ -24,7 +24,7 @@ pub(crate) fn prepare(
     };
     system_dns.original_upstreams = original_upstreams;
     let data = fs::read(runtime_config).map_err(|source| TransparentError::Io {
-        context: "read macOS DNS frontend runtime configuration".into(),
+        context: "read desktop DNS frontend runtime configuration".into(),
         source,
     })?;
     let mut config = crate::decode(core, &data)?;
@@ -43,7 +43,7 @@ pub(crate) fn prepare(
     data.push(b'\n');
     sempre_state::write_atomic(runtime_config, &data, 0o600).map_err(|source| {
         TransparentError::Io {
-            context: "write macOS DNS frontend runtime configuration".into(),
+            context: "write desktop DNS frontend runtime configuration".into(),
             source,
         }
     })?;
@@ -54,7 +54,7 @@ fn insert_original_dns_bypass(config: &mut Value, plan: &Plan) -> Result<(), Tra
     let system_dns = plan
         .system_dns
         .as_ref()
-        .expect("macOS DNS plan has system DNS");
+        .expect("desktop DNS plan has system DNS");
     let prefixes = system_dns
         .original_upstreams
         .iter()
@@ -67,7 +67,7 @@ fn insert_original_dns_bypass(config: &mut Value, plan: &Plan) -> Result<(), Tra
                 })
                 .map_err(|_| {
                     TransparentError::Invalid(format!(
-                        "macOS original DNS upstream {value:?} is not an IP address"
+                        "desktop original DNS upstream {value:?} is not an IP address"
                     ))
                 })
         })

@@ -4,7 +4,7 @@ use tokio::{net::TcpStream, time::sleep};
 
 use crate::{
     Mode, Plan, TransparentError, command, macos_dns::SystemDns as MacSystemDns, nft, policy,
-    system_dns::SystemDns,
+    system_dns::SystemDns, windows_dns::SystemDns as WindowsSystemDns,
 };
 
 const TUN_TIMEOUT: Duration = Duration::from_secs(20);
@@ -15,6 +15,7 @@ pub struct Controller {
     runner: Arc<dyn command::Runner>,
     system_dns: SystemDns,
     macos_dns: MacSystemDns,
+    windows_dns: WindowsSystemDns,
 }
 
 impl Default for Controller {
@@ -23,6 +24,7 @@ impl Default for Controller {
             runner: Arc::new(command::SystemRunner),
             system_dns: SystemDns::disabled(),
             macos_dns: MacSystemDns::new(false, std::path::PathBuf::new()),
+            windows_dns: WindowsSystemDns::new(false, std::path::PathBuf::new()),
         }
     }
 }
@@ -39,6 +41,10 @@ impl Controller {
             macos_dns: MacSystemDns::new(
                 cfg!(target_os = "macos") && layout.mode == sempre_state::Mode::System,
                 layout.home.join("system-dns").join("macos"),
+            ),
+            windows_dns: WindowsSystemDns::new(
+                cfg!(target_os = "windows") && layout.mode == sempre_state::Mode::System,
+                layout.home.join("system-dns").join("windows"),
             ),
         }
     }
@@ -57,7 +63,17 @@ impl Controller {
                 .macos_dns
                 .discover_upstreams(self.runner.as_ref())
                 .await?;
-            return crate::macos_plan::prepare(core, profile, runtime_config, upstreams);
+            return crate::desktop_plan::prepare(core, profile, runtime_config, upstreams);
+        }
+        if cfg!(target_os = "windows") {
+            if crate::system_dns_intent(profile).is_none() {
+                return Ok(Plan::default());
+            }
+            let upstreams = self
+                .windows_dns
+                .discover_upstreams(self.runner.as_ref())
+                .await?;
+            return crate::desktop_plan::prepare(core, profile, runtime_config, upstreams);
         }
         if !cfg!(target_os = "linux") {
             return Ok(Plan::default());
@@ -75,6 +91,9 @@ impl Controller {
     pub async fn apply(&self, plan: &Plan) -> Result<(), TransparentError> {
         if cfg!(target_os = "macos") {
             return self.apply_macos(plan).await;
+        }
+        if cfg!(target_os = "windows") {
+            return self.apply_windows(plan).await;
         }
         if !cfg!(target_os = "linux") || !plan.active() {
             return Ok(());
@@ -116,6 +135,12 @@ impl Controller {
             }
             return Ok(());
         }
+        if cfg!(target_os = "windows") {
+            if plan.system_dns.is_some() {
+                self.windows_dns.verify(self.runner.as_ref()).await?;
+            }
+            return Ok(());
+        }
         if !cfg!(target_os = "linux") || !plan.active() {
             return Ok(());
         }
@@ -139,6 +164,12 @@ impl Controller {
             }
             return Ok(());
         }
+        if cfg!(target_os = "windows") {
+            if self.is_root().await? {
+                return self.windows_dns.restore(self.runner.as_ref()).await;
+            }
+            return Ok(());
+        }
         if !cfg!(target_os = "linux") || !self.is_root().await? {
             return Ok(());
         }
@@ -154,6 +185,9 @@ impl Controller {
     pub async fn recover_stale_system_dns(&self) -> Result<(), TransparentError> {
         if cfg!(target_os = "macos") && self.macos_dns.allowed() && self.is_root().await? {
             self.macos_dns.restore(self.runner.as_ref()).await?;
+        }
+        if cfg!(target_os = "windows") && self.windows_dns.allowed() && self.is_root().await? {
+            self.windows_dns.restore(self.runner.as_ref()).await?;
         }
         Ok(())
     }
@@ -180,6 +214,34 @@ impl Controller {
         }
         if let Err(error) = self.verify(plan).await {
             let _ = self.macos_dns.restore(self.runner.as_ref()).await;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn apply_windows(&self, plan: &Plan) -> Result<(), TransparentError> {
+        if !plan.active() {
+            return Ok(());
+        }
+        self.require_root().await?;
+        if plan.system_dns.is_some() && self.windows_dns.verify(self.runner.as_ref()).await.is_ok()
+        {
+            return Ok(());
+        }
+        self.windows_dns.restore(self.runner.as_ref()).await?;
+        if let Some(system_dns) = &plan.system_dns {
+            self.wait_system_dns(system_dns).await?;
+            if let Err(error) = self
+                .windows_dns
+                .apply(self.runner.as_ref(), &system_dns.original_upstreams)
+                .await
+            {
+                let _ = self.windows_dns.restore(self.runner.as_ref()).await;
+                return Err(error);
+            }
+        }
+        if let Err(error) = self.verify(plan).await {
+            let _ = self.windows_dns.restore(self.runner.as_ref()).await;
             return Err(error);
         }
         Ok(())
@@ -242,12 +304,24 @@ impl Controller {
             Ok(())
         } else {
             Err(TransparentError::Invalid(
-                "Linux transparent proxy mode requires root privileges".into(),
+                "system network integration requires administrator privileges".into(),
             ))
         }
     }
 
     async fn is_root(&self) -> Result<bool, TransparentError> {
+        if cfg!(target_os = "windows") {
+            let script = "$p=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()); if($p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){exit 0}else{exit 1}";
+            let output = self
+                .runner
+                .run(
+                    "powershell.exe",
+                    &["-NoProfile", "-NonInteractive", "-Command", script],
+                    None,
+                )
+                .await?;
+            return Ok(output.success);
+        }
         if cfg!(target_os = "macos") {
             let output = command::require_success(
                 "/usr/bin/id",

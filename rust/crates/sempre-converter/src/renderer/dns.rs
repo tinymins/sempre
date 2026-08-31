@@ -26,7 +26,7 @@ pub(super) fn sing_box_system_route_rules(profile: &Profile, target: &Target) ->
 
 pub(super) fn sing_box_fakeip_route_addresses(profile: &Profile, target: &Target) -> Vec<String> {
     let shared = SharedDns::resolve(&profile.dns);
-    if managed_macos_frontend(&shared, target) && shared.fakeip_enabled() {
+    if managed_frontend(&shared, target) && shared.fakeip_enabled() {
         vec![shared.fakeip_ipv4_range, shared.fakeip_ipv6_range]
     } else {
         Vec::new()
@@ -47,9 +47,7 @@ pub(super) fn apply_sing_box_platform_policy(
     config: &mut Value,
     warnings: &mut Vec<String>,
 ) {
-    if target.platform != "macos"
-        || managed_macos_frontend(&SharedDns::resolve(&profile.dns), target)
-    {
+    if target.platform != "macos" || managed_frontend(&SharedDns::resolve(&profile.dns), target) {
         return;
     }
     strip_fakeip(&mut config["dns"]);
@@ -63,8 +61,8 @@ pub(super) fn apply_sing_box_platform_policy(
     }
 }
 
-fn managed_macos_frontend(shared: &SharedDns, target: &Target) -> bool {
-    target.platform == "macos" && shared.system_takeover()
+fn managed_frontend(shared: &SharedDns, target: &Target) -> bool {
+    matches!(target.platform.as_str(), "macos" | "windows") && shared.system_takeover()
 }
 
 pub(super) fn clash(profile: &Profile, target: &Target, final_group: &str) -> Option<Value> {
@@ -256,15 +254,15 @@ impl SharedDns {
             }
         }
         if self.system_takeover() {
-            let macos_frontend = target.platform == "macos";
-            if target.platform != "default" && !macos_frontend {
+            let frontend = matches!(target.platform.as_str(), "macos" | "windows");
+            if target.platform != "default" && !frontend {
                 return Err(CompileError::Render(
-                    "system DNS takeover is only available for Linux system or managed macOS sing-box runtime".into(),
+                    "system DNS takeover is only available for Linux system or managed desktop sing-box runtime".into(),
                 ));
             }
-            if macos_frontend && target.version == "11" {
+            if frontend && target.version == "11" {
                 return Err(CompileError::Render(
-                    "managed macOS DNS frontend requires sing-box 1.12 or newer".into(),
+                    "managed desktop DNS frontend requires sing-box 1.12 or newer".into(),
                 ));
             }
             if self.system_dns_listen_port != 53 {

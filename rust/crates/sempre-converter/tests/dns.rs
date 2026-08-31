@@ -152,11 +152,16 @@ fn v2ray_family_compiles_split_dns_and_native_override() {
     assert_eq!(native["dns"]["servers"], json!(["1.1.1.1"]));
 }
 
-#[test]
-fn sing_box_system_dns_takeover_supports_linux_and_managed_macos_frontend() {
-    let mut input = request("sing-box-v13");
+fn takeover_request(format: &str) -> CompileRequest {
+    let mut input = request(format);
     input.profile.dns["shared"]["systemDnsTakeoverEnabled"] = json!(true);
     input.profile.dns["shared"]["systemDnsListenHosts"] = json!(["127.0.0.1"]);
+    input
+}
+
+#[test]
+fn sing_box_system_dns_takeover_supports_linux() {
+    let mut input = takeover_request("sing-box-v13");
     let output = compile(&input).expect("Linux system DNS");
     let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
     assert!(output["inbounds"].as_array().is_some_and(|values| {
@@ -176,8 +181,19 @@ fn sing_box_system_dns_takeover_supports_linux_and_managed_macos_frontend() {
         })
     }));
 
-    input.target.format = "sing-box-v13-macos".into();
-    let output = compile(&input).expect("managed macOS frontend");
+    input.profile.dns["shared"]["localDns"] = json!("local");
+    input.profile.dns["shared"]["localDnsTransport"] = json!("system");
+    assert!(
+        compile(&input)
+            .expect_err("recursive local resolver must fail")
+            .to_string()
+            .contains("explicit local DNS")
+    );
+}
+
+fn assert_managed_desktop_frontend(format: &str) {
+    let mut input = takeover_request(format);
+    let output = compile(&input).expect("managed desktop frontend");
     let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
     let inbounds = output["inbounds"].as_array().expect("inbounds");
     assert!(inbounds.iter().any(|inbound| {
@@ -190,11 +206,6 @@ fn sing_box_system_dns_takeover_supports_linux_and_managed_macos_frontend() {
         .find(|inbound| inbound["tag"] == "tun-in")
         .expect("TUN inbound");
     assert_eq!(tun["route_address"], json!(["198.18.0.0/15", "fc00::/18"]));
-    assert!(
-        output["dns"]["servers"]
-            .as_array()
-            .is_some_and(|servers| { servers.iter().any(|server| server["type"] == "fakeip") })
-    );
     assert!(output["dns"]["rules"].as_array().is_some_and(|rules| {
         rules.iter().any(|rule| {
             rule["inbound"] == json!(["sempre-dns-core-in"]) && rule["server"] == "fakeip"
@@ -202,7 +213,7 @@ fn sing_box_system_dns_takeover_supports_linux_and_managed_macos_frontend() {
     }));
 
     input.profile.dns["shared"]["fakeipEnabled"] = json!(false);
-    let output = compile(&input).expect("managed macOS real-IP frontend");
+    let output = compile(&input).expect("managed desktop real-IP frontend");
     let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
     let tun = output["inbounds"]
         .as_array()
@@ -216,23 +227,22 @@ fn sing_box_system_dns_takeover_supports_linux_and_managed_macos_frontend() {
             .as_array()
             .is_some_and(|servers| { servers.iter().all(|server| server["type"] != "fakeip") })
     );
+}
 
-    input.target.format = "sing-box-macos".into();
-    assert!(
-        compile(&input)
-            .expect_err("legacy macOS frontend must fail")
-            .to_string()
-            .contains("1.12 or newer")
-    );
+#[test]
+fn managed_desktop_frontend_supports_windows_and_macos_modes() {
+    assert_managed_desktop_frontend("sing-box-v13-windows");
+    assert_managed_desktop_frontend("sing-box-v13-macos");
+}
 
-    input.target.format = "sing-box-v13".into();
-    input.profile.dns["shared"]["fakeipEnabled"] = json!(true);
-    input.profile.dns["shared"]["localDns"] = json!("local");
-    input.profile.dns["shared"]["localDnsTransport"] = json!("system");
-    assert!(
-        compile(&input)
-            .expect_err("recursive local resolver must fail")
-            .to_string()
-            .contains("explicit local DNS")
-    );
+#[test]
+fn managed_desktop_frontend_rejects_legacy_sing_box() {
+    for format in ["sing-box-windows", "sing-box-macos"] {
+        assert!(
+            compile(&takeover_request(format))
+                .expect_err("legacy desktop frontend must fail")
+                .to_string()
+                .contains("1.12 or newer")
+        );
+    }
 }
