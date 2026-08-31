@@ -312,6 +312,7 @@ mod tests {
             uptime_seconds: 1,
             restart_count: 0,
             pending: false,
+            pending_changes: Vec::new(),
             last_transition: None,
             last_exit: None,
             last_error: None,

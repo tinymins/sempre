@@ -3,7 +3,10 @@ use sempre_converter::{CustomNode, Proxy};
 use sempre_subscription::SubscriptionError;
 use uuid::Uuid;
 
-use crate::{CoreChange, Manager, ManagerError, VersionRunner};
+use crate::{
+    CoreChange, Manager, ManagerError, VersionRunner,
+    pending_changes::{has_pending_profile_revision, record_pending_fields},
+};
 
 impl<R: VersionRunner> Manager<R> {
     pub fn custom_nodes(&self) -> Result<Vec<CustomNode>, ManagerError> {
@@ -34,7 +37,10 @@ impl<R: VersionRunner> Manager<R> {
         candidate.proxy = proxy.as_value();
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         candidate.updated_at = Some(now.clone());
+        let document = self.store.read()?;
         let mut saved = None;
+        let mut active_affected = false;
+        let mut append = false;
         self.subscriptions.update(|catalog| {
             if let Some(index) = catalog
                 .custom_nodes
@@ -47,6 +53,10 @@ impl<R: VersionRunner> Manager<R> {
                 catalog.custom_nodes[index] = candidate.clone();
                 for profile in &mut catalog.profiles {
                     if profile.custom_node_ids.contains(&candidate.id) {
+                        if document.active_profile_id.as_deref() == Some(&profile.id) {
+                            active_affected = true;
+                            append = has_pending_profile_revision(&document, profile);
+                        }
                         profile.revision += 1;
                     }
                 }
@@ -64,6 +74,12 @@ impl<R: VersionRunner> Manager<R> {
             saved = Some(candidate.clone());
             Ok(())
         })?;
+        if active_affected && document.selected.is_some() {
+            self.store.update(|document| {
+                record_pending_fields(document, &["nodes".into()], append);
+                Ok(())
+            })?;
+        }
         Ok(saved.expect("custom node mutation stores its result"))
     }
 

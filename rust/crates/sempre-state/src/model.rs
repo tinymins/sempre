@@ -19,6 +19,8 @@ pub struct Document {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_profile_id: Option<String>,
     pub pending: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_config_fields: Vec<String>,
     pub last_error: Option<String>,
     pub cores: BTreeMap<String, CoreState>,
     pub configs: BTreeMap<String, String>,
@@ -171,6 +173,7 @@ impl Default for Document {
             previous_config_build: None,
             previous_profile_id: None,
             pending: false,
+            pending_config_fields: Vec::new(),
             last_error: None,
             cores: BTreeMap::new(),
             configs: BTreeMap::new(),

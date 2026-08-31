@@ -150,8 +150,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         content: &[u8],
         build: ConfigBuild,
     ) -> Result<CoreChange, ManagerError> {
-        self.activate_config_content_updating(content, build, |_, _| {})
-            .await
+        self.activate_config_content_updating(content, build, |document, changed| {
+            if changed {
+                let append = document.pending;
+                crate::pending_changes::record_pending_fields(
+                    document,
+                    &["manual_configuration".into()],
+                    append,
+                );
+            }
+        })
+        .await
     }
 
     pub(crate) async fn activate_config_content_updating(

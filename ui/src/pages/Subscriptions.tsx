@@ -14,12 +14,14 @@ import ProxyDebugModal, { type ProxyDebugModalRef } from '../features/subscripti
 import ProxyPreviewModal, { type ProxyPreviewModalRef } from '../features/subscriptions/toolbox/ProxyPreviewModal'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../features/subscriptions/toolbox/ProxySubscribeEditor'
 import { RemoteSubscriptionPanel } from '../features/subscriptions/RemoteSubscriptionPanel'
+import { RestartChangeSummary, type RuntimePendingChange } from '../features/subscriptions/RestartChangeSummary'
 import { SubscriptionProfileDialog, type SubscriptionMode } from '../features/subscriptions/SubscriptionProfileDialog'
 
 type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; profile?: SubscriptionProfile; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
 type Notice = RuntimeActionNotice
 type Confirmation = 'refresh' | 'restart'
+type RuntimeStatusWithChanges = ManagedRuntimeStatus & { pending_changes?: RuntimePendingChange[] }
 
 export function Subscriptions() {
   const { t } = useI18n()
@@ -48,7 +50,7 @@ export function Subscriptions() {
 	const networkInventory = useQuery({ queryKey: ['system', 'network'], queryFn: () => api<LinuxNetworkInventory>(session!, '/system/network') })
   const runtimeStatus = useQuery({
     queryKey: ['runtime', 'status'],
-    queryFn: () => api<ManagedRuntimeStatus>(session!, '/runtime/status'),
+    queryFn: () => api<RuntimeStatusWithChanges>(session!, '/runtime/status'),
     refetchInterval: (query) => query.state.data?.pending || ['starting', 'stopping', 'restarting'].includes(query.state.data?.runtime_state || '') ? 1000 : false,
   })
   const acceptRuntimeAction = useRuntimeActionFeedback(runtimeStatus.data, setNotice)
@@ -369,7 +371,7 @@ export function Subscriptions() {
         title={t(confirmation === 'refresh' ? 'subscriptionUpdateConfirmTitle' : 'coreRestartConfirmTitle')}
         detail={confirmation === 'refresh'
           ? t(currentProfile?.mode === 'remote' ? 'remoteSubscriptionUpdateConfirmDetail' : 'subscriptionUpdateConfirmDetail').replace('{profile}', currentProfile?.name || t('defaultSubscriptionSet'))
-          : t('coreRestartConfirmDetail')}
+          : <RestartChangeSummary detail={t('coreRestartConfirmDetail')} changes={runtimeStatus.data?.pending_changes} />}
         confirmLabel={t(confirmation === 'refresh' ? 'updateNow' : 'restartNow')}
         cancelLabel={t('cancel')}
         pending={confirmation === 'refresh' ? action.isPending : restart.isPending}

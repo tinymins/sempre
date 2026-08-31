@@ -4,7 +4,13 @@ use serde_json::{Map, json};
 use url::Url;
 use uuid::Uuid;
 
-use crate::{CoreChange, Manager, ManagerError, VersionRunner, subscription::profile_mode};
+use crate::{
+    CoreChange, Manager, ManagerError, VersionRunner,
+    pending_changes::{
+        has_pending_profile_revision, profile_changed_fields, record_pending_fields,
+    },
+    subscription::profile_mode,
+};
 
 impl<R: VersionRunner> Manager<R> {
     pub fn save_subscription_profile(
@@ -21,6 +27,8 @@ impl<R: VersionRunner> Manager<R> {
         }
         let document = self.store.read()?;
         let mut saved = None;
+        let mut fields = Vec::new();
+        let mut append = false;
         self.subscriptions.update(|catalog| {
             let current = catalog
                 .profiles
@@ -42,6 +50,8 @@ impl<R: VersionRunner> Manager<R> {
             }
             preserve_source_metadata(&current.sources, &mut candidate.sources);
             preserve_compilation_metadata(current, &mut candidate);
+            fields = profile_changed_fields(current, &candidate);
+            append = has_pending_profile_revision(&document, current);
             candidate.id.clone_from(&current.id);
             candidate.name.clone_from(&current.name);
             candidate.revision = current.revision + 1;
@@ -58,6 +68,12 @@ impl<R: VersionRunner> Manager<R> {
         })?;
         let needs_restart =
             document.selected.is_some() && document.active_profile_id.as_deref() == Some(id);
+        if needs_restart {
+            self.store.update(|document| {
+                record_pending_fields(document, &fields, append);
+                Ok(())
+            })?;
+        }
         Ok((
             CoreChange {
                 changed: true,
@@ -89,6 +105,7 @@ impl<R: VersionRunner> Manager<R> {
             .into());
         }
         let profile_id = profile.id.clone();
+        let append = has_pending_profile_revision(&document, profile);
         let sources = if value.is_empty() {
             Vec::new()
         } else {
@@ -138,6 +155,7 @@ impl<R: VersionRunner> Manager<R> {
                 document.subscription.last_result = None;
             } else {
                 document.subscription.url = Some(value.into());
+                record_pending_fields(document, &["sources".into()], append);
             }
             Ok(())
         })?;

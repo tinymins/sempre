@@ -9,7 +9,7 @@ use std::{
 use chrono::Utc;
 use sempre_converter::Source;
 use sempre_core::Adapter;
-use sempre_state::{Installation, Layout, Selection, Store};
+use sempre_state::{ConfigBuild, Deployment, Installation, Layout, Selection, Store};
 use serde_json::Map;
 
 use super::*;
@@ -210,4 +210,100 @@ async fn invalid_action_has_a_stable_error_code() {
         .await
         .expect_err("invalid");
     assert_eq!(error.runtime_action_code(), Some("INVALID_RUNTIME_ACTION"));
+}
+
+#[test]
+fn status_describes_directly_recorded_profile_changes_without_exposing_values() {
+    let (_root, manager) = fixture();
+    let catalog = manager.subscriptions.read().expect("catalog");
+    let mut profile = catalog.profiles[0].clone();
+    let profile_id = profile.id.clone();
+    drop(catalog);
+    manager
+        .store
+        .update(|document| {
+            document.active_profile_id = Some(profile_id.clone());
+            document.active = Some(Deployment {
+                core: "sing-box".into(),
+                repository: None,
+                reference: "stable".into(),
+                version: "1.13.2".into(),
+                config_hash: "a".repeat(64),
+            });
+            document.config_builds.insert(
+                "sing-box".into(),
+                ConfigBuild {
+                    profile_id: profile_id.clone(),
+                    profile_revision: profile.revision,
+                    target_key: "baseline".into(),
+                    runtime_key: None,
+                },
+            );
+            Ok(())
+        })
+        .expect("baseline deployment");
+    profile.editor.dns_config = r#"{"final":"local"}"#.into();
+    profile.transparent_proxy.capture_host = !profile.transparent_proxy.capture_host;
+    profile.management_api.secret = "must-not-appear-in-runtime-status".into();
+    manager
+        .save_subscription_profile(&profile_id, profile.clone(), None)
+        .expect("save pending profile");
+
+    let status = manager.runtime_status().expect("status");
+    assert!(status.pending);
+    assert_eq!(status.pending_changes.len(), 1);
+    let RuntimePendingChange::Configuration {
+        fields,
+        previous_revision,
+        current_revision,
+    } = &status.pending_changes[0]
+    else {
+        panic!("expected configuration change");
+    };
+    assert_eq!(previous_revision, &Some(profile.revision));
+    assert_eq!(current_revision, &Some(profile.revision + 1));
+    assert_eq!(fields, &["dns", "management_api", "transparent_proxy"]);
+    let encoded = serde_json::to_string(&status).expect("runtime status JSON");
+    assert!(!encoded.contains("must-not-appear-in-runtime-status"));
+}
+
+#[test]
+fn status_describes_a_pending_core_switch_without_calling_it_a_config_edit() {
+    let (_root, manager) = fixture();
+    manager
+        .store
+        .update(|document| {
+            let installation = document.cores["sing-box"].default.installed["1.13.2"].clone();
+            document
+                .core_mut("sing-box")
+                .default
+                .installed
+                .insert("1.12.20".into(), installation);
+            let previous = Deployment {
+                core: "sing-box".into(),
+                repository: None,
+                reference: "stable".into(),
+                version: "1.12.20".into(),
+                config_hash: "a".repeat(64),
+            };
+            let current = Deployment {
+                version: "1.13.2".into(),
+                ..previous.clone()
+            };
+            document.previous = Some(previous);
+            document.active = Some(current);
+            document.active_profile_id = None;
+            document.pending = true;
+            Ok(())
+        })
+        .expect("pending core");
+
+    let status = manager.runtime_status().expect("status");
+    assert_eq!(
+        status.pending_changes,
+        vec![RuntimePendingChange::Core {
+            previous: Some("sing-box@1.12.20".into()),
+            current: "sing-box@1.13.2".into(),
+        }]
+    );
 }

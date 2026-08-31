@@ -74,6 +74,7 @@ fn fixture(script: &str) -> (tempfile::TempDir, Arc<Manager<FakeRunner>>) {
                 config_hash: hash.clone(),
             });
             document.pending = true;
+            document.pending_config_fields = vec!["dns".into()];
             Ok(())
         })
         .expect("seed state");
@@ -118,6 +119,7 @@ async fn supervisor_starts_commits_and_stops_the_real_process() {
     wait_for_state(&manager, sempre_state::RuntimeState::Running).await;
     let document = manager.state().expect("state");
     assert!(!document.pending);
+    assert!(document.pending_config_fields.is_empty());
     assert!(document.runtime.pid.is_some());
     wait_until(Duration::from_secs(2), || {
         fs::read(&manager.store.layout().core_stdout_log)
@@ -206,6 +208,7 @@ async fn early_exit_rolls_back_a_pending_deployment() {
     .await;
     let document = manager.state().expect("state");
     assert!(!document.pending && document.previous.is_none());
+    assert!(document.pending_config_fields.is_empty());
     assert!(document.previous_config_build.is_none());
     assert!(document.previous_profile_id.is_none());
     assert_eq!(

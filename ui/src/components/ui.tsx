@@ -100,7 +100,7 @@ export function ConfirmDialog({
 }: {
   open: boolean
   title: string
-  detail: string
+  detail: ReactNode
   confirmLabel: string
   cancelLabel: string
   acknowledgement?: string
@@ -126,7 +126,7 @@ function ConfirmDialogContent({
 }: {
   open: boolean
   title: string
-  detail: string
+  detail: ReactNode
   confirmLabel: string
   cancelLabel: string
   acknowledgement?: string
@@ -160,7 +160,7 @@ function ConfirmDialogContent({
       destroyOnClose
       centered
     >
-      <p className="text-sm leading-6 text-[var(--muted)]">{detail}</p>
+      <div className="text-sm leading-6 text-[var(--muted)]">{detail}</div>
       {acknowledgement ? (
         <Checkbox
           className="mt-4 w-full items-start rounded-md border border-amber-500/40 bg-amber-500/8 p-3 leading-5"

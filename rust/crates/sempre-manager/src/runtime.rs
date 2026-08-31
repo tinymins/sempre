@@ -4,7 +4,10 @@ use sempre_state::{Deployment, DesiredState, Document, RuntimeFailure, RuntimeSt
 use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
-use crate::{Manager, ManagerError, ValidationRunner, VersionRunner, config::configuration_target};
+use crate::{
+    Manager, ManagerError, RuntimePendingChange, ValidationRunner, VersionRunner,
+    config::configuration_target,
+};
 
 const START: &str = "start";
 const STOP: &str = "stop";
@@ -59,6 +62,8 @@ pub struct RuntimeStatus {
     pub uptime_seconds: i64,
     pub restart_count: u32,
     pub pending: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_changes: Vec<RuntimePendingChange>,
     pub last_transition: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_exit: Option<String>,
@@ -235,6 +240,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             uptime_seconds,
             restart_count: document.runtime.restart_count,
             pending: document.pending || configuration_pending,
+            pending_changes: self.runtime_pending_changes(document, configuration_pending),
             last_transition: document.runtime.last_transition,
             last_exit: document.runtime.last_exit.clone(),
             last_error,

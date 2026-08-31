@@ -147,6 +147,14 @@ describe('Subscriptions subscription sets', () => {
         if (method === 'PUT') {
           profiles = profiles.map((item) => item.id === id ? { ...item, ...body } : item)
           runtimePending = true
+          runtimeStatusResponse = {
+            ...runtimeStatusResponse,
+            pending_changes: [
+              { type: 'core', previous: 'sing-box@1.12.20', current: 'sing-box@1.14.0-beta.13' },
+              { type: 'profile', previous: 'Primary', current: 'Secondary' },
+              { type: 'configuration', fields: ['dns', 'management_api', 'transparent_proxy'], previous_revision: 1, current_revision: 2 },
+            ],
+          }
           return jsonResponse({ change: { Changed: true, NeedsRestart: true, Message: 'Subscription set saved.' } })
         }
         if (method === 'PATCH') {
@@ -348,6 +356,13 @@ describe('Subscriptions subscription sets', () => {
     fireEvent.click(restart)
     actionDialog = screen.getByRole('dialog', { name: 'Restart the core?' })
     expect(within(actionDialog).getByText('Stop and start the managed core, applying any staged configuration. Existing proxy connections and traffic will be interrupted briefly; Sempre Service, the Web console, and the API will remain online.')).toBeInTheDocument()
+    expect(within(actionDialog).getByText('Changes to apply')).toBeInTheDocument()
+    expect(within(actionDialog).getByText('Core switch')).toBeInTheDocument()
+    expect(within(actionDialog).getByText('sing-box@1.12.20')).toBeInTheDocument()
+    expect(within(actionDialog).getByText('sing-box@1.14.0-beta.13')).toBeInTheDocument()
+    expect(within(actionDialog).getByText('Subscription set')).toBeInTheDocument()
+    expect(within(actionDialog).getByText('Configuration changes')).toBeInTheDocument()
+    expect(within(actionDialog).getByText('DNS configuration, Management API, and Transparent proxy')).toBeInTheDocument()
     expect(requests).not.toContainEqual(expect.objectContaining({
       method: 'POST',
       url: 'http://sempre.test/api/v1/runtime/restart',

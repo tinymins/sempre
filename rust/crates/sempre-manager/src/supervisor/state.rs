@@ -77,6 +77,7 @@ pub fn mark_healthy<R: VersionRunner>(
             document.previous_config_build = None;
             document.previous_profile_id = None;
             document.pending = false;
+            document.pending_config_fields.clear();
         }
         document.last_error = None;
         document.runtime.state = RuntimeState::Running;
@@ -172,6 +173,7 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
                 document.active_profile_id = document.previous_profile_id.take();
             }
             document.pending = false;
+            document.pending_config_fields.clear();
         }
         document.runtime.state = if document.desired_state == DesiredState::Stopped {
             RuntimeState::Stopped

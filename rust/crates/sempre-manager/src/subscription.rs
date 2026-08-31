@@ -53,8 +53,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             .into());
         }
-        let document = self.store.read()?;
-        let catalog = self.subscriptions.read()?;
+        let (document, catalog) = (self.store.read()?, self.subscriptions.read()?);
         let profile = document
             .active_profile_id
             .as_deref()
@@ -89,6 +88,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             profile.revision += 1;
             Ok(())
         })?;
+        self.record_pending_profile_fields(&document, profile, &["sources"])?;
         let (change, _) = self.activate_subscription_profile(&profile_id).await?;
         Ok(change)
     }
@@ -139,6 +139,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let mut rendered = self
             .render_subscription(&catalog, &profile, &document, refresh)
             .await?;
+        let pending =
+            crate::pending_changes::profile_change(&document, &profile, &rendered.updated);
         let now = Utc::now();
         let active = activate || document.active_profile_id.as_deref() == Some(id);
         let profile_changed = activate && document.active_profile_id.as_deref() != Some(id);
@@ -149,6 +151,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 rendered.render.content.as_bytes(),
                 build,
                 move |state, changed| {
+                    pending.record(state, changed);
                     if activate {
                         state.active_profile_id = Some(profile_id);
                     }
