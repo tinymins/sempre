@@ -35,7 +35,7 @@ pub fn dns_frontend_policy(
         .collect::<HashMap<_, _>>();
     let shared = profile.dns.get("shared").unwrap_or(&profile.dns);
     let enabled = target.core == "sing-box"
-        && target.platform == "macos"
+        && matches!(target.platform.as_str(), "macos" | "windows")
         && shared
             .get("systemDnsTakeoverEnabled")
             .and_then(Value::as_bool)
@@ -241,6 +241,21 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn managed_frontend_policy_is_enabled_on_windows_and_macos() {
+        let profile: Profile = serde_json::from_value(json!({
+            "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
+        }))
+        .expect("profile");
+        for target in ["sing-box-v13-windows", "sing-box-v13-macos"] {
+            let policy =
+                dns_frontend_policy(&profile, &Target::parse(target).expect("target"), &[])
+                    .expect("DNS frontend policy");
+            assert!(policy.enabled, "{target}");
+            assert!(policy.complete, "{target}");
+        }
+    }
 
     #[test]
     fn extracts_safe_precedence_and_requires_every_provider_snapshot() {
