@@ -151,6 +151,13 @@ impl Controller {
         dns_result.and(network_result)
     }
 
+    pub async fn recover_stale_system_dns(&self) -> Result<(), TransparentError> {
+        if cfg!(target_os = "macos") && self.macos_dns.allowed() && self.is_root().await? {
+            self.macos_dns.restore(self.runner.as_ref()).await?;
+        }
+        Ok(())
+    }
+
     async fn apply_macos(&self, plan: &Plan) -> Result<(), TransparentError> {
         if !plan.active() {
             return Ok(());

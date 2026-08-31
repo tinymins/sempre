@@ -49,6 +49,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         mut shutdown: watch::Receiver<bool>,
         startup_grace: Duration,
     ) -> Result<(), ManagerError> {
+        self.transparent.recover_stale_system_dns().await?;
         let mut backoff = Duration::from_secs(1);
         loop {
             let document = self.store.read()?;

@@ -31,6 +31,10 @@ impl SystemDns {
         Self { allowed, state_dir }
     }
 
+    pub(crate) const fn allowed(&self) -> bool {
+        self.allowed
+    }
+
     pub(crate) async fn discover_upstreams(
         &self,
         runner: &dyn command::Runner,
@@ -95,6 +99,9 @@ impl SystemDns {
         &self,
         runner: &dyn command::Runner,
     ) -> Result<(), TransparentError> {
+        if !self.allowed {
+            return Ok(());
+        }
         let Some(state) = self.read_state()? else {
             return Ok(());
         };
@@ -259,7 +266,40 @@ fn parse_services(data: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::{future::Future, pin::Pin, sync::Mutex};
+
     use super::*;
+
+    #[derive(Default)]
+    struct FakeRunner {
+        calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl command::Runner for FakeRunner {
+        fn run<'a>(
+            &'a self,
+            _program: &'a str,
+            arguments: &'a [&'a str],
+            _input: Option<&'a [u8]>,
+        ) -> Pin<Box<dyn Future<Output = Result<command::Output, TransparentError>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                self.calls
+                    .lock()
+                    .expect("calls")
+                    .push(arguments.iter().map(|value| (*value).into()).collect());
+                Ok(command::Output {
+                    success: true,
+                    stdout: if arguments.first() == Some(&"-getdnsservers") {
+                        "127.0.0.1\n".into()
+                    } else {
+                        String::new()
+                    },
+                    stderr: String::new(),
+                })
+            })
+        }
+    }
 
     #[test]
     fn parses_primary_resolver_without_scoped_or_loopback_servers() {
@@ -275,5 +315,50 @@ mod tests {
             ),
             ["Wi-Fi", "USB LAN"]
         );
+    }
+
+    #[tokio::test]
+    async fn stale_ownership_restores_static_and_dhcp_services() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let dns = SystemDns::new(true, root.path().into());
+        fs::create_dir_all(root.path()).expect("state directory");
+        dns.write_state(&State {
+            original_upstreams: vec!["223.6.6.6".into()],
+            services: vec![
+                ServiceState {
+                    name: "Wi-Fi".into(),
+                    original: Vec::new(),
+                },
+                ServiceState {
+                    name: "USB LAN".into(),
+                    original: vec!["223.6.6.6".into()],
+                },
+            ],
+        })
+        .expect("ownership state");
+        let runner = FakeRunner::default();
+        dns.restore(&runner).await.expect("restore stale ownership");
+        let calls = runner.calls.lock().expect("calls");
+        assert!(calls.contains(&vec![
+            "-setdnsservers".into(),
+            "Wi-Fi".into(),
+            "Empty".into()
+        ]));
+        assert!(calls.contains(&vec![
+            "-setdnsservers".into(),
+            "USB LAN".into(),
+            "223.6.6.6".into()
+        ]));
+        assert!(!dns.state_path().exists());
+    }
+
+    #[tokio::test]
+    async fn disabled_controller_never_consumes_relative_ownership_state() {
+        let runner = FakeRunner::default();
+        SystemDns::new(false, PathBuf::new())
+            .restore(&runner)
+            .await
+            .expect("disabled restore");
+        assert!(runner.calls.lock().expect("calls").is_empty());
     }
 }
