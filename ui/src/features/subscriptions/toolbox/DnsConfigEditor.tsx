@@ -201,6 +201,7 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
       {supported.has("dns.system_takeover") ? (
         <>
           <SectionTitle title={t("proxy.form.dnsSystemSection")} />
+          <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t("proxy.form.dnsSystemDetail")}</p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <FieldRow label={t("proxy.form.dnsSystemTakeover")}><Switch size="small" checked={merged.systemDnsTakeoverEnabled} disabled={disabled} onChange={(next) => onFieldChange("systemDnsTakeoverEnabled", next)} /></FieldRow>
             <FieldRow label={t("proxy.form.dnsSystemListenPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.systemDnsListenPort} disabled={disabled || !merged.systemDnsTakeoverEnabled} onChange={(next) => onFieldChange("systemDnsListenPort", next)} /></FieldRow>

@@ -27,8 +27,8 @@ describe('DnsConfigEditor', () => {
       </I18nProvider>,
     )
 
-    expect(screen.getByText('System DNS')).toBeInTheDocument()
-    expect(screen.getByText('Take over system DNS')).toBeInTheDocument()
+    expect(screen.getByText('Sempre DNS frontend / system takeover')).toBeInTheDocument()
+    expect(screen.getByText('Enable DNS frontend')).toBeInTheDocument()
     expect(screen.getByText('Listen addresses')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('switch'))
