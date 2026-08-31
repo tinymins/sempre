@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::{net::TcpStream, time::sleep};
 
-use crate::{Mode, Plan, TransparentError, command, nft, policy, system_dns::SystemDns};
+use crate::{
+    Mode, Plan, TransparentError, command, macos_dns::SystemDns as MacSystemDns, nft, policy,
+    system_dns::SystemDns,
+};
 
 const TUN_TIMEOUT: Duration = Duration::from_secs(20);
 const LISTENER_TIMEOUT: Duration = Duration::from_secs(8);
@@ -11,6 +14,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 pub struct Controller {
     runner: Arc<dyn command::Runner>,
     system_dns: SystemDns,
+    macos_dns: MacSystemDns,
 }
 
 impl Default for Controller {
@@ -18,6 +22,7 @@ impl Default for Controller {
         Self {
             runner: Arc::new(command::SystemRunner),
             system_dns: SystemDns::disabled(),
+            macos_dns: MacSystemDns::new(false, std::path::PathBuf::new()),
         }
     }
 }
@@ -31,15 +36,29 @@ impl Controller {
                 layout.home.join("system-dns"),
                 "/etc/resolv.conf".into(),
             ),
+            macos_dns: MacSystemDns::new(
+                cfg!(target_os = "macos") && layout.mode == sempre_state::Mode::System,
+                layout.home.join("system-dns").join("macos"),
+            ),
         }
     }
 
-    pub fn prepare(
+    pub async fn prepare(
         &self,
         core: &str,
         profile: &sempre_converter::Profile,
         runtime_config: &std::path::Path,
     ) -> Result<Plan, TransparentError> {
+        if cfg!(target_os = "macos") {
+            if crate::system_dns_intent(profile).is_none() {
+                return Ok(Plan::default());
+            }
+            let upstreams = self
+                .macos_dns
+                .discover_upstreams(self.runner.as_ref())
+                .await?;
+            return crate::macos_plan::prepare(core, profile, runtime_config, upstreams);
+        }
         if !cfg!(target_os = "linux") {
             return Ok(Plan::default());
         }
@@ -54,6 +73,9 @@ impl Controller {
     }
 
     pub async fn apply(&self, plan: &Plan) -> Result<(), TransparentError> {
+        if cfg!(target_os = "macos") {
+            return self.apply_macos(plan).await;
+        }
         if !cfg!(target_os = "linux") || !plan.active() {
             return Ok(());
         }
@@ -88,6 +110,12 @@ impl Controller {
     }
 
     pub async fn verify(&self, plan: &Plan) -> Result<(), TransparentError> {
+        if cfg!(target_os = "macos") {
+            if plan.system_dns.is_some() {
+                self.macos_dns.verify(self.runner.as_ref()).await?;
+            }
+            return Ok(());
+        }
         if !cfg!(target_os = "linux") || !plan.active() {
             return Ok(());
         }
@@ -105,6 +133,12 @@ impl Controller {
     }
 
     pub async fn cleanup(&self) -> Result<(), TransparentError> {
+        if cfg!(target_os = "macos") {
+            if self.is_root().await? {
+                return self.macos_dns.restore(self.runner.as_ref()).await;
+            }
+            return Ok(());
+        }
         if !cfg!(target_os = "linux") || !self.is_root().await? {
             return Ok(());
         }
@@ -115,6 +149,26 @@ impl Controller {
         let dns_result = self.system_dns.restore();
         let network_result = self.cleanup_network().await;
         dns_result.and(network_result)
+    }
+
+    async fn apply_macos(&self, plan: &Plan) -> Result<(), TransparentError> {
+        if !plan.active() {
+            return Ok(());
+        }
+        self.require_root().await?;
+        self.macos_dns.restore(self.runner.as_ref()).await?;
+        if let Some(system_dns) = &plan.system_dns {
+            self.wait_system_dns(system_dns).await?;
+            if let Err(error) = self.macos_dns.apply(self.runner.as_ref()).await {
+                let _ = self.macos_dns.restore(self.runner.as_ref()).await;
+                return Err(error);
+            }
+        }
+        if let Err(error) = self.verify(plan).await {
+            let _ = self.macos_dns.restore(self.runner.as_ref()).await;
+            return Err(error);
+        }
+        Ok(())
     }
 
     async fn cleanup_network(&self) -> Result<(), TransparentError> {
@@ -180,6 +234,13 @@ impl Controller {
     }
 
     async fn is_root(&self) -> Result<bool, TransparentError> {
+        if cfg!(target_os = "macos") {
+            let output = command::require_success(
+                "/usr/bin/id",
+                self.runner.run("/usr/bin/id", &["-u"], None).await?,
+            )?;
+            return Ok(output.stdout.trim() == "0");
+        }
         let status = tokio::fs::read_to_string("/proc/self/status")
             .await
             .map_err(|source| TransparentError::Io {

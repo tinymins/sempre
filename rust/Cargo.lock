@@ -2420,6 +2420,7 @@ dependencies = [
  "sempre-converter",
  "sempre-network",
  "sempre-state",
+ "serde",
  "serde_json",
  "serde_yaml",
  "socket2",

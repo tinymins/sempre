@@ -1,6 +1,8 @@
 mod command;
 mod document;
 mod host;
+mod macos_dns;
+mod macos_plan;
 mod nft;
 mod policy;
 mod prefix;
@@ -51,6 +53,9 @@ impl Plan {
 pub struct SystemDnsPlan {
     pub listen_port: u16,
     pub listen_hosts: Vec<String>,
+    pub core_listen_port: u16,
+    pub original_upstreams: Vec<String>,
+    pub managed_frontend: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -157,7 +162,7 @@ pub(crate) fn prepare_with_inventory_authorized(
     Ok(plan)
 }
 
-fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
+pub(crate) fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
     let shared = profile.dns.get("shared").unwrap_or(&profile.dns);
     if shared
         .get("systemDnsTakeoverEnabled")
@@ -185,6 +190,9 @@ fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
             return Some(SystemDnsPlan {
                 listen_port,
                 listen_hosts: vec![host],
+                core_listen_port: listen_port,
+                original_upstreams: Vec::new(),
+                managed_frontend: false,
             });
         }
         if !listen_hosts.contains(&host) {
@@ -197,10 +205,16 @@ fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
     Some(SystemDnsPlan {
         listen_port,
         listen_hosts,
+        core_listen_port: listen_port,
+        original_upstreams: Vec::new(),
+        managed_frontend: false,
     })
 }
 
-fn validate_system_dns_config(plan: &Plan, config: &Value) -> Result<(), TransparentError> {
+pub(crate) fn validate_system_dns_config(
+    plan: &Plan,
+    config: &Value,
+) -> Result<(), TransparentError> {
     let Some(system_dns) = &plan.system_dns else {
         return Ok(());
     };
@@ -216,17 +230,33 @@ fn validate_system_dns_config(plan: &Plan, config: &Value) -> Result<(), Transpa
         .ok_or_else(|| {
             TransparentError::Invalid("runtime configuration has no system DNS route rules".into())
         })?;
-    for (index, host) in system_dns.listen_hosts.iter().enumerate() {
-        let tag = match host.as_str() {
-            "127.0.0.1" => "system-dns-in".into(),
-            "0.0.0.0" => "system-dns-in-any".into(),
-            _ => format!("system-dns-in-{index}"),
-        };
+    let listeners = if system_dns.managed_frontend {
+        vec![(
+            "sempre-dns-core-in".into(),
+            "127.0.0.1".into(),
+            system_dns.core_listen_port,
+        )]
+    } else {
+        system_dns
+            .listen_hosts
+            .iter()
+            .enumerate()
+            .map(|(index, host)| {
+                let tag = match host.as_str() {
+                    "127.0.0.1" => "system-dns-in".into(),
+                    "0.0.0.0" => "system-dns-in-any".into(),
+                    _ => format!("system-dns-in-{index}"),
+                };
+                (tag, host.clone(), system_dns.listen_port)
+            })
+            .collect()
+    };
+    for (tag, host, port) in listeners {
         let valid_inbound = inbounds.iter().any(|inbound| {
             inbound["type"] == "direct"
                 && inbound["tag"] == tag
-                && inbound["listen"] == *host
-                && inbound["listen_port"] == system_dns.listen_port
+                && inbound["listen"] == host
+                && inbound["listen_port"] == port
                 && inbound["override_address"] == "1.1.1.1"
                 && inbound["override_port"] == 53
         });
@@ -240,14 +270,14 @@ fn validate_system_dns_config(plan: &Plan, config: &Value) -> Result<(), Transpa
         if !valid_inbound || !valid_rules {
             return Err(TransparentError::Invalid(format!(
                 "runtime configuration is missing managed system DNS listener {host}:{}",
-                system_dns.listen_port
+                port
             )));
         }
     }
     Ok(())
 }
 
-fn decode(core: &str, data: &[u8]) -> Result<Value, TransparentError> {
+pub(crate) fn decode(core: &str, data: &[u8]) -> Result<Value, TransparentError> {
     if matches!(core, "mihomo" | "clash-rs") {
         serde_yaml::from_slice(data).map_err(|error| TransparentError::Decode {
             core: core.into(),
@@ -423,7 +453,10 @@ mod system_plan_tests {
             plan.system_dns,
             Some(SystemDnsPlan {
                 listen_port: 53,
-                listen_hosts: vec!["127.0.0.1".into()]
+                listen_hosts: vec!["127.0.0.1".into()],
+                core_listen_port: 53,
+                original_upstreams: Vec::new(),
+                managed_frontend: false,
             })
         );
 

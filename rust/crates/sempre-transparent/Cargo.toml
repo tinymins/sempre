@@ -11,6 +11,7 @@ ipnet.workspace = true
 sempre-converter = { path = "../sempre-converter" }
 sempre-network = { path = "../sempre-network" }
 sempre-state = { path = "../sempre-state" }
+serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
