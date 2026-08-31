@@ -44,6 +44,7 @@ struct Resolver {
 
 #[derive(Clone)]
 struct ResolvedRuleSet {
+    id: String,
     upstream: String,
     matcher: DomainMatcher,
 }
@@ -51,6 +52,7 @@ struct ResolvedRuleSet {
 struct Resolved {
     packet: Vec<u8>,
     upstream: String,
+    detail: String,
 }
 
 impl DnsServer {
@@ -118,6 +120,7 @@ impl Resolver {
             .iter()
             .filter(|rule_set| rule_set.enabled)
             .map(|rule_set| ResolvedRuleSet {
+                id: rule_set.id.clone(),
                 upstream: rule_set.upstream.clone(),
                 matcher: DomainMatcher::from_rules(&rule_set.rules),
             })
@@ -142,7 +145,7 @@ impl Resolver {
             record_type,
             upstream: resolved.upstream,
             answers: format_answers(&resolved.packet)?,
-            detail: String::new(),
+            detail: resolved.detail,
         })
     }
 
@@ -152,31 +155,69 @@ impl Resolver {
             return Ok(Resolved {
                 packet: response_with_code(packet, 0)?,
                 upstream: String::new(),
+                detail: "empty-question".into(),
             });
         };
         if self.config.reject_https && question.record_type == TYPE_HTTPS {
             return Ok(Resolved {
                 packet: response_with_code(packet, 3)?,
                 upstream: "reject".into(),
+                detail: "https-rejected".into(),
             });
         }
-        if let Some(upstream) = self.match_rule_upstream(&question.name) {
-            return self.exchange(packet, &self.named_upstream(&upstream)).await;
+        if let Some(rule_set) = self.match_rule(&question.name) {
+            let mut resolved = self.exchange_named(packet, &rule_set.upstream).await?;
+            resolved.detail = format!("rule-set:{}", rule_set.id);
+            return Ok(resolved);
         }
         if self.config.strategy == "rules-first" {
-            return self.exchange(packet, &self.config.remote_upstream).await;
+            let mut resolved = self.exchange(packet, &self.config.remote_upstream).await?;
+            resolved.detail = "default-remote".into();
+            return Ok(resolved);
         }
-        let local = self.exchange(packet, self.first_local_upstream()).await;
+        let local = self.exchange_local(packet).await;
         if local
             .as_ref()
             .is_ok_and(|response| self.domestic_response(&response.packet))
         {
-            return local;
+            return local.map(|mut response| {
+                response.detail = "local-response".into();
+                response
+            });
         }
         match self.exchange(packet, &self.config.remote_upstream).await {
-            Ok(remote) => Ok(remote),
+            Ok(mut remote) => {
+                remote.detail = "remote-response".into();
+                Ok(remote)
+            }
             Err(remote_error) => local.or(Err(remote_error)),
         }
+    }
+
+    async fn exchange_named(
+        &self,
+        packet: &[u8],
+        upstream: &str,
+    ) -> Result<Resolved, GatewayError> {
+        match upstream {
+            "local" => self.exchange_local(packet).await,
+            "remote" | "" => self.exchange(packet, &self.config.remote_upstream).await,
+            upstream => self.exchange(packet, upstream).await,
+        }
+    }
+
+    async fn exchange_local(&self, packet: &[u8]) -> Result<Resolved, GatewayError> {
+        if self.config.local_upstreams.is_empty() {
+            return self.exchange(packet, &self.config.remote_upstream).await;
+        }
+        let mut last_error = None;
+        for upstream in &self.config.local_upstreams {
+            match self.exchange(packet, upstream).await {
+                Ok(response) => return Ok(response),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.expect("non-empty local upstreams"))
     }
 
     async fn exchange(&self, packet: &[u8], upstream: &str) -> Result<Resolved, GatewayError> {
@@ -212,29 +253,14 @@ impl Resolver {
         Ok(Resolved {
             packet: response,
             upstream: upstream.into(),
+            detail: String::new(),
         })
     }
 
-    fn first_local_upstream(&self) -> &str {
-        self.config
-            .local_upstreams
-            .first()
-            .map_or(&self.config.remote_upstream, String::as_str)
-    }
-
-    fn named_upstream(&self, value: &str) -> String {
-        match value {
-            "local" => self.first_local_upstream().into(),
-            "remote" | "" => self.config.remote_upstream.clone(),
-            value => value.into(),
-        }
-    }
-
-    fn match_rule_upstream(&self, name: &str) -> Option<String> {
+    fn match_rule(&self, name: &str) -> Option<&ResolvedRuleSet> {
         self.rule_sets
             .iter()
             .find(|rule_set| rule_set.matcher.matches(name))
-            .map(|rule_set| rule_set.upstream.clone())
     }
 
     fn domestic_response(&self, packet: &[u8]) -> bool {
@@ -356,6 +382,27 @@ fn in_prefix(address: Ipv4Addr, network: Ipv4Addr, prefix: u8) -> bool {
 mod tests {
     use super::*;
 
+    async fn answering_upstream(count: usize, address: [u8; 4]) -> (String, JoinHandle<()>) {
+        let upstream = UdpSocket::bind("127.0.0.1:0").await.expect("upstream");
+        let socket_address = upstream.local_addr().expect("upstream address");
+        let responder = tokio::spawn(async move {
+            for _ in 0..count {
+                let mut query = [0_u8; 512];
+                let (count, peer) = upstream.recv_from(&mut query).await.expect("query");
+                let mut response = query[..count].to_vec();
+                response[2] |= 0x80;
+                response[3] |= 0x80;
+                response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+                response.extend_from_slice(&[
+                    0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, address[0], address[1], address[2],
+                    address[3],
+                ]);
+                upstream.send_to(&response, peer).await.expect("response");
+            }
+        });
+        (socket_address.to_string(), responder)
+    }
+
     #[tokio::test]
     async fn debug_query_exchanges_with_the_selected_udp_upstream() {
         let upstream = UdpSocket::bind("127.0.0.1:0").await.expect("upstream");
@@ -381,5 +428,33 @@ mod tests {
         responder.await.expect("responder");
         assert_eq!(result.upstream, address.to_string());
         assert!(result.answers[0].ends_with("A 10.0.0.1"));
+    }
+
+    #[tokio::test]
+    async fn managed_frontend_enforces_proxy_direct_domestic_then_default_order() {
+        let (local, local_task) = answering_upstream(2, [10, 0, 0, 1]).await;
+        let (remote, remote_task) = answering_upstream(2, [198, 18, 0, 1]).await;
+        let config = DnsConfig::managed_frontend(
+            vec![local],
+            remote,
+            vec!["domain,proxy.baidu.com".into()],
+            vec!["domain,direct.example".into()],
+            false,
+        )
+        .expect("managed frontend");
+        for (name, answer, detail) in [
+            ("proxy.baidu.com", "198.18.0.1", "rule-set:explicit-proxy"),
+            ("direct.example", "10.0.0.1", "rule-set:explicit-direct"),
+            ("baidu.com", "10.0.0.1", "rule-set:domestic-domains"),
+            ("github.com", "198.18.0.1", "default-remote"),
+        ] {
+            let result = debug_query(config.clone(), name, "A")
+                .await
+                .expect("debug query");
+            assert!(result.answers[0].ends_with(&format!("A {answer}")));
+            assert_eq!(result.detail, detail);
+        }
+        local_task.await.expect("local responder");
+        remote_task.await.expect("remote responder");
     }
 }

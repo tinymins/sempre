@@ -281,7 +281,7 @@ pub fn validation_messages(config: &Config) -> Vec<String> {
     errors
 }
 
-fn validate_dns(config: &DnsConfig, errors: &mut Vec<String>) {
+pub(crate) fn validate_dns(config: &DnsConfig, errors: &mut Vec<String>) {
     if config.listen_port == 0 {
         errors.push("DNS listen port must be between 1 and 65535".into());
     }
@@ -375,11 +375,15 @@ fn valid_upstream(value: &str) -> bool {
         .strip_prefix('[')
         .and_then(|value| value.split_once("]:"))
     {
-        return !host.is_empty() && !port.is_empty();
+        return !host.is_empty() && valid_port(port);
     }
     value
         .rsplit_once(':')
-        .is_some_and(|(host, port)| !host.is_empty() && !host.contains(':') && !port.is_empty())
+        .is_some_and(|(host, port)| !host.is_empty() && !host.contains(':') && valid_port(port))
+}
+
+fn valid_port(value: &str) -> bool {
+    value.parse::<u16>().is_ok_and(|port| port != 0)
 }
 
 #[cfg(test)]

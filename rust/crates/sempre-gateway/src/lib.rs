@@ -4,6 +4,8 @@ mod dns;
 mod dns_wire;
 mod domain_matcher;
 mod error;
+mod frontend_config;
+mod frontend_service;
 mod host;
 mod model;
 mod rules;
@@ -15,6 +17,9 @@ pub use domain_matcher::{
     DOMESTIC_DOMAIN_SHA256, DOMESTIC_DOMAIN_SOURCE, bundled_domestic_domains,
 };
 pub use error::GatewayError;
+pub use frontend_service::DnsService;
 pub use host::{HostApplyRequest, HostPlan, HostPlanRequest, apply_host_plan, build_host_plan};
-pub use model::{Config, LeaseView, RuntimeStatus, Status, validation_messages};
+pub use model::{
+    Config, DnsConfig, DnsRuleSet, LeaseView, RuntimeStatus, Status, validation_messages,
+};
 pub use store::Store;
