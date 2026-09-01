@@ -8,6 +8,7 @@ mod custom_node;
 mod direct;
 mod dns_frontend;
 mod dns_runtime;
+mod dns_settings;
 mod error;
 mod gateway;
 mod install;
@@ -43,6 +44,7 @@ pub use auto_config::{
 pub use config::{CurrentConfig, MAX_CONFIG_SIZE};
 pub use context::{ConfigurationContext, ConfigurationTarget, RunningCore};
 pub use dns_runtime::DnsFrontendStatus;
+pub use dns_settings::DnsSettings;
 pub use error::ManagerError;
 pub use install::InstallResult;
 pub use inventory::{CoreInventory, InstalledCore};
@@ -74,6 +76,7 @@ pub struct Manager<R = ProcessRunner> {
     tunnels: Arc<TunnelController>,
     transparent: Arc<TransparentController>,
     dns_frontend: Arc<dns_runtime::DnsFrontendRuntime>,
+    dns_settings: Arc<dns_settings::DnsSettingsStore>,
 }
 
 impl Manager<ProcessRunner> {
@@ -98,12 +101,26 @@ impl<R: VersionRunner> Manager<R> {
                 Ok(())
             })?;
         }
+        let document = store.read()?;
+        let initial_profile = document
+            .active_profile_id
+            .as_deref()
+            .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id))
+            .unwrap_or(&catalog.profiles[0]);
+        let dns_settings = Arc::new(dns_settings::DnsSettingsStore::open(
+            store.layout().dns_settings.clone(),
+            store.layout().dns_query_history.clone(),
+            initial_profile,
+        )?);
         let fetcher = Fetcher::new(subscriptions.clone())?;
         let remote = RemoteClient::new()?;
-        let gateway = Arc::new(sempre_gateway::Controller::new(store.layout())?);
+        let gateway = Arc::new(sempre_gateway::Controller::new_with_dns_policy(
+            store.layout(),
+            dns_settings.clone(),
+        )?);
         let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
         let transparent = Arc::new(TransparentController::new(store.layout()));
-        let dns_frontend = dns_runtime::DnsFrontendRuntime::new();
+        let dns_frontend = dns_runtime::DnsFrontendRuntime::new(dns_settings.clone());
         Ok(Self {
             store,
             registry: built_in_registry(),
@@ -120,6 +137,7 @@ impl<R: VersionRunner> Manager<R> {
             tunnels,
             transparent,
             dns_frontend,
+            dns_settings,
         })
     }
 
@@ -133,6 +151,22 @@ impl<R: VersionRunner> Manager<R> {
 
     pub fn subscriptions(&self) -> &SubscriptionStore {
         &self.subscriptions
+    }
+
+    pub fn dns_settings(&self) -> DnsSettings {
+        self.dns_settings.read()
+    }
+
+    pub fn dns_frontend_status(&self) -> DnsFrontendStatus {
+        self.dns_frontend.status()
+    }
+
+    pub fn dns_queries(&self) -> Vec<sempre_gateway::DnsQueryEvent> {
+        self.dns_settings.queries()
+    }
+
+    pub fn clear_dns_queries(&self) -> Result<(), ManagerError> {
+        self.dns_settings.clear_queries()
     }
 
     pub fn request_runtime_reload(&self) {

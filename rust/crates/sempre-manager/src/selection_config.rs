@@ -60,7 +60,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 Box::pin(self.render_active_subscription_for(document, reference, version)).await?
         {
             let compilation_item = Box::new((original, rendered));
-            let build = config_build(&compilation_item.1.updated, &compilation_item.1.target)?;
+            let build = config_build(
+                &compilation_item.1.updated,
+                &compilation_item.1.target,
+                self.dns_settings.read().revision,
+            )?;
             let candidate = self
                 .prepare_config_content_for(
                     reference,
@@ -107,7 +111,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let catalog = self.subscriptions.read()?;
         let profile = find_profile(&catalog, id)?;
         let (target, _) = self.subscription_target_for(reference, version)?;
-        Ok(Some(config_build(profile, &target)?))
+        Ok(Some(config_build(
+            profile,
+            &target,
+            self.dns_settings.read().revision,
+        )?))
     }
 
     pub(crate) async fn render_active_subscription_for(

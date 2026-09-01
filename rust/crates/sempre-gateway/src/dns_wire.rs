@@ -61,6 +61,65 @@ pub(crate) fn response_with_code(packet: &[u8], code: u8) -> Result<Vec<u8>, Gat
     Ok(response)
 }
 
+pub(crate) fn response_with_answer(
+    packet: &[u8],
+    record_type: u16,
+    answer: &str,
+    ttl: u32,
+) -> Result<Vec<u8>, GatewayError> {
+    let question = parse_question(packet)?
+        .ok_or_else(|| GatewayError::invalid("DNS rewrite requires a question"))?;
+    let data = match record_type {
+        TYPE_A => answer
+            .parse::<Ipv4Addr>()
+            .map(|value| value.octets().to_vec())
+            .map_err(|_| GatewayError::invalid("DNS A rewrite answer must be an IPv4 address"))?,
+        TYPE_AAAA => answer
+            .parse::<Ipv6Addr>()
+            .map(|value| value.octets().to_vec())
+            .map_err(|_| {
+                GatewayError::invalid("DNS AAAA rewrite answer must be an IPv6 address")
+            })?,
+        TYPE_CNAME => encode_name(answer)?,
+        _ => return Err(GatewayError::invalid("DNS rewrite type is not supported")),
+    };
+    let mut response = packet[..question.end].to_vec();
+    response[2] |= 0x80;
+    response[3] = (response[3] & 0xf0) | 0x80;
+    response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+    response[8..12].fill(0);
+    response.extend_from_slice(&[0xc0, 0x0c]);
+    response.extend_from_slice(&record_type.to_be_bytes());
+    response.extend_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&ttl.to_be_bytes());
+    response.extend_from_slice(
+        &u16::try_from(data.len())
+            .map_err(|_| GatewayError::invalid("DNS rewrite answer is too long"))?
+            .to_be_bytes(),
+    );
+    response.extend_from_slice(&data);
+    Ok(response)
+}
+
+fn encode_name(value: &str) -> Result<Vec<u8>, GatewayError> {
+    let normalized = value.trim().trim_end_matches('.');
+    if normalized.is_empty() {
+        return Err(GatewayError::invalid(
+            "DNS CNAME rewrite answer is required",
+        ));
+    }
+    let mut encoded = Vec::new();
+    for label in normalized.split('.') {
+        if label.is_empty() || label.len() > 63 || !label.is_ascii() {
+            return Err(GatewayError::invalid("invalid DNS CNAME rewrite answer"));
+        }
+        encoded.push(u8::try_from(label.len()).expect("label length checked"));
+        encoded.extend_from_slice(label.as_bytes());
+    }
+    encoded.push(0);
+    Ok(encoded)
+}
+
 pub(crate) fn build_query(name: &str, record_type: u16) -> Result<Vec<u8>, GatewayError> {
     let mut packet = vec![0_u8; DNS_HEADER_SIZE];
     packet[0..2].copy_from_slice(&random_id().to_be_bytes());
@@ -276,7 +335,7 @@ pub(crate) fn record_number(value: &str) -> Result<(String, u16), GatewayError> 
     Ok((name, number))
 }
 
-fn type_name(value: u16) -> &'static str {
+pub(crate) fn type_name(value: u16) -> &'static str {
     match value {
         TYPE_A => "A",
         TYPE_AAAA => "AAAA",

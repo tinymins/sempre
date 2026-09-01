@@ -223,20 +223,6 @@ fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigFi
     let mut fields = Vec::new();
     push_changed(
         &mut fields,
-        PendingConfigField::Dns,
-        &json!([
-            current.dns,
-            current.editor.dns_config,
-            current.extra.get("use_system_dns")
-        ]),
-        &json!([
-            candidate.dns,
-            candidate.editor.dns_config,
-            candidate.extra.get("use_system_dns")
-        ]),
-    );
-    push_changed(
-        &mut fields,
         PendingConfigField::PrivateAccess,
         &json!([current.private_access, current.editor.private_access_config]),
         &json!([

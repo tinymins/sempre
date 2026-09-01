@@ -16,7 +16,7 @@ import type { CustomNode, SubscriptionSource } from "@/lib/types";
 import PrivateAccessEditor from "./PrivateAccessEditor";
 import SubscribeItemsEditor from "./SubscribeItemsEditor";
 
-import { ConfigFieldEditor, DnsConfigEditorField, JsoncEditor, NodeFilterField } from "./ProxySubscribeFields";
+import { ConfigFieldEditor, JsoncEditor, NodeFilterField } from "./ProxySubscribeFields";
 import { type Props, type SaveFeedback, recommendedEditorDefaults } from "./ProxySubscribeModel";
 import { ProxyRuntimeFields } from "./ProxyRuntimeFields";
 import { useProxySubscribeEditor } from "./useProxySubscribeEditor";
@@ -275,32 +275,6 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                 </div>
               ),
             )}
-
-            {/* DNS 配置 */}
-            <div className={visibleActiveTab === "dnsConfig" ? "" : "hidden"}>
-              <div className="flex items-center justify-between mb-2">
-                <span>{t("proxy.form.dnsConfigLabel")}</span>
-                <Form.Item
-                  name="useSystemDnsConfig"
-                  valuePropName="checked"
-                  noStyle
-                >
-                  <Checkbox>{t("proxy.form.useSystemConfig")}</Checkbox>
-                </Form.Item>
-              </div>
-              <Form.Item
-                name="dnsConfig"
-                dependencies={["useSystemDnsConfig"]}
-                noStyle
-              >
-                <DnsConfigEditorField
-                  form={form}
-                  defaultValue={recommendedDefaults.dns_config}
-								configurationContext={configurationContext}
-								networkInventory={networkInventory}
-                />
-              </Form.Item>
-            </div>
 
             {/* 内网访问配置 */}
             <div

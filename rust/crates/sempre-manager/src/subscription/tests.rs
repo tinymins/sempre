@@ -269,3 +269,49 @@ async fn runtime_validation_is_deferred_until_refresh() {
     assert!(error.to_string().contains("TUN interface name"));
     assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
 }
+
+#[tokio::test]
+async fn global_dns_survives_subscription_switches() {
+    let (_root, manager, first_id) = fixture();
+    let mut settings = manager.dns_settings();
+    settings.use_system_dns = false;
+    settings.config = r#"{"shared":{"remoteDns":"1.1.1.1"}}"#.into();
+    manager
+        .update_dns_settings(settings)
+        .await
+        .expect("update global DNS");
+
+    let second_id = sempre_subscription::new_profile("second").id;
+    manager
+        .subscriptions
+        .update(|catalog| {
+            let mut second = catalog.profiles[0].clone();
+            second.id.clone_from(&second_id);
+            second.name = "second".into();
+            second.extra.insert("use_system_dns".into(), json!(false));
+            second.editor.dns_config = r#"{"shared":{"remoteDns":"8.8.8.8"}}"#.into();
+            catalog.profiles.push(second);
+            Ok(())
+        })
+        .expect("add profile with different legacy DNS");
+
+    manager
+        .activate_subscription_profile(&first_id)
+        .await
+        .expect("activate first");
+    let (_, render) = manager
+        .activate_subscription_profile(&second_id)
+        .await
+        .expect("activate second");
+    assert!(render.content.contains("1.1.1.1"));
+    assert!(!render.content.contains("8.8.8.8"));
+    assert_eq!(
+        manager.dns_settings().config,
+        r#"{"shared":{"remoteDns":"1.1.1.1"}}"#
+    );
+    assert!(
+        manager.state().expect("state").config_builds["sing-box"]
+            .target_key
+            .contains("|dns:")
+    );
+}

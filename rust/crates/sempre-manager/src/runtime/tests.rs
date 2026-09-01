@@ -265,7 +265,6 @@ fn status_describes_directly_recorded_profile_changes_without_exposing_values() 
     assert_eq!(
         fields,
         &[
-            sempre_state::PendingConfigField::Dns,
             sempre_state::PendingConfigField::TransparentProxy,
             sempre_state::PendingConfigField::ManagementApi,
         ]

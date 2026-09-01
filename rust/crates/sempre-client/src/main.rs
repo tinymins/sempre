@@ -8,6 +8,7 @@ mod custom_node_cli;
 mod daemon;
 mod diagnostics_cli;
 mod direct_cli;
+mod dns_api;
 mod doctor_cli;
 mod elevate;
 mod gateway_api;

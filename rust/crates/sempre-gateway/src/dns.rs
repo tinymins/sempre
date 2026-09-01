@@ -1,20 +1,22 @@
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 
+use chrono::Utc;
 use serde::Serialize;
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
     net::{TcpListener, TcpStream, UdpSocket, lookup_host},
     sync::watch,
     task::{JoinHandle, JoinSet},
-    time::timeout,
+    time::{Instant, timeout},
 };
 
 use crate::model::DnsConfig;
 use crate::{
     GatewayError,
+    dns_policy::{DnsQueryEvent, DnsRuntimePolicy, NoopDnsRuntimePolicy},
     dns_wire::{
         TYPE_HTTPS, answer_ipv4_addresses, build_query, format_answers, fqdn, parse_question,
-        record_number, response_with_code,
+        record_number, response_with_answer, response_with_code, type_name,
     },
     domain_matcher::DomainMatcher,
 };
@@ -40,6 +42,7 @@ struct Resolver {
     config: DnsConfig,
     domestic_cidrs: Vec<(Ipv4Addr, u8)>,
     rule_sets: Vec<ResolvedRuleSet>,
+    policy: Arc<dyn DnsRuntimePolicy>,
 }
 
 #[derive(Clone)]
@@ -56,8 +59,11 @@ struct Resolved {
 }
 
 impl DnsServer {
-    pub(crate) async fn start(config: DnsConfig) -> Result<Self, GatewayError> {
-        let resolver = Resolver::new(config)?;
+    pub(crate) async fn start_with_policy(
+        config: DnsConfig,
+        policy: Arc<dyn DnsRuntimePolicy>,
+    ) -> Result<Self, GatewayError> {
+        let resolver = Resolver::new(config, policy)?;
         let mut udp = Vec::new();
         let mut tcp = Vec::new();
         for host in &resolver.config.listen_hosts {
@@ -105,11 +111,13 @@ pub(crate) async fn debug_query(
     name: &str,
     record_type: &str,
 ) -> Result<DnsDebugResult, GatewayError> {
-    Resolver::new(config)?.debug_query(name, record_type).await
+    Resolver::new(config, Arc::new(NoopDnsRuntimePolicy))?
+        .debug_query(name, record_type)
+        .await
 }
 
 pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), GatewayError> {
-    let resolver = Resolver::new(config.clone())?;
+    let resolver = Resolver::new(config.clone(), Arc::new(NoopDnsRuntimePolicy))?;
     let local = [
         "baidu.com",
         "qq.com",
@@ -134,7 +142,7 @@ pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), Gatew
 }
 
 impl Resolver {
-    fn new(config: DnsConfig) -> Result<Self, GatewayError> {
+    fn new(config: DnsConfig, policy: Arc<dyn DnsRuntimePolicy>) -> Result<Self, GatewayError> {
         let domestic_cidrs = config
             .domestic_cidrs
             .iter()
@@ -154,6 +162,7 @@ impl Resolver {
             config,
             domestic_cidrs,
             rule_sets,
+            policy,
         })
     }
 
@@ -183,6 +192,19 @@ impl Resolver {
                 detail: "empty-question".into(),
             });
         };
+        let record_type = type_name(question.record_type);
+        if let Some(rewrite) = self.policy.rewrite(&question.name, record_type) {
+            return Ok(Resolved {
+                packet: response_with_answer(
+                    packet,
+                    question.record_type,
+                    &rewrite.answer,
+                    rewrite.ttl,
+                )?,
+                upstream: "rewrite".into(),
+                detail: format!("rewrite:{}", rewrite.id),
+            });
+        }
         if self.config.reject_https && question.record_type == TYPE_HTTPS {
             return Ok(Resolved {
                 packet: response_with_code(packet, 3)?,
@@ -217,6 +239,49 @@ impl Resolver {
             }
             Err(remote_error) => local.or(Err(remote_error)),
         }
+    }
+
+    async fn resolve_for_client(&self, packet: &[u8], client: String) -> Vec<u8> {
+        let started = Instant::now();
+        let question = parse_question(packet).ok().flatten();
+        let result = self.resolve(packet).await;
+        let (response, upstream, detail, error) = match result {
+            Ok(value) => (value.packet, value.upstream, value.detail, String::new()),
+            Err(error) => (
+                response_with_code(packet, 2).unwrap_or_default(),
+                String::new(),
+                "error".into(),
+                error.to_string(),
+            ),
+        };
+        let decision = if detail.starts_with("rewrite:") {
+            "rewrite"
+        } else if detail == "https-rejected" {
+            "reject"
+        } else if detail.contains("local") || detail == "rule-set:explicit-direct" {
+            "local"
+        } else if detail == "error" {
+            "error"
+        } else {
+            "core"
+        };
+        self.policy.record(DnsQueryEvent {
+            time: Utc::now().timestamp_millis(),
+            client,
+            name: question
+                .as_ref()
+                .map_or_else(String::new, |value| value.name.clone()),
+            record_type: question
+                .as_ref()
+                .map_or_else(String::new, |value| type_name(value.record_type).into()),
+            decision: decision.into(),
+            answers: format_answers(&response).unwrap_or_default(),
+            upstream,
+            latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            detail,
+            error,
+        });
+        response
     }
 
     async fn exchange_named(
@@ -324,8 +389,7 @@ async fn serve_udp(socket: UdpSocket, resolver: Resolver, mut shutdown: watch::R
                 let socket = Arc::clone(&socket);
                 let resolver = resolver.clone();
                 requests.spawn(async move {
-                    let response = resolver.resolve(&request).await
-                        .map_or_else(|_| response_with_code(&request, 2).unwrap_or_default(), |value| value.packet);
+                    let response = resolver.resolve_for_client(&request, peer.ip().to_string()).await;
                     if !response.is_empty() { let _ = socket.send_to(&response, peer).await; }
                 });
             }
@@ -346,9 +410,9 @@ async fn serve_tcp(listener: TcpListener, resolver: Resolver, mut shutdown: watc
             }
             Some(_) = connections.join_next(), if !connections.is_empty() => {}
             accepted = listener.accept() => {
-                let Ok((stream, _)) = accepted else { return; };
+                let Ok((stream, peer)) = accepted else { return; };
                 let resolver = resolver.clone();
-                connections.spawn(async move { let _ = serve_tcp_connection(stream, resolver).await; });
+                connections.spawn(async move { let _ = serve_tcp_connection(stream, resolver, peer.ip().to_string()).await; });
             }
         }
     }
@@ -357,6 +421,7 @@ async fn serve_tcp(listener: TcpListener, resolver: Resolver, mut shutdown: watc
 async fn serve_tcp_connection(
     mut stream: TcpStream,
     resolver: Resolver,
+    client: String,
 ) -> Result<(), GatewayError> {
     let mut length = [0_u8; 2];
     timeout(Duration::from_secs(5), stream.read_exact(&mut length))
@@ -368,10 +433,7 @@ async fn serve_tcp_connection(
         .read_exact(&mut request)
         .await
         .map_err(|error| GatewayError::io("read DNS TCP query", error))?;
-    let response = resolver.resolve(&request).await.map_or_else(
-        |_| response_with_code(&request, 2).unwrap_or_default(),
-        |value| value.packet,
-    );
+    let response = resolver.resolve_for_client(&request, client).await;
     let length = u16::try_from(response.len())
         .map_err(|_| GatewayError::invalid("DNS TCP response exceeds 65535 bytes"))?;
     stream
@@ -409,83 +471,5 @@ fn in_prefix(address: Ipv4Addr, network: Ipv4Addr, prefix: u8) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn answering_upstream(count: usize, address: [u8; 4]) -> (String, JoinHandle<()>) {
-        let upstream = UdpSocket::bind("127.0.0.1:0").await.expect("upstream");
-        let socket_address = upstream.local_addr().expect("upstream address");
-        let responder = tokio::spawn(async move {
-            for _ in 0..count {
-                let mut query = [0_u8; 512];
-                let (count, peer) = upstream.recv_from(&mut query).await.expect("query");
-                let mut response = query[..count].to_vec();
-                response[2] |= 0x80;
-                response[3] |= 0x80;
-                response[6..8].copy_from_slice(&1_u16.to_be_bytes());
-                response.extend_from_slice(&[
-                    0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, address[0], address[1], address[2],
-                    address[3],
-                ]);
-                upstream.send_to(&response, peer).await.expect("response");
-            }
-        });
-        (socket_address.to_string(), responder)
-    }
-
-    #[tokio::test]
-    async fn debug_query_exchanges_with_the_selected_udp_upstream() {
-        let upstream = UdpSocket::bind("127.0.0.1:0").await.expect("upstream");
-        let address = upstream.local_addr().expect("upstream address");
-        let responder = tokio::spawn(async move {
-            let mut query = [0_u8; 512];
-            let (count, peer) = upstream.recv_from(&mut query).await.expect("query");
-            let mut response = query[..count].to_vec();
-            response[2] |= 0x80;
-            response[3] |= 0x80;
-            response[6..8].copy_from_slice(&1_u16.to_be_bytes());
-            response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 10, 0, 0, 1]);
-            upstream.send_to(&response, peer).await.expect("response");
-        });
-        let config = DnsConfig {
-            local_upstreams: vec![address.to_string()],
-            remote_upstream: address.to_string(),
-            ..DnsConfig::default()
-        };
-        let result = debug_query(config, "example.com", "A")
-            .await
-            .expect("debug query");
-        responder.await.expect("responder");
-        assert_eq!(result.upstream, address.to_string());
-        assert!(result.answers[0].ends_with("A 10.0.0.1"));
-    }
-
-    #[tokio::test]
-    async fn managed_frontend_enforces_proxy_direct_domestic_then_default_order() {
-        let (local, local_task) = answering_upstream(2, [10, 0, 0, 1]).await;
-        let (remote, remote_task) = answering_upstream(2, [198, 18, 0, 1]).await;
-        let config = DnsConfig::managed_frontend(
-            1054,
-            vec![local],
-            remote,
-            vec!["domain,proxy.baidu.com".into()],
-            vec!["domain,direct.example".into()],
-            false,
-        )
-        .expect("managed frontend");
-        for (name, answer, detail) in [
-            ("proxy.baidu.com", "198.18.0.1", "rule-set:explicit-proxy"),
-            ("direct.example", "10.0.0.1", "rule-set:explicit-direct"),
-            ("baidu.com", "10.0.0.1", "rule-set:domestic-domains"),
-            ("github.com", "198.18.0.1", "default-remote"),
-        ] {
-            let result = debug_query(config.clone(), name, "A")
-                .await
-                .expect("debug query");
-            assert!(result.answers[0].ends_with(&format!("A {answer}")));
-            assert_eq!(result.detail, detail);
-        }
-        local_task.await.expect("local responder");
-        remote_task.await.expect("remote responder");
-    }
-}
+#[path = "dns_tests.rs"]
+mod tests;

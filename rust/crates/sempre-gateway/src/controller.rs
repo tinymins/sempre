@@ -5,7 +5,7 @@ use sempre_state::Layout;
 use tokio::sync::Mutex;
 
 use crate::{
-    Config, DnsDebugResult, GatewayError, LeaseView, RuntimeStatus, Store,
+    Config, DnsDebugResult, DnsRuntimePolicy, GatewayError, LeaseView, RuntimeStatus, Store,
     dhcp::DhcpServer,
     dns::{DnsServer, debug_query},
     rules::resolve_rule_sets,
@@ -14,6 +14,7 @@ use crate::{
 pub struct Controller {
     store: Store,
     runtime: Arc<Mutex<Runtime>>,
+    dns_policy: Arc<dyn DnsRuntimePolicy>,
 }
 
 #[derive(Default)]
@@ -26,11 +27,19 @@ struct Runtime {
 
 impl Controller {
     pub fn new(layout: &Layout) -> Result<Self, GatewayError> {
+        Self::new_with_dns_policy(layout, Arc::new(crate::dns_policy::NoopDnsRuntimePolicy))
+    }
+
+    pub fn new_with_dns_policy(
+        layout: &Layout,
+        dns_policy: Arc<dyn DnsRuntimePolicy>,
+    ) -> Result<Self, GatewayError> {
         let store = Store::new(layout);
         store.initialize()?;
         Ok(Self {
             store,
             runtime: Arc::new(Mutex::new(Runtime::default())),
+            dns_policy,
         })
     }
 
@@ -54,7 +63,7 @@ impl Controller {
         if !config.dns.enabled && !config.dhcp.enabled {
             return Ok(());
         }
-        let result = start_services(&config).await;
+        let result = start_services(&config, Arc::clone(&self.dns_policy)).await;
         match result {
             Ok((dns, dhcp)) => {
                 let mut runtime = self.runtime.lock().await;
@@ -130,10 +139,11 @@ impl Controller {
 
 async fn start_services(
     config: &Config,
+    dns_policy: Arc<dyn DnsRuntimePolicy>,
 ) -> Result<(Option<DnsServer>, Option<DhcpServer>), GatewayError> {
     let dns = if config.dns.enabled {
         let dns_config = resolve_rule_sets(config.dns.clone()).await?;
-        Some(DnsServer::start(dns_config).await?)
+        Some(DnsServer::start_with_policy(dns_config, dns_policy).await?)
     } else {
         None
     };

@@ -1,6 +1,7 @@
 use crate::{
     GatewayError,
     dns::DnsServer,
+    dns_policy::DnsRuntimePolicy,
     model::{DnsConfig, validate_dns},
 };
 
@@ -10,6 +11,17 @@ pub struct DnsService {
 
 impl DnsService {
     pub async fn start(config: DnsConfig) -> Result<Self, GatewayError> {
+        Self::start_with_policy(
+            config,
+            std::sync::Arc::new(crate::dns_policy::NoopDnsRuntimePolicy),
+        )
+        .await
+    }
+
+    pub async fn start_with_policy(
+        config: DnsConfig,
+        policy: std::sync::Arc<dyn DnsRuntimePolicy>,
+    ) -> Result<Self, GatewayError> {
         let mut errors = Vec::new();
         validate_dns(&config, &mut errors);
         if !config.enabled {
@@ -19,7 +31,7 @@ impl DnsService {
             return Err(GatewayError::invalid(errors.join("; ")));
         }
         Ok(Self {
-            server: DnsServer::start(config).await?,
+            server: DnsServer::start_with_policy(config, policy).await?,
         })
     }
 

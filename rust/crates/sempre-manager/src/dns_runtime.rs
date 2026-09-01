@@ -6,7 +6,7 @@ use std::{
 
 use ipnet::IpNet;
 use sempre_converter::DnsFrontendPolicy;
-use sempre_gateway::{DnsConfig, DnsService, managed_probe_names, probe_dns};
+use sempre_gateway::{DnsConfig, DnsRuntimePolicy, DnsService, managed_probe_names, probe_dns};
 use serde::{Deserialize, Serialize};
 use tokio::{sync::Mutex, time::sleep};
 
@@ -17,6 +17,7 @@ const PROBE_INTERVAL: Duration = Duration::from_millis(200);
 pub(crate) struct DnsFrontendRuntime {
     running: Mutex<Option<RunningFrontend>>,
     status: RwLock<DnsFrontendStatus>,
+    policy: Arc<dyn DnsRuntimePolicy>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -51,10 +52,11 @@ pub(crate) struct DnsFrontendPlan {
 }
 
 impl DnsFrontendRuntime {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new(policy: Arc<dyn DnsRuntimePolicy>) -> Arc<Self> {
         Arc::new(Self {
             running: Mutex::new(None),
             status: RwLock::new(DnsFrontendStatus::default()),
+            policy,
         })
     }
 
@@ -144,7 +146,8 @@ impl DnsFrontendRuntime {
                 "DNS frontend is still owned by a different deployment".into(),
             ));
         }
-        let service = DnsService::start(plan.config.clone()).await?;
+        let service =
+            DnsService::start_with_policy(plan.config.clone(), Arc::clone(&self.policy)).await?;
         *running = Some(RunningFrontend {
             deployment_hash: plan.deployment_hash.clone(),
             service,

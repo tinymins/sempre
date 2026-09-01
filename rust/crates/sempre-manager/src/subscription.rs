@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use sempre_converter::{
     CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, SourceSnapshot, Target, compile,
-    dns_frontend_policy, parse_subscription,
+    dns_frontend_policy, parse_subscription, prepare_profile,
 };
 use sempre_state::{ConfigBuild, Document, PendingConfigField};
 use sempre_subscription::{Catalog, SubscriptionError};
@@ -41,6 +41,53 @@ pub(crate) struct RenderedProfile {
     pub(crate) dns_frontend_policy: Option<sempre_converter::DnsFrontendPolicy>,
 }
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
+    pub async fn update_dns_settings(
+        &self,
+        candidate: crate::DnsSettings,
+    ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
+        let _operation = self.store.acquire_operation()?;
+        let document = self.store.read()?;
+        let catalog = self.subscriptions.read()?;
+        let active = document
+            .active_profile_id
+            .as_deref()
+            .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id));
+        if let Some(profile) = active
+            && let Ok((target, _)) = self.subscription_target(&document)
+        {
+            let mut validation_profile = profile.clone();
+            candidate.apply(&mut validation_profile);
+            prepare_profile(&validation_profile, &target)?;
+        }
+        let previous = self.dns_settings.read();
+        let saved = self.dns_settings.replace(candidate)?;
+        let Some(profile_id) = document.active_profile_id.as_deref() else {
+            return Ok((CoreChange::default(), saved));
+        };
+        match self
+            .prepare_subscription_locked(profile_id, false, false)
+            .await
+        {
+            Ok((change, _)) => {
+                if change.changed {
+                    self.store.update(|document| {
+                        crate::pending_changes::record_pending_fields(
+                            document,
+                            &[PendingConfigField::Dns],
+                            true,
+                        );
+                        Ok(())
+                    })?;
+                }
+                Ok((change, saved))
+            }
+            Err(error) => {
+                self.dns_settings.restore(previous)?;
+                Err(error)
+            }
+        }
+    }
+
     pub async fn import_subscription_source(
         &self,
         remark: &str,
@@ -138,7 +185,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let now = Utc::now();
         let active = activate || document.active_profile_id.as_deref() == Some(id);
         let profile_changed = activate && document.active_profile_id.as_deref() != Some(id);
-        let build = config_build(&rendered.updated, &rendered.target)?;
+        let build = config_build(
+            &rendered.updated,
+            &rendered.target,
+            self.dns_settings.read().revision,
+        )?;
         self.save_optional_dns_frontend_policy(
             &rendered.render.artifact_hash,
             rendered.dns_frontend_policy.as_ref(),
@@ -198,7 +249,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let catalog = self.subscriptions.read()?;
         let profile = find_profile(&catalog, id)?;
         let (target, _) = self.subscription_target(&document)?;
-        let expected = config_build(profile, &target)?;
+        let expected = config_build(profile, &target, self.dns_settings.read().revision)?;
         if document
             .selected
             .as_ref()
@@ -226,7 +277,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let Ok((target, _)) = self.subscription_target(document) else {
             return false;
         };
-        config_build(profile, &target)
+        config_build(profile, &target, self.dns_settings.read().revision)
             .is_ok_and(|expected| document.config_builds.get(&selected.core) != Some(&expected))
     }
 
@@ -257,6 +308,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         refresh: bool,
     ) -> Result<RenderedProfile, ManagerError> {
         if profile_mode(profile) == "remote" {
+            if !self.dns_settings.read().matches(profile) {
+                return Err(ManagerError::InvalidOperation(
+                    "remote subscription artifact DNS differs from this device's independent DNS settings; update the remote Sempre service before activating this profile".into(),
+                ));
+            }
             let remote = self.remote.render(profile, &target).await?;
             validate_runtime_profile(&remote.profile)?;
             let warnings = adapter_warnings.drain(..).chain(remote.warnings).collect();
@@ -300,11 +356,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .await?;
         snapshots.extend(provider_snapshots);
         adapter_warnings.extend(provider_warnings);
-        let dns_frontend_policy = dns_frontend_policy(&updated, &target, &snapshots)?;
+        let mut compile_profile = updated.clone();
+        self.dns_settings.read().apply(&mut compile_profile);
+        let dns_frontend_policy = dns_frontend_policy(&compile_profile, &target, &snapshots)?;
         adapter_warnings.extend(dns_frontend_policy.warnings.iter().cloned());
         let compiled = compile(&CompileRequest {
             protocol: 1,
-            profile: updated.clone(),
+            profile: compile_profile,
             snapshots,
             custom_nodes: catalog.custom_nodes.clone(),
             target: target.clone(),
@@ -411,11 +469,15 @@ fn validate_runtime_profile(profile: &Profile) -> Result<(), ManagerError> {
 pub(crate) fn config_build(
     profile: &Profile,
     target: &Target,
+    dns_revision: u64,
 ) -> Result<ConfigBuild, ManagerError> {
     Ok(ConfigBuild {
         profile_id: profile.id.clone(),
         profile_revision: profile.revision,
-        target_key: format!("{}|{}|{}", target.format, target.version, target.platform),
+        target_key: format!(
+            "{}|{}|{}|dns:{dns_revision}",
+            target.format, target.version, target.platform
+        ),
         runtime_key: Some(runtime_key(profile)?),
     })
 }
