@@ -1,43 +1,43 @@
 # Sempre
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Sempre is a cross-platform lifecycle manager for proxy cores.
 
-It installs and switches core versions, validates and updates configuration,
-registers a native system service, and keeps the selected core running.
-Supported cores currently include [sing-box](https://github.com/SagerNet/sing-box)
-and [Mihomo](https://github.com/MetaCubeX/mihomo).
+It installs and switches core versions, validates and updates configuration, registers a native system service, and keeps the selected core running. Supported cores currently include [sing-box](https://github.com/SagerNet/sing-box) and [Mihomo](https://github.com/MetaCubeX/mihomo).
 
 > Any core. Always current. Always running.
 
 Project homepage: [sempre.run](https://sempre.run)
 
-Sempre is an independent community project. It is not affiliated with
-SagerNet, Project X, MetaCubeX, or their respective projects.
+Sempre is an independent community project. It is not affiliated with SagerNet, Project X, MetaCubeX, or their respective projects.
 
 > [!WARNING]
-> Sempre is pre-1.0 software that installs a privileged system service and
-> manages network proxy processes. Review release notes, keep a working
-> recovery path, and test upgrades on a non-critical machine first. Initial
-> v0.1 binaries are not code-signed; verify checksums and GitHub attestations
-> before running them.
+> Sempre is pre-1.0 software that installs a privileged system service and manages network proxy processes. Review release notes, keep a working recovery path, and test upgrades on a non-critical machine first. Initial v0.1 binaries are not code-signed; verify checksums and GitHub attestations before running them.
 
 ## Why
 
-Sempre replaces platform-specific wrapper scripts and third-party service
-hosts with one Rust binary and a separately replaceable Web UI:
+Sempre replaces platform-specific wrapper scripts and third-party service hosts with one Rust binary and a separately replaceable Web UI:
 
-```text
-Browser / CLI
-      |
-Sempre API on localhost:33211
-      |
-sempre daemon ---- selected core@version
-      |
-Windows SCM / systemd / launchd
+```mermaid
+flowchart LR
+    user["Browser / CLI"] --> api["Versioned localhost API"]
+    service["Windows SCM / systemd / launchd"] --> daemon
+    subgraph sempre["Sempre control plane"]
+        api --> daemon["Sempre daemon"] --> state["Profiles, state, and cached sources"] --> compiler["Versioned configuration compiler"] --> deployment["Validate and stage deployment"] --> supervisor["Core lifecycle supervisor"]
+        daemon --> supervisor
+        daemon --> platform["Platform DNS and routing integration"]
+    end
+    supervisor --> core["Selected external core"]
+    platform --> inbound
+    subgraph dataplane["External-core data plane"]
+        core --> inbound["TUN / TProxy / local proxy"] --> routing["Core routing rules"] --> egress["Direct / proxy / private connector / reject"]
+    end
 ```
 
-Windows service support is implemented directly with the Windows SCM API.
-Sempre does not download, bundle, or invoke NSSM or PowerShell.
+Sempre is the management and control plane. The selected external core owns the TUN, proxy protocols, packet processing, and traffic-routing data plane.
+
+Windows service support is implemented directly with the Windows SCM API. Sempre does not download, bundle, or invoke NSSM or PowerShell.
 
 ## Quick Start
 
@@ -53,9 +53,7 @@ Windows PowerShell:
 irm https://sempre.run/install.ps1 | iex
 ```
 
-The command generator at [sempre.run](https://sempre.run) can include a core,
-subscription URL, and Web UI source in the same verified installation. For
-example:
+The command generator at [sempre.run](https://sempre.run) can include a core, subscription URL, and Web UI source in the same verified installation. For example:
 
 ```sh
 curl -fsSL https://sempre.run/install | sh -s -- --core='sing-box:tinymins/sing-box@13.11.2' --subscription='https://domain.com/some-subscription/xxx1safsadf'
@@ -65,29 +63,11 @@ curl -fsSL https://sempre.run/install | sh -s -- --core='sing-box:tinymins/sing-
 & ([scriptblock]::Create((irm https://sempre.run/install.ps1))) -Core 'sing-box:tinymins/sing-box@13.11.2' -Subscription 'https://domain.com/some-subscription/xxx1safsadf'
 ```
 
-Core references use
-`<adapter>[:<github-owner>/<repository>][@<stable-or-version>]`. On a fresh
-installation, omitting `--core`/`-Core` selects `sing-box@stable`; an existing
-selection is preserved. A subscription URL is added to the unnamed default
-subscription set, duplicate URLs are removed, the set is activated and
-refreshed, and the resulting deployment must reach the running state or the
-installer fails. The URL is passed from the online script to Sempre through a
-private temporary file instead of a child-process argument. Because it is
-still present in the command itself, treat shell history and shared terminals
-as sensitive.
+Core references use `<adapter>[:<github-owner>/<repository>][@<stable-or-version>]`. On a fresh installation, omitting `--core`/`-Core` selects `sing-box@stable`; an existing selection is preserved. A subscription URL is added to the unnamed default subscription set, duplicate URLs are removed, the set is activated and refreshed, and the resulting deployment must reach the running state or the installer fails. The URL is passed from the online script to Sempre through a private temporary file instead of a child-process argument. Because it is still present in the command itself, treat shell history and shared terminals as sensitive.
 
-The UI option accepts `official`, an HTTPS ZIP, or a GitHub release reference
-such as `tinymins/sempre-ui@stable`. HTTPS ZIPs can include
-`--ui-sha256='<digest>'` or `-UISha256 '<digest>'`. GitHub UI releases must
-contain `sempre-ui.zip` and provide its SHA-256 through release asset metadata
-or `SHA256SUMS`. When the UI option is omitted, a custom installed UI is kept;
-a fresh installation uses the official UI.
+The UI option accepts `official`, an HTTPS ZIP, or a GitHub release reference such as `tinymins/sempre-ui@stable`. HTTPS ZIPs can include `--ui-sha256='<digest>'` or `-UISha256 '<digest>'`. GitHub UI releases must contain `sempre-ui.zip` and provide its SHA-256 through release asset metadata or `SHA256SUMS`. When the UI option is omitted, a custom installed UI is kept; a fresh installation uses the official UI.
 
-The installer detects the operating system and architecture, resolves one
-concrete GitHub Release tag, and verifies the matching bundle against that
-release's `SHA256SUMS` before running it. The scripts are available for review
-at [sempre.run/install](https://sempre.run/install) and
-[sempre.run/install.ps1](https://sempre.run/install.ps1).
+The installer detects the operating system and architecture, resolves one concrete GitHub Release tag, and verifies the matching bundle against that release's `SHA256SUMS` before running it. The scripts are available for review at [sempre.run/install](https://sempre.run/install) and [sempre.run/install.ps1](https://sempre.run/install.ps1).
 
 The verified bundle then runs:
 
@@ -95,28 +75,13 @@ The verified bundle then runs:
 sempre install
 ```
 
-`install` can be run repeatedly to install, repair, or upgrade Sempre from the
-current bundle. It copies the binary and bundled UI to protected system storage,
-registers the native service, starts the Web control plane, and opens it in the
-default browser. Existing subscriptions, tunnels, gateway settings, Web
-settings, and custom UI are preserved unless an explicit install option asks to
-replace them. Without a subscription or existing configuration, the
-service reports `idle` until one is configured.
-Open a new terminal after installation; `sempre status`, `sempre doctor`, and
-the rest of the CLI are available globally.
+`install` can be run repeatedly to install, repair, or upgrade Sempre from the current bundle. It copies the binary and bundled UI to protected system storage, registers the native service, starts the Web control plane, and opens it in the default browser. Existing subscriptions, tunnels, gateway settings, Web settings, and custom UI are preserved unless an explicit install option asks to replace them. Without a subscription or existing configuration, the service reports `idle` until one is configured. Open a new terminal after installation; `sempre status`, `sempre doctor`, and the rest of the CLI are available globally.
 
-On Linux, sing-box and Mihomo profiles can run as a TUN router or as a fully
-managed TProxy gateway. Debian, Ubuntu, and Proxmox VE setup, routing ownership,
-MetaCubeX access, and recovery procedures are documented in
-[Linux Transparent Gateway](docs/linux-transparent-gateway.md). The stable,
-planned, experimental, and protocol-only compatibility boundaries are recorded
-in the [Core Capability Model](docs/core-capability-matrix.md).
+On Linux, sing-box and Mihomo profiles can run as a TUN router or as a fully managed TProxy gateway. Debian, Ubuntu, and Proxmox VE setup, routing ownership, MetaCubeX access, and recovery procedures are documented in [Linux Transparent Gateway](docs/linux-transparent-gateway.md). The stable, planned, experimental, and protocol-only compatibility boundaries are recorded in the [Core Capability Model](docs/core-capability-matrix.md).
 
-For an offline or fully manual installation, download and extract a bundle
-from the [Downloads](#downloads) section and run `sempre install` yourself.
+For an offline or fully manual installation, download and extract a bundle from the [Downloads](#downloads) section and run `sempre install` yourself.
 
-Running the binary without arguments, including by double-clicking it, shows
-only the current version/status and up to four actions:
+Running the binary without arguments, including by double-clicking it, shows only the current version/status and up to four actions:
 
 | Action | Result |
 | --- | --- |
@@ -125,8 +90,7 @@ only the current version/status and up to four actions:
 | Uninstall | Keeps configuration by default, with an explicit purge choice |
 | Run Portable | Runs the Web control plane and selected core beside the binary; shown only while the system service is inactive |
 
-The launcher contains no settings. Configure everything through the Web UI or
-the equivalent CLI commands. A complete CLI setup remains available:
+The launcher contains no settings. Configure everything through the Web UI or the equivalent CLI commands. A complete CLI setup remains available:
 
 ```text
 sempre core install sing-box@stable
@@ -141,15 +105,11 @@ To keep both the binary and its data in one movable directory:
 sempre --portable portable run
 ```
 
-`sempre portable enable` creates a persistent `.sempre-portable` marker beside
-the executable. `--portable` and `--system` select a mode for one invocation.
+`sempre portable enable` creates a persistent `.sempre-portable` marker beside the executable. `--portable` and `--system` select a mode for one invocation.
 
 ## Downloads
 
-Canonical releases are published at
-[github.com/tinymins/sempre/releases](https://github.com/tinymins/sempre/releases).
-Bundles are recommended because they include the verified official UI and
-preinstalled stable sing-box, Mihomo, Xray, and V2Ray cores:
+Canonical releases are published at [github.com/tinymins/sempre/releases](https://github.com/tinymins/sempre/releases). Bundles are recommended because they include the verified official UI and preinstalled stable sing-box, Mihomo, Xray, and V2Ray cores:
 
 | Platform | amd64 | arm64 |
 | --- | --- | --- |
@@ -157,10 +117,7 @@ preinstalled stable sing-box, Mihomo, Xray, and V2Ray cores:
 | Linux | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-arm64.zip) |
 | macOS | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-arm64.zip) |
 
-Standalone binaries remain available and install the service without bundled UI
-or cores. Place the canonical `resources/` directory beside a standalone binary
-for an offline UI install, or add the UI later with
-`sempre ui install official`:
+Standalone binaries remain available and install the service without bundled UI or cores. Place the canonical `resources/` directory beside a standalone binary for an offline UI install, or add the UI later with `sempre ui install official`:
 
 | Platform | amd64 | arm64 |
 | --- | --- | --- |
@@ -168,9 +125,7 @@ for an offline UI install, or add the UI later with
 | Linux | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-linux-amd64) | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-linux-arm64) |
 | macOS | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-darwin-amd64) | [Download](https://github.com/tinymins/sempre/releases/latest/download/sempre-darwin-arm64) |
 
-Release checksums are available from
-[`SHA256SUMS`](https://github.com/tinymins/sempre/releases/latest/download/SHA256SUMS).
-Each target also includes a CycloneDX JSON SBOM. Verify build provenance with:
+Release checksums are available from [`SHA256SUMS`](https://github.com/tinymins/sempre/releases/latest/download/SHA256SUMS). Each target also includes a CycloneDX JSON SBOM. Verify build provenance with:
 
 ```text
 gh attestation verify <downloaded-binary> --repo tinymins/sempre
@@ -196,42 +151,22 @@ sempre core update sing-box@stable
 sempre core remove sing-box@1.13.15
 ```
 
-Core references use `<adapter>[:<github-owner>/<repository>][@<stable-or-version>]`.
-Each adapter has an official default repository:
+Core references use `<adapter>[:<github-owner>/<repository>][@<stable-or-version>]`. Each adapter has an official default repository:
 
 | Adapter | Default repository | Compiled configuration | Release package |
 | --- | --- | --- | --- |
 | `sing-box` | `SagerNet/sing-box` | Version/platform-specific sing-box JSON | ZIP on Windows, tar.gz elsewhere |
 | `mihomo` | `MetaCubeX/mihomo` | Clash Meta YAML | ZIP on Windows, single-file gzip elsewhere |
 
-Repository and version are separate identity
-dimensions: an official `1.13.15` and a fork's `1.13.15` can be installed and
-selected independently without changing the version reported by either
-binary. A custom source must remain explicit in later commands, for example
-`sempre core use sing-box:tinymins/sing-box@1.13.15-ddns.1`.
+Repository and version are separate identity dimensions: an official `1.13.15` and a fork's `1.13.15` can be installed and selected independently without changing the version reported by either binary. A custom source must remain explicit in later commands, for example `sempre core use sing-box:tinymins/sing-box@1.13.15-ddns.1`.
 
-On amd64, the Mihomo adapter detects the host's x86-64 microarchitecture level.
-Level 3 hosts try `v3`, then `v2`, then `compatible`; level 2 hosts try `v2`,
-then `compatible`; all other or unknown hosts use `compatible`. Sempre never
-selects a binary above the detected CPU level and does not use the unqualified
-amd64 asset. arm64 uses the official OS/arm64 asset directly. Custom Mihomo
-repositories must follow the same asset naming and SHA-256 metadata contract.
+On amd64, the Mihomo adapter detects the host's x86-64 microarchitecture level. Level 3 hosts try `v3`, then `v2`, then `compatible`; level 2 hosts try `v2`, then `compatible`; all other or unknown hosts use `compatible`. Sempre never selects a binary above the detected CPU level and does not use the unqualified amd64 asset. arm64 uses the official OS/arm64 asset directly. Custom Mihomo repositories must follow the same asset naming and SHA-256 metadata contract.
 
-`stable` keeps its existing meaning for every repository: the latest
-non-draft, non-prerelease GitHub Release. Install a prerelease fork build by
-its exact version. Sempre does not provide an implicit prerelease channel.
+`stable` keeps its existing meaning for every repository: the latest non-draft, non-prerelease GitHub Release. Install a prerelease fork build by its exact version. Sempre does not provide an implicit prerelease channel.
 
-An exact install is retained until explicitly removed. A channel is a weak
-reference to a concrete version. When `stable` advances, its previous version
-is removed only when no exact install, active deployment, rollback deployment,
-or other channel still references it.
+An exact install is retained until explicitly removed. A channel is a weak reference to a concrete version. When `stable` advances, its previous version is removed only when no exact install, active deployment, rollback deployment, or other channel still references it.
 
-Installing a version never changes the selected core. Run `core use` after the
-first install; this is allowed before a configuration exists. The next profile
-save, `subscription set`, or `config import` converts the subscription for that
-selection, validates it with the installed core, and stages it. A channel
-update is validated against the current configuration before the channel
-advances.
+Installing a version never changes the selected core. Run `core use` after the first install; this is allowed before a configuration exists. The next profile save, `subscription set`, or `config import` converts the subscription for that selection, validates it with the installed core, and stages it. A channel update is validated against the current configuration before the channel advances.
 
 `core remove` removes the concrete version directory and every channel alias
 that points to it. Removal fails while the version is selected, active, or
@@ -309,6 +244,70 @@ scheduled configuration is staged and, by default, restarts the managed core;
 changes never restart the core automatically. Restart it explicitly after
 reviewing the preview, or leave the staged configuration for the next start.
 An empty profile remains valid and retains the last active configuration.
+
+## DNS and Traffic Routing
+
+DNS resolution and application traffic are separate paths. Sempre keeps them consistent without turning its DNS frontend into a proxy core or a TUN data plane.
+
+### DNS Frontend and Gateway DNS
+
+Desktop system DNS and Linux gateway DNS enter the same managed Rust resolver. Gateway DHCP advertises the gateway address through DHCP option 6; nftables redirects LAN TCP/UDP port 53 to the managed frontend. Gateway mode changes how queries reach the frontend, not who owns DNS policy.
+
+```mermaid
+flowchart TD
+    dhcp["Sempre Gateway DHCP"] -. "Option 6: gateway address" .-> lan["LAN clients"] --> gateway53["Gateway TCP/UDP port 53"] --> nft["nftables redirect"] --> frontend["Sempre DNS frontend<br/>shared Rust resolver"]
+    desktop["Desktop applications"] --> system["Operating-system DNS"] --> takeover["Platform DNS takeover<br/>or TUN DNS redirect"] --> frontend
+    frontend --> rewrite{"DNS rewrite matches?"}
+    rewrite -- Yes --> rewritten["Return configured answer"]
+    rewrite -- No --> https{"Reject HTTPS record?"}
+    https -- Yes --> rejected["Return rejected response"]
+    https -- No --> custom{"First matching custom rule set?"}
+    custom -- Direct --> original["Captured or configured<br/>original DNS"]
+    custom -- Proxy --> core["Active core DNS<br/>loopback ingress"]
+    custom -- No match --> domestic{"Bundled domestic domain?"}
+    domestic -- Yes --> original --> physical["Physical/WAN network"] --> real["Return Real-IP"]
+    domestic -- No --> core --> profile["Current Profile DNS policy"] --> mode{"FakeIP enabled?"}
+    mode -- Yes --> fake["Return FakeIP for A/AAAA"]
+    mode -- No --> remote["Resolve through core remote DNS"] --> coreReal["Return Real-IP"]
+```
+
+Custom rule sets are evaluated in order before the bundled domestic-domain set. A direct rule uses the original DNS path; a proxy rule and the default path use the active core DNS. The same rule sets are compiled into priority traffic-routing rules: direct sets route to `direct`, while proxy sets receive an independent proxy selector.
+
+### Managed Desktop TUN Modes
+
+Real-IP mode retains DNS pre-routing. The mode changes which application traffic enters the external core, not whether the DNS frontend is present. The following flow describes managed desktop sing-box TUN targets; Linux gateway mode captures LAN traffic through TProxy instead.
+
+```mermaid
+flowchart TB
+    subgraph fake["FakeIP mode"]
+        fq["DNS query"] --> fc{"Direct or domestic?"}
+        fc -- Yes --> fo["Original DNS"] --> fr["Real-IP"] --> fb["Normal OS route<br/>bypasses the core"]
+        fc -- No --> fcd["Core DNS"] --> ff["FakeIP"] --> ft["Only FakeIP ranges<br/>enter the external-core TUN"] --> frr["Core routing rules"] --> fe["Proxy / private connector / reject"]
+    end
+    subgraph real["Real-IP mode"]
+        rq["DNS query"] --> rc{"Direct or domestic?"}
+        rc -- Yes --> ro["Original DNS"] --> rip["Real-IP"]
+        rc -- No --> rcd["Core remote DNS"] --> rip --> rt["All application traffic<br/>enters the external-core TUN"] --> rrr["Core routing rules"] --> re["Direct / proxy / private connector / reject"]
+    end
+```
+
+In FakeIP mode, direct and domestic names return real addresses and bypass the core; proxy and default names return addresses from `198.18.0.0/15` or `fc00::/18`, and only those ranges enter the TUN. In Real-IP mode, direct and domestic names still use original DNS, while proxy and default names use core remote DNS; all application traffic then enters the core and follows its route rules.
+
+### Private DNS and Private Routes
+
+Private DNS controls name resolution only. A connection must independently match a domain or IP route for the same connector.
+
+```mermaid
+flowchart TD
+    request["Request internal.example"] --> dnsMatch{"Private DNS suffix matches?"}
+    dnsMatch -- Yes --> privateDns["Query private DNS<br/>through the connector"] --> address["Resolved destination"]
+    dnsMatch -- No --> normalDns["Use normal DNS path"] --> address
+    address --> routeMatch{"Traffic route matches<br/>domain or IP CIDR?"}
+    routeMatch -- Yes --> connector["Private connector<br/>for example WireGuard"]
+    routeMatch -- No --> fallback["Normal direct or proxy rules"]
+```
+
+A successful private DNS answer does not prove that application traffic uses the private outbound. Verify both the DNS decision and the core's selected outbound when diagnosing private-network access.
 
 ## Managed Runtime
 
