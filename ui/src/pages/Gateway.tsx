@@ -5,6 +5,7 @@ import { Alert, Button, Card, Empty, Input, InputNumber, Select, Switch, Table, 
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
+import { compareDate, compareText } from '../lib/sort'
 import type { GatewayConfig, GatewayHostPlan, GatewayLease, GatewayStatus, NetworkSettings, NetworkSettingsResponse } from '../lib/types'
 
 const emptyStatus: GatewayStatus = {
@@ -74,11 +75,11 @@ export function Gateway() {
   })
   const update = (change: (current: GatewayConfig) => GatewayConfig) => setDraft(change(config))
   const leaseColumns = useMemo<Array<TableColumn<GatewayLease>>>(() => [
-    { title: 'MAC', dataIndex: 'mac', minWidth: 180 },
-    { title: 'IP', dataIndex: 'ip', width: 150 },
-    { title: 'Hostname', dataIndex: 'hostname', minWidth: 160, render: (value) => value || '-' },
-    { title: 'Type', key: 'type', width: 110, render: (_value, record) => <Tag color={record.reserved ? 'blue' : 'green'}>{record.reserved ? 'Reserved' : 'Dynamic'}</Tag> },
-    { title: 'Expires', dataIndex: 'expires_at', minWidth: 180, render: (value) => value ? new Date(String(value)).toLocaleString() : '-' },
+    { title: 'MAC', dataIndex: 'mac', minWidth: 180, sorter: (left, right) => compareText(left.mac, right.mac) },
+    { title: 'IP', dataIndex: 'ip', width: 150, sorter: (left, right) => compareText(left.ip, right.ip) },
+    { title: 'Hostname', dataIndex: 'hostname', minWidth: 160, sorter: (left, right) => compareText(left.hostname, right.hostname), render: (value) => value || '-' },
+    { title: 'Type', key: 'type', width: 110, sorter: (left, right) => Number(left.reserved) - Number(right.reserved), render: (_value, record) => <Tag color={record.reserved ? 'blue' : 'green'}>{record.reserved ? 'Reserved' : 'Dynamic'}</Tag> },
+    { title: 'Expires', dataIndex: 'expires_at', minWidth: 180, sorter: (left, right) => compareDate(left.expires_at, right.expires_at), render: (value) => value ? new Date(String(value)).toLocaleString() : '-' },
     { title: '', key: 'action', width: 70, render: (_value, record) => record.reserved ? null : <Button size="small" variant="text" title="Revoke" onClick={() => revokeLease.mutate(record.mac)}><Trash2 size={15} /></Button> },
   ], [revokeLease])
 

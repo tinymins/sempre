@@ -6,10 +6,11 @@ import { api } from '../lib/api'
 import { formatBytes, formatDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
+import { compareText } from '../lib/sort'
 import type { Connection, ConnectionSnapshot } from '../lib/types'
 import { Badge, Button, EmptyState, Input, PageTitle, Spinner } from '../components/ui'
 
-type SortKey = 'download' | 'upload' | 'start'
+type SortKey = 'host' | 'source' | 'process' | 'chain' | 'download' | 'upload' | 'start'
 type SortDirection = 'asc' | 'desc'
 
 export function Connections() {
@@ -27,9 +28,11 @@ export function Connections() {
   const rows = useMemo(() => {
     const query = search.toLowerCase()
     return [...connectionItems].filter((item) => connectionText(item).includes(query)).sort((left, right) => {
-      const difference = sort.key === 'start'
-        ? connectionStart(left) - connectionStart(right)
-        : left[sort.key] - right[sort.key]
+      const leftValue = connectionSortValue(left, sort.key)
+      const rightValue = connectionSortValue(right, sort.key)
+      const difference = typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? leftValue - rightValue
+        : compareText(leftValue, rightValue)
       return sort.direction === 'asc' ? difference : -difference
     })
   }, [connectionItems, search, sort])
@@ -43,7 +46,7 @@ export function Connections() {
       <div className="flex gap-2"><Button size="icon" title={t('refresh')} onClick={() => connections.refetch()}><RefreshCw size={17} /></Button><Button variant="danger" disabled={!rows.length || close.isPending} onClick={() => close.mutate('')}><Ban size={16} />{t('closeAll')}</Button></div>
     </PageTitle>
     <div className="relative min-w-64"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div>
-    {connections.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : rows.length ? <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"><div className="max-h-[calc(100vh-230px)] overflow-auto"><table className="w-full min-w-[1100px] border-collapse text-left text-sm"><thead className="sticky top-0 z-10 bg-[var(--surface)] text-xs text-[var(--muted)]"><tr><th className="px-3 py-3 font-medium">{t('host')}</th><th className="px-3 py-3 font-medium">{t('source')}</th><th className="px-3 py-3 font-medium">{t('process')}</th><th className="px-3 py-3 font-medium">{t('chain')}</th><SortableHeader label={t('download')} sortKey="download" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('upload')} sortKey="upload" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('uptime')} sortKey="start" sort={sort} onSort={toggleSort} /><th className="w-14" /></tr></thead><tbody>{rows.map((item) => <ConnectionRow key={item.id} item={item} close={() => close.mutate(item.id)} busy={close.isPending} />)}</tbody></table></div></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
+    {connections.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : rows.length ? <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"><div className="max-h-[calc(100vh-230px)] overflow-auto"><table className="w-full min-w-[1100px] border-collapse text-left text-sm"><thead className="sticky top-0 z-10 bg-[var(--surface)] text-xs text-[var(--muted)]"><tr><SortableHeader label={t('host')} sortKey="host" sort={sort} onSort={toggleSort} /><SortableHeader label={t('source')} sortKey="source" sort={sort} onSort={toggleSort} /><SortableHeader label={t('process')} sortKey="process" sort={sort} onSort={toggleSort} /><SortableHeader label={t('chain')} sortKey="chain" sort={sort} onSort={toggleSort} /><SortableHeader label={t('download')} sortKey="download" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('upload')} sortKey="upload" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('uptime')} sortKey="start" sort={sort} onSort={toggleSort} /><th className="w-14" /></tr></thead><tbody>{rows.map((item) => <ConnectionRow key={item.id} item={item} close={() => close.mutate(item.id)} busy={close.isPending} />)}</tbody></table></div></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
   </div>
 }
 
@@ -62,6 +65,15 @@ function SortableHeader({ label, sortKey, sort, onSort, align = 'left' }: { labe
 function connectionStart(item: Connection) {
   const value = new Date(item.start || 0).valueOf()
   return Number.isNaN(value) ? 0 : value
+}
+
+function connectionSortValue(item: Connection, key: SortKey) {
+  if (key === 'download' || key === 'upload') return item[key]
+  if (key === 'start') return connectionStart(item)
+  if (key === 'host') return item.metadata.host || item.metadata.destination_ip || ''
+  if (key === 'source') return item.metadata.source_ip || ''
+  if (key === 'process') return item.metadata.process || ''
+  return (item.chains || []).join(' ')
 }
 
 function connectionText(item: Connection) {

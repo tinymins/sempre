@@ -12,6 +12,7 @@ import type {
   ProxyPreviewNode,
 } from "@acme/types";
 import { useTranslation } from "react-i18next";
+import { compareText } from "@/lib/sort";
 import { SyntaxJsonViewer } from "./InteractiveJsonViewer";
 
 /** 渲染 JSON 或 YAML 格式的代码块 */
@@ -215,28 +216,33 @@ export const ManualServersStepContent = ({
             {
               title: t("proxy.preview.nodeName"),
               dataIndex: "name",
+              sorter: (left: ProxyPreviewNode, right: ProxyPreviewNode) => compareText(left.name, right.name),
               ellipsis: true,
             },
             {
               title: t("proxy.preview.protocol"),
               dataIndex: "type",
               width: 80,
+              sorter: (left: ProxyPreviewNode, right: ProxyPreviewNode) => compareText(left.type, right.type),
               render: (v: string) => <Tag>{v}</Tag>,
             },
             {
               title: t("proxy.preview.server"),
               dataIndex: "server",
+              sorter: (left: ProxyPreviewNode, right: ProxyPreviewNode) => compareText(left.server, right.server),
               ellipsis: true,
             },
             {
               title: t("proxy.preview.port"),
               dataIndex: "port",
               width: 70,
+              sorter: (left: ProxyPreviewNode, right: ProxyPreviewNode) => left.port - right.port,
             },
             {
               title: t("proxy.debug.dataSource"),
               dataIndex: "sourceUrl",
               width: 120,
+              sorter: (left: ProxyPreviewNode, right: ProxyPreviewNode) => compareText(left.sourceUrl, right.sourceUrl),
               render: (sourceUrl: string) => (
                 <Tag color={sourceUrl.startsWith("custom-node:") ? "cyan" : "default"}>
                   {t(

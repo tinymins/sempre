@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Download, KeyRound, Package, Power, RefreshCw, Router, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
-import { Select } from '@acme/components'
+import { Select, Table, type TableColumn } from '@acme/components'
 import { api, downloadBundle, uploadUI } from '../lib/api'
 import { compactHash, formatDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { CoresResponse, ManagedRuntimeStatus, NetworkSettings, NetworkSettingsResponse, SystemStatus, UIMetadata } from '../lib/types'
+import { compareDate, compareText } from '../lib/sort'
+import type { CoreInstallation, CoresResponse, ManagedRuntimeStatus, NetworkSettings, NetworkSettingsResponse, SystemStatus, UIMetadata } from '../lib/types'
 import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 
@@ -63,16 +64,25 @@ function CorePanel() {
     onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); queryClient.invalidateQueries({ queryKey: ['cores'] }); queryClient.invalidateQueries({ queryKey: ['subscriptions'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) },
     onError: (error) => setNotice(error.message),
   })
+  const installedColumns: Array<TableColumn<CoreInstallation>> = [
+    { title: t('core'), dataIndex: 'core', sorter: (left, right) => compareText(left.core, right.core), render: (value) => <span className="font-medium">{value}</span> },
+    { title: t('repository'), dataIndex: 'repository', sorter: (left, right) => compareText(left.repository, right.repository), render: (_value, item) => <div className="flex items-center gap-2"><Badge tone={item.official ? 'success' : 'warning'}>{item.official ? t('official') : t('custom')}</Badge><span className="font-mono text-xs text-[var(--muted)]">{item.repository}</span></div> },
+    { title: t('version'), dataIndex: 'version', sorter: (left, right) => compareText(left.version, right.version), render: (value) => <span className="font-mono text-xs">{value}</span> },
+    { title: t('channel'), dataIndex: 'channels', sorter: (left, right) => compareText(left.channels.join(' '), right.channels.join(' ')), render: (value) => (value as string[]).map((channel) => <Badge key={channel}>{channel}</Badge>) },
+    { title: t('details'), key: 'details', sorter: (left, right) => compareDate(left.installation.installed_at, right.installation.installed_at), render: (_value, item) => <span className="text-xs text-[var(--muted)]">{compactHash(item.installation.digest)} · {formatDate(item.installation.installed_at)}</span> },
+    { title: '', key: 'actions', width: 192, render: (_value, item) => { const selected = isSelectedCore(cores.data, item); return <div className="flex justify-end gap-2">{selected ? <Badge tone="success">{t('selected')}</Badge> : <Button size="small" onClick={() => action.mutate({ operation: 'use', value: item.reference })}>{t('use')}</Button>}<Button size="icon" variant="ghost" title={t('remove')} disabled={selected} onClick={() => action.mutate({ operation: 'remove', value: item.reference })}><Trash2 size={15} /></Button></div> } },
+  ]
   return <Section title={t('core')} icon={<Package size={18} />} notice={notice}>
 	<div className="grid gap-4 border-b border-[var(--border)] pb-6 md:grid-cols-[minmax(0,1fr)_auto_auto]"><Field label={t('reference')}><><Input list="supported-core-references" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="mihomo@stable" /><datalist id="supported-core-references">{cores.data?.supported.map((core) => <option key={core} value={`${core}@stable`} />)}</datalist></></Field><Button className="self-end" variant="primary" disabled={action.isPending} onClick={() => action.mutate({ operation: 'install', value: reference })}>{action.isPending ? <Spinner /> : <Download size={16} />}{t('install')}</Button><Button className="self-end" disabled={action.isPending} onClick={() => action.mutate({ operation: 'update', value: reference })}><RefreshCw size={16} />{t('update')}</Button></div>
     <h3 className="mt-6 text-sm font-semibold">{t('installedVersions')}</h3>
-    <div className="mt-3 overflow-x-auto rounded-lg border border-[var(--border)]"><table className="w-full min-w-[820px] text-left text-sm"><thead className="text-xs text-[var(--muted)]"><tr><th className="px-3 py-3 font-medium">{t('core')}</th><th className="px-3 py-3 font-medium">{t('repository')}</th><th className="px-3 py-3 font-medium">{t('version')}</th><th className="px-3 py-3 font-medium">{t('channel')}</th><th className="px-3 py-3 font-medium">{t('details')}</th><th className="w-48" /></tr></thead><tbody>{cores.data?.installed.map((item) => {
-      const selectedRepository = cores.data?.selected?.repository || ''
-      const itemRepository = item.official ? '' : item.repository
-      const selected = cores.data?.selected?.core === item.core && selectedRepository === itemRepository && (cores.data.selected.ref === item.version || item.channels.includes(cores.data.selected.ref))
-      return <tr key={item.reference} className="border-t border-[var(--border)]"><td className="px-3 py-3 font-medium">{item.core}</td><td className="px-3 py-3"><div className="flex items-center gap-2"><Badge tone={item.official ? 'success' : 'warning'}>{item.official ? t('official') : t('custom')}</Badge><span className="font-mono text-xs text-[var(--muted)]">{item.repository}</span></div></td><td className="px-3 py-3 font-mono text-xs">{item.version}</td><td className="px-3 py-3">{item.channels.map((channel) => <Badge key={channel}>{channel}</Badge>)}</td><td className="px-3 py-3 text-xs text-[var(--muted)]">{compactHash(item.installation.digest)} · {formatDate(item.installation.installed_at)}</td><td className="px-3 py-2 text-right"><div className="flex justify-end gap-2">{selected ? <Badge tone="success">{t('selected')}</Badge> : <Button size="small" onClick={() => action.mutate({ operation: 'use', value: item.reference })}>{t('use')}</Button>}<Button size="icon" variant="ghost" title={t('remove')} disabled={selected} onClick={() => action.mutate({ operation: 'remove', value: item.reference })}><Trash2 size={15} /></Button></div></td></tr>
-    })}</tbody></table></div>
+    <Table<CoreInstallation> className="mt-3" rowKey="reference" loading={cores.isLoading} pagination={false} columns={installedColumns} dataSource={cores.data?.installed || []} scroll={{ x: 820 }} />
   </Section>
+}
+
+function isSelectedCore(cores: CoresResponse | undefined, item: CoreInstallation) {
+  const selectedRepository = cores?.selected?.repository || ''
+  const itemRepository = item.official ? '' : item.repository
+  return cores?.selected?.core === item.core && selectedRepository === itemRepository && (cores.selected.ref === item.version || item.channels.includes(cores.selected.ref))
 }
 
 function WebUIPanel() {

@@ -6,6 +6,7 @@ import type { DnsFrontendStatus, DnsRewrite, DnsSettings, DnsSettingsResponse } 
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
+import { compareNumber, compareText } from '../lib/sort'
 
 interface DnsQueryEvent {
   time: number
@@ -66,23 +67,23 @@ export function Dns() {
     setRewrite(emptyRewrite())
   }
   const queryColumns = useMemo<Array<TableColumn<DnsQueryEvent>>>(() => [
-    { title: zh ? '时间' : 'Time', dataIndex: 'time', width: 180, render: (value) => new Date(Number(value)).toLocaleString() },
-    { title: zh ? '客户端' : 'Client', dataIndex: 'client', width: 130 },
-    { title: zh ? '域名' : 'Name', dataIndex: 'name', minWidth: 220 },
-    { title: zh ? '类型' : 'Type', dataIndex: 'type', width: 80 },
-    { title: zh ? '决策' : 'Decision', dataIndex: 'decision', width: 100, render: (value) => <Tag color={value === 'local' ? 'green' : value === 'rewrite' ? 'blue' : value === 'reject' || value === 'error' ? 'red' : 'orange'}>{String(value)}</Tag> },
-    { title: zh ? '应答' : 'Answers', dataIndex: 'answers', width: 340, ellipsis: true, render: (value) => <DnsAnswerSummary answers={value as string[]} zh={zh} /> },
-    { title: zh ? '上游' : 'Upstream', dataIndex: 'upstream', minWidth: 170 },
-    { title: zh ? '耗时' : 'Latency', dataIndex: 'latency_ms', width: 90, render: (value) => `${value} ms` },
+    { title: zh ? '时间' : 'Time', dataIndex: 'time', width: 180, sorter: (left, right) => compareNumber(left.time, right.time), render: (value) => new Date(Number(value)).toLocaleString() },
+    { title: zh ? '客户端' : 'Client', dataIndex: 'client', width: 130, sorter: (left, right) => compareText(left.client, right.client) },
+    { title: zh ? '域名' : 'Name', dataIndex: 'name', minWidth: 220, sorter: (left, right) => compareText(left.name, right.name) },
+    { title: zh ? '类型' : 'Type', dataIndex: 'type', width: 80, sorter: (left, right) => compareText(left.type, right.type) },
+    { title: zh ? '决策' : 'Decision', dataIndex: 'decision', width: 100, sorter: (left, right) => compareText(left.decision, right.decision), render: (value) => <Tag color={value === 'local' ? 'green' : value === 'rewrite' ? 'blue' : value === 'reject' || value === 'error' ? 'red' : 'orange'}>{String(value)}</Tag> },
+    { title: zh ? '应答' : 'Answers', dataIndex: 'answers', width: 340, ellipsis: true, sorter: (left, right) => compareText(left.answers.join(' '), right.answers.join(' ')), render: (value) => <DnsAnswerSummary answers={value as string[]} zh={zh} /> },
+    { title: zh ? '上游' : 'Upstream', dataIndex: 'upstream', minWidth: 170, sorter: (left, right) => compareText(left.upstream, right.upstream) },
+    { title: zh ? '耗时' : 'Latency', dataIndex: 'latency_ms', width: 90, sorter: (left, right) => left.latency_ms - right.latency_ms, render: (value) => `${value} ms` },
     { title: '', key: 'action', width: 60, render: (_value, item) => <Button size="small" variant="text" title={zh ? '添加重写' : 'Add rewrite'} onClick={() => setRewrite({ ...emptyRewrite(), domain: item.name.replace(/\.$/, ''), type: item.type === 'AAAA' ? 'AAAA' : 'A' })}><Plus size={14} /></Button> },
   ], [zh])
   const rewriteColumns = useMemo<Array<TableColumn<DnsRewrite>>>(() => [
-    { title: zh ? '启用' : 'Enabled', dataIndex: 'enabled', width: 80, render: (value, item) => <Switch size="small" checked={Boolean(value)} onChange={(enabled) => current && setDraft({ ...current, rewrites: current.rewrites.map((rule) => rule.id === item.id ? { ...rule, enabled } : rule) })} /> },
-    { title: zh ? '域名' : 'Domain', dataIndex: 'domain', minWidth: 220 },
-    { title: zh ? '类型' : 'Type', dataIndex: 'type', width: 90 },
-    { title: zh ? '应答' : 'Answer', dataIndex: 'answer', minWidth: 220 },
-    { title: 'TTL', dataIndex: 'ttl', width: 90 },
-    { title: zh ? '备注' : 'Comment', dataIndex: 'comment', minWidth: 160 },
+    { title: zh ? '启用' : 'Enabled', dataIndex: 'enabled', width: 80, sorter: (left, right) => Number(left.enabled) - Number(right.enabled), render: (value, item) => <Switch size="small" checked={Boolean(value)} onChange={(enabled) => current && setDraft({ ...current, rewrites: current.rewrites.map((rule) => rule.id === item.id ? { ...rule, enabled } : rule) })} /> },
+    { title: zh ? '域名' : 'Domain', dataIndex: 'domain', minWidth: 220, sorter: (left, right) => compareText(left.domain, right.domain) },
+    { title: zh ? '类型' : 'Type', dataIndex: 'type', width: 90, sorter: (left, right) => compareText(left.type, right.type) },
+    { title: zh ? '应答' : 'Answer', dataIndex: 'answer', minWidth: 220, sorter: (left, right) => compareText(left.answer, right.answer) },
+    { title: 'TTL', dataIndex: 'ttl', width: 90, sorter: (left, right) => left.ttl - right.ttl },
+    { title: zh ? '备注' : 'Comment', dataIndex: 'comment', minWidth: 160, sorter: (left, right) => compareText(left.comment, right.comment) },
     { title: '', key: 'action', width: 60, render: (_value, item) => <Button size="small" variant="text" title={zh ? '删除' : 'Delete'} onClick={() => current && setDraft({ ...current, rewrites: current.rewrites.filter((rule) => rule.id !== item.id) })}><Trash2 size={14} /></Button> },
   ], [current, zh])
   if (!current) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载 DNS 设置…' : 'Loading DNS settings…'}</div>

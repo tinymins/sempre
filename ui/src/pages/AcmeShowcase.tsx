@@ -79,9 +79,9 @@ const demoRows: DemoRow[] = [
 ]
 
 const tableColumns: TableColumnsType<DemoRow> = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Protocol', dataIndex: 'type', key: 'type', render: (value) => <Tag color="blue">{String(value)}</Tag> },
-  { title: 'Latency', dataIndex: 'latency', key: 'latency', align: 'right', render: (value) => `${String(value)} ms` },
+  { title: 'Name', dataIndex: 'name', key: 'name', sorter: (left, right) => left.name.localeCompare(right.name) },
+  { title: 'Protocol', dataIndex: 'type', key: 'type', sorter: (left, right) => left.type.localeCompare(right.type), render: (value) => <Tag color="blue">{String(value)}</Tag> },
+  { title: 'Latency', dataIndex: 'latency', key: 'latency', align: 'right', sorter: (left, right) => left.latency - right.latency, render: (value) => `${String(value)} ms` },
 ]
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

@@ -13,6 +13,7 @@ import { forwardRef, useImperativeHandle, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { proxyApi } from "@/generated/rust-api";
 import { useIsMobile } from "@/hooks";
+import { compareText } from "@/lib/sort";
 import {
   formatValue,
   MobileNodeCard,
@@ -51,6 +52,7 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
     {
       title: t("proxy.preview.source"),
       dataIndex: "sourceIndex",
+      sorter: (left, right) => left.sourceIndex - right.sourceIndex,
       width: 80,
       align: "center",
       render: (index: number, record) => (
@@ -64,6 +66,7 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
     {
       title: t("proxy.preview.protocol"),
       dataIndex: "type",
+      sorter: (left, right) => compareText(left.type, right.type),
       width: 100,
       align: "center",
       render: (type: string, record) => (
@@ -77,6 +80,7 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
     {
       title: t("proxy.preview.nodeName"),
       dataIndex: "name",
+      sorter: (left, right) => compareText(left.name, right.name),
       ellipsis: true,
       render: (name: string, record) => (
         <Tooltip
@@ -99,6 +103,7 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
     {
       title: t("proxy.preview.server"),
       dataIndex: "server",
+      sorter: (left, right) => compareText(left.server, right.server),
       width: 200,
       ellipsis: true,
       render: (server: string, record) => (
@@ -114,6 +119,7 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
     {
       title: t("proxy.preview.port"),
       dataIndex: "port",
+      sorter: (left, right) => left.port - right.port,
       width: 80,
       align: "center",
       render: (port: number, record) => (

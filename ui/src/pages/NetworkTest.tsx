@@ -5,6 +5,7 @@ import { Button, Card, Empty, Table, Tag, type TableColumn } from '@acme/compone
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
+import { compareNumber, compareText } from '../lib/sort'
 import type { IpMetadata, NetworkTestReport, NetworkTestResult } from '../lib/types'
 
 const defaultResults: NetworkTestResult[] = [
@@ -34,12 +35,14 @@ export function NetworkTest() {
       title: t('networkTarget'),
       key: 'target',
       minWidth: 190,
+      sorter: (left, right) => compareText(left.name, right.name),
       render: (_value, record) => <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-medium">{record.name}</span><Tag color={record.region === 'domestic' ? 'green' : 'blue'} bordered={false}>{record.region === 'domestic' ? t('domestic') : t('foreign')}</Tag></div><p className="mt-1 truncate text-xs text-[var(--muted)]" title={record.url}>{record.url}</p></div>,
     },
     {
       title: t('status'),
       key: 'status',
       width: 120,
+      sorter: (left, right) => Number(left.ok) - Number(right.ok),
       render: (_value, record) => report.isFetching ? <Tag color="processing">{t('loading')}...</Tag> : <Tag color={record.ok ? 'success' : 'error'} icon={record.ok ? <CheckCircle2 /> : <XCircle />}>{record.ok ? t('reachable') : t('unreachable')}</Tag>,
     },
     {
@@ -55,12 +58,14 @@ export function NetworkTest() {
       dataIndex: 'http_status',
       width: 90,
       align: 'right',
+      sorter: (left, right) => compareNumber(left.http_status, right.http_status),
       render: (value) => report.isFetching && !report.data ? '-' : value || '-',
     },
     {
       title: t('ipAddress'),
       dataIndex: 'ip',
       width: 280,
+      sorter: (left, right) => compareText(left.ip, right.ip),
       render: (_value, record) => report.isFetching && !report.data ? '-' : <IpAddress result={record} />,
     },
     {

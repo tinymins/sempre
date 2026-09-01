@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Select } from '@acme/components'
+import { Select, Table, type TableColumn } from '@acme/components'
 import { Database, Trash2 } from 'lucide-react'
 import { useI18n } from '../lib/i18n'
 import { useRuntimeEvents } from '../lib/useRuntimeEvents'
@@ -9,6 +9,7 @@ import { useSession } from '../lib/session'
 import type { RuntimeEvent } from '../lib/types'
 import type { TrafficDimension, TrafficHistory, TrafficSettings } from '../lib/traffic'
 import { formatBytes } from '../lib/format'
+import { compareText } from '../lib/sort'
 import { Badge, Button, Card, EmptyState, Field, PageTitle, Spinner } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
 
@@ -51,6 +52,12 @@ export function Traffic() {
   const dimensions: Array<{ value: TrafficDimension; label: string }> = [
     { value: 'device', label: t('device') }, { value: 'user', label: t('user') }, { value: 'host', label: t('host') },
     { value: 'outbound', label: t('outbound') }, { value: 'process', label: t('process') },
+  ]
+  const totalColumns: Array<TableColumn<TrafficHistory['totals'][number]>> = [
+    { title: dimensions.find((item) => item.value === dimension)?.label, dataIndex: 'label', sorter: (left, right) => compareText(left.label, right.label), render: (value) => <span className="font-medium">{value}</span> },
+    { title: t('download'), dataIndex: 'download', align: 'right', sorter: (left, right) => left.download - right.download, render: (value) => <span className="tabular-nums text-cyan-600">{formatBytes(value)}</span> },
+    { title: t('upload'), dataIndex: 'upload', align: 'right', sorter: (left, right) => left.upload - right.upload, render: (value) => <span className="tabular-nums text-emerald-600">{formatBytes(value)}</span> },
+    { title: t('totalTraffic'), key: 'total', align: 'right', sorter: (left, right) => left.download + left.upload - right.download - right.upload, render: (_value, item) => <span className="tabular-nums">{formatBytes(item.download + item.upload)}</span> },
   ]
   const hour = locale === 'zh-CN' ? '小时' : 'hour'
   const day = locale === 'zh-CN' ? '天' : 'days'
@@ -101,6 +108,6 @@ export function Traffic() {
       </Card>
     </div>
     <div className="flex gap-1 overflow-x-auto border-b border-[var(--border)] pb-2">{dimensions.map((item) => <button key={item.value} className={`h-8 shrink-0 rounded-md px-3 text-sm ${dimension === item.value ? 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald-400' : 'text-[var(--muted)] hover:bg-[var(--surface-hover)]'}`} onClick={() => setDimension(item.value)}>{item.label}</button>)}</div>
-    {history.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : history.data?.totals.length ? <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"><table className="w-full text-left text-sm"><thead className="text-xs text-[var(--muted)]"><tr><th className="px-3 py-3 font-medium">{dimensions.find((item) => item.value === dimension)?.label}</th><th className="px-3 py-3 text-right font-medium">{t('download')}</th><th className="px-3 py-3 text-right font-medium">{t('upload')}</th><th className="px-3 py-3 text-right font-medium">{t('totalTraffic')}</th></tr></thead><tbody>{history.data.totals.slice(0, 100).map((item) => <tr key={item.label} className="border-t border-[var(--border)]"><td className="max-w-xl truncate px-3 py-3 font-medium">{item.label}</td><td className="px-3 py-3 text-right tabular-nums text-cyan-600">{formatBytes(item.download)}</td><td className="px-3 py-3 text-right tabular-nums text-emerald-600">{formatBytes(item.upload)}</td><td className="px-3 py-3 text-right tabular-nums">{formatBytes(item.download + item.upload)}</td></tr>)}</tbody></table></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
+    {history.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : history.data?.totals.length ? <Table rowKey="label" pagination={false} columns={totalColumns} dataSource={history.data.totals.slice(0, 100)} scroll={{ x: 680 }} /> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
   </div>
 }

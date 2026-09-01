@@ -51,6 +51,12 @@ describe('Connections', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Started' }))
     expect(connectionHosts()).toEqual(['newer.example', 'older.example'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Host' }))
+    expect(screen.getByRole('columnheader', { name: 'Host' })).toHaveAttribute('aria-sort', 'descending')
+    fireEvent.click(screen.getByRole('button', { name: 'Host' }))
+    expect(connectionHosts()).toEqual(['newer.example', 'older.example'])
+    expect(screen.getByRole('columnheader', { name: 'Host' })).toHaveAttribute('aria-sort', 'ascending')
   })
 })
 

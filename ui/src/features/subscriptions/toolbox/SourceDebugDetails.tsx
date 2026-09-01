@@ -10,6 +10,7 @@ import type {
 } from "@acme/types";
 import { useTranslation } from "react-i18next";
 import { useIsMobile } from "@/hooks";
+import { compareText } from "@/lib/sort";
 import { SmartCodeBlock } from "./ProxyDebugModal/DebugStepContent";
 
 export const PayloadDetails = ({
@@ -168,23 +169,27 @@ export const NodeTable = ({ nodes }: { nodes: ProxyPreviewNode[] }) => {
         {
           title: t("proxy.preview.nodeName"),
           dataIndex: "name",
+          sorter: (left, right) => compareText(left.name, right.name),
           ellipsis: true,
         },
         {
           title: t("proxy.preview.protocol"),
           dataIndex: "type",
           width: 90,
+          sorter: (left, right) => compareText(left.type, right.type),
           render: (value: string) => <Tag>{value}</Tag>,
         },
         {
           title: t("proxy.preview.server"),
           dataIndex: "server",
+          sorter: (left, right) => compareText(left.server, right.server),
           ellipsis: true,
         },
         {
           title: t("proxy.preview.port"),
           dataIndex: "port",
           width: 80,
+          sorter: (left, right) => left.port - right.port,
         },
       ]}
     />

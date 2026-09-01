@@ -318,9 +318,11 @@ export function Table<T = Record<string, unknown>>({
                 const sortKey = String(colKey(col, ci));
                 const isSortable = typeof col.sorter === "function";
                 const isActiveSorted = isSortable && sortState?.key === sortKey;
+                const ariaSort = isSortable ? (isActiveSorted ? (sortState.dir === "asc" ? "ascending" : "descending") : "none") : undefined;
                 return (
                   <th
                     key={colKey(col, ci)}
+                    aria-sort={ariaSort}
                     className={cn(
                       sizeClass,
                       "text-left font-medium text-[var(--text-secondary)] whitespace-nowrap border-b border-black/[0.06] dark:border-white/[0.08]",
@@ -349,6 +351,20 @@ export function Table<T = Record<string, unknown>>({
                             )
                         : undefined
                     }
+                    onKeyDown={
+                      isSortable
+                        ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              handleSortClick(
+                                sortKey,
+                                col.sorter as (a: T, b: T) => number,
+                              );
+                            }
+                          }
+                        : undefined
+                    }
+                    tabIndex={isSortable ? 0 : undefined}
                     style={{
                       width: col.width,
                       minWidth: col.minWidth,

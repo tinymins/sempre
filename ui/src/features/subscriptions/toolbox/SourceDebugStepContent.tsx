@@ -8,6 +8,7 @@ import {
 import type { ProxySourceDebugStep } from "@acme/types";
 import { useTranslation } from "react-i18next";
 import { useIsMobile } from "@/hooks";
+import { compareText } from "@/lib/sort";
 import { SmartCodeBlock } from "./ProxyDebugModal/DebugStepContent";
 import { PayloadDetails } from "./SourceDebugDetails";
 
@@ -352,11 +353,13 @@ export function useSourceDebugStepRenderer() {
                           title: t("proxy.sourceDebug.address"),
                           dataIndex: "address",
                           width: 190,
+                          sorter: (left, right) => compareText(left.address, right.address),
                         },
                         {
                           title: t("proxy.sourceDebug.result"),
                           dataIndex: "success",
                           width: 80,
+                          sorter: (left, right) => Number(left.success) - Number(right.success),
                           render: (success: boolean) => (
                             <Tag color={success ? "success" : "error"}>
                               {success
@@ -369,17 +372,20 @@ export function useSourceDebugStepRenderer() {
                           title: t("proxy.sourceDebug.duration"),
                           dataIndex: "durationMs",
                           width: 90,
+                          sorter: (left, right) => left.durationMs - right.durationMs,
                           render: (duration: number) => `${duration} ms`,
                         },
                         {
                           title: t("proxy.sourceDebug.localAddress"),
                           dataIndex: "localAddress",
                           width: 190,
+                          sorter: (left, right) => compareText(left.localAddress, right.localAddress),
                           render: (value: string | null) => value ?? "-",
                         },
                         {
                           title: t("proxy.sourceDebug.error"),
                           dataIndex: "error",
+                          sorter: (left, right) => compareText(left.error, right.error),
                           render: (value: string | null) => value ?? "-",
                         },
                       ]}
