@@ -3,6 +3,7 @@ mod auto_config;
 mod bundle;
 mod component_deploy;
 mod config;
+mod config_build;
 mod context;
 mod custom_node;
 mod direct;

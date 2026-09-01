@@ -7,6 +7,7 @@ mod frontend_config;
 mod frontend_service;
 mod model;
 mod probe;
+mod resolver;
 mod socket;
 
 pub use dns::{DnsDebugResult, debug_query, managed_probe_names};

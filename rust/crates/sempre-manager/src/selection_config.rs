@@ -5,7 +5,8 @@ use sempre_state::{ConfigBuild, Document};
 use crate::{
     Manager, ManagerError, ValidationRunner, VersionRunner,
     config::PreparedConfig,
-    subscription::{RenderedProfile, config_build, find_profile, record_compilation},
+    config_build::config_build,
+    subscription::{RenderedProfile, find_profile, record_compilation},
 };
 
 pub(crate) struct SelectionConfig {

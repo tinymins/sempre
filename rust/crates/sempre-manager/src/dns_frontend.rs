@@ -1,5 +1,3 @@
-use std::fs;
-
 use sempre_converter::DnsFrontendPolicy;
 
 use crate::{Manager, ManagerError, VersionRunner};
@@ -31,18 +29,6 @@ impl<R: VersionRunner> Manager<R> {
         )
         .map_err(|error| ManagerError::io("write DNS frontend policy", error))
     }
-
-    pub(crate) fn load_dns_frontend_policy(
-        &self,
-        config_hash: &str,
-    ) -> Result<DnsFrontendPolicy, ManagerError> {
-        let path = self.store.layout().dns_frontend_policy(config_hash);
-        let data =
-            fs::read(&path).map_err(|error| ManagerError::io("read DNS frontend policy", error))?;
-        serde_json::from_slice(&data).map_err(|error| {
-            ManagerError::InvalidOperation(format!("decode DNS frontend policy: {error}"))
-        })
-    }
 }
 
 #[cfg(test)]
@@ -67,10 +53,10 @@ mod tests {
         manager
             .save_dns_frontend_policy("abc", &policy)
             .expect("save policy");
+        let data =
+            std::fs::read(manager.store.layout().dns_frontend_policy("abc")).expect("read policy");
         assert_eq!(
-            manager
-                .load_dns_frontend_policy("abc")
-                .expect("load policy"),
+            serde_json::from_slice::<DnsFrontendPolicy>(&data).expect("decode policy"),
             policy
         );
     }

@@ -88,24 +88,19 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 backoff = Duration::from_secs(1);
                 continue;
             }
-            let plan = match self.resolve_runtime_plan().await {
+            let plan = match self.resolve_runtime_plan(startup_grace).await {
                 Ok(plan) => plan,
                 Err(error) => {
-                    self.stop_gateway().await;
+                    let error =
+                        with_cleanup_failure(&error, self.cleanup_after_core_failure().await);
                     self.log_supervisor(&format!("resolve deployment failed: {error}"))?;
-                    if state::record_failure(
-                        self,
-                        "resolve failed",
-                        &error.to_string(),
-                        true,
-                        false,
-                    )? {
+                    if state::record_failure(self, "resolve failed", &error, true, false)? {
                         backoff = Duration::from_secs(1);
                         continue;
                     }
                     match wait_retry(self, &mut shutdown, backoff).await {
                         RetryEvent::Timer => {}
-                        RetryEvent::Reload => self.cleanup_retained_frontend().await?,
+                        RetryEvent::Reload => self.cleanup_after_core_failure().await?,
                         RetryEvent::Shutdown => {
                             self.cleanup_retained_frontend().await?;
                             state::mark_intentional_exit(self, true)?;
@@ -166,11 +161,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         ) {
             Ok(process) => process,
             Err(error) => {
-                let cleanup = if plan.dns_frontend.is_some() {
-                    Ok(())
-                } else {
-                    self.transparent.cleanup().await
-                };
+                let cleanup = self.cleanup_after_core_failure().await;
                 let error = with_cleanup_failure(&error, cleanup);
                 let retry = self.handle_process_failure(plan, "startup failed", &error, true)?;
                 return Ok(CycleResult::Failed {
@@ -181,8 +172,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let setup = self.mark_runtime_started(plan, process.pid());
         if let Err(error) = setup {
             let _ = process.terminate(STOP_GRACE).await;
-            self.stop_gateway().await;
-            if let Err(cleanup) = self.transparent.cleanup().await {
+            if let Err(cleanup) = self.cleanup_after_core_failure().await {
                 self.log_supervisor(&format!("transparent proxy cleanup failed: {cleanup}"))?;
             }
             self.remove_control();
@@ -193,8 +183,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             ProcessEvent::Healthy(Ok(())) => {
                 if let Err(error) = self.mark_runtime_healthy(plan) {
                     let _ = process.terminate(STOP_GRACE).await;
-                    self.dns_frontend.stop().await;
-                    if let Err(cleanup) = self.transparent.cleanup().await {
+                    if let Err(cleanup) = self.cleanup_after_core_failure().await {
                         self.log_supervisor(&format!(
                             "transparent proxy cleanup failed: {cleanup}"
                         ))?;
@@ -217,9 +206,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 return Ok(CycleResult::Shutdown);
             }
             ProcessEvent::Exited(result) => {
-                self.dns_frontend.stop().await;
-                self.stop_gateway().await;
-                let cleanup = self.transparent.cleanup().await;
+                let cleanup = self.cleanup_after_core_failure().await;
                 self.remove_control();
                 let exit = exit_result(result);
                 let error = with_cleanup_failure(&exit, cleanup);
@@ -240,11 +227,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 Ok(CycleResult::Shutdown)
             }
             ProcessEvent::Exited(result) => {
-                self.stop_gateway().await;
                 self.remove_control();
                 let exit = exit_result(result);
-                self.dns_frontend.record_failure(&exit);
-                self.handle_process_failure(plan, "core exited", &exit, false)?;
+                let error = with_cleanup_failure(&exit, self.cleanup_after_core_failure().await);
+                self.dns_frontend.record_failure(&error);
+                self.handle_process_failure(plan, "core exited", &error, false)?;
                 Ok(CycleResult::Failed {
                     retry_immediately: false,
                 })
@@ -253,7 +240,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
     }
 
-    async fn resolve_runtime_plan(&self) -> Result<RuntimePlan, ManagerError> {
+    async fn resolve_runtime_plan(
+        &self,
+        startup_grace: Duration,
+    ) -> Result<RuntimePlan, ManagerError> {
         let document = self.store.read()?;
         let deployment = document
             .active
@@ -264,6 +254,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 "managed core is stopped".into(),
             ));
         }
+        let reference = CoreRef {
+            core: deployment.core.clone(),
+            repository: deployment.repository.clone(),
+            reference: deployment.reference.clone(),
+        };
+        let dns_frontend = self
+            .prepare_dns_frontend_plan(&document, &deployment, &reference)
+            .await?;
+        self.dns_frontend
+            .prepare(dns_frontend.as_ref(), startup_grace)
+            .await?;
         let adapter = self.registry.get(&deployment.core)?;
         let binary = self.store.layout().core_binary(
             &deployment.core,
@@ -288,11 +289,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .map_err(|error| ManagerError::io("reset core control directory", error))?;
         }
         let runtime = adapter.prepare_runtime(&config, &control_directory)?;
-        let reference = CoreRef {
-            core: deployment.core.clone(),
-            repository: deployment.repository.clone(),
-            reference: deployment.reference.clone(),
-        };
         let transparent = self
             .prepare_dns_transparent_plan(&document, &deployment, &reference, &runtime.config)
             .await?;
@@ -301,30 +297,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let runtime_data = fs::read(&runtime.config)
             .map_err(|error| ManagerError::io("read runtime configuration", error))?;
         let runtime_config_hash = format!("{:x}", Sha256::digest(runtime_data));
-        let dns_frontend = if let Some(system_dns) = transparent
+        let managed_system_dns = transparent
             .system_dns
             .as_ref()
-            .filter(|system_dns| system_dns.managed_frontend)
-        {
-            let policy = self.load_dns_frontend_policy(&deployment.config_hash)?;
-            if policy.core_listen_port != system_dns.core_listen_port {
-                return Err(ManagerError::InvalidOperation(
-                    "managed DNS frontend and core listener ports do not match".into(),
-                ));
-            }
-            Some(DnsFrontendPlan::from_policy(
-                &deployment.config_hash,
-                &policy,
-                &system_dns.original_upstreams,
-                system_dns.listen_port,
-                &system_dns.listen_hosts,
-                &self.dns_settings.read(),
-            )?)
-        } else {
-            None
-        };
-        if let Some(frontend) = &dns_frontend {
-            self.dns_frontend.configure(frontend);
+            .is_some_and(|system_dns| system_dns.managed_frontend);
+        if managed_system_dns != dns_frontend.is_some() {
+            return Err(ManagerError::InvalidOperation(
+                "runtime and daemon DNS frontend plans do not match".into(),
+            ));
         }
         let binary = path_text(&binary)?;
         let runtime_config = path_text(&runtime.config)?;
@@ -346,9 +326,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         service_stopped: bool,
     ) -> Result<(), ManagerError> {
         let transition = state::mark_stopping(self);
-        self.dns_frontend.stop().await;
-        self.stop_gateway().await;
-        let transparent = self.transparent.cleanup().await;
+        let transparent = if service_stopped {
+            self.dns_frontend.stop().await;
+            self.stop_gateway().await;
+            self.transparent.cleanup().await
+        } else {
+            self.cleanup_after_core_failure().await
+        };
         let terminated = process.terminate(STOP_GRACE).await;
         self.remove_control();
         transition?;
@@ -389,9 +373,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         error: &sempre_transparent::TransparentError,
     ) -> Result<CycleResult, ManagerError> {
         let _ = process.terminate(STOP_GRACE).await;
-        self.dns_frontend.stop().await;
-        self.stop_gateway().await;
-        let error = with_cleanup_failure(error, self.transparent.cleanup().await);
+        let error = with_cleanup_failure(error, self.cleanup_after_core_failure().await);
         self.remove_control();
         let retry =
             self.handle_process_failure(plan, "transparent proxy startup failed", &error, true)?;

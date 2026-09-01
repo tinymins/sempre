@@ -38,6 +38,18 @@ impl DnsService {
     pub async fn stop(self) {
         self.server.stop().await;
     }
+
+    pub fn update(&self, config: DnsConfig) -> Result<(), DnsError> {
+        let mut errors = Vec::new();
+        validate(&config, &mut errors);
+        if !config.enabled {
+            errors.push("DNS service is disabled".into());
+        }
+        if !errors.is_empty() {
+            return Err(DnsError::invalid(errors.join("; ")));
+        }
+        self.server.update(config)
+    }
 }
 
 #[cfg(test)]

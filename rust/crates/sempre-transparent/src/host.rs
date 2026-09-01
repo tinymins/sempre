@@ -7,6 +7,8 @@ use crate::{
     system_dns::SystemDns, windows_dns::SystemDns as WindowsSystemDns,
 };
 
+mod dns;
+
 const TUN_TIMEOUT: Duration = Duration::from_secs(20);
 const LISTENER_TIMEOUT: Duration = Duration::from_secs(8);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -203,6 +205,13 @@ impl Controller {
             return Ok(());
         }
         self.cleanup_owned().await
+    }
+
+    pub async fn cleanup_runtime_network(&self) -> Result<(), TransparentError> {
+        if !cfg!(target_os = "linux") || !self.is_root().await? {
+            return Ok(());
+        }
+        self.cleanup_network().await
     }
 
     async fn cleanup_owned(&self) -> Result<(), TransparentError> {

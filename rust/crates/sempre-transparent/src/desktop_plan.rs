@@ -22,22 +22,10 @@ pub(crate) fn prepare(
     runtime_config: &Path,
     original_upstreams: Vec<String>,
 ) -> Result<Plan, TransparentError> {
-    if core != "sing-box" {
-        return Ok(Plan::default());
-    }
-    let Some(mut system_dns) = crate::system_dns_intent(profile) else {
+    let Some(system_dns) = managed_frontend_plan(platform, core, profile, original_upstreams)
+    else {
         return Ok(Plan::default());
     };
-    system_dns.managed_frontend = true;
-    system_dns.takeover_host = true;
-    system_dns.core_listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
-        0 => 1053,
-        port => port,
-    };
-    if platform == Platform::Windows {
-        system_dns.listen_port = WINDOWS_FRONTEND_PORT;
-    }
-    system_dns.original_upstreams = original_upstreams;
     let data = fs::read(runtime_config).map_err(|source| TransparentError::Io {
         context: "read desktop DNS frontend runtime configuration".into(),
         source,
@@ -66,6 +54,29 @@ pub(crate) fn prepare(
         }
     })?;
     Ok(plan)
+}
+
+pub(crate) fn managed_frontend_plan(
+    platform: Platform,
+    core: &str,
+    profile: &Profile,
+    original_upstreams: Vec<String>,
+) -> Option<crate::SystemDnsPlan> {
+    if core != "sing-box" {
+        return None;
+    }
+    let mut system_dns = crate::system_dns_intent(profile)?;
+    system_dns.managed_frontend = true;
+    system_dns.takeover_host = true;
+    system_dns.core_listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
+        0 => 1053,
+        port => port,
+    };
+    if platform == Platform::Windows {
+        system_dns.listen_port = WINDOWS_FRONTEND_PORT;
+    }
+    system_dns.original_upstreams = original_upstreams;
+    Some(system_dns)
 }
 
 fn configure_windows_dns_redirect(
@@ -199,6 +210,32 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn managed_frontend_plan_does_not_depend_on_core_runtime_state() {
+        let mut profile = Profile {
+            dns: json!({ "shared": {
+                "systemDnsTakeoverEnabled": true,
+                "managedDnsFrontend": true,
+                "systemDnsListenPort": 53,
+                "systemDnsListenHosts": ["127.0.0.1"]
+            }}),
+            ..Profile::default()
+        };
+        profile.transparent_proxy.tproxy.dns_listen_port = 2053;
+
+        let plan = managed_frontend_plan(
+            Platform::Macos,
+            "sing-box",
+            &profile,
+            vec!["223.5.5.5".into()],
+        )
+        .expect("frontend plan");
+
+        assert_eq!(plan.listen_port, 53);
+        assert_eq!(plan.core_listen_port, 2053);
+        assert_eq!(plan.original_upstreams, ["223.5.5.5"]);
+    }
 
     #[test]
     fn writes_original_dns_bypass_before_global_hijack() {

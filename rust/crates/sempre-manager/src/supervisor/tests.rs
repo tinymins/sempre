@@ -104,6 +104,38 @@ fn transparent_cleanup_requires_owned_runtime_evidence() {
     assert!(transparent_cleanup_required(&document));
 }
 
+#[tokio::test]
+async fn resolve_failure_clears_stale_frontend_status_without_a_running_service() {
+    let (_root, manager) = fixture("#!/bin/sh\nexit 0\n");
+    let hash = manager.state().expect("state").configs["sing-box"].clone();
+    fs::remove_file(manager.store.layout().config("sing-box", &hash))
+        .expect("remove active config");
+    manager
+        .store
+        .update(|document| {
+            document.pending = false;
+            document.pending_config_fields.clear();
+            Ok(())
+        })
+        .expect("disable pending rollback");
+    manager
+        .dns_frontend
+        .record_failure(&"retained frontend marker");
+
+    let (shutdown, receiver) = watch::channel(false);
+    let running = Arc::clone(&manager);
+    let task = tokio::spawn(async move {
+        running
+            .run_supervisor_with_grace(receiver, Duration::from_millis(50))
+            .await
+    });
+    wait_for_state(&manager, sempre_state::RuntimeState::Failed).await;
+    assert!(manager.dns_frontend.status().last_error.is_empty());
+
+    shutdown.send(true).expect("shutdown");
+    task.await.expect("task").expect("supervisor");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn supervisor_starts_commits_and_stops_the_real_process() {

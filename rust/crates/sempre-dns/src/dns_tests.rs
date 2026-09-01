@@ -1,5 +1,8 @@
 use super::*;
-use crate::DnsRewrite;
+use crate::{
+    DnsQueryEvent, DnsRewrite,
+    dns_wire::{TYPE_HTTPS, build_query, format_answers},
+};
 use std::sync::Mutex as StdMutex;
 
 #[derive(Default)]

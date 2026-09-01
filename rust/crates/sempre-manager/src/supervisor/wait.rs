@@ -39,17 +39,21 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
     plan: &RuntimePlan,
     grace: Duration,
 ) -> Result<(), sempre_transparent::TransparentError> {
-    if plan.dns_frontend.is_some() {
-        manager
-            .dns_frontend
-            .activate(plan, grace)
-            .await
-            .map_err(|error| sempre_transparent::TransparentError::Invalid(error.to_string()))?;
-    } else if !plan.transparent.active() {
+    if plan.dns_frontend.is_none() && !plan.transparent.active() {
         sleep(grace).await;
+    } else {
+        manager.transparent.apply(&plan.transparent).await?;
+    }
+    if plan.dns_frontend.is_none() {
+        manager.transparent.cleanup_system_dns().await?;
+        manager.dns_frontend.stop().await;
         return Ok(());
     }
-    manager.transparent.apply(&plan.transparent).await
+    manager
+        .dns_frontend
+        .activate_core(plan.dns_frontend.as_ref(), grace)
+        .await;
+    Ok(())
 }
 
 pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(

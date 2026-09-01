@@ -55,6 +55,25 @@ mod tests {
     use super::*;
     use crate::{DnsConfig, DnsService};
 
+    async fn answering_upstream(address: [u8; 4]) -> (String, tokio::task::JoinHandle<()>) {
+        let upstream = UdpSocket::bind("127.0.0.1:0").await.expect("upstream");
+        let socket_address = upstream.local_addr().expect("upstream address");
+        let responder = tokio::spawn(async move {
+            let mut query = [0_u8; 512];
+            let (count, peer) = upstream.recv_from(&mut query).await.expect("query");
+            let mut response = query[..count].to_vec();
+            response[2] |= 0x80;
+            response[3] |= 0x80;
+            response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+            response.extend_from_slice(&[
+                0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, address[0], address[1], address[2],
+                address[3],
+            ]);
+            upstream.send_to(&response, peer).await.expect("response");
+        });
+        (socket_address.to_string(), responder)
+    }
+
     #[tokio::test]
     async fn core_failure_is_servfail_while_domestic_dns_remains_available() {
         let local = UdpSocket::bind("127.0.0.1:0").await.expect("local DNS");
@@ -100,6 +119,43 @@ mod tests {
         assert_eq!(proxied.response_code, 2);
         assert!(proxied.addresses.is_empty());
         responder.await.expect("local responder");
+        service.stop().await;
+    }
+
+    #[tokio::test]
+    async fn updates_core_upstream_without_rebinding_the_frontend() {
+        let (first, first_task) = answering_upstream([198, 18, 0, 1]).await;
+        let (second, second_task) = answering_upstream([198, 18, 0, 2]).await;
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("frontend port");
+        let frontend_port = listener.local_addr().expect("frontend address").port();
+        drop(listener);
+        let mut config =
+            DnsConfig::managed_frontend(frontend_port, vec![first.clone()], first, Vec::new())
+                .expect("config");
+        let service = DnsService::start(config.clone()).await.expect("frontend");
+        let endpoint = format!("127.0.0.1:{frontend_port}");
+        let initial = probe_dns(&endpoint, "example.com", "A")
+            .await
+            .expect("initial query");
+        assert_eq!(
+            initial.addresses,
+            ["198.18.0.1".parse::<IpAddr>().expect("IP")]
+        );
+
+        config.remote_upstream = second;
+        service.update(config).expect("update frontend");
+        let updated = probe_dns(&endpoint, "example.com", "A")
+            .await
+            .expect("updated query");
+        assert_eq!(
+            updated.addresses,
+            ["198.18.0.2".parse::<IpAddr>().expect("IP")]
+        );
+
+        first_task.await.expect("first responder");
+        second_task.await.expect("second responder");
         service.stop().await;
     }
 }

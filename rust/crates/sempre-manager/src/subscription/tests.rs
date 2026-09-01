@@ -359,3 +359,46 @@ async fn enabling_frontend_rebuilds_only_the_private_core_ingress() {
     assert!(content.contains("9.9.9.9"));
     assert!(content.contains("sempre-dns-core-in"));
 }
+
+#[tokio::test]
+async fn enabling_frontend_rebuilds_system_dns_profile_with_private_core_ingress() {
+    let (_root, manager, profile_id) = fixture();
+    assert_eq!(
+        manager.subscriptions.read().expect("catalog").profiles[0].extra["use_system_dns"],
+        json!(true)
+    );
+    let mut settings = manager.dns_settings();
+    settings.enabled = true;
+
+    let (change, _) = manager
+        .update_dns_settings(settings)
+        .await
+        .expect("enable frontend");
+
+    assert!(change.changed);
+    let document = manager.state().expect("state");
+    assert_eq!(
+        document.active_profile_id.as_deref(),
+        Some(profile_id.as_str())
+    );
+    let hash = &document.configs["sing-box"];
+    let content = std::fs::read_to_string(manager.store.layout().config("sing-box", hash))
+        .expect("compiled config");
+    assert!(content.contains("sempre-dns-core-in"));
+}
+
+#[test]
+fn config_build_schema_invalidates_legacy_target_key() {
+    let (_root, manager, _) = fixture();
+    let profile = Profile::default();
+    let target = Target::parse("sing-box-v14-macos").expect("target");
+    let build = config_build(&profile, &target, &manager.dns_settings()).expect("build");
+    let mut legacy = build.clone();
+    legacy.target_key = build
+        .target_key
+        .strip_suffix("|build:1")
+        .expect("schema suffix")
+        .into();
+
+    assert_ne!(build, legacy);
+}

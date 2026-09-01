@@ -23,6 +23,11 @@ pub fn apply_dns_frontend_settings(
         return Ok(profile.clone());
     }
     let mut profile = prepare_profile(profile, target)?;
+    if enabled {
+        profile
+            .extra
+            .insert("use_system_dns".into(), Value::Bool(false));
+    }
     let shared = shared_mut(&mut profile.dns);
     shared.insert("systemDnsTakeoverEnabled".into(), Value::Bool(enabled));
     shared.insert("systemDnsListenPort".into(), json!(53));
@@ -138,5 +143,47 @@ mod tests {
         let policy = dns_frontend_policy(&overlaid, &target).expect("policy");
         assert!(policy.enabled);
         assert_eq!(policy.core_listen_port, 1053);
+    }
+
+    #[test]
+    fn desktop_overlay_survives_reapplying_system_defaults() {
+        let profile: Profile = serde_json::from_value(json!({
+            "use_system_dns": true
+        }))
+        .expect("profile");
+        let target = Target::parse("sing-box-v14-macos").expect("target");
+        let overlaid = apply_dns_frontend_settings(&profile, &target, true).expect("overlay");
+        let prepared = prepare_profile(&overlaid, &target).expect("prepare overlaid profile");
+
+        assert_eq!(
+            prepared.dns["shared"]["managedDnsFrontend"],
+            Value::Bool(true)
+        );
+        assert_eq!(
+            prepared.dns["shared"]["systemDnsTakeoverEnabled"],
+            Value::Bool(true)
+        );
+        assert!(
+            dns_frontend_policy(&overlaid, &target)
+                .expect("policy")
+                .enabled
+        );
+    }
+
+    #[test]
+    fn disabled_frontend_preserves_system_dns_semantics() {
+        let profile: Profile = serde_json::from_value(json!({
+            "use_system_dns": true
+        }))
+        .expect("profile");
+        let target = Target::parse("sing-box-v14-macos").expect("target");
+
+        let overlaid = apply_dns_frontend_settings(&profile, &target, false).expect("overlay");
+
+        assert_eq!(overlaid.extra["use_system_dns"], Value::Bool(true));
+        assert_eq!(
+            overlaid.dns["shared"]["systemDnsTakeoverEnabled"],
+            Value::Bool(false)
+        );
     }
 }
