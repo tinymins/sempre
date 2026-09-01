@@ -13,12 +13,18 @@ fn startup_migrates_v1_settings_once() {
     TrafficStore::open(path.clone()).expect("migrate traffic history");
     let first = fs::read(&path).expect("migrated traffic history");
     let document: serde_json::Value = serde_json::from_slice(&first).expect("migrated JSON");
-    assert_eq!(document["schema"], 2);
+    assert_eq!(document["schema"], 3);
+    assert_eq!(document["settings"]["window_hours"], 72);
+    assert_eq!(document["settings"]["retention_hours"], 720);
     assert_eq!(document["settings"]["reset_day"], serde_json::Value::Null);
     assert_eq!(document["settings"]["retention_months"], 12);
     assert_eq!(
         document["applied_migrations"][0]["id"],
         "v0002_monthly_retention"
+    );
+    assert_eq!(
+        document["applied_migrations"][1]["id"],
+        "v0003_rolling_window"
     );
 
     TrafficStore::open(path.clone()).expect("reopen current history");
@@ -70,6 +76,7 @@ fn history_is_bucketed_persisted_and_rotated_by_age() {
     store
         .update_settings(
             TrafficSettings {
+                window_hours: 1,
                 retention_hours: Some(1),
                 reset_day: None,
                 retention_months: Some(12),
@@ -84,6 +91,63 @@ fn history_is_bucketed_persisted_and_rotated_by_age() {
         .expect("history");
     assert_eq!(history.totals.len(), 1);
     assert_eq!(history.totals[0].label, "new.example");
+}
+
+#[test]
+fn rolling_window_does_not_delete_older_retained_history() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let store = TrafficStore::open(root.path().join("traffic.json")).expect("store");
+    for (time, label) in [
+        (28_800_000, "older.example"),
+        (34_200_000, "recent.example"),
+    ] {
+        store
+            .record(
+                time,
+                vec![TrafficDelta {
+                    dimension: TrafficDimension::Host,
+                    label: label.into(),
+                    download: 10,
+                    upload: 2,
+                }],
+            )
+            .expect("record");
+    }
+    let now = 36_000_000;
+    store
+        .update_settings(
+            TrafficSettings {
+                window_hours: 1,
+                retention_hours: Some(24),
+                reset_day: None,
+                retention_months: Some(12),
+                max_bytes: None,
+            },
+            now,
+        )
+        .expect("one-hour window");
+    let current = store
+        .history(0, TrafficDimension::Host, now)
+        .expect("current window");
+    assert_eq!(current.totals.len(), 1);
+    assert_eq!(current.totals[0].label, "recent.example");
+
+    store
+        .update_settings(
+            TrafficSettings {
+                window_hours: 24,
+                retention_hours: Some(24),
+                reset_day: None,
+                retention_months: Some(12),
+                max_bytes: None,
+            },
+            now,
+        )
+        .expect("expanded window");
+    let expanded = store
+        .history(0, TrafficDimension::Host, now)
+        .expect("expanded window history");
+    assert_eq!(expanded.totals.len(), 2);
 }
 
 #[test]
@@ -106,6 +170,7 @@ fn maximum_size_rotation_drops_oldest_buckets_first() {
     store
         .update_settings(
             TrafficSettings {
+                window_hours: 24,
                 retention_hours: Some(MAX_RETENTION_HOURS),
                 reset_day: None,
                 retention_months: Some(12),

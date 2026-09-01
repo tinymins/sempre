@@ -14,7 +14,7 @@ import { Badge, Button, Card, EmptyState, Field, PageTitle, Spinner } from '../c
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
 
 const UNLIMITED = 'unlimited'
-const DEFAULT_SETTINGS: TrafficSettings = { retention_hours: 24, reset_day: null, retention_months: 12, max_bytes: 32 * 1024 * 1024 }
+const DEFAULT_SETTINGS: TrafficSettings = { window_hours: 24, retention_hours: 24 * 30, reset_day: null, retention_months: 12, max_bytes: 32 * 1024 * 1024 }
 
 export function Traffic() {
   const { t, locale } = useI18n()
@@ -61,10 +61,13 @@ export function Traffic() {
   ]
   const hour = locale === 'zh-CN' ? '小时' : 'hour'
   const day = locale === 'zh-CN' ? '天' : 'days'
-  const retentionOptions = [
+  const windowOptions = [
     { value: 1, label: `1 ${hour}` }, { value: 6, label: `6 ${hour}` }, { value: 24, label: `1 ${day}` },
     { value: 72, label: `3 ${day}` }, { value: 168, label: `7 ${day}` }, { value: 720, label: `30 ${day}` },
-    { value: UNLIMITED, label: t('unlimited'), disabled: settings.max_bytes === null },
+  ]
+  const retentionOptions = [
+    ...[24, 72, 168, 720, 2160, 4320, 8760].map((value) => ({ value, label: `${value / 24} ${value === 24 ? (locale === 'zh-CN' ? '天' : 'day') : day}` })),
+    { value: UNLIMITED, label: t('unlimited') },
   ]
   const rotationOptions = [
     { value: 'rolling', label: t('rollingRetention') },
@@ -76,12 +79,11 @@ export function Traffic() {
   }))
   const retentionMonthOptions = [
     ...[1, 3, 6, 12, 24, 36, 60].map((value) => ({ value, label: locale === 'zh-CN' ? `${value} 个周期` : `${value} cycles` })),
-    { value: UNLIMITED, label: t('unlimited'), disabled: settings.max_bytes === null },
+    { value: UNLIMITED, label: t('unlimited') },
   ]
-  const timeUnlimited = settings.reset_day === null ? settings.retention_hours === null : settings.retention_months === null
   const storageOptions = [
     ...[8, 32, 64, 128, 256].map((value) => ({ value: value * 1024 * 1024, label: `${value} MiB` })),
-    { value: UNLIMITED, label: t('unlimited'), disabled: timeUnlimited },
+    { value: UNLIMITED, label: t('unlimited') },
   ]
 
   return <div className="space-y-5">
@@ -98,9 +100,9 @@ export function Traffic() {
         <p className="mt-2 text-xs tabular-nums text-[var(--muted)]">{formatBytes(history.data?.storage_bytes ?? 0)} / {settings.max_bytes === null ? t('unlimited') : formatBytes(settings.max_bytes)}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">{t('trafficStorageSafety')}</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-          <Field label={t('rotationPolicy')}><Select value={settings.reset_day === null ? 'rolling' : 'monthly'} options={rotationOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, reset_day: value === 'monthly' ? 1 : null, retention_hours: value === 'rolling' && settings.retention_hours === null && settings.max_bytes === null ? 24 : settings.retention_hours, retention_months: value === 'monthly' && settings.retention_months === null && settings.max_bytes === null ? 12 : settings.retention_months })} /></Field>
+          <Field label={t('rotationPolicy')}><Select value={settings.reset_day === null ? 'rolling' : 'monthly'} options={rotationOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, reset_day: value === 'monthly' ? 1 : null })} /></Field>
           {settings.reset_day === null
-            ? <Field label={t('retention')}><Select value={settings.retention_hours ?? UNLIMITED} options={retentionOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, retention_hours: value === UNLIMITED ? null : Number(value) })} /></Field>
+            ? <><Field label={t('rollingWindowLength')}><Select value={settings.window_hours} options={windowOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, window_hours: Number(value) })} /></Field><Field label={t('retention')}><Select value={settings.retention_hours ?? UNLIMITED} options={retentionOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, retention_hours: value === UNLIMITED ? null : Number(value) })} /></Field></>
             : <><Field label={t('monthlyResetDay')}><Select value={settings.reset_day} options={resetDayOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, reset_day: Number(value) })} /></Field><Field label={t('maximumRetentionMonths')}><Select value={settings.retention_months ?? UNLIMITED} options={retentionMonthOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, retention_months: value === UNLIMITED ? null : Number(value) })} /></Field></>}
           <Field label={t('maximumStorage')}><Select value={settings.max_bytes ?? UNLIMITED} options={storageOptions} disabled={updateSettings.isPending} onChange={(value) => updateSettings.mutate({ ...settings, max_bytes: value === UNLIMITED ? null : Number(value) })} /></Field>
         </div>

@@ -37,7 +37,8 @@ describe('Traffic', () => {
     expect(screen.getByText('3 days')).toBeInTheDocument()
     expect(screen.getByText('History period')).toBeInTheDocument()
     expect(screen.getByText('Rolling window')).toBeInTheDocument()
-    expect(screen.getByText('Rolling window length')).toBeInTheDocument()
+    expect(screen.getByText('Statistics window length')).toBeInTheDocument()
+    expect(screen.getByText('History retention time')).toBeInTheDocument()
   })
 
   it('renders a monthly traffic reset day', async () => {
@@ -57,8 +58,28 @@ describe('Traffic', () => {
     expect(screen.getByText('12 cycles')).toBeInTheDocument()
     expect(screen.getByText('80 B / Unlimited')).toBeInTheDocument()
     expect(screen.getByText('Total history storage limit')).toBeInTheDocument()
-    expect(screen.getByText(/All retained months share one total history storage limit/)).toBeInTheDocument()
-    expect(screen.getByText('Time retention and the total history storage limit cannot both be unlimited.')).toBeInTheDocument()
+    expect(screen.getByText(/The statistics window only controls the current summary/)).toBeInTheDocument()
+    expect(screen.getByText('Retention time and the total size limit may both be unlimited; the history file will keep growing when they are.')).toBeInTheDocument()
+  })
+
+  it('allows an unlimited storage cap when time retention is unlimited', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/runtime/events')) return new Response('')
+      return Response.json({
+        settings: { window_hours: 24, retention_hours: null, reset_day: null, retention_months: 12, max_bytes: 32 * 1024 * 1024 },
+        storage_bytes: 80,
+        totals: [],
+      })
+    }))
+    renderTraffic()
+
+    const field = (await screen.findByText('Total history storage limit')).closest('label')
+    expect(field).not.toBeNull()
+    fireEvent.click(within(field as HTMLLabelElement).getByRole('combobox'))
+    const unlimited = within(await screen.findByRole('listbox')).getByText('Unlimited').parentElement
+
+    expect(unlimited).not.toBeNull()
+    expect(unlimited).not.toHaveClass('opacity-50')
   })
 
   it('sorts traffic totals from every data header', async () => {

@@ -1,6 +1,7 @@
 export type TrafficDimension = 'device' | 'user' | 'host' | 'outbound' | 'process'
 
 export interface TrafficSettings {
+  window_hours: number
   retention_hours: number | null
   reset_day: number | null
   retention_months: number | null

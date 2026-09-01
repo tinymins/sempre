@@ -2,11 +2,13 @@ use chrono::{DateTime, Datelike, Local, Months, NaiveDate, TimeZone};
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
-const DEFAULT_RETENTION_HOURS: u32 = 24;
+const DEFAULT_WINDOW_HOURS: u32 = 24;
+const DEFAULT_RETENTION_HOURS: u32 = 24 * 30;
 const DEFAULT_RETENTION_MONTHS: u16 = 12;
 const DEFAULT_MAX_BYTES: u64 = 32 * 1024 * 1024;
 const MIN_RETENTION_HOURS: u32 = 1;
-pub(crate) const MAX_RETENTION_HOURS: u32 = 24 * 30;
+const MAX_WINDOW_HOURS: u32 = 24 * 30;
+pub(crate) const MAX_RETENTION_HOURS: u32 = 24 * 365;
 const MIN_RETENTION_MONTHS: u16 = 1;
 const MAX_RETENTION_MONTHS: u16 = 120;
 pub(crate) const MIN_MAX_BYTES: u64 = 1024 * 1024;
@@ -14,6 +16,7 @@ const MAX_MAX_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct TrafficSettings {
+    pub window_hours: u32,
     #[serde(deserialize_with = "required_option")]
     pub retention_hours: Option<u32>,
     #[serde(deserialize_with = "required_option")]
@@ -35,6 +38,7 @@ where
 impl Default for TrafficSettings {
     fn default() -> Self {
         Self {
+            window_hours: DEFAULT_WINDOW_HOURS,
             retention_hours: Some(DEFAULT_RETENTION_HOURS),
             reset_day: None,
             retention_months: Some(DEFAULT_RETENTION_MONTHS),
@@ -45,6 +49,8 @@ impl Default for TrafficSettings {
 
 #[derive(Debug, Error)]
 pub(crate) enum RotationError {
+    #[error("window_hours must be between {MIN_RETENTION_HOURS} and {MAX_WINDOW_HOURS}")]
+    Window,
     #[error("retention_hours must be between {MIN_RETENTION_HOURS} and {MAX_RETENTION_HOURS}")]
     Retention,
     #[error("reset_day must be between 1 and 31")]
@@ -53,11 +59,12 @@ pub(crate) enum RotationError {
     RetentionMonths,
     #[error("max_bytes must be between {MIN_MAX_BYTES} and {MAX_MAX_BYTES}")]
     MaximumSize,
-    #[error("traffic history must keep either a time limit or a storage limit")]
-    Unbounded,
 }
 
 pub(crate) fn validate(settings: &TrafficSettings) -> Result<(), RotationError> {
+    if !(MIN_RETENTION_HOURS..=MAX_WINDOW_HOURS).contains(&settings.window_hours) {
+        return Err(RotationError::Window);
+    }
     if settings
         .retention_hours
         .is_some_and(|hours| !(MIN_RETENTION_HOURS..=MAX_RETENTION_HOURS).contains(&hours))
@@ -82,13 +89,6 @@ pub(crate) fn validate(settings: &TrafficSettings) -> Result<(), RotationError> 
     {
         return Err(RotationError::MaximumSize);
     }
-    let time_limited = settings.reset_day.map_or_else(
-        || settings.retention_hours.is_some(),
-        |_| settings.retention_months.is_some(),
-    );
-    if !time_limited && settings.max_bytes.is_none() {
-        return Err(RotationError::Unbounded);
-    }
     Ok(())
 }
 
@@ -109,7 +109,7 @@ pub(crate) fn storage_cutoff(settings: &TrafficSettings, now: i64) -> Option<i64
 
 pub(crate) fn summary_cutoff(settings: &TrafficSettings, now: i64) -> Option<i64> {
     settings.reset_day.map_or_else(
-        || storage_cutoff(settings, now),
+        || Some(now - i64::from(settings.window_hours) * 3_600_000),
         |day| monthly_cutoff(now, day, 1),
     )
 }
@@ -190,6 +190,7 @@ mod tests {
     #[test]
     fn rejects_invalid_reset_days() {
         let settings = TrafficSettings {
+            window_hours: 24,
             retention_hours: Some(24),
             reset_day: Some(0),
             retention_months: Some(12),
@@ -209,13 +210,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_completely_unbounded_storage() {
+    fn allows_completely_unbounded_storage() {
         let settings = TrafficSettings {
+            window_hours: 24,
             retention_hours: None,
             reset_day: Some(21),
             retention_months: None,
             max_bytes: None,
         };
-        assert!(matches!(validate(&settings), Err(RotationError::Unbounded)));
+        assert!(validate(&settings).is_ok());
+        assert_eq!(storage_cutoff(&settings, 1_000), None);
     }
 }
