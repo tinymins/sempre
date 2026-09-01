@@ -151,7 +151,7 @@ fn dns_redirect_rules(output: &mut String, plan: &Plan) {
         for protocol in ["tcp", "udp"] {
             let _ = writeln!(
                 output,
-                "add rule ip {TABLE} dns_prerouting iifname {interface} meta l4proto {protocol} {protocol} dport 53 redirect to :{} counter comment \"sempre:dns:lan:{protocol}:\"",
+                "add rule ip {TABLE} dns_prerouting iifname {interface} meta l4proto {protocol} {protocol} dport 53 counter redirect to :{} comment \"sempre:dns:lan:{protocol}:\"",
                 plan.dns_port
             );
         }
@@ -168,7 +168,7 @@ fn dns_redirect_rules(output: &mut String, plan: &Plan) {
         for protocol in ["tcp", "udp"] {
             let _ = writeln!(
                 output,
-                "add rule ip {TABLE} dns_output meta l4proto {protocol} {protocol} dport 53 redirect to :{} counter comment \"sempre:dns:host:{protocol}:\"",
+                "add rule ip {TABLE} dns_output meta l4proto {protocol} {protocol} dport 53 counter redirect to :{} comment \"sempre:dns:host:{protocol}:\"",
                 plan.dns_port
             );
         }
@@ -235,8 +235,9 @@ mod tests {
         assert!(script.contains("iifname \"vmbr1\""));
         assert!(script.contains("tproxy to :7893"));
         assert!(!script.contains("tproxy to :1053"));
-        assert!(script.contains("udp dport 53 redirect to :1053"));
-        assert!(script.contains("tcp dport 53 redirect to :1053"));
+        assert!(script.contains("udp dport 53 counter redirect to :1053"));
+        assert!(script.contains("tcp dport 53 counter redirect to :1053"));
+        assert!(!script.contains("redirect to :1053 counter"));
         assert!(script.contains("meta mark 0x53500002 return"));
         assert!(!script.contains("meta l4proto tcp tcp meta"));
         assert!(!script.contains("meta l4proto udp udp meta"));

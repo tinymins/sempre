@@ -2,34 +2,40 @@ use tokio::net::{TcpListener, UdpSocket};
 
 use crate::DnsError;
 
-pub(crate) async fn upstream_socket(mark: Option<u32>) -> Result<UdpSocket, DnsError> {
-    #[cfg(target_os = "linux")]
-    {
-        use socket2::{Domain, Protocol, Socket, Type};
+#[cfg(target_os = "linux")]
+pub(crate) fn upstream_socket(
+    mark: Option<u32>,
+) -> std::future::Ready<Result<UdpSocket, DnsError>> {
+    std::future::ready(linux_upstream_socket(mark))
+}
 
-        let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
-            .map_err(|error| DnsError::io("create DNS upstream socket", error))?;
-        if let Some(mark) = mark {
-            socket
-                .set_mark(mark)
-                .map_err(|error| DnsError::io("mark DNS upstream socket", error))?;
-        }
+#[cfg(target_os = "linux")]
+fn linux_upstream_socket(mark: Option<u32>) -> Result<UdpSocket, DnsError> {
+    use socket2::{Domain, Protocol, Socket, Type};
+
+    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+        .map_err(|error| DnsError::io("create DNS upstream socket", error))?;
+    if let Some(mark) = mark {
         socket
-            .set_nonblocking(true)
-            .map_err(|error| DnsError::io("configure DNS upstream socket", error))?;
-        socket
-            .bind(&std::net::SocketAddr::from(([0, 0, 0, 0], 0)).into())
-            .map_err(|error| DnsError::io("bind DNS upstream socket", error))?;
-        return UdpSocket::from_std(socket.into())
-            .map_err(|error| DnsError::io("open DNS upstream socket", error));
+            .set_mark(mark)
+            .map_err(|error| DnsError::io("mark DNS upstream socket", error))?;
     }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = mark;
-        UdpSocket::bind("0.0.0.0:0")
-            .await
-            .map_err(|error| DnsError::io("bind DNS upstream socket", error))
-    }
+    socket
+        .set_nonblocking(true)
+        .map_err(|error| DnsError::io("configure DNS upstream socket", error))?;
+    socket
+        .bind(&std::net::SocketAddr::from(([0, 0, 0, 0], 0)).into())
+        .map_err(|error| DnsError::io("bind DNS upstream socket", error))?;
+    UdpSocket::from_std(socket.into())
+        .map_err(|error| DnsError::io("open DNS upstream socket", error))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) async fn upstream_socket(mark: Option<u32>) -> Result<UdpSocket, DnsError> {
+    let _ = mark;
+    UdpSocket::bind("0.0.0.0:0")
+        .await
+        .map_err(|error| DnsError::io("bind DNS upstream socket", error))
 }
 
 pub(crate) async fn bind_udp(address: &str, mark: Option<u32>) -> Result<UdpSocket, DnsError> {

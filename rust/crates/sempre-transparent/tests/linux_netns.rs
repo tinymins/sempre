@@ -54,8 +54,8 @@ async fn tproxy_owns_intercepts_and_cleans_kernel_state() {
     drain_readiness(&proxy).await;
     drain_readiness(&dns).await;
 
-    assert_intercepted("203.0.113.10:443", &proxy).await;
-    assert_intercepted("8.8.8.8:53", &dns).await;
+    assert_tproxy_intercepted("203.0.113.10:443", &proxy).await;
+    assert_redirected("8.8.8.8:53", &dns, DNS_PORT).await;
 
     controller.cleanup().await.expect("clean TProxy state");
     let tables = tables();
@@ -92,7 +92,23 @@ fn transparent_listener(port: u16) -> TcpListener {
     TcpListener::from_std(listener).expect("Tokio listener")
 }
 
-async fn assert_intercepted(target: &str, listener: &TcpListener) {
+async fn assert_tproxy_intercepted(target: &str, listener: &TcpListener) {
+    let (accepted, target) = intercepted_connection(target, listener).await;
+    assert_eq!(accepted.local_addr().expect("original destination"), target);
+}
+
+async fn assert_redirected(target: &str, listener: &TcpListener, redirect_port: u16) {
+    let (accepted, _) = intercepted_connection(target, listener).await;
+    assert_eq!(
+        accepted.local_addr().expect("redirect destination").port(),
+        redirect_port
+    );
+}
+
+async fn intercepted_connection(
+    target: &str,
+    listener: &TcpListener,
+) -> (tokio::net::TcpStream, SocketAddr) {
     let target: SocketAddr = target.parse().expect("target address");
     let connect = tokio::net::TcpStream::connect(target);
     let accept = listener.accept();
@@ -103,7 +119,7 @@ async fn assert_intercepted(target: &str, listener: &TcpListener) {
     .expect("transparent connection timeout");
     connected.expect("connect through TProxy");
     let (accepted, _) = accepted.expect("accept TProxy connection");
-    assert_eq!(accepted.local_addr().expect("original destination"), target);
+    (accepted, target)
 }
 
 fn policy_state_exists(family: &str) -> bool {
