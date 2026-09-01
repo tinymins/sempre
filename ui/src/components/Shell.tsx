@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
-import { NavLink } from 'react-router-dom'
-import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, DatabaseZap, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { Activity, Cable, ChartNoAxesCombined, ChevronDown, ChevronLeft, ChevronRight, CircleGauge, DatabaseZap, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -20,6 +20,14 @@ export interface ShellNavigationItem {
   icon: LucideIcon
 }
 
+interface ShellNavigationSection {
+  key: string
+  label?: string
+  icon?: LucideIcon
+  collapsible?: boolean
+  items: ShellNavigationItem[]
+}
+
 export interface ShellChrome {
   subtitle: string
   statusLabel: string
@@ -31,9 +39,14 @@ export interface ShellChrome {
 export function Shell({ children, navigation, chrome }: { children: ReactNode; navigation?: ShellNavigationItem[]; chrome?: ShellChrome }) {
   const { t, locale, setLocale } = useI18n()
   const { session, setSession } = useSession()
+  const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [passwordWarningDismissed, setPasswordWarningDismissed] = useState(false)
   const [desktopCollapsed, setDesktopCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true')
+  const analysisPaths = ['/connections', '/traffic', '/network-test', '/rules', '/logs']
+  const analysisActive = analysisPaths.includes(location.pathname)
+  const [analysisOpen, setAnalysisOpen] = useState(false)
+  const analysisVisible = analysisActive || analysisOpen
   const { theme, setTheme } = useTheme()
   const system = useQuery({
     queryKey: ['system'],
@@ -44,23 +57,31 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(desktopCollapsed))
   }, [desktopCollapsed])
-  const defaultNavigation = [
-    { path: '/', label: t('overview'), icon: CircleGauge },
-    { path: '/custom-nodes', label: t('customNodes'), icon: Library },
-    { path: '/subscriptions', label: t('subscriptions'), icon: Rss },
-    { path: '/tunnels', label: t('tunnels'), icon: Waypoints },
-    { path: '/proxies', label: t('proxies'), icon: Network },
-    { path: '/connections', label: t('connections'), icon: Cable },
-    { path: '/routing-rules', label: t('routingRules'), icon: ListFilter },
-    { path: '/rules', label: t('runtimeRules'), icon: ListTree },
-    { path: '/dns', label: t('dns'), icon: DatabaseZap },
-    { path: '/traffic', label: t('traffic'), icon: ChartNoAxesCombined },
-    { path: '/logs', label: t('logs'), icon: Activity },
-    { path: '/network-test', label: t('networkTest'), icon: Globe2 },
-    { path: '/gateway', label: t('gateway'), icon: Router },
-    { path: '/management', label: t('management'), icon: Settings },
+  const defaultNavigation: ShellNavigationSection[] = [
+    { key: 'overview', items: [{ path: '/', label: t('overview'), icon: CircleGauge }] },
+    { key: 'strategy', label: t('navigationStrategy'), items: [
+      { path: '/proxies', label: t('proxies'), icon: Network },
+      { path: '/routing-rules', label: t('routingRules'), icon: ListFilter },
+    ] },
+    { key: 'configuration', label: t('navigationConfiguration'), items: [
+      { path: '/subscriptions', label: t('navigationSubscriptions'), icon: Rss },
+      { path: '/custom-nodes', label: t('customNodes'), icon: Library },
+    ] },
+    { key: 'network', label: t('navigationNetwork'), items: [
+      { path: '/dns', label: t('dns'), icon: DatabaseZap },
+      { path: '/tunnels', label: t('tunnels'), icon: Waypoints },
+      { path: '/gateway', label: t('gateway'), icon: Router },
+    ] },
+    { key: 'analysis', label: t('navigationAnalysis'), icon: ChartNoAxesCombined, collapsible: true, items: [
+      { path: '/connections', label: t('connections'), icon: Cable },
+      { path: '/traffic', label: t('traffic'), icon: ChartNoAxesCombined },
+      { path: '/network-test', label: t('networkTest'), icon: Globe2 },
+      { path: '/rules', label: t('navigationEffectiveRules'), icon: ListTree },
+      { path: '/logs', label: t('logs'), icon: Activity },
+    ] },
+    { key: 'system', label: t('navigationSystem'), items: [{ path: '/management', label: t('management'), icon: Settings }] },
   ]
-  const nav = navigation ?? defaultNavigation
+  const sections: ShellNavigationSection[] = navigation ? [{ key: 'custom', items: navigation }] : defaultNavigation
   const runtime = system.data?.runtime.state || 'stopped'
   const statusLabel = chrome?.statusLabel ?? t('core')
   const statusDetail = chrome?.statusDetail ?? (system.data?.active ? `${system.data.active.core} ${system.data.active.version}` : t('noCore'))
@@ -81,12 +102,23 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           <div className={cn('min-w-0', desktopCollapsed && 'lg:sr-only')}><p className="font-semibold">Sempre</p><p className="truncate text-xs text-[var(--muted)]">{chrome?.subtitle ?? system.data?.version ?? 'Control plane'}</p></div>
           <Button className="ml-auto lg:hidden" size="icon" variant="ghost" title="Close" onClick={() => setMobileOpen(false)}><ChevronLeft size={18} /></Button>
         </div>
-        <nav className={cn('flex-1 space-y-1 p-3', desktopCollapsed && 'lg:p-2')}>
-          {nav.map(({ path, label, icon: Icon }) => (
-            <NavLink key={path} to={path} end={path === '/'} aria-label={label} title={desktopCollapsed ? label : undefined} onClick={() => setMobileOpen(false)} className={({ isActive }) => cn('flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]', desktopCollapsed && 'lg:justify-center lg:gap-0 lg:px-0', isActive && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400')}>
-              <Icon size={18} /><span className={cn(desktopCollapsed && 'lg:sr-only')}>{label}</span>
-            </NavLink>
-          ))}
+        <nav className={cn('flex-1 space-y-3 overflow-y-auto p-3', desktopCollapsed && 'lg:p-2')}>
+          {sections.map((section) => {
+            const open = !section.collapsible || analysisVisible
+            const SectionIcon = section.icon
+            return <div key={section.key} className="space-y-1">
+              {section.label ? section.collapsible ? (
+                <button type="button" title={desktopCollapsed ? section.label : undefined} aria-expanded={analysisVisible} className={cn('flex h-8 w-full items-center gap-2 rounded-md px-3 text-xs font-semibold text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]', analysisActive && 'text-emerald-700 dark:text-emerald-400', desktopCollapsed && 'lg:h-10 lg:justify-center lg:px-0')} onClick={() => setAnalysisOpen((value) => !value)}>
+                  {SectionIcon ? <SectionIcon size={16} /> : null}<span className={cn('flex-1 text-left', desktopCollapsed && 'lg:sr-only')}>{section.label}</span><ChevronDown className={cn('transition-transform', analysisVisible && 'rotate-180', desktopCollapsed && 'lg:hidden')} size={15} />
+                </button>
+              ) : <p className={cn('px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]', desktopCollapsed && 'lg:hidden')}>{section.label}</p> : null}
+              {open ? section.items.map(({ path, label, icon: Icon }) => (
+                <NavLink key={path} to={path} end={path === '/'} aria-label={label} title={desktopCollapsed ? label : undefined} onClick={() => setMobileOpen(false)} className={({ isActive }) => cn('flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]', section.collapsible && 'pl-7', desktopCollapsed && 'lg:justify-center lg:gap-0 lg:px-0', isActive && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400')}>
+                  <Icon size={18} /><span className={cn(desktopCollapsed && 'lg:sr-only')}>{label}</span>
+                </NavLink>
+              )) : null}
+            </div>
+          })}
         </nav>
         <div className="border-t border-[var(--border)] p-3">
           <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge></div>

@@ -60,16 +60,41 @@ describe('Shell sidebar', () => {
 
     const collapse = screen.getByRole('button', { name: 'Collapse sidebar' })
     expect(collapse).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('link', { name: 'Subscriptions' })).not.toHaveAttribute('title')
+    expect(screen.getByRole('link', { name: 'Subscription Config' })).not.toHaveAttribute('title')
     fireEvent.click(collapse)
 
     expect(shell).toHaveAttribute('data-sidebar-collapsed', 'true')
     expect(shell?.style.getPropertyValue('--shell-sidebar-width')).toBe('4rem')
     expect(localStorage.getItem('sempre.sidebar.collapsed')).toBe('true')
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('link', { name: 'Subscriptions' })).toHaveAttribute('title', 'Subscriptions')
-    expect(screen.getByRole('link', { name: 'Network Test' })).toHaveAttribute('title', 'Network Test')
+    expect(screen.getByRole('link', { name: 'Subscription Config' })).toHaveAttribute('title', 'Subscription Config')
+    expect(screen.getByRole('button', { name: 'Analysis & diagnostics' })).toHaveAttribute('title', 'Analysis & diagnostics')
     expect(await screen.findByLabelText('Core: running')).toBeInTheDocument()
+  })
+
+  it('groups primary controls and keeps analysis tools collapsed by default', () => {
+    renderShell()
+    const navigation = screen.getByRole('navigation')
+    const labels = within(navigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
+
+    expect(labels).toEqual(['Overview', 'Proxies', 'Routing Rules', 'Subscription Config', 'Custom Nodes', 'DNS', 'Tunnels', 'LAN Gateway', 'Management'])
+    expect(within(navigation).getByText('Strategy')).toBeInTheDocument()
+    expect(within(navigation).getByText('Configuration')).toBeInTheDocument()
+    expect(within(navigation).getByText('Network capabilities')).toBeInTheDocument()
+    expect(within(navigation).getByText('System')).toBeInTheDocument()
+
+    const analysis = within(navigation).getByRole('button', { name: 'Analysis & diagnostics' })
+    expect(analysis).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(analysis)
+    expect(analysis).toHaveAttribute('aria-expanded', 'true')
+    expect(within(navigation).getAllByRole('link').slice(-6).map((link) => link.getAttribute('aria-label'))).toEqual(['Connections', 'Traffic', 'Network Test', 'Effective Rules', 'Logs', 'Management'])
+  })
+
+  it('opens analysis tools when the current route belongs to that section', () => {
+    renderShell('/rules')
+
+    expect(screen.getByRole('button', { name: 'Analysis & diagnostics' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'Effective Rules' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('restores the saved state and can expand again', () => {
@@ -91,7 +116,7 @@ describe('Shell sidebar', () => {
 
     fireEvent.click(screen.getByTitle('Menu'))
     expect(screen.getByRole('button', { name: 'Close navigation' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('link', { name: 'Subscriptions' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Subscription Config' }))
     expect(screen.queryByRole('button', { name: 'Close navigation' })).not.toBeInTheDocument()
     expect(localStorage.getItem('sempre.sidebar.collapsed')).toBe('true')
   })
@@ -194,14 +219,14 @@ describe('Shell sidebar', () => {
   })
 })
 
-function renderShell() {
+function renderShell(initialEntry = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <I18nProvider>
         <SessionProvider>
           <ThemeProvider>
-            <MemoryRouter>
+            <MemoryRouter initialEntries={[initialEntry]}>
               <Shell><div>Page content</div></Shell>
             </MemoryRouter>
           </ThemeProvider>

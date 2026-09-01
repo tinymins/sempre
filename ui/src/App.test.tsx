@@ -116,6 +116,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /Connect/ }))
 
     expect(await screen.findByRole('link', { name: 'Overview' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis & diagnostics' }))
     expect(screen.getByRole('link', { name: 'Network Test' })).toBeInTheDocument()
     expect(await screen.findByText('Managed core runtime')).toBeInTheDocument()
     expect(await screen.findByText('exit status 1')).toBeInTheDocument()
