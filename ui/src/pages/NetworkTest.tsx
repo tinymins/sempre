@@ -8,7 +8,19 @@ import { useSession } from '../lib/session'
 import { compareNumber, compareText } from '../lib/sort'
 import type { IpMetadata, NetworkTestReport, NetworkTestResult } from '../lib/types'
 
-const defaultResults: NetworkTestResult[] = [
+interface DnsAnswer {
+  address: string
+  fake_ip: boolean
+}
+
+interface NetworkTestRow extends NetworkTestResult {
+  dns_answers?: DnsAnswer[]
+  dns_error?: string
+}
+
+type NetworkTestReportWithDns = Omit<NetworkTestReport, 'results'> & { results: NetworkTestRow[] }
+
+const defaultResults: NetworkTestRow[] = [
   { id: 'domestic-ip', name: 'Domestic IP', region: 'domestic', category: 'ip', url: 'https://ip.3322.net', ok: false, latency_ms: 0 },
   { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: false, latency_ms: 0 },
   { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: false, latency_ms: 0 },
@@ -20,7 +32,7 @@ export function NetworkTest() {
   const { session } = useSession()
   const report = useQuery({
     queryKey: ['network', 'test'],
-    queryFn: () => api<NetworkTestReport>(session!, '/network/test', { method: 'POST' }),
+    queryFn: () => api<NetworkTestReportWithDns>(session!, '/network/test', { method: 'POST' }),
     retry: false,
   })
   const results = report.data?.results.length ? report.data.results : defaultResults
@@ -30,13 +42,20 @@ export function NetworkTest() {
   const foreignResult = results.find((item) => item.id === 'foreign-ip')
   const domesticIP = domesticResult?.ip || '-'
   const foreignIP = foreignResult?.ip || '-'
-  const columns = useMemo<Array<TableColumn<NetworkTestResult>>>(() => [
+  const columns = useMemo<Array<TableColumn<NetworkTestRow>>>(() => [
     {
       title: t('networkTarget'),
       key: 'target',
       minWidth: 190,
       sorter: (left, right) => compareText(left.name, right.name),
       render: (_value, record) => <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-medium">{record.name}</span><Tag color={record.region === 'domestic' ? 'green' : 'blue'} bordered={false}>{record.region === 'domestic' ? t('domestic') : t('foreign')}</Tag></div><p className="mt-1 truncate text-xs text-[var(--muted)]" title={record.url}>{record.url}</p></div>,
+    },
+    {
+      title: t('localDnsResult'),
+      key: 'dns',
+      width: 240,
+      sorter: (left, right) => compareText(left.dns_answers?.map((answer) => answer.address).join(','), right.dns_answers?.map((answer) => answer.address).join(',')),
+      render: (_value, record) => report.isFetching && !report.data ? '-' : <LocalDnsResult result={record} />,
     },
     {
       title: t('status'),
@@ -88,17 +107,24 @@ export function NetworkTest() {
       <Metric icon={Globe2} label={t('foreignIP')} value={foreignIP} detail={formatIpMetadata(foreignResult?.ip_metadata)} tone="blue" />
     </div>
     <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
-      <Table<NetworkTestResult>
+      <Table<NetworkTestRow>
         rowKey="id"
         size="middle"
         pagination={false}
         columns={columns}
         dataSource={results}
-        scroll={{ x: 980 }}
+        scroll={{ x: 1220 }}
         locale={{ emptyText: report.isError ? (report.error instanceof Error ? report.error.message : t('operationFailed')) : <Empty description={t('noData')} /> }}
       />
     </Card>
   </div>
+}
+
+function LocalDnsResult({ result }: { result: NetworkTestRow }) {
+  if (!result.dns_answers?.length) {
+    return result.dns_error ? <span className="text-red-600 dark:text-red-400">{result.dns_error}</span> : '-'
+  }
+  return <div className="space-y-1">{result.dns_answers.map((answer) => <div key={answer.address} className="flex items-center gap-2"><span className="min-w-0 truncate font-medium tabular-nums" title={answer.address}>{answer.address}</span><Tag size="small" color={answer.fake_ip ? 'warning' : 'success'} bordered={false}>{answer.fake_ip ? 'Fake-IP' : 'Real-IP'}</Tag></div>)}</div>
 }
 
 function IpAddress({ result }: { result: NetworkTestResult }) {

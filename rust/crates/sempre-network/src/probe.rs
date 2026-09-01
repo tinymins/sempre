@@ -11,7 +11,7 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::NetworkError;
+use crate::{DnsAnswer, NetworkError, dns_probe};
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 const IP_METADATA_TIMEOUT: Duration = Duration::from_secs(5);
@@ -56,6 +56,10 @@ pub struct NetworkTestResult {
     pub ip: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip_metadata: Option<IpMetadata>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dns_answers: Vec<DnsAnswer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
@@ -175,6 +179,9 @@ pub async fn run_network_test() -> Result<NetworkTestReport, NetworkError> {
 
 async fn run_probe(client: &Client, probe: Probe) -> NetworkTestResult {
     let started = std::time::Instant::now();
+    let url = reqwest::Url::parse(probe.url).expect("built-in probe URL");
+    let host = url.host_str().expect("built-in probe host");
+    let (dns, response) = tokio::join!(dns_probe::resolve(host), client.get(probe.url).send());
     let mut result = NetworkTestResult {
         id: probe.id,
         name: probe.name,
@@ -186,9 +193,11 @@ async fn run_probe(client: &Client, probe: Probe) -> NetworkTestResult {
         http_status: None,
         ip: None,
         ip_metadata: None,
+        dns_answers: dns.answers,
+        dns_error: dns.error,
         detail: None,
     };
-    let response = match client.get(probe.url).send().await {
+    let response = match response {
         Ok(response) => response,
         Err(error) => {
             result.latency_ms = started.elapsed().as_millis();

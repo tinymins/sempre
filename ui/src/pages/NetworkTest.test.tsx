@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
@@ -8,10 +8,10 @@ import { NetworkTest } from './NetworkTest'
 const report = {
   checked_at: '2026-08-07T00:00:00Z',
   results: [
-    { id: 'domestic-ip', name: 'Domestic IP', region: 'domestic', category: 'ip', url: 'https://ip.3322.net', ok: true, latency_ms: 38, http_status: 200, ip: '183.131.177.101', ip_metadata: { country: 'China', region: 'Zhejiang', city: 'Hangzhou', isp: 'China Telecom', asn: 4134 } },
-    { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: true, latency_ms: 128, http_status: 200, ip: '144.34.229.119', ip_metadata: { country: 'United States', region: 'California', city: 'Los Angeles', asn_organization: 'Cloudflare, Inc.', asn: 13335 } },
-    { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: true, latency_ms: 42, http_status: 200 },
-    { id: 'google', name: 'Google', region: 'foreign', category: 'reachability', url: 'https://www.google.com/generate_204', ok: false, latency_ms: 8000, http_status: 0, detail: 'context deadline exceeded' },
+    { id: 'domestic-ip', name: 'Domestic IP', region: 'domestic', category: 'ip', url: 'https://ip.3322.net', ok: true, latency_ms: 38, http_status: 200, ip: '183.131.177.101', ip_metadata: { country: 'China', region: 'Zhejiang', city: 'Hangzhou', isp: 'China Telecom', asn: 4134 }, dns_answers: [{ address: '223.5.5.5', fake_ip: false }] },
+    { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: true, latency_ms: 128, http_status: 200, ip: '144.34.229.119', ip_metadata: { country: 'United States', region: 'California', city: 'Los Angeles', asn_organization: 'Cloudflare, Inc.', asn: 13335 }, dns_answers: [{ address: '198.18.0.2', fake_ip: true }] },
+    { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: true, latency_ms: 42, http_status: 200, dns_answers: [{ address: '110.242.68.66', fake_ip: false }] },
+    { id: 'google', name: 'Google', region: 'foreign', category: 'reachability', url: 'https://www.google.com/generate_204', ok: false, latency_ms: 8000, http_status: 0, detail: 'context deadline exceeded', dns_answers: [{ address: '198.18.0.8', fake_ip: true }] },
   ],
 }
 
@@ -39,6 +39,7 @@ describe('NetworkTest', () => {
     expect(screen.getByText('Baidu')).toBeInTheDocument()
     expect(screen.getByText('Google')).toBeInTheDocument()
     expect(screen.getByText('Request duration')).toBeInTheDocument()
+    expect(screen.getByText('Local DNS')).toBeInTheDocument()
     expect(screen.getByText('Average request duration')).toBeInTheDocument()
     expect(screen.getAllByText('Loading...')).toHaveLength(4)
     expect(await screen.findAllByText('183.131.177.101')).toHaveLength(2)
@@ -52,6 +53,10 @@ describe('NetworkTest', () => {
       expect.stringContaining('Google'),
     ])
     expect(screen.getByText('context deadline exceeded')).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: /Baidu/ })).getByText('110.242.68.66')).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: /Baidu/ })).getByText('Real-IP')).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: /Google/ })).getByText('198.18.0.8')).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: /Google/ })).getByText('Fake-IP')).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/network/test', expect.objectContaining({ method: 'POST' }))
 
     fireEvent.click(screen.getByRole('button', { name: /Refresh/ }))
