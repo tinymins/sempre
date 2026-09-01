@@ -37,6 +37,8 @@ describe('Proxies', () => {
     fireEvent.click(globalGroup)
     expect(screen.getByText('global-node')).toBeInTheDocument()
     expect(screen.queryByText('second-node')).not.toBeInTheDocument()
+    expect(screen.getByRole('radiogroup')).toHaveClass('grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]')
+    expect(screen.getByRole('radio', { name: 'global-node' })).toHaveClass('rounded-md', 'border')
 
     fireEvent.click(globalGroup)
     expect(screen.queryByText('global-node')).not.toBeInTheDocument()
