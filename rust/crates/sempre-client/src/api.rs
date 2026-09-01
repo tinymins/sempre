@@ -73,6 +73,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .merge(crate::subscription_tools_api::router())
         .merge(crate::custom_node_api::router())
         .merge(crate::dns_api::router())
+        .merge(crate::network_api::router())
         .merge(crate::runtime_api::router())
         .merge(crate::runtime_control_api::router())
         .merge(crate::runtime_events_api::router())

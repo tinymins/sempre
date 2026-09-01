@@ -64,11 +64,11 @@ impl DnsSettings {
         }
     }
 
-    pub(crate) fn frontend_rule_sets(&self) -> Vec<sempre_gateway::DnsRuleSet> {
+    pub(crate) fn frontend_rule_sets(&self) -> Vec<sempre_dns::DnsRuleSet> {
         self.rule_sets
             .iter()
             .filter(|rule_set| !rule_set.domains.is_empty())
-            .map(|rule_set| sempre_gateway::DnsRuleSet {
+            .map(|rule_set| sempre_dns::DnsRuleSet {
                 id: rule_set.id.clone(),
                 name: rule_set.name.clone(),
                 enabled: true,

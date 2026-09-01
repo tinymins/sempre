@@ -320,18 +320,6 @@ export interface GatewayConfig {
     domain?: string
     reservations: Array<{ mac: string; ip: string; hostname?: string }>
   }
-  dns: {
-    enabled: boolean
-    listen_hosts: string[]
-    listen_port: number
-    local_upstreams: string[]
-    remote_upstream: string
-    strategy: 'local-first-classify' | 'rules-first'
-    reject_https: boolean
-    rule_sets: Array<{ id: string; name: string; enabled: boolean; type: 'inline' | 'url' | string; url?: string; rules?: string[]; upstream: string }>
-    domestic_cidrs: string[]
-    cache_ttl_seconds: number
-  }
   pve: {
     host?: string
     port?: number
@@ -353,7 +341,6 @@ export interface GatewayLease {
 export interface GatewayStatus {
   config: GatewayConfig
   runtime: {
-    dns_running: boolean
     dhcp_running: boolean
     started_at?: string | null
     dhcp_leases: GatewayLease[]
@@ -375,12 +362,17 @@ export interface GatewayHostPlan {
   output?: string[]
 }
 
-export interface GatewayDNSDebugResult {
-  name: string
-  type: string
-  upstream: string
-  answers: string[]
-  detail?: string
+export interface NetworkSettings {
+  schema: number
+  revision: number
+  mode: 'local' | 'gateway'
+  gateway_capture_host: boolean
+}
+
+export interface NetworkSettingsResponse {
+  settings: NetworkSettings
+  platform: string
+  gateway_available: boolean
 }
 
 export interface TunnelForward {

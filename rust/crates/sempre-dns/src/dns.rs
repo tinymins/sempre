@@ -12,7 +12,7 @@ use tokio::{
 
 use crate::model::DnsConfig;
 use crate::{
-    GatewayError,
+    DnsError,
     dns_policy::{DnsQueryEvent, DnsRuntimePolicy, NoopDnsRuntimePolicy},
     dns_wire::{
         TYPE_HTTPS, answer_ipv4_addresses, build_query, format_answers, fqdn, parse_question,
@@ -62,22 +62,14 @@ impl DnsServer {
     pub(crate) async fn start_with_policy(
         config: DnsConfig,
         policy: Arc<dyn DnsRuntimePolicy>,
-    ) -> Result<Self, GatewayError> {
+    ) -> Result<Self, DnsError> {
         let resolver = Resolver::new(config, policy)?;
         let mut udp = Vec::new();
         let mut tcp = Vec::new();
         for host in &resolver.config.listen_hosts {
             let address = format!("{host}:{}", resolver.config.listen_port);
-            udp.push(
-                UdpSocket::bind(&address).await.map_err(|error| {
-                    GatewayError::io(format!("listen DNS UDP {address}"), error)
-                })?,
-            );
-            tcp.push(
-                TcpListener::bind(&address).await.map_err(|error| {
-                    GatewayError::io(format!("listen DNS TCP {address}"), error)
-                })?,
-            );
+            udp.push(crate::socket::bind_udp(&address, resolver.config.outbound_mark).await?);
+            tcp.push(crate::socket::bind_tcp(&address, resolver.config.outbound_mark).await?);
         }
         let (shutdown, _) = watch::channel(false);
         let mut tasks = Vec::with_capacity(udp.len() + tcp.len());
@@ -106,17 +98,17 @@ impl DnsServer {
     }
 }
 
-pub(crate) async fn debug_query(
+pub async fn debug_query(
     config: DnsConfig,
     name: &str,
     record_type: &str,
-) -> Result<DnsDebugResult, GatewayError> {
+) -> Result<DnsDebugResult, DnsError> {
     Resolver::new(config, Arc::new(NoopDnsRuntimePolicy))?
         .debug_query(name, record_type)
         .await
 }
 
-pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), GatewayError> {
+pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), DnsError> {
     let resolver = Resolver::new(config.clone(), Arc::new(NoopDnsRuntimePolicy))?;
     let local = [
         "baidu.com",
@@ -127,7 +119,7 @@ pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), Gatew
     ]
     .into_iter()
     .find(|name| resolver.selected_upstream(name) == "local")
-    .ok_or_else(|| GatewayError::invalid("managed DNS policy has no local probe domain"))?;
+    .ok_or_else(|| DnsError::invalid("managed DNS policy has no local probe domain"))?;
     let remote = [
         "example.com",
         "github.com",
@@ -137,12 +129,12 @@ pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), Gatew
     ]
     .into_iter()
     .find(|name| resolver.selected_upstream(name) == "remote")
-    .ok_or_else(|| GatewayError::invalid("managed DNS policy has no core probe domain"))?;
+    .ok_or_else(|| DnsError::invalid("managed DNS policy has no core probe domain"))?;
     Ok((local.into(), remote.into()))
 }
 
 impl Resolver {
-    fn new(config: DnsConfig, policy: Arc<dyn DnsRuntimePolicy>) -> Result<Self, GatewayError> {
+    fn new(config: DnsConfig, policy: Arc<dyn DnsRuntimePolicy>) -> Result<Self, DnsError> {
         let domestic_cidrs = config
             .domestic_cidrs
             .iter()
@@ -166,11 +158,7 @@ impl Resolver {
         })
     }
 
-    async fn debug_query(
-        &self,
-        name: &str,
-        record_type: &str,
-    ) -> Result<DnsDebugResult, GatewayError> {
+    async fn debug_query(&self, name: &str, record_type: &str) -> Result<DnsDebugResult, DnsError> {
         let (record_type, number) = record_number(record_type)?;
         let packet = build_query(name, number)?;
         let resolved = self.resolve(&packet).await?;
@@ -183,7 +171,7 @@ impl Resolver {
         })
     }
 
-    async fn resolve(&self, packet: &[u8]) -> Result<Resolved, GatewayError> {
+    async fn resolve(&self, packet: &[u8]) -> Result<Resolved, DnsError> {
         let question = parse_question(packet)?;
         let Some(question) = question else {
             return Ok(Resolved {
@@ -286,11 +274,7 @@ impl Resolver {
         response
     }
 
-    async fn exchange_named(
-        &self,
-        packet: &[u8],
-        upstream: &str,
-    ) -> Result<Resolved, GatewayError> {
+    async fn exchange_named(&self, packet: &[u8], upstream: &str) -> Result<Resolved, DnsError> {
         match upstream {
             "local" => self.exchange_local(packet).await,
             "remote" | "" => self.exchange(packet, &self.config.remote_upstream).await,
@@ -298,7 +282,7 @@ impl Resolver {
         }
     }
 
-    async fn exchange_local(&self, packet: &[u8]) -> Result<Resolved, GatewayError> {
+    async fn exchange_local(&self, packet: &[u8]) -> Result<Resolved, DnsError> {
         if self.config.local_upstreams.is_empty() {
             return self.exchange(packet, &self.config.remote_upstream).await;
         }
@@ -312,33 +296,31 @@ impl Resolver {
         Err(last_error.expect("non-empty local upstreams"))
     }
 
-    async fn exchange(&self, packet: &[u8], upstream: &str) -> Result<Resolved, GatewayError> {
+    async fn exchange(&self, packet: &[u8], upstream: &str) -> Result<Resolved, DnsError> {
         let address = lookup_host(upstream)
             .await
-            .map_err(|error| GatewayError::io(format!("resolve DNS upstream {upstream}"), error))?
+            .map_err(|error| DnsError::io(format!("resolve DNS upstream {upstream}"), error))?
             .next()
-            .ok_or_else(|| GatewayError::invalid(format!("DNS upstream {upstream:?} is empty")))?;
-        let socket = UdpSocket::bind("0.0.0.0:0")
-            .await
-            .map_err(|error| GatewayError::io("bind DNS upstream socket", error))?;
+            .ok_or_else(|| DnsError::invalid(format!("DNS upstream {upstream:?} is empty")))?;
+        let socket = crate::socket::upstream_socket(self.config.outbound_mark).await?;
         socket
             .connect(address)
             .await
-            .map_err(|error| GatewayError::io(format!("connect DNS upstream {upstream}"), error))?;
+            .map_err(|error| DnsError::io(format!("connect DNS upstream {upstream}"), error))?;
         socket
             .send(packet)
             .await
-            .map_err(|error| GatewayError::io(format!("send DNS query to {upstream}"), error))?;
+            .map_err(|error| DnsError::io(format!("send DNS query to {upstream}"), error))?;
         let mut response = vec![0_u8; u16::MAX as usize];
         let count = timeout(Duration::from_secs(5), socket.recv(&mut response))
             .await
-            .map_err(|_| GatewayError::invalid(format!("DNS upstream {upstream} timed out")))?
+            .map_err(|_| DnsError::invalid(format!("DNS upstream {upstream} timed out")))?
             .map_err(|error| {
-                GatewayError::io(format!("receive DNS response from {upstream}"), error)
+                DnsError::io(format!("receive DNS response from {upstream}"), error)
             })?;
         response.truncate(count);
         if response.get(..2) != packet.get(..2) {
-            return Err(GatewayError::invalid(format!(
+            return Err(DnsError::invalid(format!(
                 "DNS upstream {upstream} returned a mismatched transaction"
             )));
         }
@@ -437,42 +419,42 @@ async fn serve_tcp_connection(
     mut stream: TcpStream,
     resolver: Resolver,
     client: String,
-) -> Result<(), GatewayError> {
+) -> Result<(), DnsError> {
     let mut length = [0_u8; 2];
     timeout(Duration::from_secs(5), stream.read_exact(&mut length))
         .await
-        .map_err(|_| GatewayError::invalid("DNS TCP read timed out"))?
-        .map_err(|error| GatewayError::io("read DNS TCP length", error))?;
+        .map_err(|_| DnsError::invalid("DNS TCP read timed out"))?
+        .map_err(|error| DnsError::io("read DNS TCP length", error))?;
     let mut request = vec![0_u8; usize::from(u16::from_be_bytes(length))];
     stream
         .read_exact(&mut request)
         .await
-        .map_err(|error| GatewayError::io("read DNS TCP query", error))?;
+        .map_err(|error| DnsError::io("read DNS TCP query", error))?;
     let response = resolver.resolve_for_client(&request, client).await;
     let length = u16::try_from(response.len())
-        .map_err(|_| GatewayError::invalid("DNS TCP response exceeds 65535 bytes"))?;
+        .map_err(|_| DnsError::invalid("DNS TCP response exceeds 65535 bytes"))?;
     stream
         .write_all(&length.to_be_bytes())
         .await
-        .map_err(|error| GatewayError::io("write DNS TCP response length", error))?;
+        .map_err(|error| DnsError::io("write DNS TCP response length", error))?;
     stream
         .write_all(&response)
         .await
-        .map_err(|error| GatewayError::io("write DNS TCP response", error))
+        .map_err(|error| DnsError::io("write DNS TCP response", error))
 }
 
-fn parse_cidr(value: &str) -> Result<(Ipv4Addr, u8), GatewayError> {
+fn parse_cidr(value: &str) -> Result<(Ipv4Addr, u8), DnsError> {
     let (address, prefix) = value
         .split_once('/')
-        .ok_or_else(|| GatewayError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
+        .ok_or_else(|| DnsError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
     let address = address
         .parse()
-        .map_err(|_| GatewayError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
+        .map_err(|_| DnsError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
     let prefix = prefix
         .parse::<u8>()
         .ok()
         .filter(|prefix| *prefix <= 32)
-        .ok_or_else(|| GatewayError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
+        .ok_or_else(|| DnsError::invalid(format!("invalid IPv4 prefix {value:?}")))?;
     Ok((address, prefix))
 }
 

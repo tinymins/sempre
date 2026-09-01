@@ -14,6 +14,7 @@ mod elevate;
 mod gateway_api;
 mod listener;
 mod local_api;
+mod network_api;
 mod portable_cli;
 mod runtime_api;
 mod runtime_args;

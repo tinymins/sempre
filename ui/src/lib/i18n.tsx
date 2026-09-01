@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 const zh = {
-  overview: '总览', customNodes: '自定义节点', subscriptions: '订阅转换', tunnels: '隧道', proxies: '代理', connections: '连接', rules: '规则', routingRules: '分流规则', runtimeRules: '运行时规则', dns: 'DNS', traffic: '流量', logs: '日志', networkTest: '网络测试', gateway: 'LAN 网关', management: '管理',
+  overview: '总览', customNodes: '自定义节点', subscriptions: '订阅转换', tunnels: '隧道', proxies: '代理', connections: '连接', rules: '规则', routingRules: '分流规则', runtimeRules: '运行时规则', dns: 'DNS', traffic: '流量', logs: '日志', networkTest: '网络测试', gateway: '网关', management: '管理',
   navigationStrategy: '策略', navigationConfiguration: '配置', navigationNetwork: '网络能力', navigationAnalysis: '分析与诊断', navigationSystem: '系统', navigationSubscriptions: '订阅配置', navigationEffectiveRules: '生效规则', navigationCoreStatus: '核心状态',
   signIn: '登录', address: 'Sempre 地址', password: '管理员密码', connect: '连接', connecting: '正在连接',
   loginLead: '连接到 Sempre 控制面', addressHint: '默认使用当前页面地址，也可以连接其他 Sempre 实例。',
@@ -31,7 +31,7 @@ const zh = {
 
 type Key = keyof typeof zh
 const en: Record<Key, string> = {
-  overview: 'Overview', customNodes: 'Custom Nodes', subscriptions: 'Subscriptions', tunnels: 'Tunnels', proxies: 'Proxies', connections: 'Connections', rules: 'Rules', routingRules: 'Routing Rules', runtimeRules: 'Runtime Rules', dns: 'DNS', traffic: 'Traffic', logs: 'Logs', networkTest: 'Network Test', gateway: 'LAN Gateway', management: 'Management',
+  overview: 'Overview', customNodes: 'Custom Nodes', subscriptions: 'Subscriptions', tunnels: 'Tunnels', proxies: 'Proxies', connections: 'Connections', rules: 'Rules', routingRules: 'Routing Rules', runtimeRules: 'Runtime Rules', dns: 'DNS', traffic: 'Traffic', logs: 'Logs', networkTest: 'Network Test', gateway: 'Gateway', management: 'Management',
   navigationStrategy: 'Strategy', navigationConfiguration: 'Configuration', navigationNetwork: 'Network capabilities', navigationAnalysis: 'Analysis & diagnostics', navigationSystem: 'System', navigationSubscriptions: 'Subscription Config', navigationEffectiveRules: 'Effective Rules', navigationCoreStatus: 'Core Status',
   signIn: 'Sign in', address: 'Sempre address', password: 'Administrator password', connect: 'Connect', connecting: 'Connecting',
   loginLead: 'Connect to the Sempre control plane', addressHint: 'The current address is used by default. You can connect to another Sempre instance.',

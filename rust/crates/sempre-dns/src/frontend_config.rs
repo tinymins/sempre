@@ -1,7 +1,7 @@
 use crate::{
-    GatewayError,
+    DnsError,
     domain_matcher::bundled_domestic_domains,
-    model::{DnsConfig, DnsRuleSet, validate_dns},
+    model::{DnsConfig, DnsRuleSet, validate},
 };
 
 impl DnsConfig {
@@ -10,9 +10,9 @@ impl DnsConfig {
         local_upstreams: Vec<String>,
         remote_upstream: String,
         mut rule_sets: Vec<DnsRuleSet>,
-    ) -> Result<Self, GatewayError> {
+    ) -> Result<Self, DnsError> {
         if local_upstreams.is_empty() {
-            return Err(GatewayError::invalid(
+            return Err(DnsError::invalid(
                 "managed DNS frontend requires at least one original DNS upstream",
             ));
         }
@@ -33,13 +33,14 @@ impl DnsConfig {
             rule_sets,
             domestic_cidrs: Vec::new(),
             cache_ttl_seconds: 300,
+            outbound_mark: None,
         };
         let mut errors = Vec::new();
-        validate_dns(&config, &mut errors);
+        validate(&config, &mut errors);
         if errors.is_empty() {
             Ok(config)
         } else {
-            Err(GatewayError::invalid(errors.join("; ")))
+            Err(DnsError::invalid(errors.join("; ")))
         }
     }
 }

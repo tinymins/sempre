@@ -31,6 +31,8 @@ pub enum ManagerError {
     #[error(transparent)]
     Gateway(#[from] sempre_gateway::GatewayError),
     #[error(transparent)]
+    Dns(#[from] sempre_dns::DnsError),
+    #[error(transparent)]
     Network(#[from] sempre_network::NetworkError),
     #[error("compile subscription profile: {0}")]
     Compile(#[from] sempre_converter::CompileError),

@@ -44,19 +44,15 @@ impl<R: VersionRunner> Manager<R> {
         Ok(apply_host_plan(request).await?)
     }
 
-    pub async fn gateway_dns_query(
-        &self,
-        name: &str,
-        record_type: &str,
-    ) -> Result<sempre_gateway::DnsDebugResult, ManagerError> {
-        Ok(self.gateway.query_dns(name, record_type).await?)
-    }
-
     pub async fn revoke_gateway_lease(&self, mac: &str) -> Result<(), ManagerError> {
         Ok(self.gateway.revoke_lease(mac).await?)
     }
 
     pub(crate) async fn start_gateway(&self) -> Result<(), ManagerError> {
+        if self.network_settings().mode != crate::NetworkMode::Gateway {
+            self.gateway.stop().await;
+            return Ok(());
+        }
         Ok(self.gateway.start().await?)
     }
 

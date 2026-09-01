@@ -57,6 +57,7 @@ pub struct SystemDnsPlan {
     pub core_listen_port: u16,
     pub original_upstreams: Vec<String>,
     pub managed_frontend: bool,
+    pub takeover_host: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -177,6 +178,11 @@ pub(crate) fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
         .and_then(Value::as_u64)
         .and_then(|port| u16::try_from(port).ok())
         .unwrap_or(53);
+    let managed_frontend = shared.get("managedDnsFrontend").and_then(Value::as_bool) == Some(true);
+    let takeover_host = shared
+        .get("systemDnsTakeoverHost")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let mut listen_hosts = Vec::new();
     for host in shared
         .get("systemDnsListenHosts")
@@ -191,9 +197,17 @@ pub(crate) fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
             return Some(SystemDnsPlan {
                 listen_port,
                 listen_hosts: vec![host],
-                core_listen_port: listen_port,
+                core_listen_port: if managed_frontend {
+                    match profile.transparent_proxy.tproxy.dns_listen_port {
+                        0 => 1053,
+                        port => port,
+                    }
+                } else {
+                    listen_port
+                },
                 original_upstreams: Vec::new(),
-                managed_frontend: false,
+                managed_frontend,
+                takeover_host,
             });
         }
         if !listen_hosts.contains(&host) {
@@ -206,9 +220,17 @@ pub(crate) fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
     Some(SystemDnsPlan {
         listen_port,
         listen_hosts,
-        core_listen_port: listen_port,
+        core_listen_port: if managed_frontend {
+            match profile.transparent_proxy.tproxy.dns_listen_port {
+                0 => 1053,
+                port => port,
+            }
+        } else {
+            listen_port
+        },
         original_upstreams: Vec::new(),
-        managed_frontend: false,
+        managed_frontend,
+        takeover_host,
     })
 }
 
@@ -457,6 +479,7 @@ mod system_plan_tests {
                 core_listen_port: 53,
                 original_upstreams: Vec::new(),
                 managed_frontend: false,
+                takeover_host: true,
             })
         );
 

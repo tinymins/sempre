@@ -19,7 +19,7 @@ pub fn apply_dns_frontend_settings(
     target: &Target,
     enabled: bool,
 ) -> Result<Profile, CompileError> {
-    if !managed_desktop_target(target) {
+    if !managed_frontend_target(target) {
         return Ok(profile.clone());
     }
     let mut profile = prepare_profile(profile, target)?;
@@ -27,6 +27,8 @@ pub fn apply_dns_frontend_settings(
     shared.insert("systemDnsTakeoverEnabled".into(), Value::Bool(enabled));
     shared.insert("systemDnsListenPort".into(), json!(53));
     shared.insert("systemDnsListenHosts".into(), json!(["127.0.0.1"]));
+    shared.insert("managedDnsFrontend".into(), Value::Bool(true));
+    shared.insert("systemDnsTakeoverHost".into(), Value::Bool(true));
     profile.editor.dns_config.clear();
     Ok(profile)
 }
@@ -38,7 +40,7 @@ pub fn dns_frontend_policy(
     let profile = prepare_profile(profile, target)?;
     let shared = profile.dns.get("shared").unwrap_or(&profile.dns);
     Ok(DnsFrontendPolicy {
-        enabled: managed_desktop_target(target)
+        enabled: managed_frontend_target(target)
             && shared
                 .get("systemDnsTakeoverEnabled")
                 .and_then(Value::as_bool)
@@ -55,8 +57,8 @@ pub fn dns_frontend_policy(
     })
 }
 
-fn managed_desktop_target(target: &Target) -> bool {
-    target.core == "sing-box" && matches!(target.platform.as_str(), "macos" | "windows")
+fn managed_frontend_target(target: &Target) -> bool {
+    target.core == "sing-box"
 }
 
 fn shared_mut(dns: &mut Value) -> &mut serde_json::Map<String, Value> {
@@ -125,5 +127,16 @@ mod tests {
         assert!(policy.enabled);
         assert!(!policy.fakeip_enabled);
         assert!(policy.complete);
+    }
+
+    #[test]
+    fn linux_sing_box_uses_the_same_managed_frontend_boundary() {
+        let profile = Profile::default();
+        let target = Target::parse("sing-box-v14").expect("target");
+        let overlaid = apply_dns_frontend_settings(&profile, &target, true).expect("overlay");
+        assert_eq!(overlaid.dns["shared"]["managedDnsFrontend"], true);
+        let policy = dns_frontend_policy(&overlaid, &target).expect("policy");
+        assert!(policy.enabled);
+        assert_eq!(policy.core_listen_port, 1053);
     }
 }

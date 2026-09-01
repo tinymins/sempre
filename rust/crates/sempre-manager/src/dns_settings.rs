@@ -10,7 +10,7 @@ use std::{
 };
 
 use sempre_converter::Profile;
-use sempre_gateway::{DnsQueryEvent, DnsRewrite, DnsRuntimePolicy};
+use sempre_dns::{DnsQueryEvent, DnsRewrite, DnsRuntimePolicy};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

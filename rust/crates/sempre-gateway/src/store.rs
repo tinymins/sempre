@@ -2,10 +2,7 @@ use std::{fs, path::PathBuf, sync::OnceLock};
 
 use sempre_state::{Layout, validate_json_shape, write_atomic};
 
-use crate::{
-    Config, GatewayError,
-    model::{DhcpReservation, DnsRuleSet},
-};
+use crate::{Config, GatewayError, model::DhcpReservation};
 
 pub struct Store {
     path: PathBuf,
@@ -20,7 +17,14 @@ impl Store {
 
     pub fn initialize(&self) -> Result<Config, GatewayError> {
         if self.path.exists() {
-            self.read()
+            let data = fs::read(&self.path)
+                .map_err(|error| GatewayError::io("read gateway configuration", error))?;
+            let (config, migrated) = decode(&data)?;
+            if migrated {
+                self.write(&config)
+            } else {
+                Ok(config)
+            }
         } else {
             let config = Config::default();
             self.write(&config)?;
@@ -31,17 +35,7 @@ impl Store {
     pub fn read(&self) -> Result<Config, GatewayError> {
         let data = fs::read(&self.path)
             .map_err(|error| GatewayError::io("read gateway configuration", error))?;
-        let value = serde_json::from_slice(&data).map_err(|error| {
-            GatewayError::invalid(format!("decode gateway configuration: {error}"))
-        })?;
-        validate_json_shape(&value, config_shape()).map_err(|error| {
-            GatewayError::invalid(format!("decode gateway configuration: {error}"))
-        })?;
-        let config: Config = serde_json::from_value(value).map_err(|error| {
-            GatewayError::invalid(format!("decode gateway configuration: {error}"))
-        })?;
-        config.validate()?;
-        Ok(config)
+        decode(&data).map(|(config, _)| config)
     }
 
     pub fn write(&self, config: &Config) -> Result<Config, GatewayError> {
@@ -63,9 +57,30 @@ fn config_shape() -> &'static serde_json::Value {
     SHAPE.get_or_init(|| {
         let mut config = Config::default();
         config.dhcp.reservations.push(DhcpReservation::default());
-        config.dns.rule_sets.push(DnsRuleSet::default());
         serde_json::to_value(config).expect("gateway configuration shape")
     })
+}
+
+fn decode(data: &[u8]) -> Result<(Config, bool), GatewayError> {
+    let mut value = serde_json::from_slice::<serde_json::Value>(data)
+        .map_err(|error| GatewayError::invalid(format!("decode gateway configuration: {error}")))?;
+    let migrated = value.get("schema").and_then(serde_json::Value::as_u64) == Some(1);
+    if migrated {
+        let object = value.as_object_mut().ok_or_else(|| {
+            GatewayError::invalid("decode gateway configuration: expected an object")
+        })?;
+        object.remove("dns");
+        object.insert(
+            "schema".into(),
+            u64::from(crate::model::SCHEMA_VERSION).into(),
+        );
+    }
+    validate_json_shape(&value, config_shape())
+        .map_err(|error| GatewayError::invalid(format!("decode gateway configuration: {error}")))?;
+    let config: Config = serde_json::from_value(value)
+        .map_err(|error| GatewayError::invalid(format!("decode gateway configuration: {error}")))?;
+    config.validate()?;
+    Ok((config, migrated))
 }
 
 #[cfg(test)]
@@ -77,21 +92,24 @@ mod tests {
     use super::Store;
 
     #[test]
-    fn read_rejects_old_schema_without_rewriting_the_file() {
+    fn initialize_migrates_schema_one_and_removes_dns() {
         let root = tempfile::tempdir().expect("temporary directory");
         let layout = Layout::at(root.path());
         let store = Store::new(&layout);
         let mut document = serde_json::to_value(crate::Config::default()).expect("config value");
-        document["schema"] = 0.into();
+        document["schema"] = 1.into();
+        document["dns"] = serde_json::json!({ "enabled": true });
         let data = serde_json::to_vec_pretty(&document).expect("config data");
         fs::create_dir_all(&layout.gateway).expect("gateway directory");
         fs::write(layout.gateway.join("config.json"), &data).expect("gateway config");
 
-        assert!(store.read().is_err());
-        assert_eq!(
-            fs::read(layout.gateway.join("config.json")).expect("stored config"),
-            data
-        );
+        let migrated = store.initialize().expect("migrate config");
+        assert_eq!(migrated.schema, 2);
+        let stored: serde_json::Value = serde_json::from_slice(
+            &fs::read(layout.gateway.join("config.json")).expect("stored config"),
+        )
+        .expect("stored JSON");
+        assert!(stored.get("dns").is_none());
     }
 
     #[test]
@@ -99,13 +117,12 @@ mod tests {
         let root = tempfile::tempdir().expect("temporary directory");
         let layout = Layout::at(root.path());
         let store = Store::new(&layout);
-        let mut config = crate::Config::default();
-        config.dns.listen_hosts.clear();
+        let config = crate::Config::default();
         let mut incomplete = serde_json::to_value(&config).expect("config value");
-        incomplete["dns"]
+        incomplete["dhcp"]
             .as_object_mut()
-            .expect("DNS object")
-            .remove("cache_ttl_seconds");
+            .expect("DHCP object")
+            .remove("lease_time");
         fs::create_dir_all(&layout.gateway).expect("gateway directory");
         fs::write(
             layout.gateway.join("config.json"),

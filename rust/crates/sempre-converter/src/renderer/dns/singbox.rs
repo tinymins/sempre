@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{Profile, Proxy, Target};
 
-use super::{SharedDns, native_override};
+use super::{SharedDns, managed_frontend, native_override};
 
 const FRONTEND_DNS_INBOUND: &str = "sempre-dns-core-in";
 
@@ -23,8 +23,7 @@ pub(super) fn render(
     if let Some(value) = native_override(&profile.dns, key) {
         return value;
     }
-    let frontend =
-        matches!(target.platform.as_str(), "macos" | "windows") && shared.system_takeover();
+    let frontend = managed_frontend(shared, target);
     let fakeip = shared.fakeip_enabled() && (target.platform != "macos" || frontend);
     let bootstrap_domains = proxies
         .iter()
@@ -280,7 +279,7 @@ pub(super) fn system_inbounds(
     if !shared.system_takeover() {
         return Vec::new();
     }
-    if matches!(target.platform.as_str(), "macos" | "windows") {
+    if managed_frontend(shared, target) {
         let listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
             0 => 1053,
             port => port,
@@ -314,7 +313,7 @@ pub(super) fn system_route_rules(
     if !shared.system_takeover() {
         return Vec::new();
     }
-    if matches!(target.platform.as_str(), "macos" | "windows") {
+    if managed_frontend(shared, target) {
         return vec![
             json!({ "inbound": FRONTEND_DNS_INBOUND, "action": "sniff" }),
             json!({ "inbound": FRONTEND_DNS_INBOUND, "protocol": "dns", "action": "hijack-dns" }),

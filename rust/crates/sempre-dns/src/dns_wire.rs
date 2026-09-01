@@ -3,7 +3,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
-use crate::GatewayError;
+use crate::DnsError;
 
 const DNS_HEADER_SIZE: usize = 12;
 const TYPE_A: u16 = 1;
@@ -27,18 +27,16 @@ struct AnswerRecord {
     length: usize,
 }
 
-pub(crate) fn parse_question(packet: &[u8]) -> Result<Option<Question>, GatewayError> {
+pub(crate) fn parse_question(packet: &[u8]) -> Result<Option<Question>, DnsError> {
     if packet.len() < DNS_HEADER_SIZE {
-        return Err(GatewayError::invalid(
-            "DNS packet is shorter than its header",
-        ));
+        return Err(DnsError::invalid("DNS packet is shorter than its header"));
     }
     if u16::from_be_bytes([packet[4], packet[5]]) == 0 {
         return Ok(None);
     }
     let (name, offset) = read_name(packet, DNS_HEADER_SIZE, 0)?;
     if offset + 4 > packet.len() {
-        return Err(GatewayError::invalid("DNS question is truncated"));
+        return Err(DnsError::invalid("DNS question is truncated"));
     }
     Ok(Some(Question {
         name,
@@ -47,11 +45,9 @@ pub(crate) fn parse_question(packet: &[u8]) -> Result<Option<Question>, GatewayE
     }))
 }
 
-pub(crate) fn response_with_code(packet: &[u8], code: u8) -> Result<Vec<u8>, GatewayError> {
+pub(crate) fn response_with_code(packet: &[u8], code: u8) -> Result<Vec<u8>, DnsError> {
     if packet.len() < DNS_HEADER_SIZE {
-        return Err(GatewayError::invalid(
-            "DNS packet is shorter than its header",
-        ));
+        return Err(DnsError::invalid("DNS packet is shorter than its header"));
     }
     let end = parse_question(packet)?.map_or(DNS_HEADER_SIZE, |question| question.end);
     let mut response = packet[..end].to_vec();
@@ -66,22 +62,20 @@ pub(crate) fn response_with_answer(
     record_type: u16,
     answer: &str,
     ttl: u32,
-) -> Result<Vec<u8>, GatewayError> {
+) -> Result<Vec<u8>, DnsError> {
     let question = parse_question(packet)?
-        .ok_or_else(|| GatewayError::invalid("DNS rewrite requires a question"))?;
+        .ok_or_else(|| DnsError::invalid("DNS rewrite requires a question"))?;
     let data = match record_type {
         TYPE_A => answer
             .parse::<Ipv4Addr>()
             .map(|value| value.octets().to_vec())
-            .map_err(|_| GatewayError::invalid("DNS A rewrite answer must be an IPv4 address"))?,
+            .map_err(|_| DnsError::invalid("DNS A rewrite answer must be an IPv4 address"))?,
         TYPE_AAAA => answer
             .parse::<Ipv6Addr>()
             .map(|value| value.octets().to_vec())
-            .map_err(|_| {
-                GatewayError::invalid("DNS AAAA rewrite answer must be an IPv6 address")
-            })?,
+            .map_err(|_| DnsError::invalid("DNS AAAA rewrite answer must be an IPv6 address"))?,
         TYPE_CNAME => encode_name(answer)?,
-        _ => return Err(GatewayError::invalid("DNS rewrite type is not supported")),
+        _ => return Err(DnsError::invalid("DNS rewrite type is not supported")),
     };
     let mut response = packet[..question.end].to_vec();
     response[2] |= 0x80;
@@ -94,24 +88,22 @@ pub(crate) fn response_with_answer(
     response.extend_from_slice(&ttl.to_be_bytes());
     response.extend_from_slice(
         &u16::try_from(data.len())
-            .map_err(|_| GatewayError::invalid("DNS rewrite answer is too long"))?
+            .map_err(|_| DnsError::invalid("DNS rewrite answer is too long"))?
             .to_be_bytes(),
     );
     response.extend_from_slice(&data);
     Ok(response)
 }
 
-fn encode_name(value: &str) -> Result<Vec<u8>, GatewayError> {
+fn encode_name(value: &str) -> Result<Vec<u8>, DnsError> {
     let normalized = value.trim().trim_end_matches('.');
     if normalized.is_empty() {
-        return Err(GatewayError::invalid(
-            "DNS CNAME rewrite answer is required",
-        ));
+        return Err(DnsError::invalid("DNS CNAME rewrite answer is required"));
     }
     let mut encoded = Vec::new();
     for label in normalized.split('.') {
         if label.is_empty() || label.len() > 63 || !label.is_ascii() {
-            return Err(GatewayError::invalid("invalid DNS CNAME rewrite answer"));
+            return Err(DnsError::invalid("invalid DNS CNAME rewrite answer"));
         }
         encoded.push(u8::try_from(label.len()).expect("label length checked"));
         encoded.extend_from_slice(label.as_bytes());
@@ -120,18 +112,18 @@ fn encode_name(value: &str) -> Result<Vec<u8>, GatewayError> {
     Ok(encoded)
 }
 
-pub(crate) fn build_query(name: &str, record_type: u16) -> Result<Vec<u8>, GatewayError> {
+pub(crate) fn build_query(name: &str, record_type: u16) -> Result<Vec<u8>, DnsError> {
     let mut packet = vec![0_u8; DNS_HEADER_SIZE];
     packet[0..2].copy_from_slice(&random_id().to_be_bytes());
     packet[2] = 1;
     packet[5] = 1;
     let normalized = name.trim().trim_end_matches('.');
     if normalized.is_empty() {
-        return Err(GatewayError::invalid("DNS query name is required"));
+        return Err(DnsError::invalid("DNS query name is required"));
     }
     for label in normalized.split('.') {
         if label.is_empty() || label.len() > 63 || !label.is_ascii() {
-            return Err(GatewayError::invalid("invalid DNS query name"));
+            return Err(DnsError::invalid("invalid DNS query name"));
         }
         packet.push(u8::try_from(label.len()).expect("label length checked"));
         packet.extend_from_slice(label.as_bytes());
@@ -140,7 +132,7 @@ pub(crate) fn build_query(name: &str, record_type: u16) -> Result<Vec<u8>, Gatew
     packet.extend_from_slice(&record_type.to_be_bytes());
     packet.extend_from_slice(&1_u16.to_be_bytes());
     if packet.len() > 255 {
-        return Err(GatewayError::invalid("DNS query name is too long"));
+        return Err(DnsError::invalid("DNS query name is too long"));
     }
     Ok(packet)
 }
@@ -152,16 +144,16 @@ fn random_id() -> u16 {
     u16::try_from(hasher.finish() & u64::from(u16::MAX)).expect("masked DNS ID")
 }
 
-fn read_name(packet: &[u8], mut offset: usize, depth: u8) -> Result<(String, usize), GatewayError> {
+fn read_name(packet: &[u8], mut offset: usize, depth: u8) -> Result<(String, usize), DnsError> {
     if depth > 16 {
-        return Err(GatewayError::invalid("DNS name compression is recursive"));
+        return Err(DnsError::invalid("DNS name compression is recursive"));
     }
     let mut labels = Vec::new();
     let mut next = None;
     loop {
         let length = *packet
             .get(offset)
-            .ok_or_else(|| GatewayError::invalid("DNS name is truncated"))?;
+            .ok_or_else(|| DnsError::invalid("DNS name is truncated"))?;
         if length == 0 {
             offset += 1;
             break;
@@ -169,7 +161,7 @@ fn read_name(packet: &[u8], mut offset: usize, depth: u8) -> Result<(String, usi
         if length & 0xc0 == 0xc0 {
             let low = *packet
                 .get(offset + 1)
-                .ok_or_else(|| GatewayError::invalid("DNS compression pointer is truncated"))?;
+                .ok_or_else(|| DnsError::invalid("DNS compression pointer is truncated"))?;
             let pointer = usize::from((u16::from(length & 0x3f) << 8) | u16::from(low));
             next.get_or_insert(offset + 2);
             let (suffix, _) = read_name(packet, pointer, depth + 1)?;
@@ -179,14 +171,14 @@ fn read_name(packet: &[u8], mut offset: usize, depth: u8) -> Result<(String, usi
         let length = usize::from(length);
         let label = packet
             .get(offset + 1..offset + 1 + length)
-            .ok_or_else(|| GatewayError::invalid("DNS label is truncated"))?;
+            .ok_or_else(|| DnsError::invalid("DNS label is truncated"))?;
         labels.push(String::from_utf8_lossy(label).into_owned());
         offset += 1 + length;
     }
     Ok((format!("{}.", labels.join(".")), next.unwrap_or(offset)))
 }
 
-fn answer_records(packet: &[u8]) -> Result<Vec<AnswerRecord>, GatewayError> {
+fn answer_records(packet: &[u8]) -> Result<Vec<AnswerRecord>, DnsError> {
     let question = parse_question(packet)?;
     let mut offset = question.map_or(DNS_HEADER_SIZE, |question| question.end);
     let count = u16::from_be_bytes([packet[6], packet[7]]);
@@ -194,7 +186,7 @@ fn answer_records(packet: &[u8]) -> Result<Vec<AnswerRecord>, GatewayError> {
     for _ in 0..count {
         let (name, next) = read_name(packet, offset, 0)?;
         if next + 10 > packet.len() {
-            return Err(GatewayError::invalid("DNS answer is truncated"));
+            return Err(DnsError::invalid("DNS answer is truncated"));
         }
         let kind = u16::from_be_bytes([packet[next], packet[next + 1]]);
         let ttl = u32::from_be_bytes([
@@ -206,7 +198,7 @@ fn answer_records(packet: &[u8]) -> Result<Vec<AnswerRecord>, GatewayError> {
         let length = usize::from(u16::from_be_bytes([packet[next + 8], packet[next + 9]]));
         let start = next + 10;
         if start + length > packet.len() {
-            return Err(GatewayError::invalid("DNS answer data is truncated"));
+            return Err(DnsError::invalid("DNS answer data is truncated"));
         }
         records.push(AnswerRecord {
             name,
@@ -220,7 +212,7 @@ fn answer_records(packet: &[u8]) -> Result<Vec<AnswerRecord>, GatewayError> {
     Ok(records)
 }
 
-pub(crate) fn answer_ipv4_addresses(packet: &[u8]) -> Result<Vec<Ipv4Addr>, GatewayError> {
+pub(crate) fn answer_ipv4_addresses(packet: &[u8]) -> Result<Vec<Ipv4Addr>, DnsError> {
     Ok(answer_records(packet)?
         .into_iter()
         .filter(|record| record.kind == TYPE_A && record.length == 4)
@@ -235,7 +227,7 @@ pub(crate) fn answer_ipv4_addresses(packet: &[u8]) -> Result<Vec<Ipv4Addr>, Gate
         .collect())
 }
 
-pub(crate) fn answer_ip_addresses(packet: &[u8]) -> Result<Vec<IpAddr>, GatewayError> {
+pub(crate) fn answer_ip_addresses(packet: &[u8]) -> Result<Vec<IpAddr>, DnsError> {
     Ok(answer_records(packet)?
         .into_iter()
         .filter_map(|record| match (record.kind, record.length) {
@@ -254,14 +246,14 @@ pub(crate) fn answer_ip_addresses(packet: &[u8]) -> Result<Vec<IpAddr>, GatewayE
         .collect())
 }
 
-pub(crate) fn response_code(packet: &[u8]) -> Result<u8, GatewayError> {
+pub(crate) fn response_code(packet: &[u8]) -> Result<u8, DnsError> {
     packet
         .get(3)
         .map(|flags| flags & 0x0f)
-        .ok_or_else(|| GatewayError::invalid("DNS response is shorter than its header"))
+        .ok_or_else(|| DnsError::invalid("DNS response is shorter than its header"))
 }
 
-pub(crate) fn format_answers(packet: &[u8]) -> Result<Vec<String>, GatewayError> {
+pub(crate) fn format_answers(packet: &[u8]) -> Result<Vec<String>, DnsError> {
     answer_records(packet)?
         .into_iter()
         .map(|record| {
@@ -312,7 +304,7 @@ fn hex(data: &[u8]) -> String {
     })
 }
 
-pub(crate) fn record_number(value: &str) -> Result<(String, u16), GatewayError> {
+pub(crate) fn record_number(value: &str) -> Result<(String, u16), DnsError> {
     let name = if value.trim().is_empty() {
         "A".into()
     } else {
@@ -327,7 +319,7 @@ pub(crate) fn record_number(value: &str) -> Result<(String, u16), GatewayError> 
         "MX" => 15,
         "NS" => 2,
         _ => {
-            return Err(GatewayError::invalid(format!(
+            return Err(DnsError::invalid(format!(
                 "unsupported DNS query type {value:?}"
             )));
         }

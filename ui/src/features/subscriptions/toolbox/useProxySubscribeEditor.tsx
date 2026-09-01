@@ -146,8 +146,8 @@ export function useProxySubscribeEditor({
 			},
 			transparent_proxy: {
 				mode: values.transparentMode ?? "tun-router",
-				capture_host: values.tproxyCaptureHost ?? false,
-				lan_interfaces: values.tproxyLANInterfaces ?? [],
+					capture_host: profileRef.current.transparent_proxy?.capture_host ?? false,
+					lan_interfaces: profileRef.current.transparent_proxy?.lan_interfaces ?? [],
 				route_exclusions: String(values.tunRouteExclusions || "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
 				interface_mode: values.tunInterfaceMode ?? "all",
 				interfaces: values.tunInterfaces ?? [],

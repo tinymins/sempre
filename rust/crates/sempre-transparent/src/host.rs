@@ -94,13 +94,21 @@ impl Controller {
             return Ok(Plan::default());
         }
         let inventory = sempre_network::inventory()?;
-        crate::prepare_with_inventory_authorized(
+        let mut plan = crate::prepare_with_inventory_authorized(
             core,
             profile,
             runtime_config,
             &inventory,
             self.system_dns.allowed(),
-        )
+        )?;
+        if let Some(system_dns) = plan
+            .system_dns
+            .as_mut()
+            .filter(|system_dns| system_dns.managed_frontend)
+        {
+            system_dns.original_upstreams = self.system_dns.discover_upstreams()?;
+        }
+        Ok(plan)
     }
 
     pub async fn apply(&self, plan: &Plan) -> Result<(), TransparentError> {
@@ -134,7 +142,9 @@ impl Controller {
         }
         if let Some(system_dns) = &plan.system_dns {
             self.wait_system_dns(system_dns).await?;
-            self.system_dns.apply()?;
+            if system_dns.takeover_host {
+                self.system_dns.apply()?;
+            }
         }
         if let Err(error) = self.verify(plan).await {
             let _ = self.cleanup_owned().await;
@@ -166,7 +176,11 @@ impl Controller {
                 policy::verify(self.runner.as_ref()).await?;
             }
         }
-        if plan.system_dns.is_some() {
+        if plan
+            .system_dns
+            .as_ref()
+            .is_some_and(|system_dns| system_dns.takeover_host)
+        {
             self.system_dns.verify()?;
         }
         Ok(())

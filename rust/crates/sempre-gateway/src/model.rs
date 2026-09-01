@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::GatewayError;
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
@@ -15,7 +15,6 @@ pub struct Config {
     pub topology: String,
     pub lan: LanConfig,
     pub dhcp: DhcpConfig,
-    pub dns: DnsConfig,
     pub pve: PveConfig,
 }
 
@@ -49,34 +48,6 @@ pub struct DhcpReservation {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
-pub struct DnsConfig {
-    pub enabled: bool,
-    pub listen_hosts: Vec<String>,
-    pub listen_port: u16,
-    pub local_upstreams: Vec<String>,
-    pub remote_upstream: String,
-    pub strategy: String,
-    pub reject_https: bool,
-    pub rule_sets: Vec<DnsRuleSet>,
-    pub domestic_cidrs: Vec<String>,
-    pub cache_ttl_seconds: u64,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(default)]
-pub struct DnsRuleSet {
-    pub id: String,
-    pub name: String,
-    pub enabled: bool,
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub url: String,
-    pub rules: Vec<String>,
-    pub upstream: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(default)]
 pub struct PveConfig {
     pub host: String,
     pub port: u16,
@@ -88,7 +59,6 @@ pub struct PveConfig {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct RuntimeStatus {
-    pub dns_running: bool,
     pub dhcp_running: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -129,7 +99,6 @@ impl Default for Config {
                 ..LanConfig::default()
             },
             dhcp: DhcpConfig::default(),
-            dns: DnsConfig::default(),
             pve: PveConfig::default(),
         }
     }
@@ -144,29 +113,6 @@ impl Default for DhcpConfig {
             lease_time: "12h".into(),
             domain: String::new(),
             reservations: Vec::new(),
-        }
-    }
-}
-
-impl Default for DnsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            listen_hosts: vec!["10.10.10.1".into()],
-            listen_port: 53,
-            local_upstreams: vec!["223.5.5.5:53".into(), "223.6.6.6:53".into()],
-            remote_upstream: "127.0.0.1:1053".into(),
-            strategy: "local-first-classify".into(),
-            reject_https: true,
-            rule_sets: Vec::new(),
-            domestic_cidrs: vec![
-                "10.0.0.0/8".into(),
-                "100.64.0.0/10".into(),
-                "127.0.0.0/8".into(),
-                "172.16.0.0/12".into(),
-                "192.168.0.0/16".into(),
-            ],
-            cache_ttl_seconds: 300,
         }
     }
 }
@@ -201,24 +147,6 @@ impl Config {
         }
         if self.dhcp.lease_time.is_empty() {
             self.dhcp.lease_time = defaults.dhcp.lease_time;
-        }
-        if self.dns.listen_hosts.is_empty() {
-            self.dns.listen_hosts = defaults.dns.listen_hosts;
-        }
-        if self.dns.listen_port == 0 {
-            self.dns.listen_port = defaults.dns.listen_port;
-        }
-        if self.dns.local_upstreams.is_empty() {
-            self.dns.local_upstreams = defaults.dns.local_upstreams;
-        }
-        if self.dns.remote_upstream.is_empty() {
-            self.dns.remote_upstream = defaults.dns.remote_upstream;
-        }
-        if self.dns.strategy.is_empty() {
-            self.dns.strategy = defaults.dns.strategy;
-        }
-        if self.dns.cache_ttl_seconds == 0 {
-            self.dns.cache_ttl_seconds = defaults.dns.cache_ttl_seconds;
         }
         if self.pve.port == 0 {
             self.pve.port = defaults.pve.port;
@@ -276,57 +204,8 @@ pub fn validation_messages(config: &Config) -> Vec<String> {
             errors.push(format!("invalid DHCP reservation IP {:?}", reservation.ip));
         }
     }
-    validate_dns(&config.dns, &mut errors);
     validate_host_fields(config, &mut errors);
     errors
-}
-
-pub(crate) fn validate_dns(config: &DnsConfig, errors: &mut Vec<String>) {
-    if config.listen_port == 0 {
-        errors.push("DNS listen port must be between 1 and 65535".into());
-    }
-    for host in &config.listen_hosts {
-        if host.parse::<Ipv4Addr>().is_err() {
-            errors.push(format!("DNS listen host {host:?} must be an IPv4 address"));
-        }
-    }
-    for upstream in config
-        .local_upstreams
-        .iter()
-        .chain([&config.remote_upstream])
-    {
-        if !valid_upstream(upstream) {
-            errors.push(format!("DNS upstream {upstream:?} must be host:port"));
-        }
-    }
-    if !matches!(
-        config.strategy.as_str(),
-        "local-first-classify" | "rules-first"
-    ) {
-        errors.push(format!("invalid DNS strategy {:?}", config.strategy));
-    }
-    for cidr in &config.domestic_cidrs {
-        if parse_cidr(cidr).is_none() {
-            errors.push(format!("domestic CIDR {cidr:?} must be an IPv4 prefix"));
-        }
-    }
-    for rule_set in &config.rule_sets {
-        if rule_set.id.trim().is_empty() || rule_set.name.trim().is_empty() {
-            errors.push("DNS rule sets require ID and name".into());
-        }
-        if !rule_set.upstream.is_empty()
-            && !matches!(rule_set.upstream.as_str(), "local" | "remote")
-            && !valid_upstream(&rule_set.upstream)
-        {
-            errors.push(format!(
-                "DNS upstream {:?} must be host:port",
-                rule_set.upstream
-            ));
-        }
-        if !rule_set.kind.is_empty() && !matches!(rule_set.kind.as_str(), "inline" | "url") {
-            errors.push(format!("unsupported DNS rule set type {:?}", rule_set.kind));
-        }
-    }
 }
 
 fn validate_host_fields(config: &Config, errors: &mut Vec<String>) {
@@ -369,23 +248,6 @@ fn valid_mac(value: &str) -> bool {
             .all(|part| part.len() == 2 && u8::from_str_radix(part, 16).is_ok())
 }
 
-fn valid_upstream(value: &str) -> bool {
-    let value = value.trim();
-    if let Some((host, port)) = value
-        .strip_prefix('[')
-        .and_then(|value| value.split_once("]:"))
-    {
-        return !host.is_empty() && valid_port(port);
-    }
-    value
-        .rsplit_once(':')
-        .is_some_and(|(host, port)| !host.is_empty() && !host.contains(':') && valid_port(port))
-}
-
-fn valid_port(value: &str) -> bool {
-    value.parse::<u16>().is_ok_and(|port| port != 0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,10 +261,9 @@ mod tests {
     }
 
     #[test]
-    fn explicit_empty_domestic_cidrs_are_preserved() {
+    fn normalization_preserves_valid_defaults() {
         let mut config = Config::default();
-        config.dns.domestic_cidrs.clear();
         config.normalize();
-        assert!(config.dns.domestic_cidrs.is_empty());
+        assert_eq!(config, Config::default());
     }
 }

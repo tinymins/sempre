@@ -51,9 +51,6 @@ export function ProxyRuntimeFields({
 								{ value: "disabled", label: t("proxy.form.transparentModeDisabled") },
 							]}
 							onChange={(value) => {
-								if ((value === "tproxy" || value === "ebpf-router") && (form.getFieldValue("tproxyLANInterfaces") as string[] | undefined)?.length === 0 && networkInventory?.recommended_lan_interfaces.length) {
-									form.setFieldValue("tproxyLANInterfaces", networkInventory.recommended_lan_interfaces);
-								}
 								if (value === "ebpf-router" && !form.getFieldValue("ebpfWANInterface")) {
 									form.setFieldValue("ebpfWANInterface", networkInventory?.default_interface || "auto");
 								}
@@ -115,20 +112,6 @@ export function ProxyRuntimeFields({
 									<InputNumber min={1} max={65535} className="w-full" />
 								</Form.Item>
 							</div>
-							<Form.Item label={t("proxy.form.tproxyLANInterfaces")} name="tproxyLANInterfaces">
-								<Select
-									mode="tags"
-									showSearch
-									options={(networkInventory?.interfaces ?? []).filter((item) => item.up).map((item) => ({
-										value: item.name,
-										label: `${item.name} · ${item.kind}${item.default_route ? ` · ${t("proxy.form.defaultRoute")}` : ""}`,
-										tagLabel: item.name,
-									}))}
-								/>
-							</Form.Item>
-							<Form.Item label={t("proxy.form.tproxyCaptureHost")} name="tproxyCaptureHost" valuePropName="checked">
-								<Switch />
-							</Form.Item>
 						</>
 					) : null}
 					{transparentMode === "ebpf-router" && features.has("transparent.ebpf") ? (
@@ -139,9 +122,6 @@ export function ProxyRuntimeFields({
 										{ value: "auto", label: t("proxy.form.ebpfWANAuto") },
 										...(networkInventory?.interfaces ?? []).filter((item) => item.up).map((item) => ({ value: item.name, label: item.name })),
 									]} />
-								</Form.Item>
-								<Form.Item label={t("proxy.form.ebpfLANInterfaces")} name="tproxyLANInterfaces">
-									<Select mode="tags" showSearch options={(networkInventory?.interfaces ?? []).filter((item) => item.up).map((item) => ({ value: item.name, label: item.name }))} />
 								</Form.Item>
 							</div>
 							<Form.Item label={t("proxy.form.ebpfAutoConfigKernel")} name="ebpfAutoConfigKernel" valuePropName="checked">

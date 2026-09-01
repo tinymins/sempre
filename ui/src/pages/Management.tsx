@@ -1,24 +1,52 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { Download, KeyRound, Package, Power, RefreshCw, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { Download, KeyRound, Package, Power, RefreshCw, Router, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { Select } from '@acme/components'
 import { api, downloadBundle, uploadUI } from '../lib/api'
 import { compactHash, formatDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { CoresResponse, ManagedRuntimeStatus, SystemStatus, UIMetadata } from '../lib/types'
+import type { CoresResponse, ManagedRuntimeStatus, NetworkSettings, NetworkSettingsResponse, SystemStatus, UIMetadata } from '../lib/types'
 import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 
-type Tab = 'core' | 'web'
+type Tab = 'core' | 'network' | 'web'
 type ChangeResult = { NeedsRestart?: boolean; changes?: ChangeResult[] }
 
 export function Management() {
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('core')
   const tabs: Array<{ value: Tab; label: string; icon: typeof Package }> = [
-    { value: 'core', label: t('coreTab'), icon: Package }, { value: 'web', label: t('webUITab'), icon: ServerCog },
+    { value: 'core', label: t('coreTab'), icon: Package }, { value: 'network', label: t('mode'), icon: Router }, { value: 'web', label: t('webUITab'), icon: ServerCog },
   ]
-  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : <WebUIPanel />}</div>
+  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : tab === 'network' ? <NetworkModePanel /> : <WebUIPanel />}</div>
+}
+
+function NetworkModePanel() {
+  const { locale } = useI18n()
+  const { session } = useSession()
+  const queryClient = useQueryClient()
+  const zh = locale === 'zh-CN'
+  const network = useQuery({ queryKey: ['network', 'settings'], queryFn: () => api<NetworkSettingsResponse>(session!, '/network/settings') })
+  const update = useMutation({
+    mutationFn: (mode: NetworkSettings['mode']) => {
+      if (!network.data) throw new Error('Network settings are not loaded')
+      return api<NetworkSettingsResponse>(session!, '/network/settings', { method: 'PUT', body: JSON.stringify({ ...network.data.settings, mode }) })
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(['network', 'settings'], result)
+      queryClient.invalidateQueries({ queryKey: ['system'] })
+    },
+  })
+  const mode = network.data?.settings.mode ?? 'local'
+  return <Section title={zh ? '运行模式' : 'Operating mode'} icon={<Router size={18} />}>
+    <div className="grid gap-4 md:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+      <Field label={zh ? '当前模式' : 'Current mode'}><Select value={mode} loading={network.isLoading || update.isPending} options={[{ value: 'local', label: zh ? '本机模式' : 'Local mode' }, { value: 'gateway', label: zh ? '网关模式' : 'Gateway mode', disabled: network.data ? !network.data.gateway_available : true }]} onChange={(value) => update.mutate(value)} /></Field>
+      <div className="rounded-md border border-[var(--border)] p-3 text-sm leading-6 text-[var(--muted)]">{mode === 'gateway' ? (zh ? '只在网关模式显示“网关”入口；默认只代理内网设备，本机代理可在网关页单独开启。' : 'The Gateway entry is visible only in gateway mode. LAN clients are proxied by default; host proxying is optional on the Gateway page.') : (zh ? '仅管理本机流量与 DNS，不加载网关配置。' : 'Manages only this host traffic and DNS. Gateway configuration is not loaded.')}</div>
+    </div>
+    {update.isError ? <p className="mt-3 text-sm text-red-600">{update.error instanceof Error ? update.error.message : String(update.error)}</p> : null}
+    {!network.data?.gateway_available && network.data ? <p className="mt-3 text-xs text-[var(--muted)]">{zh ? '网关模式仅在 Linux 系统服务上可用。' : 'Gateway mode is available only for the Linux system service.'}</p> : null}
+  </Section>
 }
 
 function CorePanel() {

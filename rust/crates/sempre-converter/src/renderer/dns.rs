@@ -62,7 +62,8 @@ pub(super) fn apply_sing_box_platform_policy(
 }
 
 fn managed_frontend(shared: &SharedDns, target: &Target) -> bool {
-    matches!(target.platform.as_str(), "macos" | "windows") && shared.system_takeover()
+    shared.managed_frontend
+        || (matches!(target.platform.as_str(), "macos" | "windows") && shared.system_takeover())
 }
 
 pub(super) fn clash(profile: &Profile, target: &Target, final_group: &str) -> Option<Value> {
@@ -129,6 +130,7 @@ pub(super) struct SharedDns {
     fakeip_ttl: u64,
     system_dns_listen_port: u64,
     system_dns_listen_hosts: Vec<String>,
+    managed_frontend: bool,
     flags: DnsFlags,
     cn_domain_rule_set: RuleSet,
     cn_ip_rule_set: RuleSet,
@@ -216,6 +218,7 @@ impl SharedDns {
             fakeip_ttl: integer(shared, "fakeipTtl", 300),
             system_dns_listen_port: integer(shared, "systemDnsListenPort", 53),
             system_dns_listen_hosts: system_dns_hosts(shared),
+            managed_frontend: boolean(shared, "managedDnsFrontend", false),
             flags: DnsFlags::resolve(shared),
             cn_domain_rule_set: RuleSet::resolve(
                 shared,
@@ -254,7 +257,7 @@ impl SharedDns {
             }
         }
         if self.system_takeover() {
-            let frontend = matches!(target.platform.as_str(), "macos" | "windows");
+            let frontend = managed_frontend(self, target);
             if target.platform != "default" && !frontend {
                 return Err(CompileError::Render(
                     "system DNS takeover is only available for Linux system or managed desktop sing-box runtime".into(),
@@ -270,7 +273,7 @@ impl SharedDns {
                     "Windows managed DNS frontend requires sing-box 1.14 or newer".into(),
                 ));
             }
-            if self.system_dns_listen_port != 53 {
+            if !frontend && self.system_dns_listen_port != 53 {
                 return Err(CompileError::Render(
                     "system DNS takeover requires listen port 53 because resolv.conf cannot specify ports".into(),
                 ));

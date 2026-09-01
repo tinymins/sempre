@@ -15,6 +15,7 @@ mod gateway;
 mod install;
 mod inventory;
 mod lifecycle;
+mod network_settings;
 mod pending_changes;
 mod process;
 mod rule_provider;
@@ -51,6 +52,7 @@ pub use error::ManagerError;
 pub use install::InstallResult;
 pub use inventory::{CoreInventory, InstalledCore};
 pub use lifecycle::CoreChange;
+pub use network_settings::{NetworkMode, NetworkSettings};
 pub use pending_changes::RuntimePendingChange;
 pub use process::{ProcessRunner, ValidationRunner, VersionRunner};
 pub use runtime::{RuntimeActionAvailability, RuntimeActions, RuntimeDeployment, RuntimeStatus};
@@ -79,6 +81,7 @@ pub struct Manager<R = ProcessRunner> {
     transparent: Arc<TransparentController>,
     dns_frontend: Arc<dns_runtime::DnsFrontendRuntime>,
     dns_settings: Arc<dns_settings::DnsSettingsStore>,
+    network_settings: Arc<network_settings::NetworkSettingsStore>,
 }
 
 impl Manager<ProcessRunner> {
@@ -114,12 +117,12 @@ impl<R: VersionRunner> Manager<R> {
             store.layout().dns_query_history.clone(),
             initial_profile,
         )?);
+        let network_settings = Arc::new(network_settings::NetworkSettingsStore::open(
+            store.layout().network_settings.clone(),
+        )?);
         let fetcher = Fetcher::new(subscriptions.clone())?;
         let remote = RemoteClient::new()?;
-        let gateway = Arc::new(sempre_gateway::Controller::new_with_dns_policy(
-            store.layout(),
-            dns_settings.clone(),
-        )?);
+        let gateway = Arc::new(sempre_gateway::Controller::new(store.layout())?);
         let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
         let transparent = Arc::new(TransparentController::new(store.layout()));
         let dns_frontend = dns_runtime::DnsFrontendRuntime::new(dns_settings.clone());
@@ -140,6 +143,7 @@ impl<R: VersionRunner> Manager<R> {
             transparent,
             dns_frontend,
             dns_settings,
+            network_settings,
         })
     }
 
@@ -163,7 +167,11 @@ impl<R: VersionRunner> Manager<R> {
         self.dns_frontend.status()
     }
 
-    pub fn dns_queries(&self) -> Vec<sempre_gateway::DnsQueryEvent> {
+    pub fn network_settings(&self) -> NetworkSettings {
+        self.network_settings.read()
+    }
+
+    pub fn dns_queries(&self) -> Vec<sempre_dns::DnsQueryEvent> {
         self.dns_settings.queries()
     }
 

@@ -29,6 +29,7 @@ pub(crate) fn prepare(
         return Ok(Plan::default());
     };
     system_dns.managed_frontend = true;
+    system_dns.takeover_host = true;
     system_dns.core_listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
         0 => 1053,
         port => port,
@@ -326,6 +327,7 @@ mod tests {
                 core_listen_port: 1053,
                 original_upstreams: vec!["223.6.6.6".into()],
                 managed_frontend: true,
+                takeover_host: true,
             }),
             ..Plan::default()
         };
@@ -352,6 +354,7 @@ mod tests {
                 core_listen_port: 1053,
                 original_upstreams: vec!["223.6.6.6".into()],
                 managed_frontend: true,
+                takeover_host: true,
             }),
             ..Plan::default()
         };

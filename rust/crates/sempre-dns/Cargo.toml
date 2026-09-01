@@ -1,20 +1,17 @@
 [package]
-name = "sempre-gateway"
+name = "sempre-dns"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Validated LAN gateway configuration and host preparation for Sempre"
+description = "Managed DNS frontend service for Sempre"
 
 [dependencies]
 chrono.workspace = true
-humantime.workspace = true
 regex.workspace = true
-sempre-network = { path = "../sempre-network" }
-sempre-state = { path = "../sempre-state" }
 serde.workspace = true
 serde_json.workspace = true
-tempfile.workspace = true
+socket2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 

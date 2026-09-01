@@ -71,7 +71,7 @@ pub fn build_host_plan(mut config: Config) -> Result<HostPlan, GatewayError> {
     } else {
         warnings.push("NAT is disabled; upstream routing must already know the LAN prefix.".into());
     }
-    if config.dhcp.enabled || config.dns.enabled {
+    if config.dhcp.enabled {
         warnings.push(format!(
             "VMs should use {gateway} as default gateway and DNS server."
         ));

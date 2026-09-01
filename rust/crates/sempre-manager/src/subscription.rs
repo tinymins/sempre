@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use sempre_converter::{
     CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, SourceSnapshot, Target,
-    apply_dns_frontend_settings, compile_with_overlay, dns_frontend_policy, parse_subscription,
+    compile_with_overlay, dns_frontend_policy, parse_subscription,
 };
 use sempre_state::{ConfigBuild, Document, PendingConfigField};
 use sempre_subscription::{Catalog, SubscriptionError};
@@ -45,12 +45,20 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         candidate: crate::DnsSettings,
     ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
+        if !candidate.enabled && self.network_settings.read().mode == crate::NetworkMode::Gateway {
+            return Err(ManagerError::InvalidOperation(
+                "DNS frontend must remain enabled in gateway mode".into(),
+            ));
+        }
         let _operation = self.store.acquire_operation()?;
         let document = self.store.read()?;
         let previous = self.dns_settings.read();
         let requires_core_rebuild = previous.requires_core_rebuild(&candidate);
         let saved = self.dns_settings.replace(candidate)?;
         if !requires_core_rebuild {
+            return Ok((CoreChange::default(), saved));
+        }
+        if document.selected.is_none() {
             return Ok((CoreChange::default(), saved));
         }
         let Some(profile_id) = document.active_profile_id.as_deref() else {
@@ -75,6 +83,62 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             Err(error) => {
                 self.dns_settings.restore(previous)?;
+                Err(error)
+            }
+        }
+    }
+
+    pub async fn update_network_settings(
+        &self,
+        candidate: crate::NetworkSettings,
+    ) -> Result<(CoreChange, crate::NetworkSettings), ManagerError> {
+        if candidate.mode == crate::NetworkMode::Gateway && std::env::consts::OS != "linux" {
+            return Err(ManagerError::InvalidOperation(
+                "gateway mode is only available on Linux".into(),
+            ));
+        }
+        if candidate.mode == crate::NetworkMode::Gateway && !self.dns_settings.read().enabled {
+            return Err(ManagerError::InvalidOperation(
+                "enable the DNS frontend before switching to gateway mode".into(),
+            ));
+        }
+        let _operation = self.store.acquire_operation()?;
+        let document = self.store.read()?;
+        let previous = self.network_settings.read();
+        let saved = self.network_settings.replace(candidate)?;
+        if saved.mode == previous.mode
+            && saved.gateway_capture_host == previous.gateway_capture_host
+        {
+            return Ok((CoreChange::default(), saved));
+        }
+        if document.selected.is_none() {
+            return Ok((CoreChange::default(), saved));
+        }
+        let Some(profile_id) = document.active_profile_id.as_deref() else {
+            return Ok((CoreChange::default(), saved));
+        };
+        match self
+            .prepare_subscription_locked(profile_id, false, false)
+            .await
+        {
+            Ok((change, _)) => {
+                if change.changed {
+                    self.store.update(|document| {
+                        crate::pending_changes::record_pending_fields(
+                            document,
+                            &[
+                                PendingConfigField::TransparentProxy,
+                                PendingConfigField::Dns,
+                            ],
+                            true,
+                        );
+                        Ok(())
+                    })?;
+                }
+                Ok((change, saved))
+            }
+            Err(error) => {
+                self.network_settings.restore(previous)?;
                 Err(error)
             }
         }
@@ -307,8 +371,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 remote.content = dns_settings.apply_compiled_sing_box_overlay(&remote.content)?;
                 remote.artifact_hash = format!("{:x}", Sha256::digest(remote.content.as_bytes()));
             }
+            let network_profile = self.apply_network_settings(&remote.profile)?;
             let runtime_profile =
-                apply_dns_frontend_settings(&remote.profile, &target, dns_settings.enabled)?;
+                self.apply_dns_frontend_settings(&network_profile, &target, dns_settings.enabled)?;
             let dns_frontend_policy = dns_frontend_policy(&runtime_profile, &target)?;
             let warnings = adapter_warnings.drain(..).chain(remote.warnings).collect();
             return Ok(RenderedProfile {
@@ -352,7 +417,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         snapshots.extend(provider_snapshots);
         adapter_warnings.extend(provider_warnings);
         let dns_settings = self.dns_settings.read();
-        let compile_profile = apply_dns_frontend_settings(&updated, &target, dns_settings.enabled)?;
+        let network_profile = self.apply_network_settings(&updated)?;
+        let compile_profile =
+            self.apply_dns_frontend_settings(&network_profile, &target, dns_settings.enabled)?;
         let overlay = if dns_settings.enabled && target.core == "sing-box" {
             dns_settings.routing_overlay(&mut snapshots)
         } else {

@@ -8,7 +8,7 @@ use std::{
 use ipnet::IpNet;
 use sempre_converter::DnsFrontendPolicy;
 use sempre_core::CoreRef;
-use sempre_gateway::{DnsConfig, DnsRuntimePolicy, DnsService, managed_probe_names, probe_dns};
+use sempre_dns::{DnsConfig, DnsRuntimePolicy, DnsService, managed_probe_names, probe_dns};
 use sempre_state::{Deployment, Document};
 use sempre_transparent::Plan as TransparentPlan;
 use serde::{Deserialize, Serialize};
@@ -125,9 +125,9 @@ impl DnsFrontendRuntime {
             core_upstream: plan.core_upstream.clone(),
             original_upstreams: plan.original_upstreams.clone(),
             direct_upstreams: plan.config.local_upstreams.clone(),
-            domestic_domain_source: sempre_gateway::DOMESTIC_DOMAIN_SOURCE.into(),
-            domestic_domain_sha256: sempre_gateway::DOMESTIC_DOMAIN_SHA256.into(),
-            domestic_domain_count: sempre_gateway::DOMESTIC_DOMAIN_COUNT,
+            domestic_domain_source: sempre_dns::DOMESTIC_DOMAIN_SOURCE.into(),
+            domestic_domain_sha256: sempre_dns::DOMESTIC_DOMAIN_SHA256.into(),
+            domestic_domain_count: sempre_dns::DOMESTIC_DOMAIN_COUNT,
             last_error: String::new(),
         };
     }
@@ -198,8 +198,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .find(|profile| profile.id == profile_id)
             .ok_or_else(|| ManagerError::ProfileNotFound(profile_id.into()))?;
         let (target, _) = self.subscription_target_for(reference, &deployment.version)?;
-        let profile = sempre_converter::apply_dns_frontend_settings(
-            profile,
+        let network_profile = self.apply_network_settings(profile)?;
+        let profile = self.apply_dns_frontend_settings(
+            &network_profile,
             &target,
             self.dns_settings.read().enabled,
         )?;
@@ -221,6 +222,7 @@ impl DnsFrontendPlan {
         policy: &DnsFrontendPolicy,
         original_upstreams: &[String],
         listen_port: u16,
+        listen_hosts: &[String],
         settings: &crate::DnsSettings,
     ) -> Result<Self, ManagerError> {
         if !policy.enabled || !policy.complete {
@@ -240,12 +242,14 @@ impl DnsFrontendPlan {
         } else {
             settings.direct_upstreams.clone()
         };
-        let config = DnsConfig::managed_frontend(
+        let mut config = DnsConfig::managed_frontend(
             listen_port,
             local_upstreams,
             dns_endpoint("127.0.0.1", policy.core_listen_port),
             settings.frontend_rule_sets(),
         )?;
+        config.listen_hosts = listen_hosts.to_vec();
+        config.outbound_mark = cfg!(target_os = "linux").then_some(sempre_transparent::BYPASS_MARK);
         let (local_probe, remote_probe) = managed_probe_names(&config)?;
         Ok(Self {
             deployment_hash: deployment_hash.into(),

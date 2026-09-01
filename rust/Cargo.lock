@@ -2241,13 +2241,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-dns"
+version = "2.0.4"
+dependencies = [
+ "chrono",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "socket2",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "sempre-gateway"
 version = "2.0.4"
 dependencies = [
  "chrono",
  "humantime",
  "regex",
- "reqwest",
  "sempre-network",
  "sempre-state",
  "serde",
@@ -2270,6 +2283,7 @@ dependencies = [
  "sempre-control",
  "sempre-converter",
  "sempre-core",
+ "sempre-dns",
  "sempre-gateway",
  "sempre-network",
  "sempre-service",

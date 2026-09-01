@@ -30,6 +30,27 @@ impl SystemDns {
         self.allowed
     }
 
+    pub(crate) fn discover_upstreams(&self) -> Result<Vec<String>, TransparentError> {
+        let data = fs::read_to_string(&self.resolv_conf)
+            .map_err(|source| self.io("read system resolver", source))?;
+        let mut upstreams = Vec::new();
+        for address in data.lines().filter_map(|line| {
+            let line = line.split('#').next()?.trim();
+            let (key, value) = line.split_once(char::is_whitespace)?;
+            (key == "nameserver").then(|| value.trim().to_owned())
+        }) {
+            if !matches!(address.as_str(), "127.0.0.1" | "::1") && !upstreams.contains(&address) {
+                upstreams.push(address);
+            }
+        }
+        if upstreams.is_empty() {
+            return Err(TransparentError::Invalid(
+                "system resolver has no usable original DNS upstream".into(),
+            ));
+        }
+        Ok(upstreams)
+    }
+
     pub(crate) fn apply(&self) -> Result<(), TransparentError> {
         if !self.allowed {
             return Err(TransparentError::Invalid(

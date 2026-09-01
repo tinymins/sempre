@@ -89,9 +89,7 @@ pub(crate) fn script(plan: &Plan) -> String {
             output,
             "add chain {family} {TABLE} prerouting {{ type filter hook prerouting priority mangle; policy accept; }}"
         );
-        for protocol in ["tcp", "udp"] {
-            capture_rules(&mut output, family, protocol, plan, true);
-        }
+        dns_passthrough_rules(&mut output, family, plan);
         for value in plan
             .excluded_prefixes
             .iter()
@@ -103,33 +101,77 @@ pub(crate) fn script(plan: &Plan) -> String {
             );
         }
         for protocol in ["tcp", "udp"] {
-            capture_rules(&mut output, family, protocol, plan, false);
+            capture_rules(&mut output, family, protocol, plan);
         }
         if plan.capture_host {
             output_rules(&mut output, family, address_key, plan);
+        }
+        if family == "ip" {
+            dns_redirect_rules(&mut output, plan);
         }
     }
     output
 }
 
-fn capture_rules(output: &mut String, family: &str, protocol: &str, plan: &Plan, dns: bool) {
-    let port = if dns { plan.dns_port } else { plan.tproxy_port };
-    let destination = if dns {
-        format!(" {protocol} dport 53")
-    } else {
-        String::new()
-    };
-    let kind = if dns { "dns" } else { "proxy" };
+fn capture_rules(output: &mut String, family: &str, protocol: &str, plan: &Plan) {
     let _ = writeln!(
         output,
-        "add rule {family} {TABLE} prerouting meta mark {ROUTE_MARK:#x} meta l4proto {protocol}{destination} meta mark set {ROUTE_MARK:#x} tproxy to :{port} counter accept comment \"sempre:{kind}:host:{protocol}:\""
+        "add rule {family} {TABLE} prerouting meta mark {ROUTE_MARK:#x} meta l4proto {protocol} meta mark set {ROUTE_MARK:#x} tproxy to :{} counter accept comment \"sempre:proxy:host:{protocol}:\"",
+        plan.tproxy_port
     );
     for interface in &plan.lan_interfaces {
         let interface = serde_json::to_string(interface).expect("interface string");
         let _ = writeln!(
             output,
-            "add rule {family} {TABLE} prerouting iifname {interface} meta l4proto {protocol}{destination} meta mark set {ROUTE_MARK:#x} tproxy to :{port} counter accept comment \"sempre:{kind}:lan:{protocol}:\""
+            "add rule {family} {TABLE} prerouting iifname {interface} meta l4proto {protocol} meta mark set {ROUTE_MARK:#x} tproxy to :{} counter accept comment \"sempre:proxy:lan:{protocol}:\"",
+            plan.tproxy_port
         );
+    }
+}
+
+fn dns_passthrough_rules(output: &mut String, family: &str, plan: &Plan) {
+    for interface in &plan.lan_interfaces {
+        let interface = serde_json::to_string(interface).expect("interface string");
+        for protocol in ["tcp", "udp"] {
+            let _ = writeln!(
+                output,
+                "add rule {family} {TABLE} prerouting iifname {interface} meta l4proto {protocol} {protocol} dport 53 return"
+            );
+        }
+    }
+}
+
+fn dns_redirect_rules(output: &mut String, plan: &Plan) {
+    let _ = writeln!(
+        output,
+        "add chain ip {TABLE} dns_prerouting {{ type nat hook prerouting priority dstnat; policy accept; }}"
+    );
+    for interface in &plan.lan_interfaces {
+        let interface = serde_json::to_string(interface).expect("interface string");
+        for protocol in ["tcp", "udp"] {
+            let _ = writeln!(
+                output,
+                "add rule ip {TABLE} dns_prerouting iifname {interface} meta l4proto {protocol} {protocol} dport 53 redirect to :{} counter comment \"sempre:dns:lan:{protocol}:\"",
+                plan.dns_port
+            );
+        }
+    }
+    if plan.capture_host {
+        let _ = writeln!(
+            output,
+            "add chain ip {TABLE} dns_output {{ type nat hook output priority dstnat; policy accept; }}"
+        );
+        let _ = writeln!(
+            output,
+            "add rule ip {TABLE} dns_output meta mark {BYPASS_MARK:#x} return"
+        );
+        for protocol in ["tcp", "udp"] {
+            let _ = writeln!(
+                output,
+                "add rule ip {TABLE} dns_output meta l4proto {protocol} {protocol} dport 53 redirect to :{} counter comment \"sempre:dns:host:{protocol}:\"",
+                plan.dns_port
+            );
+        }
     }
 }
 
@@ -145,7 +187,7 @@ fn output_rules(output: &mut String, family: &str, address_key: &str, plan: &Pla
     for protocol in ["tcp", "udp"] {
         let _ = writeln!(
             output,
-            "add rule {family} {TABLE} output meta l4proto {protocol} {protocol} dport 53 meta mark set {ROUTE_MARK:#x} counter accept comment \"sempre:output-dns:host:{protocol}:\""
+            "add rule {family} {TABLE} output meta l4proto {protocol} {protocol} dport 53 return"
         );
     }
     for value in plan
@@ -192,7 +234,10 @@ mod tests {
         assert_eq!(script.matches(OWNER_LABEL).count(), 2);
         assert!(script.contains("iifname \"vmbr1\""));
         assert!(script.contains("tproxy to :7893"));
-        assert!(script.contains("tproxy to :1053"));
+        assert!(!script.contains("tproxy to :1053"));
+        assert!(script.contains("udp dport 53 redirect to :1053"));
+        assert!(script.contains("tcp dport 53 redirect to :1053"));
+        assert!(script.contains("meta mark 0x53500002 return"));
         assert!(!script.contains("meta l4proto tcp tcp meta"));
         assert!(!script.contains("meta l4proto udp udp meta"));
         let bypass = script

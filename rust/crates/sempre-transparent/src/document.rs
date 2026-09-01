@@ -192,7 +192,13 @@ pub(crate) fn prepare_tproxy(
     excluded.extend(inventory.local_prefixes.clone());
     excluded.extend(outbound_server_prefixes(config));
     plan.tproxy_port = transparent.tproxy.listen_port;
-    plan.dns_port = transparent.tproxy.dns_listen_port;
+    plan.dns_port = plan
+        .system_dns
+        .as_ref()
+        .filter(|system_dns| system_dns.managed_frontend)
+        .map_or(transparent.tproxy.dns_listen_port, |system_dns| {
+            system_dns.listen_port
+        });
     plan.capture_host = transparent.capture_host;
     plan.lan_interfaces = interfaces;
     plan.excluded_prefixes = prefix::normalized(excluded);

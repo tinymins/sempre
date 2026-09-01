@@ -275,7 +275,7 @@ async fn frontend_dns_survives_switches_without_overriding_profile_dns() {
     let (_root, manager, first_id) = fixture();
     let mut settings = manager.dns_settings();
     settings.reject_https = false;
-    settings.rewrites.push(sempre_gateway::DnsRewrite {
+    settings.rewrites.push(sempre_dns::DnsRewrite {
         id: "device-rewrite".into(),
         domain: "router.test".into(),
         record_type: "A".into(),

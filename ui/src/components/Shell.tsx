@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
-import type { SystemStatus } from '../lib/types'
+import type { NetworkSettingsResponse, SystemStatus } from '../lib/types'
 import { cn } from '../lib/cn'
 import { AcmeContentBoundary } from './AcmeContentBoundary'
 import { RuntimeRestartButton } from './RuntimeRestartButton'
@@ -54,6 +54,11 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
     enabled: Boolean(session) && !chrome,
     refetchInterval: 5000,
   })
+  const network = useQuery({
+    queryKey: ['network', 'settings'],
+    queryFn: () => api<NetworkSettingsResponse>(session!, '/network/settings'),
+    enabled: Boolean(session) && !chrome && !navigation,
+  })
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(desktopCollapsed))
   }, [desktopCollapsed])
@@ -70,7 +75,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
     { key: 'network', label: t('navigationNetwork'), items: [
       { path: '/dns', label: t('dns'), icon: DatabaseZap },
       { path: '/tunnels', label: t('tunnels'), icon: Waypoints },
-      { path: '/gateway', label: t('gateway'), icon: Router },
+      ...(network.data?.settings?.mode === 'gateway' ? [{ path: '/gateway', label: t('gateway'), icon: Router }] : []),
     ] },
     { key: 'analysis', label: t('navigationAnalysis'), icon: ChartNoAxesCombined, collapsible: true, items: [
       { path: '/runtime-status', label: t('navigationCoreStatus'), icon: Cpu },

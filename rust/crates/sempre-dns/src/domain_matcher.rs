@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use regex::Regex;
 
-use crate::GatewayError;
+use crate::DnsError;
 
 const BUNDLED_DOMAINS_MIN: &str = include_str!("../resources/domains-min.txt");
 
@@ -11,7 +11,7 @@ pub const DOMESTIC_DOMAIN_SHA256: &str =
     "80aed7f0cbe1d0292f58284f5b0b91043e09950a9019c60da96bff3a6e8ba634";
 pub const DOMESTIC_DOMAIN_COUNT: usize = 77_072;
 
-pub fn bundled_domestic_domains() -> Result<Vec<String>, GatewayError> {
+pub fn bundled_domestic_domains() -> Result<Vec<String>, DnsError> {
     parse_adguard_domains(BUNDLED_DOMAINS_MIN)
 }
 
@@ -77,7 +77,7 @@ impl DomainMatcher {
     }
 }
 
-pub(crate) fn parse_adguard_domains(data: &str) -> Result<Vec<String>, GatewayError> {
+pub(crate) fn parse_adguard_domains(data: &str) -> Result<Vec<String>, DnsError> {
     let mut domains = HashSet::new();
     let mut found = false;
     for line in data.lines().map(str::trim) {
@@ -85,30 +85,29 @@ pub(crate) fn parse_adguard_domains(data: &str) -> Result<Vec<String>, GatewayEr
             continue;
         }
         found = true;
-        let (patterns, upstream) = line.split_once(']').ok_or_else(|| {
-            GatewayError::invalid("AdGuard domain rule is missing closing bracket")
-        })?;
+        let (patterns, upstream) = line
+            .split_once(']')
+            .ok_or_else(|| DnsError::invalid("AdGuard domain rule is missing closing bracket"))?;
         if upstream.trim().is_empty() {
-            return Err(GatewayError::invalid("AdGuard domain rule has no upstream"));
+            return Err(DnsError::invalid("AdGuard domain rule has no upstream"));
         }
         let patterns = patterns
             .strip_prefix("[/")
             .and_then(|value| value.strip_suffix('/'))
-            .ok_or_else(|| GatewayError::invalid("invalid AdGuard domain rule"))?;
+            .ok_or_else(|| DnsError::invalid("invalid AdGuard domain rule"))?;
         for value in patterns.split('/') {
-            let domain = normalize_domain(value).ok_or_else(|| {
-                GatewayError::invalid(format!("invalid AdGuard domain {value:?}"))
-            })?;
+            let domain = normalize_domain(value)
+                .ok_or_else(|| DnsError::invalid(format!("invalid AdGuard domain {value:?}")))?;
             domains.insert(domain);
         }
     }
     if !found {
-        return Err(GatewayError::invalid(
+        return Err(DnsError::invalid(
             "AdGuard domain list contains no upstream rules",
         ));
     }
     if domains.is_empty() {
-        return Err(GatewayError::invalid("AdGuard domain list is empty"));
+        return Err(DnsError::invalid("AdGuard domain list is empty"));
     }
     let mut domains = domains.into_iter().collect::<Vec<_>>();
     domains.sort_unstable();

@@ -289,7 +289,7 @@ describe('ProxySubscribeEditor', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Runtime' }))
 		fireEvent.click(screen.getByText('TUN Router'))
 		fireEvent.click(screen.getByText('TProxy'))
-		expect(screen.getByText('vmbr1')).toBeInTheDocument()
+		expect(screen.queryByText('vmbr1')).not.toBeInTheDocument()
 
 		expect(screen.getByText(/Use a strong secret/i)).toBeInTheDocument()
 		fireEvent.change(screen.getByLabelText(/Fixed secret/i), { target: { value: 'fixed-secret' } })
@@ -301,7 +301,7 @@ describe('ProxySubscribeEditor', () => {
 			transparent_proxy: {
 				mode: 'tproxy',
 				capture_host: false,
-				lan_interfaces: ['vmbr1'],
+				lan_interfaces: [],
 				tproxy: { listen_port: 7893, dns_listen_port: 1053 },
 			},
 			management_api: { external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
@@ -431,7 +431,7 @@ describe('ProxySubscribeEditor', () => {
 		fireEvent.click(modeControl!)
 		fireEvent.click(screen.getByText('eBPF Router'))
 		expect(screen.getByText('WAN interface')).toBeInTheDocument()
-		expect(screen.getByText('LAN interfaces')).toBeInTheDocument()
+		expect(screen.queryByText('LAN interfaces')).not.toBeInTheDocument()
 		expect(screen.getByText('Configure kernel parameters automatically')).toBeInTheDocument()
 		expect(screen.queryByLabelText('Local SOCKS port')).not.toBeInTheDocument()
 		expect(screen.queryByText('External controller')).not.toBeInTheDocument()
@@ -442,7 +442,7 @@ describe('ProxySubscribeEditor', () => {
 		expect(onSave.mock.calls[0][0]).toMatchObject({
 			transparent_proxy: {
 				mode: 'ebpf-router',
-				lan_interfaces: ['vmbr1'],
+				lan_interfaces: [],
 				ebpf: { wan_interface: 'auto', auto_config_kernel_parameter: true },
 			},
 		})

@@ -35,6 +35,8 @@ const runtimeStatus = {
   actions: { start: { allowed: false }, stop: { allowed: true }, restart: { allowed: true } },
 }
 
+const networkSettings = (mode: 'local' | 'gateway' = 'local') => ({ settings: { schema: 1, revision: 1, mode, gateway_capture_host: false }, platform: 'linux', gateway_available: true })
+
 describe('Shell sidebar', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -43,7 +45,7 @@ describe('Shell sidebar', () => {
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
-      return Response.json(path.endsWith('/runtime/status') ? runtimeStatus : systemStatus)
+      return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : systemStatus)
     }))
   })
 
@@ -77,7 +79,7 @@ describe('Shell sidebar', () => {
     const navigation = screen.getByRole('navigation')
     const labels = within(navigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
 
-    expect(labels).toEqual(['Overview', 'Proxies', 'Routing Rules', 'Subscription Config', 'Custom Nodes', 'DNS', 'Tunnels', 'LAN Gateway', 'Management'])
+    expect(labels).toEqual(['Overview', 'Proxies', 'Routing Rules', 'Subscription Config', 'Custom Nodes', 'DNS', 'Tunnels', 'Management'])
     expect(within(navigation).getByText('Strategy')).toBeInTheDocument()
     expect(within(navigation).getByText('Configuration')).toBeInTheDocument()
     expect(within(navigation).getByText('Network capabilities')).toBeInTheDocument()
@@ -88,6 +90,16 @@ describe('Shell sidebar', () => {
     fireEvent.click(analysis)
     expect(analysis).toHaveAttribute('aria-expanded', 'true')
     expect(within(navigation).getAllByRole('link').slice(-7).map((link) => link.getAttribute('aria-label'))).toEqual(['Core Status', 'Connections', 'Traffic', 'Network Test', 'Effective Rules', 'Logs', 'Management'])
+  })
+
+  it('shows the gateway entry only in gateway mode', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      return Response.json(path.endsWith('/network/settings') ? networkSettings('gateway') : path.endsWith('/runtime/status') ? runtimeStatus : systemStatus)
+    }))
+    renderShell()
+
+    expect(await screen.findByRole('link', { name: 'Gateway' })).toBeInTheDocument()
   })
 
   it('opens analysis tools when the current route belongs to that section', () => {

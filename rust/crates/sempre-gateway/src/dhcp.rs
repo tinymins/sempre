@@ -136,9 +136,7 @@ impl LeaseState {
         append_option(&mut reply, 54, &self.server_id.octets());
         append_option(&mut reply, 1, &subnet_mask(&self.config.lan.gateway_cidr));
         append_option(&mut reply, 3, &self.server_id.octets());
-        if self.config.dns.enabled {
-            append_option(&mut reply, 6, &self.server_id.octets());
-        }
+        append_option(&mut reply, 6, &self.server_id.octets());
         if !self.config.dhcp.domain.is_empty() {
             append_option(&mut reply, 15, self.config.dhcp.domain.as_bytes());
         }

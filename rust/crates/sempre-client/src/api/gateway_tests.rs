@@ -51,8 +51,8 @@ fn request(method: &str, path: &str, body: Body, token: &str) -> Request<Body> {
     request
 }
 
-fn json_request(method: &str, path: &str, body: &'static str, token: &str) -> Request<Body> {
-    let mut request = request(method, path, Body::from(body), token);
+fn json_request(method: &str, path: &str, body: impl Into<Body>, token: &str) -> Request<Body> {
+    let mut request = request(method, path, body.into(), token);
     request.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
@@ -76,8 +76,8 @@ async fn gateway_routes_expose_defaults_validation_and_safe_host_plans() {
         .await
         .expect("status body");
     let status: serde_json::Value = serde_json::from_slice(&body).expect("status JSON");
-    assert_eq!(status["config"]["schema"], 1);
-    assert_eq!(status["runtime"]["dns_running"], false);
+    assert_eq!(status["config"]["schema"], 2);
+    assert!(status["config"].get("dns").is_none());
     assert_eq!(status["host_plan_available"], true);
 
     let invalid = json_request(
@@ -130,15 +130,19 @@ async fn gateway_runtime_operations_return_domain_errors_without_services() {
     let root = tempfile::tempdir().expect("temporary directory");
     let (state, token) = test_state(&root);
     let app = router(state);
-    let query = json_request(
+    let removed_query = json_request(
         "POST",
         "/api/v1/gateway/dns/query",
         r#"{"name":"example.com","type":"INVALID"}"#,
         &token,
     );
     assert_eq!(
-        app.clone().oneshot(query).await.expect("query").status(),
-        StatusCode::BAD_REQUEST
+        app.clone()
+            .oneshot(removed_query)
+            .await
+            .expect("query")
+            .status(),
+        StatusCode::NOT_FOUND
     );
     let revoke = json_request(
         "POST",
@@ -176,5 +180,38 @@ async fn gateway_update_persists_normalized_configuration() {
         .oneshot(request("GET", "/api/v1/gateway", Body::empty(), &token))
         .await
         .expect("status");
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn network_mode_defaults_local_and_persists_supported_changes() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let (state, token) = test_state(&root);
+    let app = router(state);
+    let response = app
+        .clone()
+        .oneshot(request(
+            "GET",
+            "/api/v1/network/settings",
+            Body::empty(),
+            &token,
+        ))
+        .await
+        .expect("network settings");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("network body");
+    let current: serde_json::Value = serde_json::from_slice(&body).expect("network JSON");
+    assert_eq!(current["settings"]["mode"], "local");
+
+    let mode = "local";
+    let update = json_request(
+        "PUT",
+        "/api/v1/network/settings",
+        format!(r#"{{"schema":1,"revision":1,"mode":"{mode}","gateway_capture_host":true}}"#),
+        &token,
+    );
+    let response = app.oneshot(update).await.expect("update network settings");
     assert_eq!(response.status(), StatusCode::OK);
 }

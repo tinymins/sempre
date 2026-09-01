@@ -1,22 +1,21 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Network, Play, RefreshCw, Save, Search, ShieldCheck, Terminal, Trash2 } from 'lucide-react'
+import { Copy, Network, Play, RefreshCw, Save, Terminal, Trash2 } from 'lucide-react'
 import { Alert, Button, Card, Input, InputNumber, Select, Switch, Table, Tag, TextArea, type TableColumn } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { GatewayConfig, GatewayDNSDebugResult, GatewayHostPlan, GatewayLease, GatewayStatus } from '../lib/types'
+import type { GatewayConfig, GatewayHostPlan, GatewayLease, GatewayStatus, NetworkSettings, NetworkSettingsResponse } from '../lib/types'
 
 const emptyStatus: GatewayStatus = {
   config: {
-    schema: 1,
+    schema: 2,
     topology: 'local-pve',
     lan: { interface: '', gateway_cidr: '10.10.10.1/24', wan_interface: '', nat_enabled: false },
     dhcp: { enabled: false, range_start: '10.10.10.100', range_end: '10.10.10.200', lease_time: '12h', reservations: [] },
-    dns: { enabled: false, listen_hosts: ['10.10.10.1'], listen_port: 53, local_upstreams: ['223.5.5.5:53', '223.6.6.6:53'], remote_upstream: '127.0.0.1:1053', strategy: 'local-first-classify', reject_https: true, rule_sets: [], domestic_cidrs: [], cache_ttl_seconds: 300 },
     pve: { port: 22, user: 'root', apply_persistent: false },
   },
-  runtime: { dns_running: false, dhcp_running: false, dhcp_leases: [] },
+  runtime: { dhcp_running: false, dhcp_leases: [] },
   inventory: { supported: false, recommended_lan_interfaces: [], local_prefixes: [], vpn_prefixes: [], occupied_prefixes: [], interfaces: [] },
   validation_errors: [],
   host_plan_available: true,
@@ -28,14 +27,17 @@ export function Gateway() {
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState<GatewayConfig | null>(null)
   const [plan, setPlan] = useState<GatewayHostPlan | null>(null)
-  const [dnsName, setDNSName] = useState('www.baidu.com')
-  const [dnsResult, setDNSResult] = useState<GatewayDNSDebugResult | null>(null)
   const [sshKey, setSSHKey] = useState('')
   const status = useQuery({
     queryKey: ['gateway'],
     queryFn: () => api<GatewayStatus>(session!, '/gateway'),
     enabled: Boolean(session),
     refetchInterval: 5000,
+  })
+  const network = useQuery({
+    queryKey: ['network', 'settings'],
+    queryFn: () => api<NetworkSettingsResponse>(session!, '/network/settings'),
+    enabled: Boolean(session),
   })
   const config = draft ?? status.data?.config ?? emptyStatus.config
   const inventory = status.data?.inventory ?? emptyStatus.inventory
@@ -57,9 +59,14 @@ export function Gateway() {
     mutationFn: (next: GatewayConfig) => api<GatewayHostPlan>(session!, '/gateway/host-apply', { method: 'POST', body: JSON.stringify({ config: next, confirm: true, private_key: sshKey }) }),
     onSuccess: setPlan,
   })
-  const queryDNS = useMutation({
-    mutationFn: () => api<GatewayDNSDebugResult>(session!, '/gateway/dns/query', { method: 'POST', body: JSON.stringify({ name: dnsName, type: 'A' }) }),
-    onSuccess: setDNSResult,
+  const captureHost = useMutation({
+    mutationFn: (gateway_capture_host: boolean) => {
+      const current = network.data?.settings
+      if (!current) throw new Error('Network settings are not loaded')
+      const candidate: NetworkSettings = { ...current, gateway_capture_host }
+      return api<NetworkSettingsResponse>(session!, '/network/settings', { method: 'PUT', body: JSON.stringify(candidate) })
+    },
+    onSuccess: (result) => queryClient.setQueryData(['network', 'settings'], result),
   })
   const revokeLease = useMutation({
     mutationFn: (mac: string) => api(session!, '/gateway/dhcp/leases/revoke', { method: 'POST', body: JSON.stringify({ mac }) }),
@@ -77,7 +84,7 @@ export function Gateway() {
 
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
-      <div><h1 className="text-xl font-semibold">{t('gateway')}</h1><p className="mt-1 text-sm text-[var(--muted)]">DHCP, DNS, PVE host preparation, and LAN transparent gateway controls.</p></div>
+      <div><h1 className="text-xl font-semibold">{t('gateway')}</h1><p className="mt-1 text-sm text-[var(--muted)]">LAN transparent proxy, DHCP, and PVE host preparation.</p></div>
       <div className="flex gap-2">
         <Button icon={<RefreshCw size={16} />} disabled={status.isFetching} onClick={() => status.refetch()}>{t('refresh')}</Button>
         <Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(config)}>{t('save')}</Button>
@@ -88,9 +95,8 @@ export function Gateway() {
     {save.isError ? <Alert type="error" showIcon message={save.error instanceof Error ? save.error.message : t('operationFailed')} /> : null}
     {save.isSuccess ? <Alert type="success" showIcon message={t('operationDone')} description="Saved. Running services will reload through the managed runtime." /> : null}
 
-    <div className="grid gap-3 md:grid-cols-4">
+    <div className="grid gap-3 md:grid-cols-3">
       <Metric icon={Network} label="Topology" value={config.topology === 'local-pve' ? 'Local PVE' : 'Remote PVE'} tone="blue" />
-      <Metric icon={ShieldCheck} label="DNS" value={runtime.dns_running ? 'Running' : config.dns.enabled ? 'Pending' : 'Disabled'} tone="green" />
       <Metric icon={Play} label="DHCP" value={runtime.dhcp_running ? 'Running' : config.dhcp.enabled ? 'Pending' : 'Disabled'} tone="amber" />
       <Metric icon={Terminal} label="Host plan" value={plan ? 'Generated' : 'Ready'} tone="cyan" />
     </div>
@@ -103,6 +109,7 @@ export function Gateway() {
           <Field label="Gateway CIDR"><Input value={config.lan.gateway_cidr} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, gateway_cidr: event.target.value } }))} /></Field>
           <Field label="WAN interface"><Input value={config.lan.wan_interface} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: event.target.value } }))} /></Field>
           <Field label="NAT masquerade"><Switch checked={config.lan.nat_enabled} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, nat_enabled: value } }))} /></Field>
+          <Field label="Proxy this host"><Switch checked={network.data?.settings.gateway_capture_host ?? false} loading={captureHost.isPending} onChange={(value) => captureHost.mutate(value)} /></Field>
           <Field label="PVE host"><Input value={config.pve.host || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, host: event.target.value } }))} /></Field>
           <Field label="SSH user"><Input value={config.pve.user || 'root'} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, user: event.target.value } }))} /></Field>
           <Field label="SSH port"><InputNumber className="w-full" min={1} max={65535} value={config.pve.port || 22} disabled={config.topology === 'local-pve'} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, port: value ?? 22 } }))} /></Field>
@@ -113,7 +120,10 @@ export function Gateway() {
       </Section>
     </Card>
 
-    <div className="grid gap-5 xl:grid-cols-2">
+    <Alert type="info" showIcon message="LAN DNS entry is automatic" description="LAN clients use the gateway on TCP/UDP port 53. Sempre forwards those queries to the DNS frontend configured on the DNS page." />
+    {captureHost.isError ? <Alert type="error" showIcon message={captureHost.error instanceof Error ? captureHost.error.message : t('operationFailed')} /> : null}
+
+    <div className="grid gap-5">
       <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
         <Section title="DHCP">
           <div className="grid gap-3 md:grid-cols-2">
@@ -126,24 +136,6 @@ export function Gateway() {
         </Section>
       </Card>
 
-      <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
-        <Section title="DNS split">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Enabled"><Switch checked={config.dns.enabled} onChange={(value) => update((current) => ({ ...current, dns: { ...current.dns, enabled: value } }))} /></Field>
-            <Field label="Strategy"><Select value={config.dns.strategy} options={[{ value: 'local-first-classify', label: 'Local first classify' }, { value: 'rules-first', label: 'Rules first' }]} onChange={(value) => update((current) => ({ ...current, dns: { ...current.dns, strategy: value } }))} /></Field>
-            <Field label="Listen hosts"><Input value={config.dns.listen_hosts.join(', ')} onChange={(event) => update((current) => ({ ...current, dns: { ...current.dns, listen_hosts: splitList(event.target.value) } }))} /></Field>
-            <Field label="Listen port"><InputNumber className="w-full" min={1} max={65535} value={config.dns.listen_port} onChange={(value) => update((current) => ({ ...current, dns: { ...current.dns, listen_port: value ?? 53 } }))} /></Field>
-            <Field label="Local upstreams"><Input value={config.dns.local_upstreams.join(', ')} onChange={(event) => update((current) => ({ ...current, dns: { ...current.dns, local_upstreams: splitList(event.target.value) } }))} /></Field>
-            <Field label="Remote upstream"><Input value={config.dns.remote_upstream} onChange={(event) => update((current) => ({ ...current, dns: { ...current.dns, remote_upstream: event.target.value } }))} /></Field>
-            <Field label="Reject HTTPS"><Switch checked={config.dns.reject_https} onChange={(value) => update((current) => ({ ...current, dns: { ...current.dns, reject_https: value } }))} /></Field>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Input value={dnsName} onChange={(event) => setDNSName(event.target.value)} />
-            <Button icon={<Search size={16} />} loading={queryDNS.isPending} onClick={() => queryDNS.mutate()}>Query</Button>
-          </div>
-          {dnsResult ? <div className="mt-3 rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 text-xs"><div>Upstream: {dnsResult.upstream}</div><div className="mt-1 whitespace-pre-wrap">{dnsResult.answers.join('\n') || 'No answers'}</div></div> : null}
-        </Section>
-      </Card>
     </div>
 
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
@@ -187,8 +179,4 @@ function Metric({ icon: Icon, label, value, tone }: { icon: typeof Network; labe
     blue: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
   }
   return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><span className={`grid size-8 place-items-center rounded-md ${colors[tone]}`}><Icon size={17} /></span><p className="mt-5 truncate text-xs text-[var(--muted)]">{label}</p><p className="mt-1 truncate text-lg font-semibold tabular-nums" title={value}>{value}</p></Card>
-}
-
-function splitList(value: string) {
-  return value.split(',').map((item) => item.trim()).filter(Boolean)
 }
