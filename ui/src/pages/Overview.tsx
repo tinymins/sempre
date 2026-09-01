@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowDownToLine, ArrowUpFromLine, Cable, Cpu, Gauge } from 'lucide-react'
+import { Activity, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Cable, Cpu, Gauge, Server } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/format'
 import { useI18n } from '../lib/i18n'
@@ -9,7 +10,6 @@ import { useSession } from '../lib/session'
 import type { Overview as OverviewData, RuntimeEvent, SystemStatus } from '../lib/types'
 import { Card, EmptyState, Badge, PageTitle } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
-import { RuntimeControlPanel } from '../components/RuntimeControlPanel'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 
 export function Overview() {
@@ -41,11 +41,9 @@ export function Overview() {
 
   return (
     <div className="space-y-6">
-      <PageTitle title={t('overview')} detail={system.data?.active ? `${system.data.active.core} ${system.data.active.version}` : t('noCore')}>
-        <Badge tone={system.data?.runtime.state === 'running' ? 'success' : 'warning'}>{system.data?.runtime.state || t('loading')}</Badge>
-      </PageTitle>
-      <AutoConfigureCard />
-      <RuntimeControlPanel />
+      <PageTitle title={t('overview')} />
+      <SystemSummary system={system.data} />
+      {system.data && (!system.data.selected || !system.data.active) ? <AutoConfigureCard /> : null}
       {system.data && system.data.runtime.state !== 'running' ? (
         <EmptyState title={system.data.active ? t('coreNotRunning') : t('noCore')} detail={system.data.active ? t('coreNotRunningDetail') : t('noCoreDetail')} />
       ) : (
@@ -62,14 +60,29 @@ export function Overview() {
             <div className="mb-4 flex items-center justify-between"><div><h2 className="text-sm font-semibold">{t('realtimeTraffic')}</h2><p className="mt-1 text-xs text-[var(--muted)]">120 seconds</p></div><Badge tone="success">{t('live')}</Badge></div>
             <RuntimeChart points={points} />
           </Card>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card className="p-5"><h2 className="text-sm font-semibold">{t('core')}</h2><dl className="mt-4 grid grid-cols-2 gap-y-4 text-sm"><Info label={t('version')} value={overview.data?.version || '-'} /><Info label={t('mode')} value={overview.data?.mode || '-'} /><Info label={t('service')} value={system.data?.service || '-'} /><Info label="PID" value={String(system.data?.runtime.pid || '-')} /></dl></Card>
-            <Card className="p-5"><h2 className="text-sm font-semibold">Sempre</h2><dl className="mt-4 grid grid-cols-2 gap-y-4 text-sm"><Info label={t('version')} value={system.data?.version || '-'} /><Info label="Commit" value={system.data?.commit || '-'} /><Info label={t('mode')} value={system.data?.mode || '-'} /><Info label="API" value="v1" /></dl></Card>
-          </div>
         </>
       )}
     </div>
   )
+}
+
+function SystemSummary({ system }: { system?: SystemStatus }) {
+  const { t } = useI18n()
+  const runtimeState = system?.runtime.state || ''
+  const coreName = system?.active ? `${system.active.core} ${system.active.version}` : system?.selected ? `${system.selected.core}@${system.selected.ref}` : t('noCore')
+  return <Card className="overflow-hidden">
+    <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:divide-x md:divide-[var(--border)]">
+      <SummaryItem icon={Server} label={t('sempreService')} value={system ? `Sempre ${system.version}` : t('loading')} detail={system?.mode || '-'} status={system?.service === 'running' ? t('online') : system?.service || t('loading')} tone={system?.service === 'running' ? 'success' : 'warning'} />
+      <SummaryItem icon={Cpu} label={t('managedCore')} value={coreName} detail={system?.active?.ref || system?.selected?.ref || '-'} status={runtimeState ? runtimeLabel(runtimeState, t) : t('loading')} tone={runtimeState === 'running' ? 'success' : runtimeState === 'failed' ? 'danger' : 'warning'} />
+      <Link className="flex items-center justify-center gap-2 border-t border-[var(--border)] px-5 py-4 text-sm font-medium text-emerald-700 hover:bg-[var(--surface-hover)] dark:text-emerald-400 md:border-t-0" to="/runtime-status">{t('navigationCoreStatus')}<ArrowRight size={16} /></Link>
+    </div>
+    {system?.pending ? <div className="border-t border-amber-500/25 bg-amber-500/8 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">{t('pendingChange')}</div> : null}
+    {system?.last_error ? <div className="border-t border-red-500/25 bg-red-500/8 px-4 py-2 text-sm text-red-700 dark:text-red-300">{system.last_error}</div> : null}
+  </Card>
+}
+
+function SummaryItem({ icon: Icon, label, value, detail, status, tone }: { icon: typeof Server; label: string; value: string; detail: string; status: string; tone: 'success' | 'warning' | 'danger' }) {
+  return <div className="flex min-w-0 items-center gap-3 border-t border-[var(--border)] p-4 first:border-t-0 md:border-t-0 md:p-5"><span className="grid size-9 shrink-0 place-items-center rounded-md bg-emerald-500/10 text-emerald-600"><Icon size={18} /></span><div className="min-w-0 flex-1"><p className="text-xs text-[var(--muted)]">{label}</p><p className="mt-1 truncate text-sm font-semibold">{value}</p><p className="mt-0.5 truncate text-xs text-[var(--muted)]">{detail}</p></div><Badge tone={tone}>{status}</Badge></div>
 }
 
 function Metric({ icon: Icon, label, value, tone }: { icon: typeof Activity; label: string; value: string; tone: 'cyan' | 'green' | 'amber' | 'red' }) {
@@ -77,6 +90,8 @@ function Metric({ icon: Icon, label, value, tone }: { icon: typeof Activity; lab
   return <Card className="min-w-0 p-4"><span className={`grid size-8 place-items-center rounded-md ${colors[tone]}`}><Icon size={17} /></span><p className="mt-5 truncate text-xs text-[var(--muted)]">{label}</p><p className="mt-1 truncate text-lg font-semibold tabular-nums">{value}</p></Card>
 }
 
-function Info({ label, value }: { label: string; value: string }) {
-  return <div><dt className="text-xs text-[var(--muted)]">{label}</dt><dd className="mt-1 truncate font-medium">{value}</dd></div>
+type Translate = ReturnType<typeof useI18n>['t']
+
+function runtimeLabel(state: string, t: Translate) {
+  return ({ running: t('running'), stopped: t('stopped'), idle: t('idle'), starting: t('starting'), stopping: t('stopping'), restarting: t('restarting'), failed: t('failed') } as Record<string, string>)[state] || state
 }

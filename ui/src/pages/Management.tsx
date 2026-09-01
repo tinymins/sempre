@@ -1,24 +1,24 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { Activity, Download, KeyRound, Package, Power, RefreshCw, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { Download, KeyRound, Package, Power, RefreshCw, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import { api, downloadBundle, uploadUI } from '../lib/api'
 import { compactHash, formatDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import type { CoresResponse, ManagedRuntimeStatus, SystemStatus, UIMetadata } from '../lib/types'
 import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
-import { RuntimeControlPanel } from '../components/RuntimeControlPanel'
+import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 
-type Tab = 'runtime' | 'core' | 'web'
+type Tab = 'core' | 'web'
 type ChangeResult = { NeedsRestart?: boolean; changes?: ChangeResult[] }
 
 export function Management() {
   const { t } = useI18n()
-  const [tab, setTab] = useState<Tab>('runtime')
+  const [tab, setTab] = useState<Tab>('core')
   const tabs: Array<{ value: Tab; label: string; icon: typeof Package }> = [
-    { value: 'runtime', label: t('runtimeTab'), icon: Activity }, { value: 'core', label: t('coreTab'), icon: Package }, { value: 'web', label: t('webUITab'), icon: ServerCog },
+    { value: 'core', label: t('coreTab'), icon: Package }, { value: 'web', label: t('webUITab'), icon: ServerCog },
   ]
-  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'runtime' ? <RuntimeControlPanel /> : tab === 'core' ? <CorePanel /> : <WebUIPanel />}</div>
+  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : <WebUIPanel />}</div>
 }
 
 function CorePanel() {

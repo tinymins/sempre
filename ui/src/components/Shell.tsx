@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Activity, Cable, ChartNoAxesCombined, ChevronDown, ChevronLeft, ChevronRight, CircleGauge, DatabaseZap, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
+import { Activity, Cable, ChartNoAxesCombined, ChevronDown, ChevronLeft, ChevronRight, CircleGauge, Cpu, DatabaseZap, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -43,7 +43,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   const [mobileOpen, setMobileOpen] = useState(false)
   const [passwordWarningDismissed, setPasswordWarningDismissed] = useState(false)
   const [desktopCollapsed, setDesktopCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true')
-  const analysisPaths = ['/connections', '/traffic', '/network-test', '/rules', '/logs']
+  const analysisPaths = ['/runtime-status', '/connections', '/traffic', '/network-test', '/rules', '/logs']
   const analysisActive = analysisPaths.includes(location.pathname)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const analysisVisible = analysisActive || analysisOpen
@@ -73,6 +73,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
       { path: '/gateway', label: t('gateway'), icon: Router },
     ] },
     { key: 'analysis', label: t('navigationAnalysis'), icon: ChartNoAxesCombined, collapsible: true, items: [
+      { path: '/runtime-status', label: t('navigationCoreStatus'), icon: Cpu },
       { path: '/connections', label: t('connections'), icon: Cable },
       { path: '/traffic', label: t('traffic'), icon: ChartNoAxesCombined },
       { path: '/network-test', label: t('networkTest'), icon: Globe2 },

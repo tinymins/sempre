@@ -87,14 +87,14 @@ describe('Shell sidebar', () => {
     expect(analysis).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(analysis)
     expect(analysis).toHaveAttribute('aria-expanded', 'true')
-    expect(within(navigation).getAllByRole('link').slice(-6).map((link) => link.getAttribute('aria-label'))).toEqual(['Connections', 'Traffic', 'Network Test', 'Effective Rules', 'Logs', 'Management'])
+    expect(within(navigation).getAllByRole('link').slice(-7).map((link) => link.getAttribute('aria-label'))).toEqual(['Core Status', 'Connections', 'Traffic', 'Network Test', 'Effective Rules', 'Logs', 'Management'])
   })
 
   it('opens analysis tools when the current route belongs to that section', () => {
-    renderShell('/rules')
+    renderShell('/runtime-status')
 
     expect(screen.getByRole('button', { name: 'Analysis & diagnostics' })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('link', { name: 'Effective Rules' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Core Status' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('restores the saved state and can expand again', () => {

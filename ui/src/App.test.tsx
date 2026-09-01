@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App, AppContent } from './App'
@@ -117,7 +117,11 @@ describe('App', () => {
 
     expect(await screen.findByRole('link', { name: 'Overview' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Analysis & diagnostics' }))
+    const navigation = screen.getByRole('navigation')
+    const coreStatus = within(navigation).getByRole('link', { name: 'Core Status' })
+    expect(coreStatus).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Network Test' })).toBeInTheDocument()
+    fireEvent.click(coreStatus)
     expect(await screen.findByText('Managed core runtime')).toBeInTheDocument()
     expect(await screen.findByText('exit status 1')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('link', { name: 'Network Test' }))
