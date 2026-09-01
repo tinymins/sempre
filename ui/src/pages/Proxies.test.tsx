@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
@@ -14,7 +14,7 @@ describe('Proxies', () => {
       const body = url.endsWith('/api/v1/runtime/proxies') ? [
         { name: 'GLOBAL', type: 'Fallback', all: ['active-global', 'global-node'], now: 'active-global' },
         { name: 'configured-second', type: 'Selector', all: ['active-second', 'second-node'], now: 'active-second' },
-      ] : []
+      ] : url.endsWith('/api/v1/runtime/proxies/delay') ? { delay: 42 } : []
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
   })
@@ -40,5 +40,29 @@ describe('Proxies', () => {
 
     fireEvent.click(globalGroup)
     expect(screen.queryByText('global-node')).not.toBeInTheDocument()
+  })
+
+  it('selects a node from the whole row but not from the latency button', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Proxies /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: /GLOBAL/ }))
+    const activeNode = screen.getByRole('radio', { name: 'active-global' })
+    const inactiveNode = screen.getByRole('radio', { name: 'global-node' })
+    expect(activeNode).toHaveAttribute('aria-checked', 'true')
+    expect(inactiveNode).toHaveAttribute('aria-checked', 'false')
+
+    fireEvent.click(inactiveNode)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/proxies/select', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ group: 'GLOBAL', proxy: 'global-node' }),
+    })))
+
+    const currentInactiveNode = screen.getByRole('radio', { name: 'global-node' })
+    await vi.waitFor(() => expect(within(currentInactiveNode).getByTitle('Test latency')).not.toBeDisabled())
+    const selectionCalls = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith('/api/v1/runtime/proxies/select')).length
+    fireEvent.click(within(currentInactiveNode).getByTitle('Test latency'))
+    expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith('/api/v1/runtime/proxies/select'))).toHaveLength(selectionCalls)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/proxies/delay', expect.objectContaining({ method: 'POST' })))
   })
 })
