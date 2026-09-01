@@ -295,7 +295,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .find(|profile| profile.id == profile_id)
                 .ok_or_else(|| ManagerError::ProfileNotFound(profile_id.into()))?;
             self.transparent
-                .prepare(&deployment.core, profile, &runtime.config)
+                .prepare(
+                    &deployment.core,
+                    &deployment.version,
+                    profile,
+                    &runtime.config,
+                )
                 .await?
         } else {
             TransparentPlan::default()
@@ -325,6 +330,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 &deployment.config_hash,
                 policy,
                 &system_dns.original_upstreams,
+                system_dns.listen_port,
             )?)
         } else {
             None

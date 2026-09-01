@@ -222,7 +222,7 @@ fn resolve_lan_interfaces(
     Ok(result)
 }
 
-fn fake_ip_prefixes(core: &str, config: &Value) -> Vec<String> {
+pub(crate) fn fake_ip_prefixes(core: &str, config: &Value) -> Vec<String> {
     let dns = config.get("dns").unwrap_or(&Value::Null);
     let mut values = Vec::new();
     if core == "sing-box" {

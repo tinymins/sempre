@@ -465,6 +465,7 @@ mod tests {
         let (local, local_task) = answering_upstream(2, [10, 0, 0, 1]).await;
         let (remote, remote_task) = answering_upstream(2, [198, 18, 0, 1]).await;
         let config = DnsConfig::managed_frontend(
+            1054,
             vec![local],
             remote,
             vec!["domain,proxy.baidu.com".into()],

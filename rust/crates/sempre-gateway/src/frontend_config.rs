@@ -6,6 +6,7 @@ use crate::{
 
 impl DnsConfig {
     pub fn managed_frontend(
+        listen_port: u16,
         local_upstreams: Vec<String>,
         remote_upstream: String,
         proxy_rules: Vec<String>,
@@ -29,7 +30,7 @@ impl DnsConfig {
         let config = Self {
             enabled: true,
             listen_hosts: vec!["127.0.0.1".into()],
-            listen_port: 53,
+            listen_port,
             local_upstreams,
             remote_upstream,
             strategy: "rules-first".into(),
@@ -70,6 +71,7 @@ mod tests {
     #[test]
     fn has_fixed_precedence_and_no_classification_fallback() {
         let config = DnsConfig::managed_frontend(
+            1054,
             vec!["192.0.2.53:53".into()],
             "127.0.0.1:1053".into(),
             vec!["domain,proxy.baidu.com".into()],
@@ -77,6 +79,7 @@ mod tests {
             true,
         )
         .expect("managed frontend");
+        assert_eq!(config.listen_port, 1054);
         assert_eq!(config.strategy, "rules-first");
         assert!(config.domestic_cidrs.is_empty());
         assert_eq!(
@@ -98,6 +101,7 @@ mod tests {
     fn requires_usable_upstreams() {
         assert!(
             DnsConfig::managed_frontend(
+                1054,
                 Vec::new(),
                 "127.0.0.1:1053".into(),
                 Vec::new(),
@@ -108,6 +112,7 @@ mod tests {
         );
         assert!(
             DnsConfig::managed_frontend(
+                1054,
                 vec!["223.5.5.5:not-a-port".into()],
                 "127.0.0.1:1053".into(),
                 Vec::new(),

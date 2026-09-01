@@ -81,6 +81,30 @@ fn sing_box_compiles_shared_dns_for_modern_and_legacy_schemas() {
 }
 
 #[test]
+fn sing_box_v14_uses_explicit_dns_response_matching() {
+    let output = compile(&request("sing-box-v14-windows")).expect("sing-box v14 DNS");
+    let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
+    let rules = output["dns"]["rules"].as_array().expect("DNS rules");
+    let evaluate = rules
+        .iter()
+        .position(|rule| rule["action"] == "evaluate")
+        .expect("response evaluation");
+    assert_eq!(rules[evaluate]["server"], "remote");
+    assert_eq!(rules[evaluate + 1]["match_response"], true);
+    assert_eq!(rules[evaluate + 1]["action"], "route");
+    assert_eq!(rules[evaluate + 1]["server"], "local");
+    let geoip = rules
+        .iter()
+        .find(|rule| rule["type"] == "logical")
+        .expect("GeoIP response rule");
+    assert!(geoip["rules"].as_array().is_some_and(|sub_rules| {
+        sub_rules
+            .iter()
+            .all(|sub_rule| sub_rule["match_response"] == true)
+    }));
+}
+
+#[test]
 fn sing_box_native_override_wins_and_macos_removes_fakeip() {
     let mut input = request("sing-box-v13");
     input.profile.dns = json!({
@@ -231,7 +255,7 @@ fn assert_managed_desktop_frontend(format: &str) {
 
 #[test]
 fn managed_desktop_frontend_supports_windows_and_macos_modes() {
-    assert_managed_desktop_frontend("sing-box-v13-windows");
+    assert_managed_desktop_frontend("sing-box-v14-windows");
     assert_managed_desktop_frontend("sing-box-v13-macos");
 }
 
@@ -245,4 +269,14 @@ fn managed_desktop_frontend_rejects_legacy_sing_box() {
                 .contains("1.12 or newer")
         );
     }
+}
+
+#[test]
+fn managed_windows_frontend_rejects_sing_box_v13() {
+    assert!(
+        compile(&takeover_request("sing-box-v13-windows"))
+            .expect_err("Windows sing-box v13 frontend must fail")
+            .to_string()
+            .contains("requires sing-box 1.14")
+    );
 }

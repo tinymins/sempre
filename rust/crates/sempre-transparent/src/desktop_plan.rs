@@ -5,8 +5,19 @@ use serde_json::{Value, json};
 
 use crate::{Plan, TransparentError};
 
+const WINDOWS_FRONTEND_PORT: u16 = 1054;
+const WINDOWS_DNS_TARGET_PREFIX: &str = "192.0.2.1/32";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Platform {
+    Macos,
+    Windows,
+}
+
 pub(crate) fn prepare(
+    platform: Platform,
     core: &str,
+    core_version: &str,
     profile: &Profile,
     runtime_config: &Path,
     original_upstreams: Vec<String>,
@@ -22,6 +33,9 @@ pub(crate) fn prepare(
         0 => 1053,
         port => port,
     };
+    if platform == Platform::Windows {
+        system_dns.listen_port = WINDOWS_FRONTEND_PORT;
+    }
     system_dns.original_upstreams = original_upstreams;
     let data = fs::read(runtime_config).map_err(|source| TransparentError::Io {
         context: "read desktop DNS frontend runtime configuration".into(),
@@ -34,7 +48,10 @@ pub(crate) fn prepare(
         ..Plan::default()
     };
     crate::validate_system_dns_config(&plan, &config)?;
-    insert_original_dns_bypass(&mut config, &plan)?;
+    match platform {
+        Platform::Macos => insert_original_dns_bypass(&mut config, &plan)?,
+        Platform::Windows => configure_windows_dns_redirect(&mut config, &plan, core_version)?,
+    }
     let mut data =
         serde_json::to_vec_pretty(&config).map_err(|error| TransparentError::Encode {
             core: core.into(),
@@ -50,12 +67,95 @@ pub(crate) fn prepare(
     Ok(plan)
 }
 
-fn insert_original_dns_bypass(config: &mut Value, plan: &Plan) -> Result<(), TransparentError> {
+fn configure_windows_dns_redirect(
+    config: &mut Value,
+    plan: &Plan,
+    core_version: &str,
+) -> Result<(), TransparentError> {
+    if !supports_configurable_tun_dns(core_version) {
+        return Err(TransparentError::Invalid(format!(
+            "Windows managed DNS frontend requires sing-box 1.14 or newer; selected version is {core_version}"
+        )));
+    }
     let system_dns = plan
         .system_dns
         .as_ref()
         .expect("desktop DNS plan has system DNS");
-    let prefixes = system_dns
+    let original_dns = upstream_prefixes(system_dns)?;
+    let fake_ip_prefixes = crate::document::fake_ip_prefixes(&plan.core, config);
+    let inbounds = config
+        .get_mut("inbounds")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| TransparentError::Invalid("runtime configuration has no inbounds".into()))?;
+    let tun = inbounds
+        .iter_mut()
+        .find(|inbound| inbound["type"] == "tun" && inbound["tag"] == "tun-in")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            TransparentError::Invalid(
+                "Windows managed DNS frontend requires the sing-box TUN inbound".into(),
+            )
+        })?;
+    tun.insert("dns_mode".into(), json!("native"));
+    tun.insert("dns_address".into(), json!(["192.0.2.1"]));
+    tun.insert("strict_route".into(), json!(false));
+    merge_array(tun, "route_exclude_address", original_dns);
+    if fake_ip_prefixes.is_empty() {
+        tun.remove("route_address");
+    } else {
+        let mut included = fake_ip_prefixes;
+        if !included
+            .iter()
+            .any(|prefix| prefix == WINDOWS_DNS_TARGET_PREFIX)
+        {
+            included.push(WINDOWS_DNS_TARGET_PREFIX.into());
+        }
+        tun.insert("route_address".into(), json!(included));
+    }
+    let rules = config
+        .pointer_mut("/route/rules")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| {
+            TransparentError::Invalid("runtime configuration has no route rules".into())
+        })?;
+    rules.insert(
+        0,
+        json!({
+            "inbound": "tun-in", "network": ["tcp", "udp"], "port": [53],
+            "action": "route", "outbound": "direct",
+            "override_address": "127.0.0.1", "override_port": system_dns.listen_port,
+            "udp_connect": true
+        }),
+    );
+    Ok(())
+}
+
+fn supports_configurable_tun_dns(version: &str) -> bool {
+    let mut parts = version.trim_start_matches('v').split('.');
+    matches!(
+        (
+            parts.next().and_then(|value| value.parse::<u32>().ok()),
+            parts.next().and_then(|value| value.parse::<u32>().ok()),
+        ),
+        (Some(1), Some(14..))
+    )
+}
+
+fn merge_array(object: &mut serde_json::Map<String, Value>, key: &str, values: Vec<String>) {
+    let target = object
+        .entry(key)
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .expect("sing-box route address field is an array");
+    for value in values {
+        if !target.iter().any(|current| current == &value) {
+            target.push(json!(value));
+        }
+    }
+}
+
+fn upstream_prefixes(system_dns: &crate::SystemDnsPlan) -> Result<Vec<String>, TransparentError> {
+    system_dns
         .original_upstreams
         .iter()
         .map(|value| {
@@ -71,7 +171,15 @@ fn insert_original_dns_bypass(config: &mut Value, plan: &Plan) -> Result<(), Tra
                     ))
                 })
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect()
+}
+
+fn insert_original_dns_bypass(config: &mut Value, plan: &Plan) -> Result<(), TransparentError> {
+    let system_dns = plan
+        .system_dns
+        .as_ref()
+        .expect("desktop DNS plan has system DNS");
+    let prefixes = upstream_prefixes(system_dns)?;
     let rules = config
         .pointer_mut("/route/rules")
         .and_then(Value::as_array_mut)
@@ -116,7 +224,9 @@ mod tests {
         }))
         .expect("profile");
         let plan = prepare(
+            Platform::Macos,
             "sing-box",
+            "1.13.18",
             &profile,
             &config,
             vec!["223.6.6.6".into(), "2400:3200::1".into()],
@@ -132,5 +242,121 @@ mod tests {
                 "port": [53], "action": "route", "outbound": "direct"
             })
         );
+    }
+
+    #[test]
+    fn windows_redirects_dns_to_non_privileged_frontend_and_routes_only_fake_ip() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let config = root.path().join("config.json");
+        fs::write(
+            &config,
+            serde_json::to_vec(&json!({
+                "dns": { "servers": [{
+                    "type": "fakeip", "tag": "fakeip",
+                    "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18"
+                }] },
+                "inbounds": [
+                    { "type": "tun", "tag": "tun-in", "auto_route": true },
+                    {
+                        "type": "direct", "tag": "sempre-dns-core-in", "listen": "127.0.0.1",
+                        "listen_port": 1053, "override_address": "1.1.1.1", "override_port": 53
+                    }
+                ],
+                "route": { "rules": [
+                    { "inbound": "sempre-dns-core-in", "action": "sniff" },
+                    { "inbound": "sempre-dns-core-in", "protocol": "dns", "action": "hijack-dns" },
+                    { "protocol": "dns", "action": "hijack-dns" }
+                ] }
+            }))
+            .expect("encode config"),
+        )
+        .expect("write config");
+        let profile: Profile = serde_json::from_value(json!({
+            "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
+        }))
+        .expect("profile");
+        let plan = prepare(
+            Platform::Windows,
+            "sing-box",
+            "1.14.0-beta.13",
+            &profile,
+            &config,
+            vec!["223.6.6.6".into()],
+        )
+        .expect("plan");
+        assert_eq!(plan.system_dns.expect("system DNS").listen_port, 1054);
+        let output: Value =
+            serde_json::from_slice(&fs::read(config).expect("read config")).expect("decode config");
+        assert_eq!(
+            output["inbounds"][0]["route_exclude_address"],
+            json!(["223.6.6.6/32"])
+        );
+        assert_eq!(output["inbounds"][0]["strict_route"], json!(false));
+        assert_eq!(output["inbounds"][0]["dns_mode"], json!("native"));
+        assert_eq!(output["inbounds"][0]["dns_address"], json!(["192.0.2.1"]));
+        assert_eq!(
+            output["inbounds"][0]["route_address"],
+            json!(["198.18.0.0/15", "fc00::/18", "192.0.2.1/32"])
+        );
+        assert_eq!(
+            output["route"]["rules"][0],
+            json!({
+                "inbound": "tun-in", "network": ["tcp", "udp"], "port": [53],
+                "action": "route", "outbound": "direct",
+                "override_address": "127.0.0.1", "override_port": 1054,
+                "udp_connect": true
+            })
+        );
+    }
+
+    #[test]
+    fn windows_real_ip_keeps_full_tun_routing() {
+        let mut config = json!({
+            "inbounds": [{
+                "type": "tun", "tag": "tun-in", "auto_route": true,
+                "route_address": ["198.18.0.0/15"]
+            }],
+            "route": { "rules": [{ "protocol": "dns", "action": "hijack-dns" }] }
+        });
+        let plan = Plan {
+            core: "sing-box".into(),
+            system_dns: Some(crate::SystemDnsPlan {
+                listen_port: 1054,
+                listen_hosts: vec!["127.0.0.1".into()],
+                core_listen_port: 1053,
+                original_upstreams: vec!["223.6.6.6".into()],
+                managed_frontend: true,
+            }),
+            ..Plan::default()
+        };
+        configure_windows_dns_redirect(&mut config, &plan, "1.14.0-beta.13").expect("redirect");
+        assert!(config["inbounds"][0]["route_address"].is_null());
+        assert_eq!(config["inbounds"][0]["strict_route"], json!(false));
+        assert_eq!(
+            config["inbounds"][0]["route_exclude_address"],
+            json!(["223.6.6.6/32"])
+        );
+    }
+
+    #[test]
+    fn windows_rejects_core_without_configurable_tun_dns() {
+        let mut config = json!({
+            "inbounds": [{ "type": "tun", "tag": "tun-in" }],
+            "route": { "rules": [] }
+        });
+        let plan = Plan {
+            core: "sing-box".into(),
+            system_dns: Some(crate::SystemDnsPlan {
+                listen_port: 1054,
+                listen_hosts: vec!["127.0.0.1".into()],
+                core_listen_port: 1053,
+                original_upstreams: vec!["223.6.6.6".into()],
+                managed_frontend: true,
+            }),
+            ..Plan::default()
+        };
+        let error = configure_windows_dns_redirect(&mut config, &plan, "1.13.18")
+            .expect_err("sing-box 1.13 must be rejected");
+        assert!(error.to_string().contains("requires sing-box 1.14"));
     }
 }

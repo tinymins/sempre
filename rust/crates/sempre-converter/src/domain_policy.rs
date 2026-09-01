@@ -248,7 +248,7 @@ mod tests {
             "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
         }))
         .expect("profile");
-        for target in ["sing-box-v13-windows", "sing-box-v13-macos"] {
+        for target in ["sing-box-v14-windows", "sing-box-v13-macos"] {
             let policy =
                 dns_frontend_policy(&profile, &Target::parse(target).expect("target"), &[])
                     .expect("DNS frontend policy");

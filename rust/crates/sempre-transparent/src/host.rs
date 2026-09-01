@@ -52,6 +52,7 @@ impl Controller {
     pub async fn prepare(
         &self,
         core: &str,
+        core_version: &str,
         profile: &sempre_converter::Profile,
         runtime_config: &std::path::Path,
     ) -> Result<Plan, TransparentError> {
@@ -63,7 +64,14 @@ impl Controller {
                 .macos_dns
                 .discover_upstreams(self.runner.as_ref())
                 .await?;
-            return crate::desktop_plan::prepare(core, profile, runtime_config, upstreams);
+            return crate::desktop_plan::prepare(
+                crate::desktop_plan::Platform::Macos,
+                core,
+                core_version,
+                profile,
+                runtime_config,
+                upstreams,
+            );
         }
         if cfg!(target_os = "windows") {
             if crate::system_dns_intent(profile).is_none() {
@@ -73,7 +81,14 @@ impl Controller {
                 .windows_dns
                 .discover_upstreams(self.runner.as_ref())
                 .await?;
-            return crate::desktop_plan::prepare(core, profile, runtime_config, upstreams);
+            return crate::desktop_plan::prepare(
+                crate::desktop_plan::Platform::Windows,
+                core,
+                core_version,
+                profile,
+                runtime_config,
+                upstreams,
+            );
         }
         if !cfg!(target_os = "linux") {
             return Ok(Plan::default());

@@ -265,6 +265,11 @@ impl SharedDns {
                     "managed desktop DNS frontend requires sing-box 1.12 or newer".into(),
                 ));
             }
+            if target.platform == "windows" && target.version != "14" {
+                return Err(CompileError::Render(
+                    "Windows managed DNS frontend requires sing-box 1.14 or newer".into(),
+                ));
+            }
             if self.system_dns_listen_port != 53 {
                 return Err(CompileError::Render(
                     "system DNS takeover requires listen port 53 because resolv.conf cannot specify ports".into(),

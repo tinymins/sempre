@@ -77,7 +77,8 @@ mod tests {
         let dead = UdpSocket::bind("127.0.0.1:0").await.expect("dead port");
         let dead_address = dead.local_addr().expect("dead address");
         drop(dead);
-        let mut config = DnsConfig::managed_frontend(
+        let config = DnsConfig::managed_frontend(
+            frontend_port,
             vec![local_address.to_string()],
             dead_address.to_string(),
             Vec::new(),
@@ -85,7 +86,6 @@ mod tests {
             false,
         )
         .expect("config");
-        config.listen_port = frontend_port;
         let service = DnsService::start(config).await.expect("frontend");
         let endpoint = format!("127.0.0.1:{frontend_port}");
         let domestic = probe_dns(&endpoint, "baidu.com", "A")

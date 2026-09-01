@@ -158,10 +158,11 @@ impl DnsFrontendRuntime {
         plan: &DnsFrontendPlan,
         timeout: Duration,
     ) -> Result<(), ManagerError> {
-        wait_for_answer(plan, "127.0.0.1:53", &plan.local_probe, false, timeout).await?;
+        let upstream = dns_endpoint("127.0.0.1", plan.config.listen_port);
+        wait_for_answer(plan, &upstream, &plan.local_probe, false, timeout).await?;
         wait_for_answer(
             plan,
-            "127.0.0.1:53",
+            &upstream,
             &plan.remote_probe,
             plan.fakeip_enabled,
             timeout,
@@ -175,6 +176,7 @@ impl DnsFrontendPlan {
         deployment_hash: &str,
         policy: DnsFrontendPolicy,
         original_upstreams: &[String],
+        listen_port: u16,
     ) -> Result<Self, ManagerError> {
         if !policy.enabled || !policy.complete {
             return Err(ManagerError::InvalidOperation(
@@ -186,6 +188,7 @@ impl DnsFrontendPlan {
             fakeip_ranges.push(parse_range(&policy.fakeip_ipv6_range)?);
         }
         let config = DnsConfig::managed_frontend(
+            listen_port,
             original_upstreams
                 .iter()
                 .map(|ip| dns_endpoint(ip, 53))

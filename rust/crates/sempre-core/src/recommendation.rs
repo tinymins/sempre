@@ -36,6 +36,24 @@ pub(crate) fn profiles(kind: BuiltInKind, target: &Target) -> Vec<AutoConfigCand
                 AutoConfigDnsFallback::DestinationOverride,
             ),
         ],
+        BuiltInKind::SingBox if target.os == "windows" => vec![
+            profile(
+                "sing-box/windows-native-dns-v14",
+                "sing-box@1.14.0-beta.13",
+                "windows-tun-native-dns",
+                AutoConfigValidation::Verified,
+                AutoConfigRelease::Preview,
+                AutoConfigDnsFallback::External,
+            ),
+            profile(
+                "sing-box/windows-stable",
+                "sing-box@stable",
+                "platform-tun",
+                AutoConfigValidation::Verified,
+                AutoConfigRelease::Stable,
+                AutoConfigDnsFallback::External,
+            ),
+        ],
         BuiltInKind::SingBox => vec![profile(
             "sing-box/stable",
             "sing-box@stable",
@@ -95,6 +113,23 @@ mod tests {
         assert_eq!(profiles.len(), 3);
         assert!(profiles.iter().any(|profile| {
             profile.id == "sing-box/macos-native-dns-v14"
+                && profile.reference == "sing-box@1.14.0-beta.13"
+        }));
+    }
+
+    #[test]
+    fn windows_catalog_includes_native_dns_v14_and_stable() {
+        let profiles = profiles(
+            BuiltInKind::SingBox,
+            &Target {
+                os: "windows".into(),
+                arch: "amd64".into(),
+                amd64_level: 2,
+            },
+        );
+        assert_eq!(profiles.len(), 2);
+        assert!(profiles.iter().any(|profile| {
+            profile.id == "sing-box/windows-native-dns-v14"
                 && profile.reference == "sing-box@1.14.0-beta.13"
         }));
     }

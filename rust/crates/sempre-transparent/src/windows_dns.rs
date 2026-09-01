@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{TransparentError, command};
 
 const POWERSHELL: &str = "powershell.exe";
-const MANAGED_SERVER: &str = "127.0.0.1";
+pub(crate) const MANAGED_SERVER: &str = "192.0.2.1";
 
 const CAPTURE_SCRIPT: &str = r"
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
@@ -26,7 +26,6 @@ $items = foreach ($dns in Get-DnsClientServerAddress -AddressFamily IPv4) {
     $nameServer = [string](Get-ItemProperty -LiteralPath $key -Name NameServer -ErrorAction SilentlyContinue).NameServer
     [pscustomobject]@{
         guid = $guid
-        name = $dns.InterfaceAlias
         original = @($dns.ServerAddresses)
         automatic = [string]::IsNullOrWhiteSpace($nameServer)
         default_route = $defaults -contains $dns.InterfaceIndex
@@ -36,6 +35,7 @@ ConvertTo-Json -InputObject @($items) -Compress
 ";
 
 const APPLY_SCRIPT: &str = r"
+[Console]::InputEncoding = [Text.UTF8Encoding]::new()
 $ErrorActionPreference = 'Stop'
 $state = [Console]::In.ReadToEnd() | ConvertFrom-Json
 foreach ($interface in @($state.interfaces)) {
@@ -43,11 +43,14 @@ foreach ($interface in @($state.interfaces)) {
         Where-Object { $_.InterfaceGuid.ToString() -eq [string]$interface.guid } |
         Select-Object -First 1
     if (-not $adapter) { throw 'DNS interface disappeared before takeover: ' + $interface.guid }
-    Set-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -ServerAddresses @('127.0.0.1')
+    $name = 'name=' + $adapter.InterfaceIndex
+    & netsh.exe interface ipv4 set dnsservers $name source=static address=192.0.2.1 register=primary validate=no | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to configure DNS interface: ' + $interface.guid }
 }
 ";
 
 const READ_SCRIPT: &str = r"
+[Console]::InputEncoding = [Text.UTF8Encoding]::new()
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
 $ErrorActionPreference = 'Stop'
 $state = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -70,6 +73,7 @@ ConvertTo-Json -InputObject @($items) -Compress
 ";
 
 const RESTORE_SCRIPT: &str = r"
+[Console]::InputEncoding = [Text.UTF8Encoding]::new()
 $ErrorActionPreference = 'Stop'
 $state = [Console]::In.ReadToEnd() | ConvertFrom-Json
 foreach ($interface in @($state.interfaces)) {
@@ -79,11 +83,23 @@ foreach ($interface in @($state.interfaces)) {
     if (-not $adapter) { continue }
     $dns = Get-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4
     $current = @($dns.ServerAddresses)
-    if ($current.Count -ne 1 -or $current[0] -ne '127.0.0.1') { continue }
+    if ($current.Count -ne 1 -or $current[0] -ne '192.0.2.1') { continue }
+    $name = 'name=' + $adapter.InterfaceIndex
     if ([bool]$interface.automatic) {
-        Set-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -ResetServerAddresses
+        & netsh.exe interface ipv4 set dnsservers $name source=dhcp | Out-Null
     } else {
-        Set-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -ServerAddresses @($interface.original)
+        $original = @($interface.original)
+        if ($original.Count -eq 0) { continue }
+        $address = 'address=' + $original[0]
+        & netsh.exe interface ipv4 set dnsservers $name source=static $address register=primary validate=no | Out-Null
+        for ($index = 1; $index -lt $original.Count; $index++) {
+            $address = 'address=' + $original[$index]
+            $position = 'index=' + ($index + 1)
+            & netsh.exe interface ipv4 add dnsservers $name $address $position validate=no | Out-Null
+        }
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Failed to restore DNS interface: ' + $interface.guid
     }
 }
 ";
@@ -102,7 +118,6 @@ struct State {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct InterfaceState {
     guid: String,
-    name: String,
     original: Vec<String>,
     automatic: bool,
     default_route: bool,
@@ -150,7 +165,7 @@ impl SystemDns {
         original_upstreams: &[String],
     ) -> Result<(), TransparentError> {
         self.require_allowed()?;
-        let interfaces = capture_interfaces(runner).await?;
+        let interfaces = takeover_interfaces(capture_interfaces(runner).await?);
         if interfaces.is_empty() {
             return Err(TransparentError::Invalid(
                 "Windows has no connected DNS interfaces".into(),
@@ -274,6 +289,17 @@ fn original_upstreams(interfaces: &[InterfaceState]) -> Vec<String> {
     values
 }
 
+fn takeover_interfaces(interfaces: Vec<InterfaceState>) -> Vec<InterfaceState> {
+    if interfaces.iter().any(|interface| interface.default_route) {
+        interfaces
+            .into_iter()
+            .filter(|interface| interface.default_route)
+            .collect()
+    } else {
+        interfaces
+    }
+}
+
 fn usable_upstreams<'a>(values: impl IntoIterator<Item = &'a String>) -> Vec<String> {
     let mut result = Vec::new();
     for value in values {
@@ -373,7 +399,6 @@ mod tests {
     fn interface(default_route: bool, original: &[&str]) -> InterfaceState {
         InterfaceState {
             guid: "00000000-0000-0000-0000-000000000001".into(),
-            name: "Ethernet".into(),
             original: original.iter().map(|value| (*value).into()).collect(),
             automatic: true,
             default_route,
@@ -393,6 +418,17 @@ mod tests {
     fn falls_back_to_connected_dns_without_a_default_route() {
         let interfaces = [interface(false, &["202.101.172.35"]), interface(false, &[])];
         assert_eq!(original_upstreams(&interfaces), ["202.101.172.35"]);
+    }
+
+    #[test]
+    fn takeover_uses_default_route_interfaces_instead_of_tun_adapters() {
+        let interfaces = vec![
+            interface(false, &["172.19.0.2"]),
+            interface(true, &["223.6.6.6"]),
+        ];
+        let selected = takeover_interfaces(interfaces);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].original, ["223.6.6.6"]);
     }
 
     #[tokio::test]
@@ -418,9 +454,9 @@ mod tests {
         let dns = SystemDns::new(true, root.path().into());
         let guid = "00000000-0000-0000-0000-000000000001";
         let capture = format!(
-            r#"[{{"guid":"{guid}","name":"Ethernet","original":["223.6.6.6"],"automatic":true,"default_route":true}}]"#
+            r#"[{{"guid":"{guid}","original":["223.6.6.6"],"automatic":true,"default_route":true}}]"#
         );
-        let current = format!(r#"[{{"guid":"{guid}","present":true,"servers":["127.0.0.1"]}}]"#);
+        let current = format!(r#"[{{"guid":"{guid}","present":true,"servers":["192.0.2.1"]}}]"#);
         let runner =
             FakeRunner::with_outputs([output(&capture), output(""), output(&current), output("")]);
         dns.apply(&runner, &["223.6.6.6".into()])

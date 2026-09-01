@@ -186,6 +186,14 @@ fn profile_has_inputs(profile: &Profile) -> bool {
 
 fn profile_requirements(profile: &Profile, custom_nodes: &[CustomNode]) -> AutoConfigRequirements {
     let mut requirements = AutoConfigRequirements::default();
+    if profile
+        .dns
+        .pointer("/shared/systemDnsTakeoverEnabled")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+    {
+        requirements.require_feature(features::DNS_TUN_CAPTURE);
+    }
     match profile.transparent_proxy.mode.as_str() {
         "tun-router" => requirements.require_feature(features::TRANSPARENT_TUN),
         "tproxy" => requirements.require_feature(features::TRANSPARENT_TPROXY),
@@ -298,6 +306,20 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn system_dns_takeover_requires_tun_capture() {
+        let profile: Profile = serde_json::from_value(json!({
+            "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
+        }))
+        .expect("profile");
+        let requirements = profile_requirements(&profile, &[]);
+        assert!(
+            requirements
+                .required_features
+                .contains(features::DNS_TUN_CAPTURE)
+        );
+    }
 
     #[tokio::test]
     async fn diagnosis_is_local_and_apply_rejects_unknown_candidates_before_download() {

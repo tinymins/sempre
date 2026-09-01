@@ -199,10 +199,7 @@ fn rules(shared: &SharedDns, options: RuleOptions, bootstrap_domains: &[String])
         "172.16.0.0/12",
         "192.168.0.0/16",
     ];
-    if options.response_matching {
-        rules.push(json!({ "action": "evaluate", "server": "local" }));
-        rules.push(json!({ "match_response": true, "ip_cidr": private, "action": "respond" }));
-    } else {
+    if !options.response_matching {
         let mut rule = json!({ "ip_cidr": private, "server": "local" });
         if options.modern {
             rule["action"] = json!("route");
@@ -216,6 +213,13 @@ fn rules(shared: &SharedDns, options: RuleOptions, bootstrap_domains: &[String])
         }
         rules.push(rule);
     }
+    if options.response_matching {
+        rules.push(json!({ "action": "evaluate", "server": "remote" }));
+        rules.push(json!({
+            "match_response": true, "ip_cidr": private,
+            "action": "route", "server": "local"
+        }));
+    }
     if shared.cn_ip_local_dns() && shared.cn_ip_rule_set.enabled {
         let mut rule = if shared.exclude_hk_from_cn_ip() && shared.hk_ip_rule_set.enabled {
             json!({ "type": "logical", "mode": "and", "server": "local", "rules": [
@@ -224,6 +228,15 @@ fn rules(shared: &SharedDns, options: RuleOptions, bootstrap_domains: &[String])
         } else {
             json!({ "rule_set": ["geoip-cn"], "server": "local" })
         };
+        if options.response_matching {
+            if let Some(sub_rules) = rule.get_mut("rules").and_then(Value::as_array_mut) {
+                for sub_rule in sub_rules {
+                    sub_rule["match_response"] = json!(true);
+                }
+            } else {
+                rule["match_response"] = json!(true);
+            }
+        }
         if options.modern {
             rule["action"] = json!("route");
         }
