@@ -39,13 +39,15 @@ function NetworkModePanel() {
     },
   })
   const mode = network.data?.settings.mode ?? 'local'
+  const gatewayAvailable = network.data?.gateway_available ?? false
+  const gatewayLabel = zh ? '网关模式' : 'Gateway mode'
+  const gatewayReason = zh ? '仅 Linux 系统服务可用' : 'Linux system service only'
   return <Section title={zh ? '运行模式' : 'Operating mode'} icon={<Router size={18} />}>
-    <div className="grid gap-4 md:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
-      <Field label={zh ? '当前模式' : 'Current mode'}><Select value={mode} loading={network.isLoading || update.isPending} options={[{ value: 'local', label: zh ? '本机模式' : 'Local mode' }, { value: 'gateway', label: zh ? '网关模式' : 'Gateway mode', disabled: network.data ? !network.data.gateway_available : true }]} onChange={(value) => update.mutate(value)} /></Field>
-      <div className="rounded-md border border-[var(--border)] p-3 text-sm leading-6 text-[var(--muted)]">{mode === 'gateway' ? (zh ? '只在网关模式显示“网关”入口；默认只代理内网设备，本机代理可在网关页单独开启。' : 'The Gateway entry is visible only in gateway mode. LAN clients are proxied by default; host proxying is optional on the Gateway page.') : (zh ? '仅管理本机流量与 DNS，不加载网关配置。' : 'Manages only this host traffic and DNS. Gateway configuration is not loaded.')}</div>
+    <div className="grid gap-3 md:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] md:items-end">
+      <Field label={zh ? '当前模式' : 'Current mode'}><Select className="w-full" popupMatchSelectWidth value={mode} loading={network.isLoading || update.isPending} options={[{ value: 'local', label: zh ? '本机模式' : 'Local mode' }, { value: 'gateway', label: gatewayAvailable ? gatewayLabel : <span className="flex w-full min-w-0 items-center gap-3"><span className="shrink-0">{gatewayLabel}</span><span className="ml-auto truncate text-xs font-normal text-[var(--text-muted)]">{gatewayReason}</span></span>, disabled: !gatewayAvailable }]} onChange={(value) => update.mutate(value)} /></Field>
+      <p className="self-end py-1.5 text-sm leading-5 text-[var(--muted)]">{mode === 'gateway' ? (zh ? '默认代理内网设备；本机代理可在网关页单独开启。' : 'LAN clients are proxied by default; host proxying is optional on the Gateway page.') : (zh ? '仅管理本机流量与 DNS，不加载网关配置。' : 'Manages only this host traffic and DNS. Gateway configuration is not loaded.')}</p>
     </div>
     {update.isError ? <p className="mt-3 text-sm text-red-600">{update.error instanceof Error ? update.error.message : String(update.error)}</p> : null}
-    {!network.data?.gateway_available && network.data ? <p className="mt-3 text-xs text-[var(--muted)]">{zh ? '网关模式仅在 Linux 系统服务上可用。' : 'Gateway mode is available only for the Linux system service.'}</p> : null}
   </Section>
 }
 
