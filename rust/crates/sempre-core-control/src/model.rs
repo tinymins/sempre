@@ -196,7 +196,7 @@ impl From<RawConnection> for Connection {
 }
 
 pub(crate) fn proxy_map(values: Map<String, Value>) -> Vec<Proxy> {
-    let mut proxies = values
+    values
         .into_iter()
         .filter_map(|(name, value)| {
             serde_json::from_value::<Proxy>(value)
@@ -208,9 +208,7 @@ pub(crate) fn proxy_map(values: Map<String, Value>) -> Vec<Proxy> {
                     proxy
                 })
         })
-        .collect::<Vec<_>>();
-    proxies.sort_by_key(|proxy| proxy.name.to_lowercase());
-    proxies
+        .collect()
 }
 
 pub(crate) fn providers(values: Map<String, Value>) -> Vec<ProxyProvider> {
@@ -285,5 +283,22 @@ mod tests {
         assert_eq!(normalized.download_total, 10);
         assert_eq!(normalized.connections[0].metadata.source_ip, "127.0.0.1");
         assert_eq!(normalized.connections[0].rule_payload, "example.com");
+    }
+
+    #[test]
+    fn preserves_proxy_order_from_the_core() {
+        let mut values = Map::new();
+        for name in ["🔰 国外流量", "GLOBAL", "⚓️ 其他流量"] {
+            values.insert(
+                name.into(),
+                json!({ "type": "Selector", "now": "edge", "all": ["edge"] }),
+            );
+        }
+
+        let names = proxy_map(values)
+            .into_iter()
+            .map(|proxy| proxy.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["🔰 国外流量", "GLOBAL", "⚓️ 其他流量"]);
     }
 }
