@@ -82,56 +82,53 @@ fn validate_groups(groups: &[ProxyGroup]) -> Result<(), CompileError> {
 }
 
 fn clean_jsonc(input: &str) -> Result<String, String> {
-    let bytes = input.as_bytes();
+    let mut characters = input.chars().peekable();
     let mut output = String::with_capacity(input.len());
-    let mut index = 0;
     let mut in_string = false;
     let mut escaped = false;
-    while index < bytes.len() {
-        let current = bytes[index];
+    while let Some(current) = characters.next() {
         if in_string {
-            output.push(char::from(current));
+            output.push(current);
             if escaped {
                 escaped = false;
-            } else if current == b'\\' {
+            } else if current == '\\' {
                 escaped = true;
-            } else if current == b'"' {
+            } else if current == '"' {
                 in_string = false;
             }
-            index += 1;
             continue;
         }
-        if current == b'"' {
+        if current == '"' {
             in_string = true;
             output.push('"');
-            index += 1;
             continue;
         }
-        if current == b'/' && bytes.get(index + 1) == Some(&b'/') {
-            index += 2;
-            while index < bytes.len() && bytes[index] != b'\n' {
-                index += 1;
+        if current == '/' && characters.peek() == Some(&'/') {
+            characters.next();
+            for character in characters.by_ref() {
+                if character == '\n' {
+                    output.push('\n');
+                    break;
+                }
             }
             continue;
         }
-        if current == b'/' && bytes.get(index + 1) == Some(&b'*') {
-            index += 2;
+        if current == '/' && characters.peek() == Some(&'*') {
+            characters.next();
             let mut closed = false;
-            while index + 1 < bytes.len() {
-                if bytes[index] == b'*' && bytes[index + 1] == b'/' {
-                    index += 2;
+            while let Some(character) = characters.next() {
+                if character == '*' && characters.peek() == Some(&'/') {
+                    characters.next();
                     closed = true;
                     break;
                 }
-                index += 1;
             }
             if !closed {
                 return Err("unterminated block comment".into());
             }
             continue;
         }
-        output.push(char::from(current));
-        index += 1;
+        output.push(current);
     }
     if in_string {
         return Err("unterminated string".into());
@@ -152,6 +149,15 @@ mod tests {
         let applied = apply(&profile).expect("editor applies");
         assert_eq!(applied.groups[0].name, "proxy");
         assert_eq!(applied.manual_servers.len(), 1);
+    }
+
+    #[test]
+    fn preserves_unicode_in_jsonc_editor_fields() {
+        let mut profile = Profile::default();
+        profile.editor.dns_config =
+            r#"{/* route */"shared":{"remoteDetour":"🔰 国外流量"}}"#.into();
+        let applied = apply(&profile).expect("editor applies");
+        assert_eq!(applied.dns["shared"]["remoteDetour"], "🔰 国外流量");
     }
 
     #[test]
