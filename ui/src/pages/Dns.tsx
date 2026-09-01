@@ -2,11 +2,9 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { Alert, Button, Card, Input, InputNumber, Select, Switch, Table, Tabs, Tag, type TableColumn } from '@acme/components'
-import DnsConfigEditor from '../features/subscriptions/toolbox/DnsConfigEditor'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { SubscriptionConfigurationContext, SubscriptionEditorConfig } from '../lib/types'
 
 interface DnsRewrite {
   id: string
@@ -21,9 +19,8 @@ interface DnsRewrite {
 interface DnsSettings {
   schema: number
   revision: number
-  use_system_dns: boolean
-  config: string
-  dns: unknown
+  enabled: boolean
+  reject_https: boolean
   rewrites: DnsRewrite[]
   query_log_enabled: boolean
   query_log_max_entries: number
@@ -44,8 +41,6 @@ interface DnsFrontendStatus {
 interface DnsSettingsResponse {
   settings: DnsSettings
   status: DnsFrontendStatus
-  editor_defaults: SubscriptionEditorConfig & { by_core?: Record<string, SubscriptionEditorConfig> }
-  configuration_context?: SubscriptionConfigurationContext
 }
 
 interface DnsQueryEvent {
@@ -96,9 +91,6 @@ export function Dns() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dns', 'queries'] }),
   })
   const current = draft ?? settings.data?.settings
-  const context = settings.data?.configuration_context
-  const defaults = settings.data?.editor_defaults
-  const recommended = defaults?.by_core?.[context?.target?.core ?? ''] ?? defaults
   const visibleQueries = useMemo(() => {
     const needle = filter.trim().toLowerCase()
     return (queries.data?.queries ?? []).filter((item) => !needle || `${item.name} ${item.client} ${item.answers.join(' ')} ${item.detail}`.toLowerCase().includes(needle))
@@ -134,15 +126,15 @@ export function Dns() {
   const tabs = [
     { key: 'queries', label: zh ? '查询日志' : 'Query log', children: <QueryLog filter={filter} setFilter={setFilter} rows={visibleQueries} columns={queryColumns} clear={() => clear.mutate()} exporting={() => exportQueries(visibleQueries)} zh={zh} /> },
     { key: 'rewrites', label: zh ? 'DNS 重写' : 'DNS rewrites', children: <Rewrites current={current} rewrite={rewrite} setRewrite={setRewrite} add={addRewrite} columns={rewriteColumns} zh={zh} /> },
-    { key: 'settings', label: zh ? '设置与状态' : 'Settings & status', children: <Settings current={current} setDraft={setDraft} status={status} features={context?.capabilities.features ?? []} recommended={recommended?.dns_config ?? ''} zh={zh} /> },
+    { key: 'settings', label: zh ? '设置与状态' : 'Settings & status', children: <Settings current={current} setDraft={setDraft} status={status} zh={zh} /> },
   ]
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
-      <div><h1 className="text-xl font-semibold">DNS</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '设备级 DNS 策略；切换订阅和路由规则不会改变这里的配置。' : 'Device-level DNS policy. Switching subscriptions or routing rules does not change it.'}</p></div>
-      <div className="flex gap-2"><Button icon={<RefreshCw size={16} />} onClick={() => { settings.refetch(); queries.refetch() }}>{zh ? '刷新' : 'Refresh'}</Button><Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(current)}>{zh ? '保存并暂存' : 'Save & stage'}</Button></div>
+      <div><h1 className="text-xl font-semibold">DNS</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '设备级前置 DNS；核心 DNS 仍由当前订阅配置。' : 'Device-level DNS frontend. Core DNS remains owned by the active subscription.'}</p></div>
+      <div className="flex gap-2"><Button icon={<RefreshCw size={16} />} onClick={() => { settings.refetch(); queries.refetch() }}>{zh ? '刷新' : 'Refresh'}</Button><Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(current)}>{zh ? '保存' : 'Save'}</Button></div>
     </div>
     {save.isError ? <Alert type="error" showIcon message={save.error instanceof Error ? save.error.message : String(save.error)} /> : null}
-    {save.isSuccess ? <Alert type="success" showIcon message={zh ? 'DNS 设置已保存、重新编译并暂存。' : 'DNS settings were saved, recompiled, and staged.'} /> : null}
+    {save.isSuccess ? <Alert type="success" showIcon message={zh ? '前置 DNS 设置已保存；接管开关变化时会暂存核心接线配置。' : 'Frontend DNS settings saved. Takeover changes stage the required core plumbing.'} /> : null}
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><Tabs items={tabs} defaultActiveKey="queries" destroyInactiveTabPane={false} /></Card>
   </div>
 }
@@ -155,9 +147,11 @@ function Rewrites({ current, rewrite, setRewrite, add, columns, zh }: { current:
   return <div className="space-y-4 pt-4"><div className="grid gap-2 rounded-md border border-[var(--border)] p-3 md:grid-cols-6"><Input value={rewrite.domain} placeholder={zh ? '域名或 *.example.com' : 'Domain or *.example.com'} onChange={(event) => setRewrite({ ...rewrite, domain: event.target.value })} /><Select value={rewrite.type} options={['A', 'AAAA', 'CNAME'].map((value) => ({ value, label: value }))} onChange={(type) => setRewrite({ ...rewrite, type })} /><Input className="md:col-span-2" value={rewrite.answer} placeholder={zh ? 'IP 或目标域名' : 'IP or target name'} onChange={(event) => setRewrite({ ...rewrite, answer: event.target.value })} /><InputNumber className="w-full" min={0} value={rewrite.ttl} onChange={(ttl) => setRewrite({ ...rewrite, ttl: ttl ?? 300 })} /><Button variant="primary" icon={<Plus size={15} />} onClick={add}>{zh ? '添加' : 'Add'}</Button><Input className="md:col-span-6" value={rewrite.comment} placeholder={zh ? '备注（可选）' : 'Comment (optional)'} onChange={(event) => setRewrite({ ...rewrite, comment: event.target.value })} /></div><Table<DnsRewrite> rowKey="id" size="middle" pagination={false} columns={columns} dataSource={current.rewrites} scroll={{ x: 900 }} locale={{ emptyText: zh ? '暂无 DNS 重写' : 'No DNS rewrites' }} /></div>
 }
 
-function Settings({ current, setDraft, status, features, recommended, zh }: { current: DnsSettings; setDraft: (value: DnsSettings) => void; status?: DnsFrontendStatus; features: string[]; recommended: string; zh: boolean }) {
-  return <div className="space-y-5 pt-4"><div className="grid gap-3 md:grid-cols-4"><Metric label={zh ? '前置 DNS' : 'DNS frontend'} value={status?.running ? (zh ? '运行中' : 'Running') : status?.enabled ? (zh ? '待启动' : 'Pending') : (zh ? '未启用' : 'Disabled')} /><Metric label={zh ? '模式' : 'Mode'} value={status?.mode || '-'} /><Metric label={zh ? '核心 DNS' : 'Core DNS'} value={status?.core_dns_healthy ? (zh ? '正常' : 'Healthy') : '-'} /><Metric label={zh ? '国内域名规则' : 'Domestic domains'} value={String(status?.domestic_domain_count ?? 0)} /></div>{status?.last_error ? <Alert type="error" showIcon message={status.last_error} /> : null}<div className="flex items-center justify-between rounded-md border border-[var(--border)] p-3"><div><div className="text-sm font-medium">{zh ? '使用核心推荐 DNS' : 'Use core-recommended DNS'}</div><div className="mt-1 text-xs text-[var(--muted)]">{zh ? '关闭后使用下面的设备级自定义 DNS。' : 'Turn off to use the device-level custom DNS below.'}</div></div><Switch checked={current.use_system_dns} onChange={(use_system_dns) => setDraft({ ...current, use_system_dns })} /></div><DnsConfigEditor value={current.use_system_dns ? recommended : current.config} readOnly={current.use_system_dns} features={features} onChange={(config) => setDraft({ ...current, config })} /><div className="grid gap-3 md:grid-cols-2"><label className="flex items-center justify-between rounded-md border border-[var(--border)] p-3 text-sm">{zh ? '记录 DNS 查询' : 'Record DNS queries'}<Switch checked={current.query_log_enabled} onChange={(query_log_enabled) => setDraft({ ...current, query_log_enabled })} /></label><label className="flex items-center gap-3 rounded-md border border-[var(--border)] p-3 text-sm"><span className="flex-1">{zh ? '最多保留条数' : 'Maximum entries'}</span><InputNumber min={100} max={20000} value={current.query_log_max_entries} onChange={(query_log_max_entries) => setDraft({ ...current, query_log_max_entries: query_log_max_entries ?? 2000 })} /></label></div></div>
+function Settings({ current, setDraft, status, zh }: { current: DnsSettings; setDraft: (value: DnsSettings) => void; status?: DnsFrontendStatus; zh: boolean }) {
+  return <div className="space-y-5 pt-4"><div className="grid gap-3 md:grid-cols-4"><Metric label={zh ? '前置 DNS' : 'DNS frontend'} value={status?.running ? (zh ? '运行中' : 'Running') : status?.enabled ? (zh ? '待启动' : 'Pending') : (zh ? '未启用' : 'Disabled')} /><Metric label={zh ? '核心 DNS 模式' : 'Core DNS mode'} value={status?.mode || '-'} /><Metric label={zh ? '核心 DNS' : 'Core DNS'} value={status?.core_dns_healthy ? (zh ? '正常' : 'Healthy') : '-'} /><Metric label={zh ? '国内域名规则' : 'Domestic domains'} value={String(status?.domestic_domain_count ?? 0)} /></div>{status?.last_error ? <Alert type="error" showIcon message={status.last_error} /> : null}<div className="grid gap-3 md:grid-cols-2"><SettingSwitch title={zh ? '启用前置 DNS' : 'Enable DNS frontend'} detail={zh ? '国内域名使用原始 DNS，其余查询进入当前核心。' : 'Resolve domestic domains through the original DNS and send the rest to the active core.'} checked={current.enabled} onChange={(enabled) => setDraft({ ...current, enabled })} /><SettingSwitch title={zh ? '前置层拒绝 HTTPS 记录' : 'Reject HTTPS records at frontend'} detail={zh ? '仅影响前置层，不修改当前 Profile 的核心 DNS 设置。' : 'Affects only the frontend and does not modify the active profile DNS.'} checked={current.reject_https} onChange={(reject_https) => setDraft({ ...current, reject_https })} /><SettingSwitch title={zh ? '记录 DNS 查询' : 'Record DNS queries'} checked={current.query_log_enabled} onChange={(query_log_enabled) => setDraft({ ...current, query_log_enabled })} /><label className="flex items-center gap-3 rounded-md border border-[var(--border)] p-3 text-sm"><span className="flex-1">{zh ? '最多保留条数' : 'Maximum entries'}</span><InputNumber min={100} max={20000} value={current.query_log_max_entries} onChange={(query_log_max_entries) => setDraft({ ...current, query_log_max_entries: query_log_max_entries ?? 2000 })} /></label></div><div className="rounded-md border border-[var(--border)] p-3 text-xs leading-5 text-[var(--muted)]"><div>{zh ? '核心入口：' : 'Core upstream: '}{status?.core_upstream || '-'}</div><div>{zh ? '原始 DNS：' : 'Original DNS: '}{status?.original_upstreams?.join(', ') || '-'}</div><div>{zh ? '国内规则：' : 'Domestic source: '}{status?.domestic_domain_source || '-'}</div></div></div>
 }
+
+function SettingSwitch({ title, detail, checked, onChange }: { title: string; detail?: string; checked: boolean; onChange: (value: boolean) => void }) { return <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] p-3"><div><div className="text-sm font-medium">{title}</div>{detail ? <div className="mt-1 text-xs text-[var(--muted)]">{detail}</div> : null}</div><Switch checked={checked} onChange={onChange} /></div> }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-md border border-[var(--border)] p-3"><div className="text-xs text-[var(--muted)]">{label}</div><div className="mt-1 font-medium">{value}</div></div> }
 

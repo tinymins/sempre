@@ -9,9 +9,6 @@ impl DnsConfig {
         listen_port: u16,
         local_upstreams: Vec<String>,
         remote_upstream: String,
-        proxy_rules: Vec<String>,
-        direct_rules: Vec<String>,
-        reject_https: bool,
     ) -> Result<Self, GatewayError> {
         if local_upstreams.is_empty() {
             return Err(GatewayError::invalid(
@@ -19,8 +16,6 @@ impl DnsConfig {
             ));
         }
         let mut rule_sets = Vec::new();
-        push_inline_rules(&mut rule_sets, "explicit-proxy", proxy_rules, "remote");
-        push_inline_rules(&mut rule_sets, "explicit-direct", direct_rules, "local");
         push_inline_rules(
             &mut rule_sets,
             "domestic-domains",
@@ -34,7 +29,7 @@ impl DnsConfig {
             local_upstreams,
             remote_upstream,
             strategy: "rules-first".into(),
-            reject_https,
+            reject_https: false,
             rule_sets,
             domestic_cidrs: Vec::new(),
             cache_ttl_seconds: 300,
@@ -74,9 +69,6 @@ mod tests {
             1054,
             vec!["192.0.2.53:53".into()],
             "127.0.0.1:1053".into(),
-            vec!["domain,proxy.baidu.com".into()],
-            vec!["domain,direct.example".into()],
-            true,
         )
         .expect("managed frontend");
         assert_eq!(config.listen_port, 1054);
@@ -88,36 +80,19 @@ mod tests {
                 .iter()
                 .map(|rules| (rules.id.as_str(), rules.upstream.as_str()))
                 .collect::<Vec<_>>(),
-            [
-                ("explicit-proxy", "remote"),
-                ("explicit-direct", "local"),
-                ("domestic-domains", "local")
-            ]
+            [("domestic-domains", "local")]
         );
-        assert!(config.rule_sets[2].rules.len() > 77_000);
+        assert!(config.rule_sets[0].rules.len() > 77_000);
     }
 
     #[test]
     fn requires_usable_upstreams() {
-        assert!(
-            DnsConfig::managed_frontend(
-                1054,
-                Vec::new(),
-                "127.0.0.1:1053".into(),
-                Vec::new(),
-                Vec::new(),
-                false,
-            )
-            .is_err()
-        );
+        assert!(DnsConfig::managed_frontend(1054, Vec::new(), "127.0.0.1:1053".into(),).is_err());
         assert!(
             DnsConfig::managed_frontend(
                 1054,
                 vec!["223.5.5.5:not-a-port".into()],
                 "127.0.0.1:1053".into(),
-                Vec::new(),
-                Vec::new(),
-                false,
             )
             .is_err()
         );

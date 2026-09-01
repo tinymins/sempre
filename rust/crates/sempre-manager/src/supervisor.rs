@@ -257,6 +257,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let document = self.store.read()?;
         let deployment = document
             .active
+            .clone()
             .ok_or_else(|| ManagerError::RuntimeNotReady("no active core deployment".into()))?;
         if document.desired_state == DesiredState::Stopped {
             return Err(ManagerError::RuntimeNotReady(
@@ -287,29 +288,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .map_err(|error| ManagerError::io("reset core control directory", error))?;
         }
         let runtime = adapter.prepare_runtime(&config, &control_directory)?;
-        let transparent = if let Some(profile_id) = document.active_profile_id.as_deref() {
-            let catalog = self.subscriptions.read()?;
-            let profile = catalog
-                .profiles
-                .iter()
-                .find(|profile| profile.id == profile_id)
-                .ok_or_else(|| ManagerError::ProfileNotFound(profile_id.into()))?;
-            self.transparent
-                .prepare(
-                    &deployment.core,
-                    &deployment.version,
-                    profile,
-                    &runtime.config,
-                )
-                .await?
-        } else {
-            TransparentPlan::default()
-        };
         let reference = CoreRef {
             core: deployment.core.clone(),
             repository: deployment.repository.clone(),
             reference: deployment.reference.clone(),
         };
+        let transparent = self
+            .prepare_dns_transparent_plan(&document, &deployment, &reference, &runtime.config)
+            .await?;
         self.validate_config_path(&reference, &deployment.version, &runtime.config)
             .await?;
         let runtime_data = fs::read(&runtime.config)
@@ -328,7 +314,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             Some(DnsFrontendPlan::from_policy(
                 &deployment.config_hash,
-                policy,
+                &policy,
                 &system_dns.original_upstreams,
                 system_dns.listen_port,
             )?)

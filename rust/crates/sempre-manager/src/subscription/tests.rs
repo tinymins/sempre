@@ -271,20 +271,33 @@ async fn runtime_validation_is_deferred_until_refresh() {
 }
 
 #[tokio::test]
-async fn global_dns_survives_subscription_switches() {
+async fn frontend_dns_survives_switches_without_overriding_profile_dns() {
     let (_root, manager, first_id) = fixture();
     let mut settings = manager.dns_settings();
-    settings.use_system_dns = false;
-    settings.config = r#"{"shared":{"remoteDns":"1.1.1.1"}}"#.into();
-    manager
+    settings.reject_https = false;
+    settings.rewrites.push(sempre_gateway::DnsRewrite {
+        id: "device-rewrite".into(),
+        domain: "router.test".into(),
+        record_type: "A".into(),
+        answer: "192.0.2.1".into(),
+        ttl: 60,
+        enabled: true,
+        comment: String::new(),
+    });
+    let (frontend_change, _) = manager
         .update_dns_settings(settings)
         .await
-        .expect("update global DNS");
+        .expect("update frontend DNS");
+    assert!(!frontend_change.changed);
 
     let second_id = sempre_subscription::new_profile("second").id;
     manager
         .subscriptions
         .update(|catalog| {
+            catalog.profiles[0]
+                .extra
+                .insert("use_system_dns".into(), json!(false));
+            catalog.profiles[0].editor.dns_config = r#"{"shared":{"remoteDns":"1.1.1.1"}}"#.into();
             let mut second = catalog.profiles[0].clone();
             second.id.clone_from(&second_id);
             second.name = "second".into();
@@ -303,15 +316,46 @@ async fn global_dns_survives_subscription_switches() {
         .activate_subscription_profile(&second_id)
         .await
         .expect("activate second");
-    assert!(render.content.contains("1.1.1.1"));
-    assert!(!render.content.contains("8.8.8.8"));
-    assert_eq!(
-        manager.dns_settings().config,
-        r#"{"shared":{"remoteDns":"1.1.1.1"}}"#
-    );
+    assert!(render.content.contains("8.8.8.8"));
+    assert!(!render.content.contains("1.1.1.1"));
+    let frontend = manager.dns_settings();
+    assert!(!frontend.reject_https);
+    assert_eq!(frontend.rewrites[0].id, "device-rewrite");
     assert!(
-        manager.state().expect("state").config_builds["sing-box"]
+        !manager.state().expect("state").config_builds["sing-box"]
             .target_key
             .contains("|dns:")
     );
+}
+
+#[tokio::test]
+async fn enabling_frontend_rebuilds_only_the_private_core_ingress() {
+    let (_root, manager, profile_id) = fixture();
+    manager
+        .subscriptions
+        .update(|catalog| {
+            let profile = &mut catalog.profiles[0];
+            profile.extra.insert("use_system_dns".into(), json!(false));
+            profile.editor.dns_config =
+                r#"{"shared":{"remoteDns":"9.9.9.9","fakeipEnabled":false}}"#.into();
+            Ok(())
+        })
+        .expect("set profile DNS");
+    let mut settings = manager.dns_settings();
+    settings.enabled = true;
+    let (change, _) = manager
+        .update_dns_settings(settings)
+        .await
+        .expect("enable frontend");
+    assert!(change.changed);
+    let document = manager.state().expect("state");
+    assert_eq!(
+        document.active_profile_id.as_deref(),
+        Some(profile_id.as_str())
+    );
+    let hash = &document.configs["sing-box"];
+    let content = std::fs::read_to_string(manager.store.layout().config("sing-box", hash))
+        .expect("compiled config");
+    assert!(content.contains("9.9.9.9"));
+    assert!(content.contains("sempre-dns-core-in"));
 }

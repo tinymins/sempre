@@ -122,7 +122,7 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     const rendered = renderEditor()
 
-    const labels = ['Basic', 'Subscribe URL', 'Rule List', 'Proxy Groups', 'Custom Rules', 'Private Access', 'Runtime', 'Manual Servers', 'Diagnostics']
+    const labels = ['Basic', 'Subscribe URL', 'Rule List', 'Proxy Groups', 'Custom Rules', 'DNS Config', 'Private Access', 'Runtime', 'Manual Servers', 'Diagnostics']
     for (const label of labels) {
       expect(await screen.findByRole('button', { name: label })).toBeInTheDocument()
     }
@@ -181,7 +181,7 @@ describe('ProxySubscribeEditor', () => {
 		})
 	})
 
-	it('preserves legacy profile DNS while saving non-DNS subscription fields', async () => {
+	it('edits core DNS in the profile without exposing frontend takeover', async () => {
 		localStorage.setItem('sempre.locale', 'en')
 		const { onSave } = renderEditor({
 			profile: {
@@ -191,14 +191,17 @@ describe('ProxySubscribeEditor', () => {
 			},
 		})
 
+		fireEvent.click(await screen.findByRole('button', { name: 'DNS Config' }))
+		expect(screen.getByText('Remote DNS')).toBeInTheDocument()
+		expect(screen.getByText('FakeIP')).toBeInTheDocument()
+		expect(screen.queryByText('System DNS takeover')).not.toBeInTheDocument()
 		vi.useFakeTimers()
-		fireEvent.click(screen.getByRole('button', { name: 'Basic' }))
-		fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'renamed' } })
+		fireEvent.change(screen.getByDisplayValue('8.8.8.8'), { target: { value: '1.1.1.1' } })
 		await act(async () => vi.advanceTimersByTime(800))
 
 		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0].use_system_dns).toBe(false)
-		expect(onSave.mock.calls[0][0].editor.dns_config).toBe(JSON.stringify({ shared: { systemDnsTakeoverEnabled: true } }))
+		expect(onSave.mock.calls[0][0].editor.dns_config).toContain('1.1.1.1')
 	})
 
 	it('starts Subscribe URL empty and allows deleting the last source', async () => {
@@ -383,7 +386,7 @@ describe('ProxySubscribeEditor', () => {
 				},
 			},
 		})
-		expect(screen.queryByRole('button', { name: 'DNS Config' })).not.toBeInTheDocument()
+		expect(await screen.findByRole('button', { name: 'DNS Config' })).toBeInTheDocument()
 		expect(screen.getByRole('button', { name: 'Runtime' })).toBeInTheDocument()
 		expect(screen.getByRole('button', { name: 'Rule List' })).toBeInTheDocument()
 		expect(screen.getByRole('button', { name: 'Proxy Groups' })).toBeInTheDocument()
@@ -402,7 +405,7 @@ describe('ProxySubscribeEditor', () => {
 			},
 		})
 		expect(await screen.findByRole('button', { name: 'Runtime' })).toBeInTheDocument()
-		for (const label of ['Rule List', 'Proxy Groups', 'Custom Rules', 'Advanced Config', 'Private Access', 'Manual Servers']) {
+		for (const label of ['Rule List', 'Proxy Groups', 'Custom Rules', 'Advanced Config', 'DNS Config', 'Private Access', 'Manual Servers']) {
 			expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
 		}
 		expect(screen.queryByLabelText('Log Level')).not.toBeInTheDocument()

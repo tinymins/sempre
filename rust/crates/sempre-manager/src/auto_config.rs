@@ -50,7 +50,11 @@ impl<R: VersionRunner> Manager<R> {
             .as_deref()
             .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id));
         let requirements = active_profile.map_or_else(AutoConfigRequirements::default, |profile| {
-            profile_requirements(profile, &catalog.custom_nodes)
+            profile_requirements(
+                profile,
+                &catalog.custom_nodes,
+                self.dns_settings.read().enabled,
+            )
         });
         let registered = self
             .registry
@@ -184,13 +188,18 @@ fn profile_has_inputs(profile: &Profile) -> bool {
         || profile.sources.iter().any(|source| source.enabled)
 }
 
-fn profile_requirements(profile: &Profile, custom_nodes: &[CustomNode]) -> AutoConfigRequirements {
+fn profile_requirements(
+    profile: &Profile,
+    custom_nodes: &[CustomNode],
+    dns_frontend_enabled: bool,
+) -> AutoConfigRequirements {
     let mut requirements = AutoConfigRequirements::default();
-    if profile
-        .dns
-        .pointer("/shared/systemDnsTakeoverEnabled")
-        .and_then(serde_json::Value::as_bool)
-        == Some(true)
+    if dns_frontend_enabled
+        || profile
+            .dns
+            .pointer("/shared/systemDnsTakeoverEnabled")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
     {
         requirements.require_feature(features::DNS_TUN_CAPTURE);
     }
@@ -313,7 +322,7 @@ mod tests {
             "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
         }))
         .expect("profile");
-        let requirements = profile_requirements(&profile, &[]);
+        let requirements = profile_requirements(&profile, &[], false);
         assert!(
             requirements
                 .required_features
@@ -429,7 +438,7 @@ mod tests {
         ])
         .to_string();
 
-        let requirements = profile_requirements(&profile, &[]);
+        let requirements = profile_requirements(&profile, &[], false);
         assert_eq!(
             requirements.required_features,
             [

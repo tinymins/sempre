@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use sempre_converter::{
-    CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, SourceSnapshot, Target, compile,
-    dns_frontend_policy, parse_subscription, prepare_profile,
+    CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, SourceSnapshot, Target,
+    apply_dns_frontend_settings, compile, dns_frontend_policy, parse_subscription,
 };
 use sempre_state::{ConfigBuild, Document, PendingConfigField};
 use sempre_subscription::{Catalog, SubscriptionError};
@@ -47,20 +47,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
         let _operation = self.store.acquire_operation()?;
         let document = self.store.read()?;
-        let catalog = self.subscriptions.read()?;
-        let active = document
-            .active_profile_id
-            .as_deref()
-            .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id));
-        if let Some(profile) = active
-            && let Ok((target, _)) = self.subscription_target(&document)
-        {
-            let mut validation_profile = profile.clone();
-            candidate.apply(&mut validation_profile);
-            prepare_profile(&validation_profile, &target)?;
-        }
         let previous = self.dns_settings.read();
+        let requires_core_rebuild = previous.requires_core_rebuild(&candidate);
         let saved = self.dns_settings.replace(candidate)?;
+        if !requires_core_rebuild {
+            return Ok((CoreChange::default(), saved));
+        }
         let Some(profile_id) = document.active_profile_id.as_deref() else {
             return Ok((CoreChange::default(), saved));
         };
@@ -188,7 +180,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let build = config_build(
             &rendered.updated,
             &rendered.target,
-            self.dns_settings.read().revision,
+            self.dns_settings.read().enabled,
         )?;
         self.save_optional_dns_frontend_policy(
             &rendered.render.artifact_hash,
@@ -249,7 +241,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let catalog = self.subscriptions.read()?;
         let profile = find_profile(&catalog, id)?;
         let (target, _) = self.subscription_target(&document)?;
-        let expected = config_build(profile, &target, self.dns_settings.read().revision)?;
+        let expected = config_build(profile, &target, self.dns_settings.read().enabled)?;
         if document
             .selected
             .as_ref()
@@ -277,7 +269,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let Ok((target, _)) = self.subscription_target(document) else {
             return false;
         };
-        config_build(profile, &target, self.dns_settings.read().revision)
+        config_build(profile, &target, self.dns_settings.read().enabled)
             .is_ok_and(|expected| document.config_builds.get(&selected.core) != Some(&expected))
     }
 
@@ -308,13 +300,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         refresh: bool,
     ) -> Result<RenderedProfile, ManagerError> {
         if profile_mode(profile) == "remote" {
-            if !self.dns_settings.read().matches(profile) {
-                return Err(ManagerError::InvalidOperation(
-                    "remote subscription artifact DNS differs from this device's independent DNS settings; update the remote Sempre service before activating this profile".into(),
-                ));
-            }
             let remote = self.remote.render(profile, &target).await?;
             validate_runtime_profile(&remote.profile)?;
+            let runtime_profile = apply_dns_frontend_settings(
+                &remote.profile,
+                &target,
+                self.dns_settings.read().enabled,
+            )?;
+            let dns_frontend_policy = dns_frontend_policy(&runtime_profile, &target)?;
             let warnings = adapter_warnings.drain(..).chain(remote.warnings).collect();
             return Ok(RenderedProfile {
                 render: SubscriptionRender {
@@ -332,7 +325,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 },
                 updated: remote.profile,
                 target,
-                dns_frontend_policy: None,
+                dns_frontend_policy: Some(dns_frontend_policy),
             });
         }
 
@@ -356,9 +349,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .await?;
         snapshots.extend(provider_snapshots);
         adapter_warnings.extend(provider_warnings);
-        let mut compile_profile = updated.clone();
-        self.dns_settings.read().apply(&mut compile_profile);
-        let dns_frontend_policy = dns_frontend_policy(&compile_profile, &target, &snapshots)?;
+        let compile_profile =
+            apply_dns_frontend_settings(&updated, &target, self.dns_settings.read().enabled)?;
+        let dns_frontend_policy = dns_frontend_policy(&compile_profile, &target)?;
         adapter_warnings.extend(dns_frontend_policy.warnings.iter().cloned());
         let compiled = compile(&CompileRequest {
             protocol: 1,
@@ -469,13 +462,16 @@ fn validate_runtime_profile(profile: &Profile) -> Result<(), ManagerError> {
 pub(crate) fn config_build(
     profile: &Profile,
     target: &Target,
-    dns_revision: u64,
+    dns_frontend_enabled: bool,
 ) -> Result<ConfigBuild, ManagerError> {
+    let dns_frontend_enabled = dns_frontend_enabled
+        && target.core == "sing-box"
+        && matches!(target.platform.as_str(), "windows" | "macos");
     Ok(ConfigBuild {
         profile_id: profile.id.clone(),
         profile_revision: profile.revision,
         target_key: format!(
-            "{}|{}|{}|dns:{dns_revision}",
+            "{}|{}|{}|front-dns:{dns_frontend_enabled}",
             target.format, target.version, target.platform
         ),
         runtime_key: Some(runtime_key(profile)?),

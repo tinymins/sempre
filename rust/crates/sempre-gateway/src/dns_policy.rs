@@ -31,6 +31,9 @@ pub struct DnsQueryEvent {
 
 pub trait DnsRuntimePolicy: Send + Sync {
     fn rewrite(&self, name: &str, record_type: &str) -> Option<DnsRewrite>;
+    fn reject_https(&self) -> bool {
+        false
+    }
     fn record(&self, event: DnsQueryEvent);
 }
 

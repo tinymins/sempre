@@ -5,6 +5,7 @@ use std::sync::Mutex as StdMutex;
 #[derive(Default)]
 struct TestPolicy {
     rewrite: Option<DnsRewrite>,
+    reject_https: bool,
     events: StdMutex<Vec<DnsQueryEvent>>,
 }
 
@@ -13,6 +14,10 @@ impl DnsRuntimePolicy for TestPolicy {
         self.rewrite
             .clone()
             .filter(|rule| rule.record_type == record_type)
+    }
+
+    fn reject_https(&self) -> bool {
+        self.reject_https
     }
 
     fn record(&self, event: DnsQueryEvent) {
@@ -69,21 +74,11 @@ async fn debug_query_exchanges_with_the_selected_udp_upstream() {
 }
 
 #[tokio::test]
-async fn managed_frontend_enforces_proxy_direct_domestic_then_default_order() {
-    let (local, local_task) = answering_upstream(2, [10, 0, 0, 1]).await;
-    let (remote, remote_task) = answering_upstream(2, [198, 18, 0, 1]).await;
-    let config = DnsConfig::managed_frontend(
-        1054,
-        vec![local],
-        remote,
-        vec!["domain,proxy.baidu.com".into()],
-        vec!["domain,direct.example".into()],
-        false,
-    )
-    .expect("managed frontend");
+async fn managed_frontend_routes_only_domestic_domains_before_the_core() {
+    let (local, local_task) = answering_upstream(1, [10, 0, 0, 1]).await;
+    let (remote, remote_task) = answering_upstream(1, [198, 18, 0, 1]).await;
+    let config = DnsConfig::managed_frontend(1054, vec![local], remote).expect("managed frontend");
     for (name, answer, detail) in [
-        ("proxy.baidu.com", "198.18.0.1", "rule-set:explicit-proxy"),
-        ("direct.example", "10.0.0.1", "rule-set:explicit-direct"),
         ("baidu.com", "10.0.0.1", "rule-set:domestic-domains"),
         ("github.com", "198.18.0.1", "default-remote"),
     ] {
@@ -109,6 +104,7 @@ async fn rewrite_precedes_split_routing_and_records_the_decision() {
             ttl: 60,
             comment: String::new(),
         }),
+        reject_https: false,
         events: StdMutex::new(Vec::new()),
     });
     let resolver = Resolver::new(
@@ -125,4 +121,23 @@ async fn rewrite_precedes_split_routing_and_records_the_decision() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].decision, "rewrite");
     assert_eq!(events[0].detail, "rewrite:local-test");
+}
+
+#[tokio::test]
+async fn frontend_https_rejection_is_owned_by_the_runtime_policy() {
+    let policy = Arc::new(TestPolicy {
+        reject_https: true,
+        ..TestPolicy::default()
+    });
+    let resolver = Resolver::new(
+        DnsConfig::default(),
+        Arc::clone(&policy) as Arc<dyn DnsRuntimePolicy>,
+    )
+    .expect("resolver");
+    let query = build_query("example.com", TYPE_HTTPS).expect("query");
+    let response = resolver
+        .resolve_for_client(&query, "127.0.0.1".into())
+        .await;
+    assert_eq!(response[3] & 0x0f, 3);
+    assert_eq!(policy.events.lock().expect("events")[0].decision, "reject");
 }

@@ -137,10 +137,14 @@ export const DnsConfigEditorField = ({
 }: DnsConfigEditorFieldProps) => {
   const useSystem = Form.useWatch("useSystemDnsConfig", form);
 	const systemDnsListenHostOptions = useMemo(() => systemDnsListenOptions(networkInventory), [networkInventory]);
+	const features = useMemo(() => {
+		if (!['windows', 'macos'].includes(configurationContext.platform)) return configurationContext.capabilities.features;
+		return configurationContext.capabilities.features.filter((feature) => feature !== 'dns.system_takeover');
+	}, [configurationContext.capabilities.features, configurationContext.platform]);
 
   if (useSystem) {
     return (
-		<DnsConfigEditor key="system-default" value={defaultValue} readOnly features={configurationContext.capabilities.features} systemDnsListenHostOptions={systemDnsListenHostOptions} />
+		<DnsConfigEditor key="system-default" value={defaultValue} readOnly features={features} systemDnsListenHostOptions={systemDnsListenHostOptions} />
     );
   }
 
@@ -149,7 +153,7 @@ export const DnsConfigEditorField = ({
 		key="user-custom"
 		value={value}
 		onChange={onChange}
-		features={configurationContext.capabilities.features}
+		features={features}
 		systemDnsListenHostOptions={systemDnsListenHostOptions}
 	/>
   );

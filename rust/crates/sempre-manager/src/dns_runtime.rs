@@ -1,16 +1,20 @@
 use std::{
     net::IpAddr,
+    path::Path,
     sync::{Arc, RwLock},
     time::Duration,
 };
 
 use ipnet::IpNet;
 use sempre_converter::DnsFrontendPolicy;
+use sempre_core::CoreRef;
 use sempre_gateway::{DnsConfig, DnsRuntimePolicy, DnsService, managed_probe_names, probe_dns};
+use sempre_state::{Deployment, Document};
+use sempre_transparent::Plan as TransparentPlan;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::Mutex, time::sleep};
 
-use crate::{ManagerError, supervisor::RuntimePlan};
+use crate::{Manager, ManagerError, ValidationRunner, VersionRunner, supervisor::RuntimePlan};
 
 const PROBE_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -174,10 +178,45 @@ impl DnsFrontendRuntime {
     }
 }
 
+impl<R: VersionRunner + ValidationRunner> Manager<R> {
+    pub(crate) async fn prepare_dns_transparent_plan(
+        &self,
+        document: &Document,
+        deployment: &Deployment,
+        reference: &CoreRef,
+        runtime_config: &Path,
+    ) -> Result<TransparentPlan, ManagerError> {
+        let Some(profile_id) = document.active_profile_id.as_deref() else {
+            return Ok(TransparentPlan::default());
+        };
+        let catalog = self.subscriptions.read()?;
+        let profile = catalog
+            .profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .ok_or_else(|| ManagerError::ProfileNotFound(profile_id.into()))?;
+        let (target, _) = self.subscription_target_for(reference, &deployment.version)?;
+        let profile = sempre_converter::apply_dns_frontend_settings(
+            profile,
+            &target,
+            self.dns_settings.read().enabled,
+        )?;
+        Ok(self
+            .transparent
+            .prepare(
+                &deployment.core,
+                &deployment.version,
+                &profile,
+                runtime_config,
+            )
+            .await?)
+    }
+}
+
 impl DnsFrontendPlan {
     pub(crate) fn from_policy(
         deployment_hash: &str,
-        policy: DnsFrontendPolicy,
+        policy: &DnsFrontendPolicy,
         original_upstreams: &[String],
         listen_port: u16,
     ) -> Result<Self, ManagerError> {
@@ -197,9 +236,6 @@ impl DnsFrontendPlan {
                 .map(|ip| dns_endpoint(ip, 53))
                 .collect(),
             dns_endpoint("127.0.0.1", policy.core_listen_port),
-            policy.proxy_rules,
-            policy.direct_rules,
-            policy.reject_https,
         )?;
         let (local_probe, remote_probe) = managed_probe_names(&config)?;
         Ok(Self {

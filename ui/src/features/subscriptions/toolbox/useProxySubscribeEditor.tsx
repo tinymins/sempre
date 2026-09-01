@@ -44,17 +44,19 @@ export function useProxySubscribeEditor({
 		const supportsTransparent = features.has("transparent.tun") || features.has("transparent.tproxy") || features.has("transparent.ebpf");
 		const supportsLocalProxy = features.has("inbound.local_proxy");
 		const supportsManagement = features.has("management.external_api");
+		const supportsDNS = configurationContext.capabilities.features.some((feature) => feature.startsWith("dns."));
 		const runtimeVisible = supportsLocalProxy || supportsTransparent || supportsManagement;
 		const availableTabs = useMemo(() => [
 				...BASE_TABS,
 				...(features.has("routing.rule_providers") ? [{ label: "ruleList", value: "ruleList" }] : []),
 				...(features.has("routing.selector") || features.has("routing.url_test") ? [{ label: "group", value: "group" }] : []),
 				...(features.has("routing.rules") ? [{ label: "customRules", value: "customConfig" }] : []),
+				...(supportsDNS ? [{ label: "dnsConfig", value: "dnsConfig" }] : []),
 				...(features.has("private_access") ? [{ label: "privateAccessConfig", value: "privateAccessConfig" }] : []),
 				...(runtimeVisible ? [{ label: "runtime", value: "runtime" }] : []),
 				...(configurationContext.capabilities.protocols.length > 0 ? [{ label: "servers", value: "servers" }] : []),
 				{ label: "diagnostics", value: "diagnostics" },
-			], [configurationContext.capabilities.protocols.length, features, runtimeVisible]);
+			], [configurationContext.capabilities.protocols.length, features, runtimeVisible, supportsDNS]);
 		const [form] = Form.useForm(profileFormValues(profile, configurationContext));
     const manualServers = Form.useWatch("servers", form) as string | undefined;
 		const transparentMode = Form.useWatch("transparentMode", form) as string | undefined;
@@ -175,13 +177,13 @@ export function useProxySubscribeEditor({
         use_system_groups: values.useSystemGroup ?? true,
         use_system_filters: values.useSystemFilter ?? true,
         use_system_custom_config: values.useSystemCustomConfig ?? true,
-        use_system_dns: profileRef.current.use_system_dns,
+        use_system_dns: values.useSystemDnsConfig ?? true,
         editor: {
           rule_list: values.ruleList || "",
           group: values.group || "",
           filter: values.filter || "",
           custom_config: values.customConfig || "",
-          dns_config: profileRef.current.editor.dns_config || "",
+          dns_config: values.dnsConfig || "",
           private_access_config: values.privateAccessConfig || "",
           servers: values.servers || "[]",
         },

@@ -7,11 +7,10 @@ import { Dns } from './Dns'
 
 const settings = {
   settings: {
-    schema: 1,
+    schema: 2,
     revision: 3,
-    use_system_dns: false,
-    config: '{"shared":{"remoteDns":"8.8.8.8"}}',
-    dns: {},
+    enabled: true,
+    reject_https: true,
     rewrites: [],
     query_log_enabled: true,
     query_log_max_entries: 2000,
@@ -25,12 +24,6 @@ const settings = {
     original_upstreams: ['10.23.0.1'],
     domestic_domain_source: 'domains-min.txt',
     domestic_domain_count: 1234,
-  },
-  editor_defaults: { dns_config: '' },
-  configuration_context: {
-    key: 'sing-box',
-    target: { core: 'sing-box' },
-    capabilities: { features: ['dns.remote_upstream', 'dns.fake_ip', 'dns.system_takeover'], protocols: [] },
   },
 }
 
@@ -55,7 +48,7 @@ describe('DNS page', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></QueryClientProvider>)
 
-    expect(await screen.findByText('设备级 DNS 策略；切换订阅和路由规则不会改变这里的配置。')).toBeInTheDocument()
+    expect(await screen.findByText('设备级前置 DNS；核心 DNS 仍由当前订阅配置。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '查询日志' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'DNS 重写' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设置与状态' })).toBeInTheDocument()
@@ -64,6 +57,8 @@ describe('DNS page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '设置与状态' }))
     expect(screen.getByText('fake-ip')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('8.8.8.8')).toBeInTheDocument()
+    expect(screen.getByText('启用前置 DNS')).toBeInTheDocument()
+    expect(screen.queryByText('远程 DNS')).not.toBeInTheDocument()
+    expect(screen.queryByText('FakeIP')).not.toBeInTheDocument()
   })
 })

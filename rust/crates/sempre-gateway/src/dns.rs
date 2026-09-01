@@ -205,7 +205,9 @@ impl Resolver {
                 detail: format!("rewrite:{}", rewrite.id),
             });
         }
-        if self.config.reject_https && question.record_type == TYPE_HTTPS {
+        if (self.config.reject_https || self.policy.reject_https())
+            && question.record_type == TYPE_HTTPS
+        {
             return Ok(Resolved {
                 packet: response_with_code(packet, 3)?,
                 upstream: "reject".into(),

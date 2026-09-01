@@ -16,16 +16,15 @@ use serde_json::Value;
 
 use crate::ManagerError;
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DnsSettings {
     pub schema: u32,
     pub revision: u64,
-    pub use_system_dns: bool,
-    pub config: String,
-    #[serde(default)]
-    pub dns: Value,
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub reject_https: bool,
     #[serde(default)]
     pub rewrites: Vec<DnsRewrite>,
     #[serde(default = "default_true")]
@@ -44,40 +43,37 @@ const fn default_max_entries() -> usize {
 
 impl DnsSettings {
     fn from_profile(profile: &Profile) -> Self {
+        let dns = effective_dns(profile);
+        let shared = dns.get("shared").unwrap_or(&dns);
         Self {
             schema: SCHEMA_VERSION,
             revision: 1,
-            use_system_dns: profile
-                .extra
-                .get("use_system_dns")
-                .and_then(Value::as_bool)
-                .unwrap_or(true),
-            config: profile.editor.dns_config.clone(),
-            dns: profile.dns.clone(),
+            enabled: boolean(shared, "systemDnsTakeoverEnabled", false),
+            reject_https: boolean(shared, "rejectHttps", true),
             rewrites: Vec::new(),
             query_log_enabled: true,
             query_log_max_entries: default_max_entries(),
         }
     }
 
-    pub(crate) fn apply(&self, profile: &mut Profile) {
-        profile
-            .extra
-            .insert("use_system_dns".into(), Value::Bool(self.use_system_dns));
-        profile.editor.dns_config.clone_from(&self.config);
-        profile.dns.clone_from(&self.dns);
+    pub(crate) fn requires_core_rebuild(&self, candidate: &Self) -> bool {
+        self.enabled != candidate.enabled
     }
+}
 
-    pub(crate) fn matches(&self, profile: &Profile) -> bool {
-        self.use_system_dns
-            == profile
-                .extra
-                .get("use_system_dns")
-                .and_then(Value::as_bool)
-                .unwrap_or(true)
-            && self.config == profile.editor.dns_config
-            && self.dns == profile.dns
-    }
+#[derive(Deserialize)]
+struct LegacyDnsSettings {
+    revision: u64,
+    #[serde(default)]
+    config: String,
+    #[serde(default)]
+    dns: Value,
+    #[serde(default)]
+    rewrites: Vec<DnsRewrite>,
+    #[serde(default = "default_true")]
+    query_log_enabled: bool,
+    #[serde(default = "default_max_entries")]
+    query_log_max_entries: usize,
 }
 
 pub(crate) struct DnsSettingsStore {
@@ -95,9 +91,7 @@ impl DnsSettingsStore {
         initial_profile: &Profile,
     ) -> Result<Self, ManagerError> {
         let settings = match fs::read(&path) {
-            Ok(data) => serde_json::from_slice::<DnsSettings>(&data).map_err(|error| {
-                ManagerError::InvalidOperation(format!("decode DNS settings: {error}"))
-            })?,
+            Ok(data) => decode_settings(&data)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let settings = DnsSettings::from_profile(initial_profile);
                 write(&path, &settings)?;
@@ -105,13 +99,8 @@ impl DnsSettingsStore {
             }
             Err(error) => return Err(ManagerError::io("read DNS settings", error)),
         };
-        if settings.schema != SCHEMA_VERSION {
-            return Err(ManagerError::InvalidOperation(format!(
-                "DNS settings schema {} is not supported",
-                settings.schema
-            )));
-        }
         validate(&settings)?;
+        write(&path, &settings)?;
         let queries = load_queries(&query_path, settings.query_log_max_entries)?;
         Ok(Self {
             path,
@@ -184,6 +173,10 @@ impl DnsRuntimePolicy for DnsSettingsStore {
         })
     }
 
+    fn reject_https(&self) -> bool {
+        self.read().reject_https
+    }
+
     fn record(&self, event: DnsQueryEvent) {
         let settings = self.read();
         if !settings.query_log_enabled {
@@ -209,6 +202,47 @@ impl DnsRuntimePolicy for DnsSettingsStore {
             let _ = write_queries(&self.query_path, &queries);
         }
     }
+}
+
+fn decode_settings(data: &[u8]) -> Result<DnsSettings, ManagerError> {
+    let value = serde_json::from_slice::<Value>(data)
+        .map_err(|error| ManagerError::InvalidOperation(format!("decode DNS settings: {error}")))?;
+    match value.get("schema").and_then(Value::as_u64) {
+        Some(version) if version == u64::from(SCHEMA_VERSION) => serde_json::from_value(value)
+            .map_err(|error| {
+                ManagerError::InvalidOperation(format!("decode DNS settings: {error}"))
+            }),
+        Some(1) => migrate_legacy(value),
+        version => Err(ManagerError::InvalidOperation(format!(
+            "DNS settings schema {} is not supported",
+            version.map_or_else(|| "missing".into(), |value| value.to_string())
+        ))),
+    }
+}
+
+fn migrate_legacy(value: Value) -> Result<DnsSettings, ManagerError> {
+    let legacy = serde_json::from_value::<LegacyDnsSettings>(value).map_err(|error| {
+        ManagerError::InvalidOperation(format!("decode legacy DNS settings: {error}"))
+    })?;
+    let dns = serde_json::from_str::<Value>(&legacy.config).unwrap_or(legacy.dns);
+    let shared = dns.get("shared").unwrap_or(&dns);
+    Ok(DnsSettings {
+        schema: SCHEMA_VERSION,
+        revision: legacy.revision.saturating_add(1),
+        enabled: boolean(shared, "systemDnsTakeoverEnabled", false),
+        reject_https: boolean(shared, "rejectHttps", true),
+        rewrites: legacy.rewrites,
+        query_log_enabled: legacy.query_log_enabled,
+        query_log_max_entries: legacy.query_log_max_entries,
+    })
+}
+
+fn effective_dns(profile: &Profile) -> Value {
+    serde_json::from_str(&profile.editor.dns_config).unwrap_or_else(|_| profile.dns.clone())
+}
+
+fn boolean(value: &Value, key: &str, fallback: bool) -> bool {
+    value.get(key).and_then(Value::as_bool).unwrap_or(fallback)
 }
 
 fn write(path: &std::path::Path, settings: &DnsSettings) -> Result<(), ManagerError> {
@@ -287,30 +321,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn migrates_profile_dns_once_and_keeps_it_independent() {
+    fn migrates_only_frontend_fields_from_legacy_device_dns() {
         let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("dns.json");
+        fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+                "schema": 1,
+                "revision": 7,
+                "use_system_dns": false,
+                "config": "{\"shared\":{\"systemDnsTakeoverEnabled\":true,\"rejectHttps\":false,\"remoteDns\":\"1.1.1.1\"}}",
+                "dns": {},
+                "rewrites": [],
+                "query_log_enabled": true,
+                "query_log_max_entries": 500
+            }))
+            .expect("legacy settings"),
+        )
+        .expect("write legacy settings");
         let mut profile = Profile::default();
         profile.editor.dns_config = "{\"shared\":{\"fakeipEnabled\":false}}".into();
         profile
             .extra
             .insert("use_system_dns".into(), Value::Bool(false));
-        let store = DnsSettingsStore::open(
-            temp.path().join("dns.json"),
-            temp.path().join("queries.ndjson"),
-            &profile,
-        )
-        .expect("store");
+        let store =
+            DnsSettingsStore::open(path.clone(), temp.path().join("queries.ndjson"), &profile)
+                .expect("store");
         let migrated = store.read();
-        assert!(!migrated.use_system_dns);
-        assert_eq!(migrated.config, profile.editor.dns_config);
+        assert_eq!(migrated.schema, 2);
+        assert!(migrated.enabled);
+        assert!(!migrated.reject_https);
+        assert_eq!(migrated.query_log_max_entries, 500);
+        assert!(
+            !fs::read_to_string(&path)
+                .expect("migrated file")
+                .contains("remoteDns")
+        );
 
         profile.editor.dns_config = "changed by profile".into();
-        let reopened = DnsSettingsStore::open(
-            temp.path().join("dns.json"),
-            temp.path().join("queries.ndjson"),
-            &profile,
-        )
-        .expect("reopened store");
-        assert_eq!(reopened.read().config, migrated.config);
+        let reopened = DnsSettingsStore::open(path, temp.path().join("queries.ndjson"), &profile)
+            .expect("reopened store");
+        assert_eq!(reopened.read(), migrated);
     }
 }

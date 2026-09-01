@@ -36,8 +36,6 @@ async fn settings(State(state): State<Arc<AppState>>) -> Response {
     Json(json!({
         "settings": state.manager.dns_settings(),
         "status": state.manager.dns_frontend_status(),
-        "editor_defaults": sempre_converter::recommended_editor_defaults(),
-        "configuration_context": state.manager.configuration_context().ok(),
     }))
     .into_response()
 }
