@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Network, Play, RefreshCw, Save, Terminal, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Input, InputNumber, Select, Switch, Table, Tag, TextArea, type TableColumn } from '@acme/components'
+import { Alert, Button, Card, Empty, Input, InputNumber, Select, Switch, Table, Tag, TextArea, type TableColumn } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -158,7 +158,7 @@ export function Gateway() {
 
     <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
       <div className="border-b border-[var(--border)] px-4 py-3"><h2 className="text-sm font-semibold">DHCP leases</h2></div>
-      <Table<GatewayLease> rowKey="mac" size="middle" pagination={false} columns={leaseColumns} dataSource={runtime.dhcp_leases} scroll={{ x: 900 }} locale={{ emptyText: 'No DHCP leases' }} />
+      <Table<GatewayLease> rowKey="mac" size="middle" pagination={false} columns={leaseColumns} dataSource={runtime.dhcp_leases} scroll={{ x: 900 }} locale={{ emptyText: <Empty description="No DHCP leases" /> }} />
     </Card>
   </div>
 }

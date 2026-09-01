@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Clock3, Rss, Server as ServerIcon, Share2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { Empty } from '@acme/components'
 import { Badge, Button, Card, PageTitle, Spinner } from '../../components/ui'
 import { serverAPI, type ServerProfile, type ServerSession, type ServerUserStats } from './server-api'
 import { useServerLocaleText } from './server-i18n'
@@ -38,7 +39,7 @@ export function ServerOverview({ session }: { session: ServerSession }) {
           <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{t.recent}</h2><p className="mt-1 text-xs text-[var(--muted)]">{t.recentDetail}</p></div><Button onClick={() => navigate('/subscriptions')}>{t.viewAll}</Button></div>
           <div className="mt-4 divide-y divide-[var(--border)]">
             {profiles.slice(0, 5).map((profile) => <button key={profile.id} type="button" className="flex w-full items-center gap-3 py-3 text-left hover:text-emerald-600" onClick={() => navigate(`/subscriptions/${profile.id}`)}><span className="grid size-9 place-items-center rounded-md bg-emerald-500/10 text-emerald-600"><Rss size={17} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{profile.name}</span><span className="block text-xs text-[var(--muted)]">{t.revision} {profile.revision} · {new Date(profile.updated_at).toLocaleString()}</span></span><Badge tone={profile.role === 'viewer' ? 'neutral' : 'info'}>{profile.role}</Badge></button>)}
-            {!profiles.length ? <p className="py-8 text-center text-sm text-[var(--muted)]">{t.empty}</p> : null}
+            {!profiles.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t.empty} /> : null}
           </div>
         </Card>
         <Card className="p-5">

@@ -1,6 +1,6 @@
 import { useState, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { Checkbox, Modal } from '@acme/components'
+import { Checkbox, Empty, Modal } from '@acme/components'
 import { cn } from '../lib/cn'
 
 const buttonVariants = cva(
@@ -70,11 +70,12 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 
 export function EmptyState({ title, detail, action }: { title: string; detail: string; action?: ReactNode }) {
   return (
-    <div className="flex min-h-52 flex-col items-center justify-center border-y border-dashed border-[var(--border)] px-6 text-center">
-      <p className="text-sm font-semibold text-[var(--text)]">{title}</p>
-      <p className="mt-1 max-w-md text-sm text-[var(--muted)]">{detail}</p>
-      {action ? <div className="mt-4">{action}</div> : null}
-    </div>
+    <Empty
+      className="min-h-52 border-y border-dashed border-[var(--border)] px-6 text-center"
+      description={<span className="grid max-w-md gap-1"><span className="font-semibold text-[var(--text)]">{title}</span><span>{detail}</span></span>}
+    >
+      {action ? <div className="mt-2">{action}</div> : null}
+    </Empty>
   )
 }
 

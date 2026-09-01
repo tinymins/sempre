@@ -64,6 +64,14 @@ describe('DNS page', () => {
     expect(await screen.findByText('example.com. 60 IN CNAME edge.example.com.')).toBeInTheDocument()
     expect(screen.getByText('alias.example.com. 60 IN A 198.18.0.1')).toBeInTheDocument()
 
+    fireEvent.change(screen.getByPlaceholderText('筛选域名、客户端、应答或原因'), { target: { value: 'not-found' } })
+    const emptyQueries = screen.getByText('暂无 DNS 查询')
+    expect(emptyQueries.parentElement?.querySelector('svg')).not.toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'DNS 重写' }))
+    const emptyRewrites = screen.getByText('暂无 DNS 重写')
+    expect(emptyRewrites.parentElement?.querySelector('svg')).not.toBeNull()
+
     fireEvent.click(screen.getByRole('button', { name: '设置与状态' }))
     expect(screen.getByText('fake-ip')).toBeInTheDocument()
     expect(screen.getByText('启用前置 DNS')).toBeInTheDocument()

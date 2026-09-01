@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, CheckCircle2, Clock3, Globe2, RefreshCw, XCircle } from 'lucide-react'
-import { Button, Card, Table, Tag, type TableColumn } from '@acme/components'
+import { Button, Card, Empty, Table, Tag, type TableColumn } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -88,7 +88,7 @@ export function NetworkTest() {
         columns={columns}
         dataSource={results}
         scroll={{ x: 980 }}
-        locale={{ emptyText: report.isError ? (report.error instanceof Error ? report.error.message : t('operationFailed')) : t('noData') }}
+        locale={{ emptyText: report.isError ? (report.error instanceof Error ? report.error.message : t('operationFailed')) : <Empty description={t('noData')} /> }}
       />
     </Card>
   </div>

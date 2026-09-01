@@ -2,7 +2,7 @@ import { useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
 import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Modal, Select } from '@acme/components'
+import { Empty, Modal, Select } from '@acme/components'
 import { Badge, Button, Card, Field, Input } from '../../components/ui'
 import { serverAPI, type ServerCustomNode, type ServerMember, type ServerSession } from './server-api'
 import { useServerLocaleText } from './server-i18n'
@@ -69,7 +69,7 @@ export function ServerCustomNodes({ session, nodes, members, onChange }: {
       <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold">{t.title}</h2><p className="text-sm text-[var(--muted)]">{t.detail}</p></div><Button onClick={() => open('new')}><Plus size={16} />{t.add}</Button></div>
       {error && !editing ? <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
       <div className="grid gap-2 md:grid-cols-2">{nodes.map((node) => <div key={node.id} className="flex items-center justify-between gap-3 border-t border-[var(--border)] py-3"><div className="min-w-0"><div className="flex items-center gap-2"><span className="truncate font-medium">{node.name}</span><Badge>{String(node.proxy.type || '')}</Badge>{node.owner_id !== session.user.id ? <Badge tone="info">{t.shared}</Badge> : null}</div><p className="truncate font-mono text-xs text-[var(--muted)]">{String(node.proxy.server || '')}:{String(node.proxy.port || '')}</p></div>{node.owner_id === session.user.id ? <div className="flex gap-1"><Button size="icon" variant="ghost" aria-label={`${t.edit} ${node.name}`} onClick={() => open(node)}><Pencil size={15} /></Button><Button size="icon" variant="ghost" aria-label={`${t.remove} ${node.name}`} onClick={() => void remove(node)}><Trash2 size={15} /></Button></div> : null}</div>)}</div>
-      {!nodes.length ? <p className="text-sm text-[var(--muted)]">{t.empty}</p> : null}
+      {!nodes.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t.empty} /> : null}
     </Card>
     <Modal open={Boolean(editing)} title={<span className="flex items-center gap-2"><Braces size={18} />{editing === 'new' ? t.addTitle : t.editTitle}</span>} width={900} okText={t.save} confirmLoading={pending} onOk={() => { void save(); return undefined }} onCancel={() => setEditing(null)} destroyOnClose>
       <div className="grid gap-4"><Field label={t.name}><Input value={name} onChange={(event) => setName(event.target.value)} /></Field><Field label={t.json}><div className="overflow-hidden rounded-md border border-[var(--border)]"><CodeMirror value={content} height="min(52vh, 520px)" extensions={[json()]} theme="dark" onChange={setContent} /></div></Field>{members.length ? <Field label={t.authorized}><Select mode="multiple" value={authorized} options={members.map((member) => ({ value: member.user_id, label: member.email }))} onChange={(value) => setAuthorized(value as string[])} /></Field> : null}{error ? <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}</div>

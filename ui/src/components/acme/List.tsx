@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Empty } from "./Empty";
 import { cn } from "./utils";
 
 export interface ListItem {
@@ -112,9 +113,7 @@ export function List<T = Record<string, unknown>>({
       ) : null}
       {children ??
         (isEmpty ? (
-          <div className="py-8 text-center text-sm text-fg-muted">
-            {locale?.emptyText ?? "暂无数据"}
-          </div>
+          locale?.emptyText ?? <Empty />
         ) : grid ? (
           <div
             className="grid"

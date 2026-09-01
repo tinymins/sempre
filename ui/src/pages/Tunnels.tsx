@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CirclePlus, Download, FileText, Play, RefreshCw, RotateCw, Save, Square, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Collapse, Input, InputNumber, Select, Switch, TextArea } from '@acme/components'
+import { Alert, Button, Card, Collapse, Empty, Input, InputNumber, Select, Switch, TextArea } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -63,7 +63,7 @@ export function Tunnels() {
     {dirty ? <Alert type="warning" showIcon message={copy.unsaved} /> : null}
     {invalidResolverDraft ? <Alert type="error" showIcon message={copy.invalidResolver} /> : null}
     <div className="flex justify-end"><Button icon={<CirclePlus size={16} />} onClick={() => update({ ...config, instances: [...config.instances, newInstance()] })}>{copy.addInstance}</Button></div>
-    {config.instances.length === 0 ? <Card className="p-8 text-center text-sm text-[var(--muted)]">{copy.empty}</Card> : config.instances.map((instance, index) => {
+    {config.instances.length === 0 ? <Card><Empty description={copy.empty} /></Card> : config.instances.map((instance, index) => {
       const runtime = runtimeByID.get(instance.id)
       const server = parseEndpoint(instance.server_url, 'wss', 443)
       const resolver = parseResolver(instance.dns_resolvers[0] || '')
