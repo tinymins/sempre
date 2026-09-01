@@ -1,6 +1,6 @@
 import { ArrowRight, Boxes, FileSliders, Layers3 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useI18n } from '../../lib/i18n'
+import { useI18n } from '../lib/i18n'
 
 type RuntimeConfigField =
   | 'sources' | 'subscription_content' | 'nodes' | 'groups' | 'rules' | 'rule_providers' | 'filters'

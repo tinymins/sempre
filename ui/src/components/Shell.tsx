@@ -9,6 +9,7 @@ import { useTheme } from '../lib/theme'
 import type { SystemStatus } from '../lib/types'
 import { cn } from '../lib/cn'
 import { AcmeContentBoundary } from './AcmeContentBoundary'
+import { RuntimeRestartButton } from './RuntimeRestartButton'
 import { Badge, Button } from './ui'
 
 const SIDEBAR_COLLAPSED_KEY = 'sempre.sidebar.collapsed'
@@ -100,6 +101,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           </Button>
           <div className="flex items-center gap-2 text-sm"><span className={cn('size-2 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /><span className="hidden text-[var(--muted)] sm:inline">{statusDetail}</span></div>
           <div className="ml-auto flex items-center gap-1">
+            {!chrome ? <RuntimeRestartButton /> : null}
             <Button size="icon" variant="ghost" title={t('language')} onClick={() => setLocale(locale === 'zh-CN' ? 'en' : 'zh-CN')}><Languages size={18} /></Button>
             <Button size="icon" variant="ghost" title={t('theme')} onClick={() => setTheme(theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system')}>
               {theme === 'dark' ? <Moon size={18} /> : theme === 'light' ? <Sun size={18} /> : <CircleGauge size={18} />}

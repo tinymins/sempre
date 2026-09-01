@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
@@ -21,13 +21,30 @@ const systemStatus = {
   capabilities: {},
 }
 
+const runtimeStatus = {
+  desired_state: 'running',
+  runtime_state: 'running',
+  active: { core: 'sing-box', ref: 'stable', version: '1.13.18', exact_reference: 'sing-box@1.13.18', config_hash: 'a'.repeat(64) },
+  pid: 1234,
+  started_at: '2026-09-01T00:00:00Z',
+  uptime_seconds: 60,
+  restart_count: 0,
+  pending: false,
+  pending_changes: [],
+  last_transition: '2026-09-01T00:00:00Z',
+  actions: { start: { allowed: false }, stop: { allowed: true }, restart: { allowed: true } },
+}
+
 describe('Shell sidebar', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
     localStorage.setItem('sempre.locale', 'en')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(systemStatus), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      return Response.json(path.endsWith('/runtime/status') ? runtimeStatus : systemStatus)
+    }))
   })
 
   afterEach(() => {
@@ -77,6 +94,87 @@ describe('Shell sidebar', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Subscriptions' }))
     expect(screen.queryByRole('button', { name: 'Close navigation' })).not.toBeInTheDocument()
     expect(localStorage.getItem('sempre.sidebar.collapsed')).toBe('true')
+  })
+
+  it('places restart before language and marks pending changes with a red dot', async () => {
+    const pendingStatus = {
+      ...runtimeStatus,
+      pending: true,
+      pending_changes: [
+        { type: 'core', previous: 'sing-box@1.12.20', current: 'sing-box@1.14.0-beta.13' },
+        { type: 'configuration', fields: ['dns', 'management_api', 'transparent_proxy'] },
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const path = new URL(String(input)).pathname
+      if (path.endsWith('/runtime/restart') && init.method === 'POST') {
+        return Response.json({ action: 'restart', status: pendingStatus }, { status: 202 })
+      }
+      return Response.json(path.endsWith('/runtime/status') ? pendingStatus : systemStatus)
+    }))
+    renderShell()
+
+    const restart = await screen.findByRole('button', { name: 'Restart core' })
+    const language = screen.getByTitle('Language')
+    expect(restart).toHaveAttribute('title', 'Restart core')
+    expect(restart.parentElement?.nextElementSibling).toBe(language)
+    await waitFor(() => expect(restart.parentElement?.querySelector('[data-restart-required]')).toHaveClass('bg-red-500'))
+
+    fireEvent.click(restart)
+    const dialog = screen.getByRole('dialog', { name: 'Restart the core?' })
+    expect(within(dialog).getByText('Changes to apply')).toBeInTheDocument()
+    expect(within(dialog).getByText('Core switch')).toBeInTheDocument()
+    expect(within(dialog).getByText('DNS configuration, Management API, and Transparent proxy')).toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/restart', expect.objectContaining({ method: 'POST' }))
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Restart core' }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/restart', expect.objectContaining({ method: 'POST' })))
+    expect(await screen.findByRole('status')).toHaveTextContent('Operation accepted')
+  })
+
+  it('shows restart failures from the global control', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const path = new URL(String(input)).pathname
+      if (path.endsWith('/runtime/restart') && init.method === 'POST') {
+        return Response.json({ error: { code: 'RUNTIME_ERROR', message: 'Managed core is unavailable' } }, { status: 503 })
+      }
+      return Response.json(path.endsWith('/runtime/status') ? runtimeStatus : systemStatus)
+    }))
+    renderShell()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart core' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Managed core is unavailable')
+  })
+
+  it('replaces the accepted restart notice with an asynchronous rollback result', async () => {
+    const failed = { ...runtimeStatus.active, config_hash: 'b'.repeat(64) }
+    const finalStatus = {
+      ...runtimeStatus,
+      last_exit: 'exit status 1',
+      last_failure: { stage: 'startup failed for sing-box@1.13.18', error: 'exit status 1', occurred_at: '2026-09-01T00:01:00Z', failed, rolled_back_to: runtimeStatus.active },
+    }
+    let statusReads = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const path = new URL(String(input)).pathname
+      if (path.endsWith('/runtime/restart') && init.method === 'POST') {
+        return Response.json({ action: 'restart', status: { ...runtimeStatus, runtime_state: 'stopping', active: failed, pending: true } }, { status: 202 })
+      }
+      if (path.endsWith('/runtime/status')) {
+        statusReads += 1
+        return Response.json(statusReads > 1 ? finalStatus : runtimeStatus)
+      }
+      return Response.json(systemStatus)
+    }))
+    renderShell()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart core' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Managed core startup failed. The last working configuration was restored.')
+    expect(alert).toHaveTextContent('Error: exit status 1')
+    expect(alert).toHaveTextContent('Rollback: sing-box@1.13.18 · bbbbbbbb...bbbbbb → sing-box@1.13.18 · aaaaaaaa...aaaaaa')
   })
 
   it('dismisses the password warning only for the current shell mount', async () => {

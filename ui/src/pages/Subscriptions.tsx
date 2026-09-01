@@ -1,27 +1,23 @@
 import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, CheckCircle2, CircleAlert, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Save as SaveIcon, Trash2 } from 'lucide-react'
-import { Dropdown, Select, Tooltip } from '@acme/components'
+import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, Save as SaveIcon, Trash2 } from 'lucide-react'
+import { Dropdown, Select } from '@acme/components'
 import type { ProxyDebugFormat } from '@acme/types'
 import { Button, Card, ConfirmDialog, Field, PageTitle, Spinner } from '../components/ui'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import { useRuntimeActionFeedback, type RuntimeActionNotice } from '../lib/useRuntimeActionFeedback'
-import type { CustomNode, LinuxNetworkInventory, ManagedRuntimeStatus, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
+import type { CustomNode, LinuxNetworkInventory, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
 import { MessageBridge } from '../features/subscriptions/toolbox/MessageBridge'
 import ProxyDebugModal, { type ProxyDebugModalRef } from '../features/subscriptions/toolbox/ProxyDebugModal'
 import ProxyPreviewModal, { type ProxyPreviewModalRef } from '../features/subscriptions/toolbox/ProxyPreviewModal'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../features/subscriptions/toolbox/ProxySubscribeEditor'
 import { RemoteSubscriptionPanel } from '../features/subscriptions/RemoteSubscriptionPanel'
-import { RestartChangeSummary, type RuntimePendingChange } from '../features/subscriptions/RestartChangeSummary'
 import { SubscriptionProfileDialog, type SubscriptionMode } from '../features/subscriptions/SubscriptionProfileDialog'
 
 type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; profile?: SubscriptionProfile; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
-type Notice = RuntimeActionNotice
-type Confirmation = 'refresh' | 'restart'
-type RuntimeStatusWithChanges = ManagedRuntimeStatus & { pending_changes: RuntimePendingChange[] }
+type Notice = { message: string; tone: 'success' | 'error' }
 
 export function Subscriptions() {
   const { t } = useI18n()
@@ -37,7 +33,7 @@ export function Subscriptions() {
   const [manifestURL, setManifestURL] = useState('')
   const [deleteProfile, setDeleteProfile] = useState<SubscriptionProfile | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const [refreshConfirmationOpen, setRefreshConfirmationOpen] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [format, setFormat] = useState<ProxyDebugFormat>('sing-box-v13')
   const previewRef = useRef<ProxyPreviewModalRef>(null)
@@ -48,12 +44,6 @@ export function Subscriptions() {
   const catalog = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<SubscriptionCatalogResponse>(session!, '/subscriptions') })
   const customNodes = useQuery({ queryKey: ['custom-nodes'], queryFn: () => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes') })
 	const networkInventory = useQuery({ queryKey: ['system', 'network'], queryFn: () => api<LinuxNetworkInventory>(session!, '/system/network') })
-  const runtimeStatus = useQuery({
-    queryKey: ['runtime', 'status'],
-    queryFn: () => api<RuntimeStatusWithChanges>(session!, '/runtime/status'),
-    refetchInterval: (query) => query.state.data?.pending || ['starting', 'stopping', 'restarting'].includes(query.state.data?.runtime_state || '') ? 1000 : false,
-  })
-  const acceptRuntimeAction = useRuntimeActionFeedback(runtimeStatus.data, setNotice)
   const profiles = useMemo(() => catalog.data?.profiles ?? [], [catalog.data?.profiles])
   const effectiveSelectedID = selectedID || catalog.data?.active_profile_id || profiles[0]?.id || ''
   const storedProfile = profiles.find((item) => item.id === effectiveSelectedID) ?? null
@@ -61,8 +51,6 @@ export function Subscriptions() {
   const currentEditorSaveState = editorSaveState.profileID === currentProfile?.id
     ? editorSaveState
     : { profileID: currentProfile?.id ?? '', dirty: false, saving: false }
-  const needsCoreRestart = Boolean(runtimeStatus.data?.pending)
-
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['subscriptions'] }),
@@ -139,23 +127,9 @@ export function Subscriptions() {
   const action = useMutation({
     mutationFn: ({ id, operation }: { id: string; operation: 'activate' | 'refresh' }) => api<SaveResponse>(session!, `/subscriptions/${id}/${operation}`, { method: 'POST' }),
     onSuccess: async (result, variables) => {
-      if (variables.operation === 'refresh') setConfirmation(null)
+      if (variables.operation === 'refresh') setRefreshConfirmationOpen(false)
       setNotice({ message: result.change.Message, tone: 'success' })
       await invalidate()
-    },
-    onError: (error) => setNotice({ message: error.message, tone: 'error' }),
-  })
-
-  const restart = useMutation({
-    mutationFn: () => api<{ action: string; status: ManagedRuntimeStatus }>(session!, '/runtime/restart', { method: 'POST' }),
-    onSuccess: async (result) => {
-      setConfirmation(null)
-      queryClient.setQueryData(['runtime', 'status'], result.status)
-      acceptRuntimeAction(result.status)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['system'] }),
-        queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }),
-      ])
     },
     onError: (error) => setNotice({ message: error.message, tone: 'error' }),
   })
@@ -228,14 +202,9 @@ export function Subscriptions() {
           <Button variant="primary" disabled={!currentProfile || currentProfile.mode === 'remote' || !currentEditorSaveState.dirty || currentEditorSaveState.saving} onClick={() => editorRef.current?.saveNow()}>
             {currentEditorSaveState.saving ? <Spinner /> : <SaveIcon size={16} />}{t('save')}
           </Button>
-          <Button disabled={!currentProfile || action.isPending} onClick={() => setConfirmation('refresh')}>
+          <Button disabled={!currentProfile || action.isPending} onClick={() => setRefreshConfirmationOpen(true)}>
             {action.isPending && action.variables?.operation === 'refresh' ? <Spinner /> : <RefreshCw size={16} />}{t('updateNow')}
           </Button>
-          <Tooltip title={needsCoreRestart ? t('configurationRestartRequired') : undefined}>
-            <Button disabled={restart.isPending} onClick={() => setConfirmation('restart')}>
-              {restart.isPending ? <Spinner /> : needsCoreRestart ? <CircleAlert className="text-amber-500" size={16} /> : <RotateCw size={16} />}{t('restartNow')}
-            </Button>
-          </Tooltip>
         </div>
       </PageTitle>
 
@@ -367,23 +336,15 @@ export function Subscriptions() {
         />
       ) : null}
       <ConfirmDialog
-        open={confirmation !== null}
-        title={t(confirmation === 'refresh' ? 'subscriptionUpdateConfirmTitle' : 'coreRestartConfirmTitle')}
-        detail={confirmation === 'refresh'
-          ? t(currentProfile?.mode === 'remote' ? 'remoteSubscriptionUpdateConfirmDetail' : 'subscriptionUpdateConfirmDetail').replace('{profile}', currentProfile?.name || t('defaultSubscriptionSet'))
-          : <RestartChangeSummary detail={t('coreRestartConfirmDetail')} changes={runtimeStatus.data ? runtimeStatus.data.pending_changes : []} />}
-        confirmLabel={t(confirmation === 'refresh' ? 'updateNow' : 'restartNow')}
+        open={refreshConfirmationOpen}
+        title={t('subscriptionUpdateConfirmTitle')}
+        detail={t(currentProfile?.mode === 'remote' ? 'remoteSubscriptionUpdateConfirmDetail' : 'subscriptionUpdateConfirmDetail').replace('{profile}', currentProfile?.name || t('defaultSubscriptionSet'))}
+        confirmLabel={t('updateNow')}
         cancelLabel={t('cancel')}
-        pending={confirmation === 'refresh' ? action.isPending : restart.isPending}
-        onCancel={() => {
-          if (!action.isPending && !restart.isPending) setConfirmation(null)
-        }}
+        pending={action.isPending}
+        onCancel={() => { if (!action.isPending) setRefreshConfirmationOpen(false) }}
         onConfirm={() => {
-          if (confirmation === 'refresh' && currentProfile) {
-            action.mutate({ id: currentProfile.id, operation: 'refresh' })
-          } else if (confirmation === 'restart') {
-            restart.mutate()
-          }
+          if (currentProfile) action.mutate({ id: currentProfile.id, operation: 'refresh' })
         }}
       />
     </div>
