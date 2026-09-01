@@ -25,6 +25,18 @@ impl DnsRuntimePolicy for TestPolicy {
     }
 }
 
+#[test]
+fn udp_listener_retries_transient_receive_errors() {
+    for kind in [
+        io::ErrorKind::ConnectionReset,
+        io::ErrorKind::ConnectionRefused,
+        io::ErrorKind::Interrupted,
+    ] {
+        assert!(retry_udp_receive(&io::Error::from(kind)), "{kind:?}");
+    }
+    assert!(!retry_udp_receive(&io::Error::from(io::ErrorKind::Other)));
+}
+
 async fn answering_upstream(count: usize, address: [u8; 4]) -> (String, JoinHandle<()>) {
     let upstream = UdpSocket::bind("127.0.0.1:0").await.expect("upstream");
     let socket_address = upstream.local_addr().expect("upstream address");

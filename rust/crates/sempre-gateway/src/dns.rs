@@ -1,4 +1,4 @@
-use std::{net::Ipv4Addr, sync::Arc, time::Duration};
+use std::{io, net::Ipv4Addr, sync::Arc, time::Duration};
 
 use chrono::Utc;
 use serde::Serialize;
@@ -386,7 +386,11 @@ async fn serve_udp(socket: UdpSocket, resolver: Resolver, mut shutdown: watch::R
             }
             Some(_) = requests.join_next(), if !requests.is_empty() => {}
             result = socket.recv_from(&mut buffer) => {
-                let Ok((count, peer)) = result else { return; };
+                let (count, peer) = match result {
+                    Ok(received) => received,
+                    Err(error) if retry_udp_receive(&error) => continue,
+                    Err(_) => return,
+                };
                 let request = buffer[..count].to_vec();
                 let socket = Arc::clone(&socket);
                 let resolver = resolver.clone();
@@ -397,6 +401,15 @@ async fn serve_udp(socket: UdpSocket, resolver: Resolver, mut shutdown: watch::R
             }
         }
     }
+}
+
+pub(crate) fn retry_udp_receive(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::Interrupted
+    )
 }
 
 async fn serve_tcp(listener: TcpListener, resolver: Resolver, mut shutdown: watch::Receiver<bool>) {
