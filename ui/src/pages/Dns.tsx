@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Input, InputNumber, Select, Switch, Table, Tabs, Tag, TextArea, type TableColumn } from '@acme/components'
+import { Alert, Button, Card, Input, InputNumber, Popover, Select, Switch, Table, Tabs, Tag, TextArea, type TableColumn } from '@acme/components'
 import type { DnsFrontendStatus, DnsRewrite, DnsSettings, DnsSettingsResponse } from '../features/dns/types'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -71,7 +71,7 @@ export function Dns() {
     { title: zh ? '域名' : 'Name', dataIndex: 'name', minWidth: 220 },
     { title: zh ? '类型' : 'Type', dataIndex: 'type', width: 80 },
     { title: zh ? '决策' : 'Decision', dataIndex: 'decision', width: 100, render: (value) => <Tag color={value === 'local' ? 'green' : value === 'rewrite' ? 'blue' : value === 'reject' || value === 'error' ? 'red' : 'orange'}>{String(value)}</Tag> },
-    { title: zh ? '应答' : 'Answers', dataIndex: 'answers', minWidth: 260, render: (value) => (value as string[]).join(', ') || '-' },
+    { title: zh ? '应答' : 'Answers', dataIndex: 'answers', width: 340, ellipsis: true, render: (value) => <DnsAnswerSummary answers={value as string[]} zh={zh} /> },
     { title: zh ? '上游' : 'Upstream', dataIndex: 'upstream', minWidth: 170 },
     { title: zh ? '耗时' : 'Latency', dataIndex: 'latency_ms', width: 90, render: (value) => `${value} ms` },
     { title: '', key: 'action', width: 60, render: (_value, item) => <Button size="small" variant="text" title={zh ? '添加重写' : 'Add rewrite'} onClick={() => setRewrite({ ...emptyRewrite(), domain: item.name.replace(/\.$/, ''), type: item.type === 'AAAA' ? 'AAAA' : 'A' })}><Plus size={14} /></Button> },
@@ -105,6 +105,22 @@ export function Dns() {
 
 function QueryLog({ filter, setFilter, rows, columns, clear, exporting, zh }: { filter: string; setFilter: (value: string) => void; rows: DnsQueryEvent[]; columns: Array<TableColumn<DnsQueryEvent>>; clear: () => void; exporting: () => void; zh: boolean }) {
   return <div className="space-y-3 pt-4"><div className="flex flex-wrap gap-2"><Input className="min-w-64 flex-1" value={filter} placeholder={zh ? '筛选域名、客户端、应答或原因' : 'Filter name, client, answer, or reason'} onChange={(event) => setFilter(event.target.value)} /><Button icon={<Download size={15} />} onClick={exporting}>{zh ? '导出' : 'Export'}</Button><Button danger icon={<Trash2 size={15} />} onClick={clear}>{zh ? '清空' : 'Clear'}</Button></div><Table<DnsQueryEvent> rowKey={(item) => `${item.time}-${item.client}-${item.name}`} size="middle" pagination={{ pageSize: 50 }} columns={columns} dataSource={rows} scroll={{ x: 1300 }} locale={{ emptyText: zh ? '暂无 DNS 查询' : 'No DNS queries' }} /></div>
+}
+
+function DnsAnswerSummary({ answers, zh }: { answers: string[]; zh: boolean }) {
+  if (!answers.length) return '-'
+  const targets = answerTargets(answers)
+  const summary = `${targets.slice(0, 2).join(', ')}${answers.length > 2 ? ` · ${zh ? `共 ${answers.length} 条` : `${answers.length} records`}` : ''}`
+  return <Popover trigger="click" placement="bottomLeft" fitViewport title={zh ? `完整应答（${answers.length} 条）` : `Full answers (${answers.length})`} popupClassName="z-[9999] max-w-3xl overflow-hidden rounded-lg border border-black/[0.06] bg-[var(--surface)] p-3 shadow-lg dark:border-white/[0.08]" content={<div className="max-h-80 space-y-1 overflow-auto font-mono text-xs leading-5">{answers.map((answer, index) => <div key={`${index}-${answer}`} className="break-all">{answer}</div>)}</div>}><Button size="small" variant="text" className="max-w-full !justify-start !px-1 font-mono font-normal" aria-label={`${zh ? '查看完整应答' : 'View full answers'}: ${summary}`}><span className="truncate">{summary}</span></Button></Popover>
+}
+
+function answerTargets(answers: string[]) {
+  const records = answers.map((answer, index) => {
+    const match = /\sIN\s([A-Z0-9]+)\s+(.+)$/i.exec(answer)
+    const type = match?.[1]?.toUpperCase()
+    return { index, priority: type === 'A' || type === 'AAAA' ? 0 : 1, value: (match?.[2] ?? answer).trim().replace(/\.$/, '') }
+  }).sort((left, right) => left.priority - right.priority || left.index - right.index)
+  return [...new Set(records.map((record) => record.value))]
 }
 
 function Rewrites({ current, rewrite, setRewrite, add, columns, zh }: { current: DnsSettings; rewrite: DnsRewrite; setRewrite: (value: DnsRewrite) => void; add: () => void; columns: Array<TableColumn<DnsRewrite>>; zh: boolean }) {
