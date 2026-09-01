@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
@@ -25,7 +25,42 @@ describe('Connections', () => {
     expect(screen.getByText('0 · ↓ 0 B · ↑ 0 B')).toBeInTheDocument()
     expect(await screen.findByText('No data')).toBeInTheDocument()
   })
+
+  it('sorts connections from sortable table headers without a dropdown', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      download_total: 300,
+      upload_total: 400,
+      connections: [
+        connection('older.example', 200, 100, '2026-09-01T01:00:00Z'),
+        connection('newer.example', 100, 300, '2026-09-01T02:00:00Z'),
+      ],
+    })))
+    renderConnections()
+
+    expect(await screen.findByText('newer.example')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(connectionHosts()).toEqual(['older.example', 'newer.example'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
+    expect(connectionHosts()).toEqual(['newer.example', 'older.example'])
+    expect(screen.getByRole('columnheader', { name: 'Upload' })).toHaveAttribute('aria-sort', 'descending')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
+    expect(connectionHosts()).toEqual(['older.example', 'newer.example'])
+    expect(screen.getByRole('columnheader', { name: 'Upload' })).toHaveAttribute('aria-sort', 'ascending')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Started' }))
+    expect(connectionHosts()).toEqual(['newer.example', 'older.example'])
+  })
 })
+
+function connection(host: string, download: number, upload: number, start: string) {
+  return { id: host, metadata: { host, destination_port: '443', network: 'tcp' }, chains: [], download, upload, start }
+}
+
+function connectionHosts() {
+  return screen.getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell')[0].textContent).map((value) => value?.replace('443 · tcp', '') || '')
+}
 
 function renderConnections() {
   return render(
