@@ -5,7 +5,7 @@ import { Button, Card, Empty, Table, Tag, type TableColumn } from '@acme/compone
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import type { NetworkTestReport, NetworkTestResult } from '../lib/types'
+import type { IpMetadata, NetworkTestReport, NetworkTestResult } from '../lib/types'
 
 const defaultResults: NetworkTestResult[] = [
   { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: false, latency_ms: 0 },
@@ -25,8 +25,10 @@ export function NetworkTest() {
   const results = report.data?.results.length ? report.data.results : defaultResults
   const okResults = results.filter((item) => item.ok)
   const averageRequestDuration = okResults.length ? Math.round(okResults.reduce((sum, item) => sum + item.latency_ms, 0) / okResults.length) : 0
-  const domesticIP = results.find((item) => item.id === 'domestic-ip')?.ip || '-'
-  const foreignIP = results.find((item) => item.id === 'foreign-ip')?.ip || '-'
+  const domesticResult = results.find((item) => item.id === 'domestic-ip')
+  const foreignResult = results.find((item) => item.id === 'foreign-ip')
+  const domesticIP = domesticResult?.ip || '-'
+  const foreignIP = foreignResult?.ip || '-'
   const columns = useMemo<Array<TableColumn<NetworkTestResult>>>(() => [
     {
       title: t('networkTarget'),
@@ -58,8 +60,8 @@ export function NetworkTest() {
     {
       title: t('ipAddress'),
       dataIndex: 'ip',
-      width: 180,
-      render: (value) => report.isFetching && !report.data ? '-' : value || '-',
+      width: 280,
+      render: (_value, record) => report.isFetching && !report.data ? '-' : <IpAddress result={record} />,
     },
     {
       title: t('details'),
@@ -77,8 +79,8 @@ export function NetworkTest() {
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       <Metric icon={CheckCircle2} label={t('reachable')} value={`${okResults.length}/${results.length}`} tone="green" />
       <Metric icon={Clock3} label={t('averageRequestDuration')} value={averageRequestDuration ? `${averageRequestDuration} ms` : '-'} tone="amber" />
-      <Metric icon={Activity} label={t('domesticIP')} value={domesticIP} tone="cyan" />
-      <Metric icon={Globe2} label={t('foreignIP')} value={foreignIP} tone="blue" />
+      <Metric icon={Activity} label={t('domesticIP')} value={domesticIP} detail={formatIpMetadata(domesticResult?.ip_metadata)} tone="cyan" />
+      <Metric icon={Globe2} label={t('foreignIP')} value={foreignIP} detail={formatIpMetadata(foreignResult?.ip_metadata)} tone="blue" />
     </div>
     <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
       <Table<NetworkTestResult>
@@ -94,12 +96,29 @@ export function NetworkTest() {
   </div>
 }
 
-function Metric({ icon: Icon, label, value, tone }: { icon: typeof Activity; label: string; value: string; tone: 'green' | 'amber' | 'cyan' | 'blue' }) {
+function IpAddress({ result }: { result: NetworkTestResult }) {
+  if (!result.ip) return '-'
+  const metadata = formatIpMetadata(result.ip_metadata)
+  return <div className="min-w-0"><p className="font-medium tabular-nums">{result.ip}</p>{metadata ? <p className="mt-1 truncate text-xs text-[var(--muted)]" title={metadata}>{metadata}</p> : null}</div>
+}
+
+function formatIpMetadata(metadata?: IpMetadata) {
+  if (!metadata) return ''
+  const location = unique([metadata.country, metadata.region, metadata.city]).join(' · ')
+  const networkName = metadata.isp || metadata.organization || metadata.asn_organization
+  return unique([location, networkName, metadata.asn ? `AS${metadata.asn}` : undefined]).join(' · ')
+}
+
+function unique(values: Array<string | undefined>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))]
+}
+
+function Metric({ icon: Icon, label, value, detail, tone }: { icon: typeof Activity; label: string; value: string; detail?: string; tone: 'green' | 'amber' | 'cyan' | 'blue' }) {
   const colors = {
     green: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     amber: 'bg-amber-500/12 text-amber-700 dark:text-amber-400',
     cyan: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400',
     blue: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
   }
-  return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><span className={`grid size-8 place-items-center rounded-md ${colors[tone]}`}><Icon size={17} /></span><p className="mt-5 truncate text-xs text-[var(--muted)]">{label}</p><p className="mt-1 truncate text-lg font-semibold tabular-nums" title={value}>{value}</p></Card>
+  return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><span className={`grid size-8 place-items-center rounded-md ${colors[tone]}`}><Icon size={17} /></span><p className="mt-5 truncate text-xs text-[var(--muted)]">{label}</p><p className="mt-1 truncate text-lg font-semibold tabular-nums" title={value}>{value}</p>{detail ? <p className="mt-1 truncate text-xs text-[var(--muted)]" title={detail}>{detail}</p> : null}</Card>
 }

@@ -2,7 +2,7 @@ mod inventory;
 mod probe;
 
 pub use inventory::{Interface, Inventory, inventory};
-pub use probe::{NetworkTestReport, NetworkTestResult, run_network_test};
+pub use probe::{IpMetadata, NetworkTestReport, NetworkTestResult, run_network_test};
 
 use std::io;
 

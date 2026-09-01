@@ -2314,6 +2314,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

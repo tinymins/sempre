@@ -10,8 +10,8 @@ const report = {
   results: [
     { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: true, latency_ms: 42, http_status: 200 },
     { id: 'google', name: 'Google', region: 'foreign', category: 'reachability', url: 'https://www.google.com/generate_204', ok: false, latency_ms: 8000, http_status: 0, detail: 'context deadline exceeded' },
-    { id: 'domestic-ip', name: 'Domestic IP', region: 'domestic', category: 'ip', url: 'https://ip.3322.net', ok: true, latency_ms: 38, http_status: 200, ip: '183.131.177.101' },
-    { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: true, latency_ms: 128, http_status: 200, ip: '144.34.229.119' },
+    { id: 'domestic-ip', name: 'Domestic IP', region: 'domestic', category: 'ip', url: 'https://ip.3322.net', ok: true, latency_ms: 38, http_status: 200, ip: '183.131.177.101', ip_metadata: { country: 'China', region: 'Zhejiang', city: 'Hangzhou', isp: 'China Telecom', asn: 4134 } },
+    { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: true, latency_ms: 128, http_status: 200, ip: '144.34.229.119', ip_metadata: { country: 'United States', region: 'California', city: 'Los Angeles', asn_organization: 'Cloudflare, Inc.', asn: 13335 } },
   ],
 }
 
@@ -43,6 +43,8 @@ describe('NetworkTest', () => {
     expect(screen.getAllByText('Loading...')).toHaveLength(4)
     expect(await screen.findAllByText('183.131.177.101')).toHaveLength(2)
     expect(screen.getAllByText('144.34.229.119')).toHaveLength(2)
+    expect(screen.getAllByText('China · Zhejiang · Hangzhou · China Telecom · AS4134')).toHaveLength(2)
+    expect(screen.getAllByText('United States · California · Los Angeles · Cloudflare, Inc. · AS13335')).toHaveLength(2)
     expect(screen.getByText('context deadline exceeded')).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/network/test', expect.objectContaining({ method: 'POST' }))
 
