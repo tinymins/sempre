@@ -95,24 +95,6 @@ type ParseResponse = fn(&[u8]) -> Result<String, String>;
 
 const PROBES: [Probe; 7] = [
     Probe {
-        id: "baidu",
-        name: "Baidu",
-        region: "domestic",
-        category: "reachability",
-        url: "https://www.baidu.com/",
-        success: status_2xx_3xx,
-        parse: None,
-    },
-    Probe {
-        id: "google",
-        name: "Google",
-        region: "foreign",
-        category: "reachability",
-        url: "https://www.google.com/generate_204",
-        success: status_204,
-        parse: None,
-    },
-    Probe {
         id: "domestic-ip",
         name: "Domestic IP",
         region: "domestic",
@@ -129,6 +111,24 @@ const PROBES: [Probe; 7] = [
         url: "https://api64.ipify.org?format=json",
         success: status_2xx_3xx,
         parse: Some(parse_json_ip),
+    },
+    Probe {
+        id: "baidu",
+        name: "Baidu",
+        region: "domestic",
+        category: "reachability",
+        url: "https://www.baidu.com/",
+        success: status_2xx_3xx,
+        parse: None,
+    },
+    Probe {
+        id: "google",
+        name: "Google",
+        region: "foreign",
+        category: "reachability",
+        url: "https://www.google.com/generate_204",
+        success: status_204,
+        parse: None,
     },
     Probe {
         id: "openai",
@@ -379,6 +379,22 @@ fn normalize_ip(value: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn probe_order_prioritizes_public_ips() {
+        assert_eq!(
+            PROBES.map(|probe| probe.id),
+            [
+                "domestic-ip",
+                "foreign-ip",
+                "baidu",
+                "google",
+                "openai",
+                "youtube",
+                "github",
+            ]
+        );
+    }
 
     #[test]
     fn parses_text_and_json_ip_responses() {
