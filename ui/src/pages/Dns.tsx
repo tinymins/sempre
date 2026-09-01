@@ -1,47 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Input, InputNumber, Select, Switch, Table, Tabs, Tag, type TableColumn } from '@acme/components'
+import { Alert, Button, Card, Input, InputNumber, Select, Switch, Table, Tabs, Tag, TextArea, type TableColumn } from '@acme/components'
+import type { DnsFrontendStatus, DnsRewrite, DnsSettings, DnsSettingsResponse } from '../features/dns/types'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-
-interface DnsRewrite {
-  id: string
-  enabled: boolean
-  domain: string
-  type: string
-  answer: string
-  ttl: number
-  comment: string
-}
-
-interface DnsSettings {
-  schema: number
-  revision: number
-  enabled: boolean
-  reject_https: boolean
-  rewrites: DnsRewrite[]
-  query_log_enabled: boolean
-  query_log_max_entries: number
-}
-
-interface DnsFrontendStatus {
-  enabled: boolean
-  running: boolean
-  core_dns_healthy: boolean
-  mode: string
-  core_upstream: string
-  original_upstreams: string[]
-  domestic_domain_source: string
-  domestic_domain_count: number
-  last_error?: string
-}
-
-interface DnsSettingsResponse {
-  settings: DnsSettings
-  status: DnsFrontendStatus
-}
 
 interface DnsQueryEvent {
   time: number
@@ -148,7 +112,15 @@ function Rewrites({ current, rewrite, setRewrite, add, columns, zh }: { current:
 }
 
 function Settings({ current, setDraft, status, zh }: { current: DnsSettings; setDraft: (value: DnsSettings) => void; status?: DnsFrontendStatus; zh: boolean }) {
-  return <div className="space-y-5 pt-4"><div className="grid gap-3 md:grid-cols-4"><Metric label={zh ? '前置 DNS' : 'DNS frontend'} value={status?.running ? (zh ? '运行中' : 'Running') : status?.enabled ? (zh ? '待启动' : 'Pending') : (zh ? '未启用' : 'Disabled')} /><Metric label={zh ? '核心 DNS 模式' : 'Core DNS mode'} value={status?.mode || '-'} /><Metric label={zh ? '核心 DNS' : 'Core DNS'} value={status?.core_dns_healthy ? (zh ? '正常' : 'Healthy') : '-'} /><Metric label={zh ? '国内域名规则' : 'Domestic domains'} value={String(status?.domestic_domain_count ?? 0)} /></div>{status?.last_error ? <Alert type="error" showIcon message={status.last_error} /> : null}<div className="grid gap-3 md:grid-cols-2"><SettingSwitch title={zh ? '启用前置 DNS' : 'Enable DNS frontend'} detail={zh ? '国内域名使用原始 DNS，其余查询进入当前核心。' : 'Resolve domestic domains through the original DNS and send the rest to the active core.'} checked={current.enabled} onChange={(enabled) => setDraft({ ...current, enabled })} /><SettingSwitch title={zh ? '前置层拒绝 HTTPS 记录' : 'Reject HTTPS records at frontend'} detail={zh ? '仅影响前置层，不修改当前 Profile 的核心 DNS 设置。' : 'Affects only the frontend and does not modify the active profile DNS.'} checked={current.reject_https} onChange={(reject_https) => setDraft({ ...current, reject_https })} /><SettingSwitch title={zh ? '记录 DNS 查询' : 'Record DNS queries'} checked={current.query_log_enabled} onChange={(query_log_enabled) => setDraft({ ...current, query_log_enabled })} /><label className="flex items-center gap-3 rounded-md border border-[var(--border)] p-3 text-sm"><span className="flex-1">{zh ? '最多保留条数' : 'Maximum entries'}</span><InputNumber min={100} max={20000} value={current.query_log_max_entries} onChange={(query_log_max_entries) => setDraft({ ...current, query_log_max_entries: query_log_max_entries ?? 2000 })} /></label></div><div className="rounded-md border border-[var(--border)] p-3 text-xs leading-5 text-[var(--muted)]"><div>{zh ? '核心入口：' : 'Core upstream: '}{status?.core_upstream || '-'}</div><div>{zh ? '原始 DNS：' : 'Original DNS: '}{status?.original_upstreams?.join(', ') || '-'}</div><div>{zh ? '国内规则：' : 'Domestic source: '}{status?.domestic_domain_source || '-'}</div></div></div>
+  const automatic = current.direct_upstreams.length === 0
+  const captured = status?.original_upstreams ?? []
+  const useAutomatic = (enabled: boolean) => setDraft({ ...current, direct_upstreams: enabled ? [] : captured.length ? captured.map(dnsEndpoint) : [''] })
+  return <div className="space-y-5 pt-4"><div className="grid gap-3 md:grid-cols-4"><Metric label={zh ? '前置 DNS' : 'DNS frontend'} value={status?.running ? (zh ? '运行中' : 'Running') : status?.enabled ? (zh ? '待启动' : 'Pending') : (zh ? '未启用' : 'Disabled')} /><Metric label={zh ? '核心 DNS 模式' : 'Core DNS mode'} value={status?.mode || '-'} /><Metric label={zh ? '核心 DNS' : 'Core DNS'} value={status?.core_dns_healthy ? (zh ? '正常' : 'Healthy') : '-'} /><Metric label={zh ? '国内域名规则' : 'Domestic domains'} value={String(status?.domestic_domain_count ?? 0)} /></div>{status?.last_error ? <Alert type="error" showIcon message={status.last_error} /> : null}<div className="grid gap-3 md:grid-cols-2"><SettingSwitch title={zh ? '启用前置 DNS' : 'Enable DNS frontend'} detail={zh ? '直连规则使用直连 DNS，其余查询进入当前核心。' : 'Resolve direct rules through direct DNS and send the rest to the active core.'} checked={current.enabled} onChange={(enabled) => setDraft({ ...current, enabled })} /><SettingSwitch title={zh ? '前置层拒绝 HTTPS 记录' : 'Reject HTTPS records at frontend'} detail={zh ? '仅影响前置层，不修改当前 Profile 的核心 DNS 设置。' : 'Affects only the frontend and does not modify the active profile DNS.'} checked={current.reject_https} onChange={(reject_https) => setDraft({ ...current, reject_https })} /><SettingSwitch title={zh ? '记录 DNS 查询' : 'Record DNS queries'} checked={current.query_log_enabled} onChange={(query_log_enabled) => setDraft({ ...current, query_log_enabled })} /><label className="flex items-center gap-3 rounded-md border border-[var(--border)] p-3 text-sm"><span className="flex-1">{zh ? '最多保留条数' : 'Maximum entries'}</span><InputNumber min={100} max={20000} value={current.query_log_max_entries} onChange={(query_log_max_entries) => setDraft({ ...current, query_log_max_entries: query_log_max_entries ?? 2000 })} /></label></div><div className="space-y-3 rounded-md border border-[var(--border)] p-4"><SettingSwitch title={zh ? '自动使用原始 DNS' : 'Use original DNS automatically'} detail={zh ? '开启时使用接管前从系统网卡捕获的 DNS。关闭后使用下面的直连上游。' : 'Use DNS captured from the system adapter before takeover. Turn off to configure direct upstreams below.'} checked={automatic} onChange={useAutomatic} />{!automatic ? <label className="block text-sm"><span className="mb-2 block font-medium">{zh ? '直连 DNS 上游' : 'Direct DNS upstreams'}</span><TextArea rows={4} value={current.direct_upstreams.join('\n')} placeholder={'223.5.5.5:53\n119.29.29.29:53'} onChange={(event) => setDraft({ ...current, direct_upstreams: event.target.value.split(/[,\n]/).map((value) => value.trim()).filter(Boolean) })} /><span className="mt-1 block text-xs text-[var(--muted)]">{zh ? '每行一个 IP:端口，用于内置国内规则和自定义直连规则。' : 'One IP:port per line, used by built-in domestic rules and custom direct rules.'}</span></label> : null}</div><div className="rounded-md border border-[var(--border)] p-3 text-xs leading-5 text-[var(--muted)]"><div>{zh ? '核心入口：' : 'Core upstream: '}{status?.core_upstream || '-'}</div><div>{zh ? '当前直连上游：' : 'Active direct upstreams: '}{status?.direct_upstreams?.join(', ') || (automatic ? (zh ? '重启核心后自动获取' : 'Captured on next core start') : '-')}</div><div>{zh ? '原始 DNS（只读）：' : 'Original DNS (read-only): '}{captured.join(', ') || '-'}</div><div>{zh ? '国内规则：内置 domains-min' : 'Domestic rules: built-in domains-min'}</div></div></div>
+}
+
+function dnsEndpoint(value: string) {
+  if (value.includes(':') && !value.startsWith('[')) return `[${value}]:53`
+  return `${value}:53`
 }
 
 function SettingSwitch({ title, detail, checked, onChange }: { title: string; detail?: string; checked: boolean; onChange: (value: boolean) => void }) { return <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] p-3"><div><div className="text-sm font-medium">{title}</div>{detail ? <div className="mt-1 text-xs text-[var(--muted)]">{detail}</div> : null}</div><Switch checked={checked} onChange={onChange} /></div> }

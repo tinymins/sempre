@@ -260,7 +260,7 @@ impl Resolver {
             "rewrite"
         } else if detail == "https-rejected" {
             "reject"
-        } else if detail.contains("local") || detail == "rule-set:explicit-direct" {
+        } else if detail.contains("local") || self.config.local_upstreams.contains(&upstream) {
             "local"
         } else if detail == "error" {
             "error"

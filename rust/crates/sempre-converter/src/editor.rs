@@ -34,6 +34,7 @@ pub(super) fn apply(input: &Profile) -> Result<Profile, CompileError> {
                         outbound: outbound.clone(),
                         format: item.format,
                         behavior: item.behavior,
+                        priority: false,
                     })
             })
             .collect();

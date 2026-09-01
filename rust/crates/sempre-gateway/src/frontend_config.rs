@@ -9,13 +9,13 @@ impl DnsConfig {
         listen_port: u16,
         local_upstreams: Vec<String>,
         remote_upstream: String,
+        mut rule_sets: Vec<DnsRuleSet>,
     ) -> Result<Self, GatewayError> {
         if local_upstreams.is_empty() {
             return Err(GatewayError::invalid(
                 "managed DNS frontend requires at least one original DNS upstream",
             ));
         }
-        let mut rule_sets = Vec::new();
         push_inline_rules(
             &mut rule_sets,
             "domestic-domains",
@@ -69,6 +69,7 @@ mod tests {
             1054,
             vec!["192.0.2.53:53".into()],
             "127.0.0.1:1053".into(),
+            Vec::new(),
         )
         .expect("managed frontend");
         assert_eq!(config.listen_port, 1054);
@@ -87,12 +88,16 @@ mod tests {
 
     #[test]
     fn requires_usable_upstreams() {
-        assert!(DnsConfig::managed_frontend(1054, Vec::new(), "127.0.0.1:1053".into(),).is_err());
+        assert!(
+            DnsConfig::managed_frontend(1054, Vec::new(), "127.0.0.1:1053".into(), Vec::new(),)
+                .is_err()
+        );
         assert!(
             DnsConfig::managed_frontend(
                 1054,
                 vec!["223.5.5.5:not-a-port".into()],
                 "127.0.0.1:1053".into(),
+                Vec::new(),
             )
             .is_err()
         );

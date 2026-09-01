@@ -317,6 +317,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 &policy,
                 &system_dns.original_upstreams,
                 system_dns.listen_port,
+                &self.dns_settings.read(),
             )?)
         } else {
             None

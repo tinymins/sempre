@@ -89,7 +89,8 @@ async fn debug_query_exchanges_with_the_selected_udp_upstream() {
 async fn managed_frontend_routes_only_domestic_domains_before_the_core() {
     let (local, local_task) = answering_upstream(1, [10, 0, 0, 1]).await;
     let (remote, remote_task) = answering_upstream(1, [198, 18, 0, 1]).await;
-    let config = DnsConfig::managed_frontend(1054, vec![local], remote).expect("managed frontend");
+    let config = DnsConfig::managed_frontend(1054, vec![local], remote, Vec::new())
+        .expect("managed frontend");
     for (name, answer, detail) in [
         ("baidu.com", "10.0.0.1", "rule-set:domestic-domains"),
         ("github.com", "198.18.0.1", "default-remote"),
@@ -101,6 +102,34 @@ async fn managed_frontend_routes_only_domestic_domains_before_the_core() {
         assert_eq!(result.detail, detail);
     }
     local_task.await.expect("local responder");
+    remote_task.await.expect("remote responder");
+}
+
+#[tokio::test]
+async fn custom_rule_sets_override_the_bundled_domestic_rule_set() {
+    let (local, local_task) = answering_upstream(1, [10, 0, 0, 1]).await;
+    let (remote, remote_task) = answering_upstream(1, [198, 18, 0, 1]).await;
+    let config = DnsConfig::managed_frontend(
+        1054,
+        vec![local],
+        remote.clone(),
+        vec![crate::DnsRuleSet {
+            id: "proxy-baidu".into(),
+            name: "Proxy Baidu".into(),
+            enabled: true,
+            kind: "inline".into(),
+            url: String::new(),
+            rules: vec!["domain,baidu.com".into()],
+            upstream: "remote".into(),
+        }],
+    )
+    .expect("managed frontend");
+    let result = debug_query(config, "baidu.com", "A")
+        .await
+        .expect("debug query");
+    assert_eq!(result.upstream, remote);
+    assert!(result.answers[0].ends_with("A 198.18.0.1"));
+    local_task.abort();
     remote_task.await.expect("remote responder");
 }
 

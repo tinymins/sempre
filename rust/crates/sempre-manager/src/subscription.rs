@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use sempre_converter::{
     CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, SourceSnapshot, Target,
-    apply_dns_frontend_settings, compile, dns_frontend_policy, parse_subscription,
+    apply_dns_frontend_settings, compile_with_overlay, dns_frontend_policy, parse_subscription,
 };
 use sempre_state::{ConfigBuild, Document, PendingConfigField};
 use sempre_subscription::{Catalog, SubscriptionError};
@@ -180,7 +180,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let build = config_build(
             &rendered.updated,
             &rendered.target,
-            self.dns_settings.read().enabled,
+            &self.dns_settings.read(),
         )?;
         self.save_optional_dns_frontend_policy(
             &rendered.render.artifact_hash,
@@ -241,7 +241,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let catalog = self.subscriptions.read()?;
         let profile = find_profile(&catalog, id)?;
         let (target, _) = self.subscription_target(&document)?;
-        let expected = config_build(profile, &target, self.dns_settings.read().enabled)?;
+        let expected = config_build(profile, &target, &self.dns_settings.read())?;
         if document
             .selected
             .as_ref()
@@ -269,7 +269,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let Ok((target, _)) = self.subscription_target(document) else {
             return false;
         };
-        config_build(profile, &target, self.dns_settings.read().enabled)
+        config_build(profile, &target, &self.dns_settings.read())
             .is_ok_and(|expected| document.config_builds.get(&selected.core) != Some(&expected))
     }
 
@@ -300,13 +300,15 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         refresh: bool,
     ) -> Result<RenderedProfile, ManagerError> {
         if profile_mode(profile) == "remote" {
-            let remote = self.remote.render(profile, &target).await?;
+            let mut remote = self.remote.render(profile, &target).await?;
             validate_runtime_profile(&remote.profile)?;
-            let runtime_profile = apply_dns_frontend_settings(
-                &remote.profile,
-                &target,
-                self.dns_settings.read().enabled,
-            )?;
+            let dns_settings = self.dns_settings.read();
+            if dns_settings.enabled && target.core == "sing-box" {
+                remote.content = dns_settings.apply_compiled_sing_box_overlay(&remote.content)?;
+                remote.artifact_hash = format!("{:x}", Sha256::digest(remote.content.as_bytes()));
+            }
+            let runtime_profile =
+                apply_dns_frontend_settings(&remote.profile, &target, dns_settings.enabled)?;
             let dns_frontend_policy = dns_frontend_policy(&runtime_profile, &target)?;
             let warnings = adapter_warnings.drain(..).chain(remote.warnings).collect();
             return Ok(RenderedProfile {
@@ -349,17 +351,25 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .await?;
         snapshots.extend(provider_snapshots);
         adapter_warnings.extend(provider_warnings);
-        let compile_profile =
-            apply_dns_frontend_settings(&updated, &target, self.dns_settings.read().enabled)?;
+        let dns_settings = self.dns_settings.read();
+        let compile_profile = apply_dns_frontend_settings(&updated, &target, dns_settings.enabled)?;
+        let overlay = if dns_settings.enabled && target.core == "sing-box" {
+            dns_settings.routing_overlay(&mut snapshots)
+        } else {
+            sempre_converter::CompileOverlay::default()
+        };
         let dns_frontend_policy = dns_frontend_policy(&compile_profile, &target)?;
         adapter_warnings.extend(dns_frontend_policy.warnings.iter().cloned());
-        let compiled = compile(&CompileRequest {
-            protocol: 1,
-            profile: compile_profile,
-            snapshots,
-            custom_nodes: catalog.custom_nodes.clone(),
-            target: target.clone(),
-        })?;
+        let compiled = compile_with_overlay(
+            &CompileRequest {
+                protocol: 1,
+                profile: compile_profile,
+                snapshots,
+                custom_nodes: catalog.custom_nodes.clone(),
+                target: target.clone(),
+            },
+            &overlay,
+        )?;
         Ok(RenderedProfile {
             render: local_render(compiled, std::mem::take(adapter_warnings)),
             updated,
@@ -462,9 +472,9 @@ fn validate_runtime_profile(profile: &Profile) -> Result<(), ManagerError> {
 pub(crate) fn config_build(
     profile: &Profile,
     target: &Target,
-    dns_frontend_enabled: bool,
+    dns_settings: &crate::DnsSettings,
 ) -> Result<ConfigBuild, ManagerError> {
-    let dns_frontend_enabled = dns_frontend_enabled
+    let dns_frontend_enabled = dns_settings.enabled
         && target.core == "sing-box"
         && matches!(target.platform.as_str(), "windows" | "macos");
     Ok(ConfigBuild {
@@ -474,15 +484,23 @@ pub(crate) fn config_build(
             "{}|{}|{}|front-dns:{dns_frontend_enabled}",
             target.format, target.version, target.platform
         ),
-        runtime_key: Some(runtime_key(profile)?),
+        runtime_key: Some(runtime_key(profile, dns_settings)?),
     })
 }
 
-fn runtime_key(profile: &Profile) -> Result<String, ManagerError> {
+fn runtime_key(
+    profile: &Profile,
+    dns_settings: &crate::DnsSettings,
+) -> Result<String, ManagerError> {
     let value = json!({
         "transparent_proxy": profile.transparent_proxy,
         "local_proxy": profile.local_proxy,
         "management_api": profile.management_api,
+        "dns_frontend": {
+            "enabled": dns_settings.enabled,
+            "direct_upstreams": dns_settings.direct_upstreams,
+            "rule_sets": dns_settings.rule_sets,
+        },
     });
     let data = serde_json::to_vec(&canonical(value)).map_err(|error| {
         SubscriptionError::Invalid(format!("encode profile runtime settings: {error}"))

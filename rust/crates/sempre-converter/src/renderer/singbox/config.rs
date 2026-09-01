@@ -60,6 +60,16 @@ pub(super) fn route(
     }
     rules.extend(private.route_rules.iter().cloned());
     rules.push(json!({ "ip_is_private": true, "outbound": "direct" }));
+    append_rule_providers(
+        profile
+            .rule_providers
+            .iter()
+            .filter(|provider| provider.priority),
+        &snapshots,
+        final_outbound,
+        &mut rule_sets,
+        &mut rules,
+    );
     for value in &profile.rules {
         if value.is_object() {
             rules.push(value.clone());
@@ -80,7 +90,35 @@ pub(super) fn route(
     if let Some(rule) = dns_route {
         rules.push(rule);
     }
-    for provider in &profile.rule_providers {
+    append_rule_providers(
+        profile
+            .rule_providers
+            .iter()
+            .filter(|provider| !provider.priority),
+        &snapshots,
+        final_outbound,
+        &mut rule_sets,
+        &mut rules,
+    );
+    let mut route = json!({ "rules": rules, "rule_set": rule_sets, "final": final_outbound });
+    if target.version != "11" {
+        route["default_domain_resolver"] =
+            json!({ "server": "bootstrap", "strategy": "ipv4_only" });
+    }
+    if target.platform != "default" || profile.transparent_proxy.mode == "tun-router" {
+        route["auto_detect_interface"] = json!(true);
+    }
+    route
+}
+
+fn append_rule_providers<'a>(
+    providers: impl Iterator<Item = &'a crate::RuleProvider>,
+    snapshots: &HashMap<&str, &str>,
+    final_outbound: &str,
+    rule_sets: &mut Vec<Value>,
+    rules: &mut Vec<Value>,
+) {
+    for provider in providers {
         let snapshot_id = rule_provider_snapshot_id(&provider.tag);
         if let Some(content) = snapshots.get(snapshot_id.as_str())
             && let Some(inline) = crate::rule_set::inline_rules(content)
@@ -96,15 +134,6 @@ pub(super) fn route(
         }
         rules.push(json!({ "rule_set": [provider.tag], "outbound": if provider.outbound.is_empty() { final_outbound } else { normalize_outbound(&provider.outbound) } }));
     }
-    let mut route = json!({ "rules": rules, "rule_set": rule_sets, "final": final_outbound });
-    if target.version != "11" {
-        route["default_domain_resolver"] =
-            json!({ "server": "bootstrap", "strategy": "ipv4_only" });
-    }
-    if target.platform != "default" || profile.transparent_proxy.mode == "tun-router" {
-        route["auto_detect_interface"] = json!(true);
-    }
-    route
 }
 
 fn final_outbound(profile: &Profile) -> &str {

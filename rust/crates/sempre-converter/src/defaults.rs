@@ -275,6 +275,7 @@ fn provider(tag: &str, outbound: &str, url: &str) -> RuleProvider {
         outbound: outbound.into(),
         format: String::new(),
         behavior: String::new(),
+        priority: false,
     }
 }
 

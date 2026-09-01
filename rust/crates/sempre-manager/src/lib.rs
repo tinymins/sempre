@@ -7,6 +7,7 @@ mod context;
 mod custom_node;
 mod direct;
 mod dns_frontend;
+mod dns_routing;
 mod dns_runtime;
 mod dns_settings;
 mod error;
@@ -43,6 +44,7 @@ pub use auto_config::{
 };
 pub use config::{CurrentConfig, MAX_CONFIG_SIZE};
 pub use context::{ConfigurationContext, ConfigurationTarget, RunningCore};
+pub use dns_routing::{DnsRoutingDomain, DnsRoutingRuleSet};
 pub use dns_runtime::DnsFrontendStatus;
 pub use dns_settings::DnsSettings;
 pub use error::ManagerError;

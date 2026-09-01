@@ -16,9 +16,9 @@ pub use defaults::{
 pub use domain_policy::{DnsFrontendPolicy, apply_dns_frontend_settings, dns_frontend_policy};
 pub use inspection::{PreviewNode, preview_nodes, preview_proxy, trace_node_steps};
 pub use model::{
-    CompileRequest, CompileResult, CustomNode, Diagnostic, EbpfConfig, EditorConfig, FieldDiff,
-    LocalProxy, ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source, SourceSnapshot,
-    TProxyConfig, TransparentProxy, TunConfig,
+    CompileOverlay, CompileRequest, CompileResult, CustomNode, Diagnostic, EbpfConfig,
+    EditorConfig, FieldDiff, LocalProxy, ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider,
+    Source, SourceSnapshot, TProxyConfig, TransparentProxy, TunConfig,
 };
 pub use parser::{ParseResult, parse_subscription};
 pub use rule_set::{convert_clash_rule_set, rule_provider_has_rules, rule_provider_snapshot_id};
@@ -50,8 +50,16 @@ pub enum CompileError {
 }
 
 pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> {
+    compile_with_overlay(request, &CompileOverlay::default())
+}
+
+pub fn compile_with_overlay(
+    request: &CompileRequest,
+    overlay: &CompileOverlay,
+) -> Result<CompileResult, CompileError> {
     let target = normalized_target(&request.target)?;
-    let profile = prepare_profile(&request.profile, &target)?;
+    let mut profile = prepare_profile(&request.profile, &target)?;
+    apply_compile_overlay(&mut profile, overlay)?;
     let snapshots: HashMap<&str, &SourceSnapshot> = request
         .snapshots
         .iter()
@@ -142,6 +150,43 @@ pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> 
         diagnostics,
         runtime_validated: false,
     })
+}
+
+fn apply_compile_overlay(
+    profile: &mut Profile,
+    overlay: &CompileOverlay,
+) -> Result<(), CompileError> {
+    for group in &overlay.groups {
+        if profile
+            .groups
+            .iter()
+            .any(|existing| existing.name == group.name)
+        {
+            return Err(CompileError::Render(format!(
+                "managed proxy group {:?} conflicts with the profile",
+                group.name
+            )));
+        }
+    }
+    for provider in &overlay.rule_providers {
+        if profile
+            .rule_providers
+            .iter()
+            .any(|existing| existing.tag == provider.tag)
+        {
+            return Err(CompileError::Render(format!(
+                "managed rule provider {:?} conflicts with the profile",
+                provider.tag
+            )));
+        }
+    }
+    let mut groups = overlay.groups.clone();
+    groups.append(&mut profile.groups);
+    profile.groups = groups;
+    let mut providers = overlay.rule_providers.clone();
+    providers.append(&mut profile.rule_providers);
+    profile.rule_providers = providers;
+    Ok(())
 }
 
 pub fn prepare_profile(profile: &Profile, target: &Target) -> Result<Profile, CompileError> {

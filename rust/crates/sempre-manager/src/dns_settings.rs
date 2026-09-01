@@ -14,15 +14,19 @@ use sempre_gateway::{DnsQueryEvent, DnsRewrite, DnsRuntimePolicy};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ManagerError;
+use crate::{DnsRoutingRuleSet, ManagerError};
 
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DnsSettings {
     pub schema: u32,
     pub revision: u64,
     pub enabled: bool,
+    #[serde(default)]
+    pub direct_upstreams: Vec<String>,
+    #[serde(default)]
+    pub rule_sets: Vec<DnsRoutingRuleSet>,
     #[serde(default = "default_true")]
     pub reject_https: bool,
     #[serde(default)]
@@ -49,6 +53,8 @@ impl DnsSettings {
             schema: SCHEMA_VERSION,
             revision: 1,
             enabled: boolean(shared, "systemDnsTakeoverEnabled", false),
+            direct_upstreams: Vec::new(),
+            rule_sets: Vec::new(),
             reject_https: boolean(shared, "rejectHttps", true),
             rewrites: Vec::new(),
             query_log_enabled: true,
@@ -58,6 +64,8 @@ impl DnsSettings {
 
     pub(crate) fn requires_core_rebuild(&self, candidate: &Self) -> bool {
         self.enabled != candidate.enabled
+            || self.direct_upstreams != candidate.direct_upstreams
+            || self.rule_sets != candidate.rule_sets
     }
 }
 
@@ -68,6 +76,20 @@ struct LegacyDnsSettings {
     config: String,
     #[serde(default)]
     dns: Value,
+    #[serde(default)]
+    rewrites: Vec<DnsRewrite>,
+    #[serde(default = "default_true")]
+    query_log_enabled: bool,
+    #[serde(default = "default_max_entries")]
+    query_log_max_entries: usize,
+}
+
+#[derive(Deserialize)]
+struct V2DnsSettings {
+    revision: u64,
+    enabled: bool,
+    #[serde(default = "default_true")]
+    reject_https: bool,
     #[serde(default)]
     rewrites: Vec<DnsRewrite>,
     #[serde(default = "default_true")]
@@ -121,6 +143,7 @@ impl DnsSettingsStore {
                 "DNS settings schema must be {SCHEMA_VERSION}"
             )));
         }
+        crate::dns_routing::normalize(&mut candidate);
         validate(&candidate)?;
         let mut current = self.settings.lock().expect("DNS settings lock");
         candidate.revision = current.revision.saturating_add(1);
@@ -212,12 +235,30 @@ fn decode_settings(data: &[u8]) -> Result<DnsSettings, ManagerError> {
             .map_err(|error| {
                 ManagerError::InvalidOperation(format!("decode DNS settings: {error}"))
             }),
+        Some(2) => migrate_v2(value),
         Some(1) => migrate_legacy(value),
         version => Err(ManagerError::InvalidOperation(format!(
             "DNS settings schema {} is not supported",
             version.map_or_else(|| "missing".into(), |value| value.to_string())
         ))),
     }
+}
+
+fn migrate_v2(value: Value) -> Result<DnsSettings, ManagerError> {
+    let previous = serde_json::from_value::<V2DnsSettings>(value).map_err(|error| {
+        ManagerError::InvalidOperation(format!("decode DNS settings schema 2: {error}"))
+    })?;
+    Ok(DnsSettings {
+        schema: SCHEMA_VERSION,
+        revision: previous.revision.saturating_add(1),
+        enabled: previous.enabled,
+        direct_upstreams: Vec::new(),
+        rule_sets: Vec::new(),
+        reject_https: previous.reject_https,
+        rewrites: previous.rewrites,
+        query_log_enabled: previous.query_log_enabled,
+        query_log_max_entries: previous.query_log_max_entries,
+    })
 }
 
 fn migrate_legacy(value: Value) -> Result<DnsSettings, ManagerError> {
@@ -230,6 +271,8 @@ fn migrate_legacy(value: Value) -> Result<DnsSettings, ManagerError> {
         schema: SCHEMA_VERSION,
         revision: legacy.revision.saturating_add(1),
         enabled: boolean(shared, "systemDnsTakeoverEnabled", false),
+        direct_upstreams: Vec::new(),
+        rule_sets: Vec::new(),
         reject_https: boolean(shared, "rejectHttps", true),
         rewrites: legacy.rewrites,
         query_log_enabled: legacy.query_log_enabled,
@@ -258,6 +301,7 @@ fn validate(settings: &DnsSettings) -> Result<(), ManagerError> {
             "DNS query log limit must be between 100 and 20000".into(),
         ));
     }
+    crate::dns_routing::validate(settings)?;
     for rule in &settings.rewrites {
         if rule.id.trim().is_empty()
             || rule.domain.trim().is_empty()
@@ -348,7 +392,7 @@ mod tests {
             DnsSettingsStore::open(path.clone(), temp.path().join("queries.ndjson"), &profile)
                 .expect("store");
         let migrated = store.read();
-        assert_eq!(migrated.schema, 2);
+        assert_eq!(migrated.schema, 3);
         assert!(migrated.enabled);
         assert!(!migrated.reject_https);
         assert_eq!(migrated.query_log_max_entries, 500);
@@ -362,5 +406,27 @@ mod tests {
         let reopened = DnsSettingsStore::open(path, temp.path().join("queries.ndjson"), &profile)
             .expect("reopened store");
         assert_eq!(reopened.read(), migrated);
+    }
+
+    #[test]
+    fn migrates_schema_two_without_importing_profile_dns() {
+        let settings = decode_settings(
+            &serde_json::to_vec(&serde_json::json!({
+                "schema": 2,
+                "revision": 9,
+                "enabled": true,
+                "reject_https": false,
+                "rewrites": [],
+                "query_log_enabled": true,
+                "query_log_max_entries": 800
+            }))
+            .expect("schema 2 settings"),
+        )
+        .expect("migration");
+        assert_eq!(settings.schema, 3);
+        assert_eq!(settings.revision, 10);
+        assert!(settings.direct_upstreams.is_empty());
+        assert!(settings.rule_sets.is_empty());
+        assert!(!settings.reject_https);
     }
 }

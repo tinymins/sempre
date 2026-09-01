@@ -7,9 +7,11 @@ import { Dns } from './Dns'
 
 const settings = {
   settings: {
-    schema: 2,
+    schema: 3,
     revision: 3,
     enabled: true,
+    direct_upstreams: [],
+    rule_sets: [],
     reject_https: true,
     rewrites: [],
     query_log_enabled: true,
@@ -22,6 +24,7 @@ const settings = {
     mode: 'fake-ip',
     core_upstream: '127.0.0.1:1053',
     original_upstreams: ['10.23.0.1'],
+    direct_upstreams: ['10.23.0.1:53'],
     domestic_domain_source: 'domains-min.txt',
     domestic_domain_count: 1234,
   },

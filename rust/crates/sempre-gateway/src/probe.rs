@@ -81,6 +81,7 @@ mod tests {
             frontend_port,
             vec![local_address.to_string()],
             dead_address.to_string(),
+            Vec::new(),
         )
         .expect("config");
         let service = DnsService::start(config).await.expect("frontend");

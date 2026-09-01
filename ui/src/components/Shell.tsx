@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, DatabaseZap, Globe2, Languages, Library, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
+import { Activity, Cable, ChartNoAxesCombined, ChevronLeft, ChevronRight, CircleGauge, DatabaseZap, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -50,7 +50,8 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
     { path: '/tunnels', label: t('tunnels'), icon: Waypoints },
     { path: '/proxies', label: t('proxies'), icon: Network },
     { path: '/connections', label: t('connections'), icon: Cable },
-    { path: '/rules', label: t('rules'), icon: ListTree },
+    { path: '/routing-rules', label: t('routingRules'), icon: ListFilter },
+    { path: '/rules', label: t('runtimeRules'), icon: ListTree },
     { path: '/dns', label: t('dns'), icon: DatabaseZap },
     { path: '/traffic', label: t('traffic'), icon: ChartNoAxesCombined },
     { path: '/logs', label: t('logs'), icon: Activity },

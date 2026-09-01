@@ -6,8 +6,7 @@ use crate::GatewayError;
 
 const BUNDLED_DOMAINS_MIN: &str = include_str!("../resources/domains-min.txt");
 
-pub const DOMESTIC_DOMAIN_SOURCE: &str =
-    "https://github.com/ohmywrt/ohmywrt/blob/master/package/base-files/files/etc/domains-min.txt";
+pub const DOMESTIC_DOMAIN_SOURCE: &str = "builtin:domains-min";
 pub const DOMESTIC_DOMAIN_SHA256: &str =
     "80aed7f0cbe1d0292f58284f5b0b91043e09950a9019c60da96bff3a6e8ba634";
 pub const DOMESTIC_DOMAIN_COUNT: usize = 77_072;

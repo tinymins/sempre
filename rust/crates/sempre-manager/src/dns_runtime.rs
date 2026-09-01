@@ -32,6 +32,7 @@ pub struct DnsFrontendStatus {
     pub mode: String,
     pub core_upstream: String,
     pub original_upstreams: Vec<String>,
+    pub direct_upstreams: Vec<String>,
     pub domestic_domain_source: String,
     pub domestic_domain_sha256: String,
     pub domestic_domain_count: usize,
@@ -123,6 +124,7 @@ impl DnsFrontendRuntime {
             .into(),
             core_upstream: plan.core_upstream.clone(),
             original_upstreams: plan.original_upstreams.clone(),
+            direct_upstreams: plan.config.local_upstreams.clone(),
             domestic_domain_source: sempre_gateway::DOMESTIC_DOMAIN_SOURCE.into(),
             domestic_domain_sha256: sempre_gateway::DOMESTIC_DOMAIN_SHA256.into(),
             domestic_domain_count: sempre_gateway::DOMESTIC_DOMAIN_COUNT,
@@ -219,6 +221,7 @@ impl DnsFrontendPlan {
         policy: &DnsFrontendPolicy,
         original_upstreams: &[String],
         listen_port: u16,
+        settings: &crate::DnsSettings,
     ) -> Result<Self, ManagerError> {
         if !policy.enabled || !policy.complete {
             return Err(ManagerError::InvalidOperation(
@@ -229,13 +232,19 @@ impl DnsFrontendPlan {
         if !policy.fakeip_ipv6_range.trim().is_empty() {
             fakeip_ranges.push(parse_range(&policy.fakeip_ipv6_range)?);
         }
-        let config = DnsConfig::managed_frontend(
-            listen_port,
+        let local_upstreams = if settings.direct_upstreams.is_empty() {
             original_upstreams
                 .iter()
                 .map(|ip| dns_endpoint(ip, 53))
-                .collect(),
+                .collect()
+        } else {
+            settings.direct_upstreams.clone()
+        };
+        let config = DnsConfig::managed_frontend(
+            listen_port,
+            local_upstreams,
             dns_endpoint("127.0.0.1", policy.core_listen_port),
+            settings.frontend_rule_sets(),
         )?;
         let (local_probe, remote_probe) = managed_probe_names(&config)?;
         Ok(Self {

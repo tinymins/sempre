@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 const zh = {
-  overview: '总览', customNodes: '自定义节点', subscriptions: '订阅转换', tunnels: '隧道', proxies: '代理', connections: '连接', rules: '规则', dns: 'DNS', traffic: '流量', logs: '日志', networkTest: '网络测试', gateway: 'LAN 网关', management: '管理',
+  overview: '总览', customNodes: '自定义节点', subscriptions: '订阅转换', tunnels: '隧道', proxies: '代理', connections: '连接', rules: '规则', routingRules: '分流规则', runtimeRules: '运行时规则', dns: 'DNS', traffic: '流量', logs: '日志', networkTest: '网络测试', gateway: 'LAN 网关', management: '管理',
   signIn: '登录', address: 'Sempre 地址', password: '管理员密码', connect: '连接', connecting: '正在连接',
   loginLead: '连接到 Sempre 控制面', addressHint: '默认使用当前页面地址，也可以连接其他 Sempre 实例。',
   emptyPassword: '当前管理员密码为空，建议立即设置。', logout: '退出登录', running: '运行中', stopped: '已停止', idle: '等待核心', starting: '正在启动', stopping: '正在停止', restarting: '正在重启', failed: '失败',
@@ -30,7 +30,7 @@ const zh = {
 
 type Key = keyof typeof zh
 const en: Record<Key, string> = {
-  overview: 'Overview', customNodes: 'Custom Nodes', subscriptions: 'Subscriptions', tunnels: 'Tunnels', proxies: 'Proxies', connections: 'Connections', rules: 'Rules', dns: 'DNS', traffic: 'Traffic', logs: 'Logs', networkTest: 'Network Test', gateway: 'LAN Gateway', management: 'Management',
+  overview: 'Overview', customNodes: 'Custom Nodes', subscriptions: 'Subscriptions', tunnels: 'Tunnels', proxies: 'Proxies', connections: 'Connections', rules: 'Rules', routingRules: 'Routing Rules', runtimeRules: 'Runtime Rules', dns: 'DNS', traffic: 'Traffic', logs: 'Logs', networkTest: 'Network Test', gateway: 'LAN Gateway', management: 'Management',
   signIn: 'Sign in', address: 'Sempre address', password: 'Administrator password', connect: 'Connect', connecting: 'Connecting',
   loginLead: 'Connect to the Sempre control plane', addressHint: 'The current address is used by default. You can connect to another Sempre instance.',
   emptyPassword: 'The administrator password is empty. Set one as soon as possible.', logout: 'Sign out', running: 'Running', stopped: 'Stopped', idle: 'Waiting for core', starting: 'Starting', stopping: 'Stopping', restarting: 'Restarting', failed: 'Failed',

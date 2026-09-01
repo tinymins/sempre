@@ -17,6 +17,12 @@ pub struct CompileRequest {
     pub target: Target,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct CompileOverlay {
+    pub groups: Vec<ProxyGroup>,
+    pub rule_providers: Vec<RuleProvider>,
+}
+
 const fn protocol_version() -> u32 {
     1
 }
@@ -181,6 +187,13 @@ pub struct RuleProvider {
     pub format: String,
     #[serde(default)]
     pub behavior: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub priority: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

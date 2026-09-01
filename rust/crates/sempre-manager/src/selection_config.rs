@@ -63,7 +63,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             let build = config_build(
                 &compilation_item.1.updated,
                 &compilation_item.1.target,
-                self.dns_settings.read().enabled,
+                &self.dns_settings.read(),
             )?;
             let candidate = self
                 .prepare_config_content_for(
@@ -114,7 +114,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         Ok(Some(config_build(
             profile,
             &target,
-            self.dns_settings.read().enabled,
+            &self.dns_settings.read(),
         )?))
     }
 
