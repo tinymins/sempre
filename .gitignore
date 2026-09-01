@@ -8,6 +8,7 @@
 /site/test-results/
 /site/playwright-report/
 /rust/target/
+.DS_Store
 *.tsbuildinfo
 *.syso
 *.exe
