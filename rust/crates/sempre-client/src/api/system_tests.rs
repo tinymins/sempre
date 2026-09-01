@@ -72,6 +72,11 @@ async fn system_and_network_inventory_match_the_control_ui_contract() {
         .expect("system body");
     let system: serde_json::Value = serde_json::from_slice(&body).expect("system JSON");
     assert_eq!(system["mode"], "portable");
+    assert!(
+        system["service_memory"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+    );
     assert!(matches!(
         system["service"].as_str(),
         Some(

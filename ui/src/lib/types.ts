@@ -84,6 +84,7 @@ export interface SystemStatus {
   commit: string
   date: string
   mode: string
+  service_memory: number
   service: string
   desired_state: 'running' | 'stopped'
   runtime: RuntimeState
@@ -95,7 +96,6 @@ export interface SystemStatus {
   ui: { installed: boolean; metadata?: UIMetadata }
   capabilities: Record<string, boolean>
 }
-
 export interface Overview {
   core: string
   version: string

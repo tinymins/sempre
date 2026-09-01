@@ -9,6 +9,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tokio::time::{Duration, sleep};
 
 use crate::{VERSION, api::AppState};
@@ -66,6 +67,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         "commit": option_env!("SEMPRE_COMMIT").unwrap_or(""),
         "date": option_env!("SEMPRE_BUILD_DATE").unwrap_or(""),
         "mode": mode,
+        "service_memory": current_process_memory(),
         "service": service,
         "desired_state": document.desired_state,
         "runtime": document.runtime,
@@ -86,6 +88,17 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         "capabilities": {},
     }))
     .into_response()
+}
+
+fn current_process_memory() -> u64 {
+    let pid = Pid::from_u32(std::process::id());
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_memory(),
+    );
+    system.process(pid).map_or(0, sysinfo::Process::memory)
 }
 
 #[derive(Deserialize)]

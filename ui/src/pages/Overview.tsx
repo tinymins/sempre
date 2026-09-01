@@ -52,7 +52,7 @@ export function Overview() {
             <Metric icon={ArrowDownToLine} label={t('download')} value={formatBytes(rates.download, '/s')} tone="cyan" />
             <Metric icon={ArrowUpFromLine} label={t('upload')} value={formatBytes(rates.upload, '/s')} tone="green" />
             <Metric icon={Cable} label={t('activeConnections')} value={String(rates.connections || overview.data?.connections || 0)} tone="amber" />
-            <Metric icon={Cpu} label={t('memory')} value={formatBytes(rates.memory)} tone="red" />
+            <Metric icon={Cpu} label={t('memory')} value={`${formatBytes(system.data?.service_memory)} + ${formatBytes(rates.memory)}`} tone="red" />
             <Metric icon={Gauge} label={t('download')} value={formatBytes(overview.data?.download || 0)} tone="cyan" />
             <Metric icon={Activity} label={t('upload')} value={formatBytes(overview.data?.upload || 0)} tone="green" />
           </div>
