@@ -31,23 +31,25 @@ export function Proxies() {
   })
   const groups = useMemo(() => (proxies.data || []).filter((item) => item.all?.length && item.name.toLowerCase().includes(search.toLowerCase())), [proxies.data, search])
   const filteredProviders = useMemo(() => (providers.data || []).filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [providers.data, search])
+  const hasProviders = Boolean(providers.data?.length)
+  const activeTab = hasProviders ? tab : 'groups'
 
   return <div className="space-y-5">
-    <PageTitle title={t('proxies')} detail={`${groups.length} groups / ${providers.data?.length || 0} providers`}>
+    <PageTitle title={t('proxies')} detail={`${t('proxyGroups')} ${groups.length}${hasProviders ? ` · ${t('proxyProviders')} ${providers.data?.length}` : ''}`}>
       <Button size="icon" title={t('refresh')} onClick={() => { proxies.refetch(); providers.refetch() }}><RefreshCw size={17} /></Button>
     </PageTitle>
     <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] pb-3">
-      <div className="flex h-9 rounded-md bg-[var(--surface-hover)] p-1">
-        <button className={`rounded px-3 text-sm ${tab === 'groups' ? 'bg-[var(--surface)] font-medium shadow-sm' : 'text-[var(--muted)]'}`} onClick={() => setTab('groups')}>{t('proxies')}</button>
-        <button className={`rounded px-3 text-sm ${tab === 'providers' ? 'bg-[var(--surface)] font-medium shadow-sm' : 'text-[var(--muted)]'}`} onClick={() => setTab('providers')}>{t('provider')}</button>
-      </div>
+      {hasProviders ? <div className="flex h-9 rounded-md bg-[var(--surface-hover)] p-1">
+        <button className={`rounded px-3 text-sm ${activeTab === 'groups' ? 'bg-[var(--surface)] font-medium shadow-sm' : 'text-[var(--muted)]'}`} onClick={() => setTab('groups')}>{t('proxies')}</button>
+        <button className={`rounded px-3 text-sm ${activeTab === 'providers' ? 'bg-[var(--surface)] font-medium shadow-sm' : 'text-[var(--muted)]'}`} onClick={() => setTab('providers')}>{t('proxyProviders')}</button>
+      </div> : null}
       <div className="relative ml-auto w-full sm:w-72"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div>
     </div>
     {notice ? <div className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
-    {proxies.isLoading ? <Loading /> : tab === 'groups' ? (
+    {proxies.isLoading ? <Loading /> : activeTab === 'groups' ? (
       groups.length ? <div className="grid gap-4">{groups.map((group) => <ProxyGroup key={group.name} group={group} onSelect={(proxy) => select.mutate({ group: group.name, proxy })} onDelay={(proxy) => delay.mutate(proxy)} busy={select.isPending || delay.isPending} />)}</div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />
     ) : filteredProviders.length ? (
-      <div className="grid gap-4 xl:grid-cols-2">{filteredProviders.map((provider) => <Card key={provider.name} className="p-4"><div className="flex items-start gap-3"><div className="grid size-9 place-items-center rounded-md bg-cyan-500/10 text-cyan-600"><Activity size={18} /></div><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold">{provider.name}</h2><p className="mt-1 text-xs text-[var(--muted)]">{provider.vehicle_type || provider.type} · {provider.proxies.length} nodes</p></div><Button size="small" onClick={() => providerAction.mutate({ name: provider.name, action: 'update' })}><RefreshCw size={14} />{t('update')}</Button></div><div className="mt-4 flex flex-wrap gap-2">{provider.proxies.slice(0, 20).map((proxy) => <Badge key={proxy.name}>{proxy.name}</Badge>)}</div><Button className="mt-4" size="small" variant="ghost" onClick={() => providerAction.mutate({ name: provider.name, action: 'healthcheck' })}><Gauge size={14} />{t('healthcheck')}</Button></Card>)}</div>
+      <div className="grid gap-4 xl:grid-cols-2">{filteredProviders.map((provider) => <Card key={provider.name} className="p-4"><div className="flex items-start gap-3"><div className="grid size-9 place-items-center rounded-md bg-cyan-500/10 text-cyan-600"><Activity size={18} /></div><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold">{provider.name}</h2><p className="mt-1 text-xs text-[var(--muted)]">{provider.vehicle_type || provider.type} · {provider.proxies.length} {t('nodes')}</p></div><Button size="small" onClick={() => providerAction.mutate({ name: provider.name, action: 'update' })}><RefreshCw size={14} />{t('update')}</Button></div><div className="mt-4 flex flex-wrap gap-2">{provider.proxies.slice(0, 20).map((proxy) => <Badge key={proxy.name}>{proxy.name}</Badge>)}</div><Button className="mt-4" size="small" variant="ghost" onClick={() => providerAction.mutate({ name: provider.name, action: 'healthcheck' })}><Gauge size={14} />{t('healthcheck')}</Button></Card>)}</div>
     ) : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
   </div>
 }

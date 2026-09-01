@@ -40,6 +40,26 @@ describe('Proxies', () => {
 
     fireEvent.click(globalGroup)
     expect(screen.queryByText('global-node')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Node Providers' })).not.toBeInTheDocument()
+    expect(screen.getByText('Proxy groups 2')).toBeInTheDocument()
+  })
+
+  it('shows node providers only when the running core exposes them', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/runtime/providers')) return Response.json([{ name: 'hong-kong-airport', type: 'Proxy', vehicle_type: 'HTTP', proxies: [{ name: 'HK-01', type: 'ss' }] }])
+      if (url.endsWith('/api/v1/runtime/proxies')) return Response.json([{ name: 'GLOBAL', type: 'Selector', all: ['HK-01'], now: 'HK-01' }])
+      return Response.json({})
+    }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Proxies /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    const providerTab = await screen.findByRole('button', { name: 'Node Providers' })
+    expect(screen.getByText('Proxy groups 1 · Node Providers 1')).toBeInTheDocument()
+    fireEvent.click(providerTab)
+    expect(screen.getByRole('heading', { name: 'hong-kong-airport' })).toBeInTheDocument()
+    expect(screen.getByText('HTTP · 1 nodes')).toBeInTheDocument()
+    expect(screen.getByText('HK-01')).toBeInTheDocument()
   })
 
   it('selects a node from the whole row but not from the latency button', async () => {
