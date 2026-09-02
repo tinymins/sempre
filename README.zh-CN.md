@@ -259,13 +259,17 @@ Real-IP 模式仍保留 DNS 前置分流。模式改变的是哪些应用流量�
 ```mermaid
 flowchart TB
     subgraph fake["FakeIP 模式"]
-        fq["DNS 查询"] --> fc{"直连或国内域名？"}
+        fq["DNS 查询"] --> fp{"命中私网 DNS 后缀？"}
+        fp -- 是 --> fpd["核心私网 DNS<br/>通过连接器 detour"]
+        fpd --> fpri["私网 Real-IP"]
+        fpri --> ft["FakeIP 网段与配置的<br/>私网 CIDR 进入 TUN"]
+        fp -- 否 --> fc{"直连或国内域名？"}
         fc -- 是 --> fo["原始 DNS"]
         fo --> fr["Real-IP"]
         fr --> fb["普通系统路由<br/>绕过核心"]
         fc -- 否 --> fcd["核心 DNS"]
         fcd --> ff["FakeIP"]
-        ff --> ft["仅 FakeIP 网段<br/>进入外部核心 TUN"]
+        ff --> ft
         ft --> frr["核心路由规则"]
         frr --> fe["代理 / 私网连接器 / 拒绝"]
     end
@@ -281,7 +285,7 @@ flowchart TB
     end
 ```
 
-FakeIP 模式下，直连和国内域名返回真实地址并绕过核心；代理和默认域名返回 `198.18.0.0/15` 或 `fc00::/18` 范围内的地址，只有这些范围进入 TUN。Real-IP 模式下，直连和国内域名仍使用原始 DNS，代理和默认域名使用核心远程 DNS；随后所有应用流量进入核心并遵循核心路由规则。
+FakeIP 模式下，直连和国内域名返回真实地址并绕过核心。代理和默认域名返回 `198.18.0.0/15` 或 `fc00::/18` 范围内的地址；这些网段以及每个已启用私网连接器的 `routes.ipCidrs` 都会进入 TUN。因此私网 DNS 可以返回真实私网地址，而匹配的私网 CIDR 仍会进入核心。Real-IP 模式下，直连和国内域名仍使用原始 DNS，代理和默认域名使用核心远程 DNS；随后所有应用流量进入核心并遵循核心路由规则。
 
 ### 私网 DNS 与私网路由
 
@@ -289,17 +293,22 @@ FakeIP 模式下，直连和国内域名返回真实地址并绕过核心；代�
 
 ```mermaid
 flowchart TD
-    request["请求 internal.example"] --> dnsMatch{"命中私网 DNS 后缀？"}
-    dnsMatch -- 是 --> privateDns["通过连接器<br/>查询私网 DNS"]
+    request["请求 internal.example"] --> systemDns["操作系统 DNS"]
+    systemDns --> frontend["Sempre DNS 前置层"]
+    frontend --> coreDns["核心 DNS loopback 入口"]
+    coreDns --> dnsMatch{"命中私网 DNS 后缀？"}
+    dnsMatch -- 是 --> privateDns["私网 DNS 服务器<br/>通过连接器 detour"]
     dnsMatch -- 否 --> normalDns["使用普通 DNS 路径"]
-    privateDns --> address["解析目标地址"]
+    privateDns --> address["解析私网地址"]
     normalDns --> address
-    address --> routeMatch{"流量路由命中<br/>域名或 IP CIDR？"}
-    routeMatch -- 是 --> connector["私网连接器<br/>例如 WireGuard"]
-    routeMatch -- 否 --> fallback["普通直连或代理规则"]
+    address --> capture{"目标命中<br/>routes.ipCidrs？"}
+    capture -- 是 --> tun["系统 / TUN route_address<br/>捕获应用流量"]
+    tun --> routeMatch["核心 ip_cidr 规则"]
+    routeMatch --> connector["私网连接器<br/>例如 WireGuard"]
+    capture -- 否 --> fallback["普通系统路由或<br/>已捕获的核心规则"]
 ```
 
-私网 DNS 成功返回，不代表应用流量已经使用私网出站。排查私网访问时，必须同时验证 DNS 决策和核心最终选择的 outbound。
+连接器的私网 DNS 服务器会写入核心，并以该连接器作为 `detour`；DNS 前置层不会直接连接私网 DNS。在受限的托管桌面 TUN 目标上，`routes.ipCidrs` 承担双重职责：扩展 TUN 的系统捕获路由，同时生成选择该连接器的核心 `ip_cidr` 规则。域名匹配仍然只是核心规则，不会安装系统路由。因此私网 DNS 成功返回，不代表应用流量已经使用私网出站；排查时必须同时验证 DNS 决策、TUN 捕获路由和核心最终选择的 outbound。
 
 ## 托管运行时
 

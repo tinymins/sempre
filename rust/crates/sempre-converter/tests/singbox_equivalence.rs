@@ -100,6 +100,85 @@ fn modern_sing_box_preserves_v1_runtime_and_private_access_semantics() {
 }
 
 #[test]
+fn managed_desktop_private_access_routes_dns_and_traffic_through_core() {
+    let profile: Profile = serde_json::from_value(json!({
+        "dns": { "shared": {
+            "systemDnsTakeoverEnabled": true,
+            "systemDnsListenHosts": ["127.0.0.1"],
+            "systemDnsListenPort": 53,
+            "fakeipEnabled": true
+        }},
+        "private_access": {
+            "enabled": true,
+            "connectors": [{
+                "type": "wireguard", "tag": "private-wg",
+                "endpoint": {
+                    "privateKey": "private", "address": ["192.0.2.2/32"],
+                    "peers": [{
+                        "address": "vpn.example.com", "port": 51820,
+                        "publicKey": "public", "allowedIps": ["0.0.0.0/0"]
+                    }]
+                },
+                "routes": { "ipCidrs": ["10.8.28.0/24"] },
+                "dns": [{
+                    "tag": "private-dns", "server": "10.8.28.1",
+                    "domainSuffixes": ["internal.example"]
+                }]
+            }]
+        }
+    }))
+    .expect("profile");
+    for format in ["sing-box-v13-macos", "sing-box-v14-windows"] {
+        let result = compile(&CompileRequest {
+            protocol: 1,
+            profile: profile.clone(),
+            snapshots: vec![],
+            custom_nodes: vec![],
+            target: Target::parse(format).expect("target"),
+        })
+        .expect("compile");
+        let document: Value = serde_json::from_str(&result.content).expect("JSON");
+        let tun = document["inbounds"]
+            .as_array()
+            .expect("inbounds")
+            .iter()
+            .find(|inbound| inbound["tag"] == "tun-in")
+            .expect("TUN inbound");
+
+        assert_eq!(
+            tun["route_address"],
+            json!(["198.18.0.0/15", "fc00::/18", "10.8.28.0/24"])
+        );
+        let private_dns = document["dns"]["servers"]
+            .as_array()
+            .expect("DNS servers")
+            .iter()
+            .find(|server| server["tag"] == "private-dns")
+            .expect("private DNS server");
+        assert_eq!(private_dns["detour"], "private-wg");
+        let dns_rules = document["dns"]["rules"].as_array().expect("DNS rules");
+        let private_dns_index = dns_rules
+            .iter()
+            .position(|rule| rule["server"] == "private-dns")
+            .expect("private DNS rule");
+        let fakeip_index = dns_rules
+            .iter()
+            .position(|rule| rule["server"] == "fakeip")
+            .expect("FakeIP rule");
+        assert!(private_dns_index < fakeip_index);
+        assert!(
+            document["route"]["rules"]
+                .as_array()
+                .expect("route rules")
+                .iter()
+                .any(|rule| {
+                    rule["ip_cidr"] == json!(["10.8.28.0/24"]) && rule["outbound"] == "private-wg"
+                })
+        );
+    }
+}
+
+#[test]
 fn custom_nodes_follow_profile_reference_order() {
     let mut request = CompileRequest {
         protocol: 1,

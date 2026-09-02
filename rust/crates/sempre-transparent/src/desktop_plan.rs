@@ -116,6 +116,19 @@ fn configure_windows_dns_redirect(
         tun.remove("route_address");
     } else {
         let mut included = fake_ip_prefixes;
+        let configured = tun
+            .get("route_address")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for prefix in configured {
+            if !included.contains(&prefix) {
+                included.push(prefix);
+            }
+        }
         if !included
             .iter()
             .any(|prefix| prefix == WINDOWS_DNS_TARGET_PREFIX)
@@ -294,7 +307,10 @@ mod tests {
                     "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18"
                 }] },
                 "inbounds": [
-                    { "type": "tun", "tag": "tun-in", "auto_route": true },
+                    {
+                        "type": "tun", "tag": "tun-in", "auto_route": true,
+                        "route_address": ["198.18.0.0/15", "10.8.28.0/24"]
+                    },
                     {
                         "type": "direct", "tag": "sempre-dns-core-in", "listen": "127.0.0.1",
                         "listen_port": 1053, "override_address": "1.1.1.1", "override_port": 53
@@ -334,7 +350,7 @@ mod tests {
         assert_eq!(output["inbounds"][0]["dns_address"], json!(["192.0.2.1"]));
         assert_eq!(
             output["inbounds"][0]["route_address"],
-            json!(["198.18.0.0/15", "fc00::/18", "192.0.2.1/32"])
+            json!(["198.18.0.0/15", "fc00::/18", "10.8.28.0/24", "192.0.2.1/32"])
         );
         assert_eq!(
             output["route"]["rules"][0],

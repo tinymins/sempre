@@ -6,7 +6,7 @@ use crate::{Profile, SourceSnapshot, Target, rule_provider_snapshot_id};
 
 use super::private_access::Resolved;
 
-pub(super) fn inbounds(profile: &Profile, target: &Target) -> Vec<Value> {
+pub(super) fn inbounds(profile: &Profile, target: &Target, private: &Resolved) -> Vec<Value> {
     let local = if target.standalone {
         Vec::new()
     } else {
@@ -16,7 +16,9 @@ pub(super) fn inbounds(profile: &Profile, target: &Target) -> Vec<Value> {
         .into_iter()
         .chain(super::super::dns::sing_box_system_inbounds(profile, target))
         .chain(super::super::transparent::sing_box_inbounds(
-            profile, target,
+            profile,
+            target,
+            &private.capture_cidrs,
         ))
         .collect()
 }

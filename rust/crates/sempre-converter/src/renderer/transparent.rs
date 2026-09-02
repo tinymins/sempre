@@ -6,7 +6,11 @@ const DISABLED: &str = "disabled";
 const TPROXY: &str = "tproxy";
 const TUN: &str = "tun-router";
 
-pub(super) fn sing_box_inbounds(profile: &Profile, target: &Target) -> Vec<Value> {
+pub(super) fn sing_box_inbounds(
+    profile: &Profile,
+    target: &Target,
+    private_capture_cidrs: &[String],
+) -> Vec<Value> {
     if target.platform != "default" {
         let mut inbound = json!({
             "type": "tun", "tag": "tun-in", "address": ["172.19.0.1/30"],
@@ -19,9 +23,14 @@ pub(super) fn sing_box_inbounds(profile: &Profile, target: &Target) -> Vec<Value
             inbound["sniff"] = json!(true);
             inbound["sniff_override_destination"] = json!(true);
         }
-        let fakeip_routes = super::dns::sing_box_fakeip_route_addresses(profile, target);
-        if !fakeip_routes.is_empty() {
-            inbound["route_address"] = json!(fakeip_routes);
+        let mut restricted_routes = super::dns::sing_box_fakeip_route_addresses(profile, target);
+        if !restricted_routes.is_empty() {
+            for cidr in private_capture_cidrs {
+                if !restricted_routes.contains(cidr) {
+                    restricted_routes.push(cidr.clone());
+                }
+            }
+            inbound["route_address"] = json!(restricted_routes);
         }
         if target.platform == "macos"
             && target.version == "14"

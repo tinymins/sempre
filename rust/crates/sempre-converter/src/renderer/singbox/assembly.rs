@@ -71,7 +71,7 @@ pub(super) fn render(
         });
     let mut output = json!({
         "log": config::log(&profile.log_level),
-        "inbounds": config::inbounds(profile, target),
+        "inbounds": config::inbounds(profile, target, &private),
         "outbounds": outbounds,
         "dns": dns,
         "route": route,

@@ -7,6 +7,7 @@ pub(super) struct Resolved {
     pub endpoints: Vec<Value>,
     pub outbounds: Vec<Value>,
     pub direct_domains: Vec<String>,
+    pub capture_cidrs: Vec<String>,
     pub route_rules: Vec<Value>,
     pub dns_servers: Vec<Value>,
     pub dns_rules: Vec<Value>,
@@ -41,6 +42,9 @@ pub(super) fn resolve(config: &Value, modern: bool, desktop: bool) -> Resolved {
             continue;
         }
         if let Some(routes) = connector.get("routes").and_then(Value::as_object) {
+            for cidr in clean_strings(routes.get("ipCidrs")) {
+                push_unique(&mut resolved.capture_cidrs, cidr);
+            }
             let mut rule = json!({ "action": "route", "outbound": tag });
             add_matchers(&mut rule, routes);
             if rule.as_object().is_some_and(|rule| rule.len() > 2) {

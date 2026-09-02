@@ -280,9 +280,11 @@ Real-IP mode retains DNS pre-routing. The mode changes which application traffic
 ```mermaid
 flowchart TB
     subgraph fake["FakeIP mode"]
-        fq["DNS query"] --> fc{"Direct or domestic?"}
+        fq["DNS query"] --> fp{"Private DNS suffix?"}
+        fp -- Yes --> fpd["Core private DNS<br/>detour through connector"] --> fpri["Private Real-IP"] --> ft["FakeIP ranges and configured<br/>private CIDRs enter the TUN"]
+        fp -- No --> fc{"Direct or domestic?"}
         fc -- Yes --> fo["Original DNS"] --> fr["Real-IP"] --> fb["Normal OS route<br/>bypasses the core"]
-        fc -- No --> fcd["Core DNS"] --> ff["FakeIP"] --> ft["Only FakeIP ranges<br/>enter the external-core TUN"] --> frr["Core routing rules"] --> fe["Proxy / private connector / reject"]
+        fc -- No --> fcd["Core DNS"] --> ff["FakeIP"] --> ft --> frr["Core routing rules"] --> fe["Proxy / private connector / reject"]
     end
     subgraph real["Real-IP mode"]
         rq["DNS query"] --> rc{"Direct or domestic?"}
@@ -291,7 +293,7 @@ flowchart TB
     end
 ```
 
-In FakeIP mode, direct and domestic names return real addresses and bypass the core; proxy and default names return addresses from `198.18.0.0/15` or `fc00::/18`, and only those ranges enter the TUN. In Real-IP mode, direct and domestic names still use original DNS, while proxy and default names use core remote DNS; all application traffic then enters the core and follows its route rules.
+In FakeIP mode, direct and domestic names return real addresses and bypass the core. Proxy and default names return addresses from `198.18.0.0/15` or `fc00::/18`; those ranges and every enabled private connector's `routes.ipCidrs` enter the TUN. Private DNS can therefore return a real private address while the matching private CIDR still reaches the core. In Real-IP mode, direct and domestic names still use original DNS, while proxy and default names use core remote DNS; all application traffic then enters the core and follows its route rules.
 
 ### Private DNS and Private Routes
 
@@ -299,15 +301,15 @@ Private DNS controls name resolution only. A connection must independently match
 
 ```mermaid
 flowchart TD
-    request["Request internal.example"] --> dnsMatch{"Private DNS suffix matches?"}
-    dnsMatch -- Yes --> privateDns["Query private DNS<br/>through the connector"] --> address["Resolved destination"]
+    request["Request internal.example"] --> systemDns["Operating-system DNS"] --> frontend["Sempre DNS frontend"] --> coreDns["Core DNS loopback ingress"] --> dnsMatch{"Private DNS suffix matches?"}
+    dnsMatch -- Yes --> privateDns["Private DNS server<br/>detour through connector"] --> address["Resolved private address"]
     dnsMatch -- No --> normalDns["Use normal DNS path"] --> address
-    address --> routeMatch{"Traffic route matches<br/>domain or IP CIDR?"}
-    routeMatch -- Yes --> connector["Private connector<br/>for example WireGuard"]
-    routeMatch -- No --> fallback["Normal direct or proxy rules"]
+    address --> capture{"Destination matches<br/>routes.ipCidrs?"}
+    capture -- Yes --> tun["OS/TUN route_address<br/>captures application traffic"] --> routeMatch["Core ip_cidr rule"] --> connector["Private connector<br/>for example WireGuard"]
+    capture -- No --> fallback["Normal OS route or<br/>already-captured core rules"]
 ```
 
-A successful private DNS answer does not prove that application traffic uses the private outbound. Verify both the DNS decision and the core's selected outbound when diagnosing private-network access.
+A connector's private DNS server is emitted into the core with that connector as its `detour`; the DNS frontend never dials the private server directly. `routes.ipCidrs` has a dual role on restricted managed desktop TUN targets: it extends the TUN's OS capture routes and emits the core `ip_cidr` rule selecting the connector. Domain matchers remain core routing rules and do not install OS routes. A successful private DNS answer therefore does not prove that application traffic uses the private outbound; verify the DNS decision, the TUN capture route, and the core's selected outbound.
 
 ## Managed Runtime
 
