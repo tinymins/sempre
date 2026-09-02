@@ -11,7 +11,7 @@ import { Button, ConfirmDialog, Spinner } from './ui'
 
 type RuntimeStatusWithChanges = ManagedRuntimeStatus & { pending_changes: RuntimePendingChange[] }
 
-export function RuntimeRestartButton() {
+export function RuntimeRestartButton({ showLabel = false }: { showLabel?: boolean }) {
   const { t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
@@ -33,6 +33,7 @@ export function RuntimeRestartButton() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['system'] }),
         queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }),
+        queryClient.invalidateQueries({ queryKey: ['runtime', 'proxies'] }),
       ])
     },
     onError: (error) => setNotice({ message: error.message, tone: 'error' }),
@@ -42,8 +43,9 @@ export function RuntimeRestartButton() {
   return (
     <>
       <span className="relative inline-flex">
-        <Button size="icon" variant="ghost" title={t('restartNow')} aria-label={t('restartNow')} disabled={restart.isPending} onClick={() => setConfirmOpen(true)}>
+        <Button size={showLabel ? 'normal' : 'icon'} variant={showLabel ? 'secondary' : 'ghost'} title={t('restartNow')} aria-label={t('restartNow')} disabled={restart.isPending} onClick={() => setConfirmOpen(true)}>
           {restart.isPending ? <Spinner /> : <RotateCw size={18} />}
+          {showLabel ? t('restartNow') : null}
         </Button>
         {needsRestart ? <span data-restart-required aria-hidden="true" className="pointer-events-none absolute right-1.5 top-1.5 size-2 rounded-full bg-red-500 ring-2 ring-[var(--background)]" /> : null}
       </span>
