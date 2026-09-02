@@ -45,6 +45,12 @@ impl ValidationRunner for FakeRunner {
 }
 
 fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>, String) {
+    fixture_with_core_version("1.13.2")
+}
+
+fn fixture_with_core_version(
+    core_version: &str,
+) -> (tempfile::TempDir, Manager<FakeRunner>, String) {
     let root = tempfile::tempdir().expect("temporary directory");
     let manager = Manager::with_runner(Store::new(Layout::at(root.path())), FakeRunner::default())
         .expect("manager");
@@ -58,7 +64,7 @@ fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>, String) {
             });
             let source = &mut document.core_mut("sing-box").default;
             source.installed.insert(
-                "1.13.2".into(),
+                core_version.into(),
                 Installation {
                     explicit: false,
                     digest: "a".repeat(64),
@@ -66,7 +72,7 @@ fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>, String) {
                     installed_at: Utc::now(),
                 },
             );
-            source.channels.insert("stable".into(), "1.13.2".into());
+            source.channels.insert("stable".into(), core_version.into());
             Ok(())
         })
         .expect("seed core");
@@ -330,7 +336,7 @@ async fn frontend_dns_survives_switches_without_overriding_profile_dns() {
 
 #[tokio::test]
 async fn enabling_frontend_rebuilds_only_the_private_core_ingress() {
-    let (_root, manager, profile_id) = fixture();
+    let (_root, manager, profile_id) = fixture_with_core_version("1.14.0-beta.13");
     manager
         .subscriptions
         .update(|catalog| {
@@ -362,7 +368,7 @@ async fn enabling_frontend_rebuilds_only_the_private_core_ingress() {
 
 #[tokio::test]
 async fn enabling_frontend_rebuilds_system_dns_profile_with_private_core_ingress() {
-    let (_root, manager, profile_id) = fixture();
+    let (_root, manager, profile_id) = fixture_with_core_version("1.14.0-beta.13");
     assert_eq!(
         manager.subscriptions.read().expect("catalog").profiles[0].extra["use_system_dns"],
         json!(true)
