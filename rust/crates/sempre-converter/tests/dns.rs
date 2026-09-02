@@ -287,6 +287,7 @@ fn sing_box_resolves_real_addresses_through_remote_dns_before_domestic_ip_routin
         "sing-box-v12",
         "sing-box-v13",
         "sing-box-v14",
+        "sing-box-v12-macos",
         "sing-box-v13-macos",
         "sing-box-v14-macos",
         "sing-box-v14-windows",
@@ -298,13 +299,18 @@ fn sing_box_resolves_real_addresses_through_remote_dns_before_domestic_ip_routin
                 input.profile.dns["shared"]["systemDnsTakeoverEnabled"] = json!(true);
             }
             input.profile.rules = vec![json!("DOMAIN,explicit.example,DIRECT")];
+            input.profile.rule_providers = serde_json::from_value(json!([
+                { "tag": "priority", "url": "https://rules.example/first.srs", "priority": true },
+                { "tag": "ordinary", "url": "https://rules.example/last.srs" }
+            ]))
+            .expect("providers");
             let output = compile(&input).expect(format);
             let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
             let rules = output["route"]["rules"].as_array().expect("route rules");
             let geoip = rules
                 .iter()
-                .position(|rule| rule["rule_set"] == json!(["geoip-cn", "geosite-cn"]))
-                .expect("domestic route");
+                .position(|rule| rule["rule_set"] == json!(["geoip-cn"]))
+                .expect("domestic IP route");
             assert_eq!(
                 rules[geoip - 1],
                 json!({ "action": "resolve", "server": "remote" }),
@@ -315,10 +321,35 @@ fn sing_box_resolves_real_addresses_through_remote_dns_before_domestic_ip_routin
                 .position(|rule| rule["domain"] == "explicit.example")
                 .expect("explicit domain rule");
             assert!(explicit < geoip - 1, "preserve explicit routing precedence");
-            assert!(
-                output["dns"]["servers"]
-                    .as_array()
-                    .is_some_and(|servers| servers.iter().any(|server| server["tag"] == "remote"))
+            let position = |tag| {
+                rules
+                    .iter()
+                    .position(|rule| rule["rule_set"] == json!([tag]))
+                    .expect(tag)
+            };
+            assert!(position("priority") < explicit);
+            assert!(explicit < position("geosite-cn"));
+            assert_eq!(position("geosite-cn") + 2, geoip);
+            assert!(geoip < position("ordinary"));
+            assert_eq!(rules[position("geosite-cn")]["outbound"], "direct");
+            assert_eq!(rules[geoip]["outbound"], "direct");
+            assert_eq!(output["route"]["final"], "foreign");
+            assert_eq!(output["dns"]["independent_cache"], true);
+            let remote = output["dns"]["servers"]
+                .as_array()
+                .expect("servers")
+                .iter()
+                .find(|server| server["tag"] == "remote")
+                .expect("remote resolver");
+            assert_eq!(remote["detour"], "foreign");
+            assert!(remote["server"] == "9.9.9.9" || remote["address"] == "tls://9.9.9.9:853");
+            assert_eq!(
+                rules
+                    .iter()
+                    .filter(|rule| rule["action"] == "resolve")
+                    .count(),
+                1,
+                "never resolve unknown destinations through local DNS"
             );
         }
     }
@@ -337,4 +368,53 @@ fn sing_box_does_not_add_domestic_resolution_without_ip_rules_or_to_legacy() {
                 .is_some_and(|rules| { rules.iter().all(|rule| rule["action"] != "resolve") })
         );
     }
+}
+
+#[test]
+fn sing_box_domestic_switches_only_control_their_own_route_stage() {
+    for domains in [false, true] {
+        for ips in [false, true] {
+            let mut input = request("sing-box-v14");
+            input.profile.dns["shared"]["cnDomainRuleSetEnabled"] = json!(domains);
+            input.profile.dns["shared"]["cnIpRuleSetEnabled"] = json!(ips);
+            let output = compile(&input).expect("compile");
+            let output: Value = serde_json::from_str(&output.content).expect("JSON");
+            let rules = output["route"]["rules"].as_array().expect("rules");
+            for (tag, enabled) in [("geosite-cn", domains), ("geoip-cn", ips)] {
+                assert_eq!(
+                    rules.iter().any(|rule| rule["rule_set"] == json!([tag])),
+                    enabled
+                );
+                assert_eq!(
+                    output["route"]["rule_set"]
+                        .as_array()
+                        .expect("sets")
+                        .iter()
+                        .any(|set| set["tag"] == tag),
+                    enabled
+                );
+            }
+            assert_eq!(rules.iter().any(|rule| rule["action"] == "resolve"), ips);
+        }
+    }
+}
+
+#[test]
+fn native_dns_owns_resolution_without_an_injected_remote_server_reference() {
+    let mut input = request("sing-box-v14");
+    let native = json!({
+        "servers": [{ "type": "local", "tag": "bootstrap" }], "final": "bootstrap"
+    });
+    input.profile.dns["modes"] = json!({ "sing_box_v12": "native" });
+    input.profile.dns["overrides"] = json!({ "sing_box_v12": native });
+    let output = compile(&input).expect("native DNS");
+    let output: Value = serde_json::from_str(&output.content).expect("JSON");
+    assert_eq!(output["dns"], native);
+    assert!(
+        output["route"]["rules"]
+            .as_array()
+            .expect("rules")
+            .iter()
+            .all(|rule| rule["action"] != "resolve")
+    );
 }

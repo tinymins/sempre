@@ -87,20 +87,9 @@ pub(super) fn route(
             None => warnings.push(format!("unsupported custom rule: {line}")),
         }
     }
-    let (dns_rule_sets, dns_route) = super::super::dns::sing_box_route_policy(profile);
+    let (dns_rule_sets, dns_routes) = super::super::dns::sing_box_route_policy(profile, target);
     rule_sets.extend(dns_rule_sets);
-    if let Some(rule) = dns_route {
-        if target.version != "11"
-            && rule["rule_set"]
-                .as_array()
-                .is_some_and(|tags| tags.iter().any(|tag| tag == "geoip-cn"))
-        {
-            // FakeIP restores a domain, not the destination addresses needed by GeoIP.
-            // Use the proxied resolver so poisoned local answers cannot replace the destination.
-            rules.push(json!({ "action": "resolve", "server": "remote" }));
-        }
-        rules.push(rule);
-    }
+    rules.extend(dns_routes);
     append_rule_providers(
         profile
             .rule_providers

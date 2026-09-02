@@ -33,8 +33,11 @@ pub(super) fn sing_box_fakeip_route_addresses(profile: &Profile, target: &Target
     }
 }
 
-pub(super) fn sing_box_route_policy(profile: &Profile) -> (Vec<Value>, Option<Value>) {
-    singbox::route_policy(profile)
+pub(super) fn sing_box_route_policy(
+    profile: &Profile,
+    target: &Target,
+) -> (Vec<Value>, Vec<Value>) {
+    singbox::route_policy(profile, target)
 }
 
 pub(super) fn strip_fakeip(config: &mut Value) {
