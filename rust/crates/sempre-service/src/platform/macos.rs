@@ -1,9 +1,13 @@
-use std::{fs, path::Path};
+use std::{fs, path::Path, time::Duration};
+
+use tokio::time::{Instant, sleep};
 
 use crate::{ServiceError, State, checked, command, render, require_administrator};
 
 const LABEL: &str = "io.github.tinymins.sempre";
 const PLIST: &str = "/Library/LaunchDaemons/io.github.tinymins.sempre.plist";
+const SERVICE_TRANSITION_TIMEOUT: Duration = Duration::from_secs(20);
+const SERVICE_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 pub async fn status() -> Result<State, ServiceError> {
     let output = query().await?;
@@ -74,7 +78,8 @@ pub async fn start() -> Result<(), ServiceError> {
 pub async fn stop() -> Result<(), ServiceError> {
     require_administrator()?;
     if query().await?.success {
-        checked("launchctl", &["bootout", &domain()]).await
+        checked("launchctl", &["bootout", &domain()]).await?;
+        wait_for_unloaded().await
     } else {
         Ok(())
     }
@@ -96,6 +101,21 @@ async fn query() -> Result<crate::Output, ServiceError> {
 
 async fn bootstrap() -> Result<(), ServiceError> {
     checked("launchctl", &["bootstrap", "system", PLIST]).await
+}
+
+async fn wait_for_unloaded() -> Result<(), ServiceError> {
+    let deadline = Instant::now() + SERVICE_TRANSITION_TIMEOUT;
+    loop {
+        if !query().await?.success {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(ServiceError::Timeout {
+                program: "macOS service transition".into(),
+            });
+        }
+        sleep(SERVICE_POLL_INTERVAL).await;
+    }
 }
 
 fn domain() -> String {
