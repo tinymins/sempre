@@ -12,6 +12,7 @@ import { formatBytes } from '../lib/format'
 import { compareText } from '../lib/sort'
 import { Badge, Button, Card, EmptyState, Field, PageTitle, Spinner } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
+import { TrafficRangePicker, trafficHistoryPath, type TrafficRange } from '../components/TrafficRangePicker'
 
 const UNLIMITED = 'unlimited'
 const DEFAULT_SETTINGS: TrafficSettings = { window_hours: 24, retention_hours: 24 * 30, reset_day: null, retention_months: 12, max_bytes: 32 * 1024 * 1024 }
@@ -23,9 +24,10 @@ export function Traffic() {
   const [points, setPoints] = useState<ChartPoint[]>([])
   const [rate, setRate] = useState({ download: 0, upload: 0 })
   const [dimension, setDimension] = useState<TrafficDimension>('host')
+  const [range, setRange] = useState<TrafficRange>({ key: 'period' })
   const history = useQuery({
-    queryKey: ['runtime', 'traffic-history', dimension],
-    queryFn: () => api<TrafficHistory>(session!, `/runtime/traffic/history?since=0&dimension=${dimension}`),
+    queryKey: ['runtime', 'traffic-history', dimension, range],
+    queryFn: () => api<TrafficHistory>(session!, trafficHistoryPath(dimension, range)),
     enabled: Boolean(session),
     retry: false,
     refetchInterval: 5000,
@@ -109,7 +111,7 @@ export function Traffic() {
         <Button className="mt-4" variant="danger" size="small" disabled={clear.isPending} onClick={() => clear.mutate()}><Trash2 size={14} />{t('clear')}</Button>
       </Card>
     </div>
-    <div className="flex gap-1 overflow-x-auto border-b border-[var(--border)] pb-2">{dimensions.map((item) => <button key={item.value} className={`h-8 shrink-0 rounded-md px-3 text-sm ${dimension === item.value ? 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald-400' : 'text-[var(--muted)] hover:bg-[var(--surface-hover)]'}`} onClick={() => setDimension(item.value)}>{item.label}</button>)}</div>
+    <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] pb-2"><div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">{dimensions.map((item) => <button key={item.value} className={`h-8 shrink-0 rounded-md px-3 text-sm ${dimension === item.value ? 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald-400' : 'text-[var(--muted)] hover:bg-[var(--surface-hover)]'}`} onClick={() => setDimension(item.value)}>{item.label}</button>)}</div><TrafficRangePicker range={range} onChange={setRange} /></div>
     {history.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : history.data?.totals.length ? <Table rowKey="label" pagination={false} columns={totalColumns} dataSource={history.data.totals.slice(0, 100)} scroll={{ x: 680 }} /> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
   </div>
 }

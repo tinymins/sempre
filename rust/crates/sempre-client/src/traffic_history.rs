@@ -215,31 +215,17 @@ impl TrafficStore {
         let inner = self.lock()?;
         let since = traffic_rotation::summary_cutoff(&inner.settings, now)
             .map_or(since, |cutoff| since.max(cutoff));
-        let mut totals = HashMap::<String, Totals>::new();
-        for (key, value) in &inner.records {
-            if key.time < since || key.dimension != dimension {
-                continue;
-            }
-            let total = totals.entry(key.label.clone()).or_default();
-            total.download += value.download;
-            total.upload += value.upload;
-        }
-        let mut totals = totals
-            .into_iter()
-            .map(|(label, total)| TrafficTotal {
-                label,
-                download: total.download,
-                upload: total.upload,
-            })
-            .collect::<Vec<_>>();
-        totals.sort_by(|left, right| {
-            (right.download + right.upload).cmp(&(left.download + left.upload))
-        });
-        Ok(TrafficHistory {
-            settings: inner.settings.clone(),
-            storage_bytes: encoded(&inner)?.len(),
-            totals,
-        })
+        summarize(&inner, since, None, dimension)
+    }
+
+    fn history_range(
+        &self,
+        since: i64,
+        until: Option<i64>,
+        dimension: TrafficDimension,
+    ) -> Result<TrafficHistory, TrafficError> {
+        let inner = self.lock()?;
+        summarize(&inner, since, until, dimension)
     }
 
     pub(crate) fn update_settings(
@@ -284,6 +270,40 @@ impl TrafficStore {
     fn lock(&self) -> Result<MutexGuard<'_, Inner>, TrafficError> {
         self.inner.lock().map_err(|_| TrafficError::Lock)
     }
+}
+
+fn summarize(
+    inner: &Inner,
+    since: i64,
+    until: Option<i64>,
+    dimension: TrafficDimension,
+) -> Result<TrafficHistory, TrafficError> {
+    let mut totals = HashMap::<String, Totals>::new();
+    for (key, value) in &inner.records {
+        if key.time < since
+            || until.is_some_and(|until| key.time > until)
+            || key.dimension != dimension
+        {
+            continue;
+        }
+        let total = totals.entry(key.label.clone()).or_default();
+        total.download += value.download;
+        total.upload += value.upload;
+    }
+    let mut totals = totals
+        .into_iter()
+        .map(|(label, total)| TrafficTotal {
+            label,
+            download: total.download,
+            upload: total.upload,
+        })
+        .collect::<Vec<_>>();
+    totals.sort_by_key(|item| std::cmp::Reverse(item.download + item.upload));
+    Ok(TrafficHistory {
+        settings: inner.settings.clone(),
+        storage_bytes: encoded(inner)?.len(),
+        totals,
+    })
 }
 
 fn rotate(inner: &mut Inner, now: i64) -> bool {
@@ -372,6 +392,7 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
 struct HistoryQuery {
     #[serde(default)]
     since: i64,
+    until: Option<i64>,
     #[serde(default = "default_dimension")]
     dimension: TrafficDimension,
 }
@@ -384,11 +405,16 @@ async fn history(
     State(state): State<Arc<AppState>>,
     Query(query): Query<HistoryQuery>,
 ) -> Response {
-    result(
+    let history = if query.since == 0 && query.until.is_none() {
         state
             .traffic
-            .history(query.since, query.dimension, Utc::now().timestamp_millis()),
-    )
+            .history(0, query.dimension, Utc::now().timestamp_millis())
+    } else {
+        state
+            .traffic
+            .history_range(query.since, query.until, query.dimension)
+    };
+    result(history)
 }
 
 async fn update_settings(

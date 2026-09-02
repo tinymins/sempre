@@ -151,6 +151,53 @@ fn rolling_window_does_not_delete_older_retained_history() {
 }
 
 #[test]
+fn explicit_history_range_ignores_summary_window_and_honors_end_time() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let store = TrafficStore::open(root.path().join("traffic.json")).expect("store");
+    for (time, label) in [
+        (28_800_000, "older.example"),
+        (34_200_000, "middle.example"),
+        (35_400_000, "newer.example"),
+    ] {
+        store
+            .record(
+                time,
+                vec![TrafficDelta {
+                    dimension: TrafficDimension::Host,
+                    label: label.into(),
+                    download: 10,
+                    upload: 2,
+                }],
+            )
+            .expect("record");
+    }
+    store
+        .update_settings(
+            TrafficSettings {
+                window_hours: 1,
+                retention_hours: Some(24),
+                reset_day: None,
+                retention_months: Some(12),
+                max_bytes: None,
+            },
+            36_000_000,
+        )
+        .expect("one-hour window");
+
+    let history = store
+        .history_range(28_800_000, Some(34_200_000), TrafficDimension::Host)
+        .expect("explicit range");
+    assert_eq!(
+        history
+            .totals
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>(),
+        ["middle.example", "older.example"]
+    );
+}
+
+#[test]
 fn maximum_size_rotation_drops_oldest_buckets_first() {
     let root = tempfile::tempdir().expect("temporary directory");
     let store = TrafficStore::open(root.path().join("traffic.json")).expect("store");
