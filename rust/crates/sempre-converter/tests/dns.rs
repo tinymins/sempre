@@ -280,3 +280,63 @@ fn managed_windows_frontend_rejects_sing_box_v13() {
             .contains("requires sing-box 1.14")
     );
 }
+
+#[test]
+fn sing_box_resolves_real_addresses_before_domestic_ip_routing() {
+    for format in [
+        "sing-box-v12",
+        "sing-box-v13",
+        "sing-box-v14",
+        "sing-box-v13-macos",
+        "sing-box-v14-macos",
+        "sing-box-v14-windows",
+    ] {
+        for fakeip in [false, true] {
+            let mut input = request(format);
+            input.profile.dns["shared"]["fakeipEnabled"] = json!(fakeip);
+            if format.ends_with("macos") || format.ends_with("windows") {
+                input.profile.dns["shared"]["systemDnsTakeoverEnabled"] = json!(true);
+            }
+            input.profile.rules = vec![json!("DOMAIN,explicit.example,DIRECT")];
+            let output = compile(&input).expect(format);
+            let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
+            let rules = output["route"]["rules"].as_array().expect("route rules");
+            let geoip = rules
+                .iter()
+                .position(|rule| rule["rule_set"] == json!(["geoip-cn", "geosite-cn"]))
+                .expect("domestic route");
+            assert_eq!(
+                rules[geoip - 1],
+                json!({ "action": "resolve", "server": "local" }),
+                "{format}, fakeip={fakeip}"
+            );
+            let explicit = rules
+                .iter()
+                .position(|rule| rule["domain"] == "explicit.example")
+                .expect("explicit domain rule");
+            assert!(explicit < geoip - 1, "preserve explicit routing precedence");
+            assert!(output["dns"]["servers"].as_array().is_some_and(|servers| {
+                servers.iter().any(|server| {
+                    server["tag"] == "local"
+                        && server["type"] == "tls"
+                        && server["server"] == "223.5.5.5"
+                })
+            }));
+        }
+    }
+}
+
+#[test]
+fn sing_box_does_not_add_domestic_resolution_without_ip_rules_or_to_legacy() {
+    for (format, enabled) in [("sing-box-v14", false), ("sing-box", true)] {
+        let mut input = request(format);
+        input.profile.dns["shared"]["cnIpRuleSetEnabled"] = json!(enabled);
+        let output = compile(&input).expect("sing-box config");
+        let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
+        assert!(
+            output["route"]["rules"]
+                .as_array()
+                .is_some_and(|rules| { rules.iter().all(|rule| rule["action"] != "resolve") })
+        );
+    }
+}

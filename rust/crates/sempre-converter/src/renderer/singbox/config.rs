@@ -90,6 +90,14 @@ pub(super) fn route(
     let (dns_rule_sets, dns_route) = super::super::dns::sing_box_route_policy(profile);
     rule_sets.extend(dns_rule_sets);
     if let Some(rule) = dns_route {
+        if target.version != "11"
+            && rule["rule_set"]
+                .as_array()
+                .is_some_and(|tags| tags.iter().any(|tag| tag == "geoip-cn"))
+        {
+            // FakeIP restores a domain, not the destination addresses needed by GeoIP.
+            rules.push(json!({ "action": "resolve", "server": "local" }));
+        }
         rules.push(rule);
     }
     append_rule_providers(
