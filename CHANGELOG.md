@@ -2,6 +2,12 @@
 
 All notable changes to Sempre are documented in this file.
 
+## [2.0.6] - 2026-09-02
+
+### Fixed
+
+- Updated Windows managed DNS regression coverage to use the required sing-box 1.14 fixture, restoring full Windows CI verification without changing production behavior.
+
 ## [2.0.5] - 2026-09-02
 
 ### Added
@@ -30,6 +36,7 @@ All notable changes to Sempre are documented in this file.
 - Improved IP attribution by preferring public-IP checks and exposing cached attribution in diagnostics.
 - Made equal-total traffic-history rows deterministic across repeated queries and test runs.
 
+[2.0.6]: https://github.com/tinymins/sempre/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/tinymins/sempre/compare/v2.0.4...v2.0.5
 
 ## [2.0.4] - 2026-08-30

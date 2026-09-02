@@ -2080,7 +2080,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-artifact"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "flate2",
  "futures-util",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-build"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "clap",
@@ -2121,7 +2121,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-bundle"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "sempre-state",
@@ -2135,7 +2135,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-client"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "axum",
  "chrono",
@@ -2175,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-control"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "argon2",
  "base64",
@@ -2192,7 +2192,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-converter"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "base64",
  "serde",
@@ -2205,7 +2205,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-converter-cli"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "sempre-converter",
  "serde",
@@ -2214,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-core"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "rand 0.9.5",
  "regex",
@@ -2227,7 +2227,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-core-control"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "axum",
  "futures-util",
@@ -2243,7 +2243,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-dns"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "regex",
@@ -2257,7 +2257,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-gateway"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "humantime",
@@ -2274,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-manager"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "humantime",
@@ -2306,7 +2306,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-network"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "futures-util",
@@ -2320,7 +2320,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-server"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "argon2",
  "axum",
@@ -2345,7 +2345,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-service"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "nix",
  "sempre-state",
@@ -2357,7 +2357,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-smoke-setup"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "clap",
@@ -2371,7 +2371,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-state"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "fs2",
@@ -2386,7 +2386,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-subscription"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "axum",
  "base64",
@@ -2409,7 +2409,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-supervisor"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "nix",
  "sempre-core",
@@ -2420,7 +2420,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-testcore"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "axum",
  "serde",
@@ -2431,7 +2431,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-transparent"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "ipnet",
  "sempre-converter",
@@ -2448,7 +2448,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-tunnel"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "humantime",
@@ -2467,7 +2467,7 @@ dependencies = [
 
 [[package]]
 name = "sempre-ui"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "futures-util",
