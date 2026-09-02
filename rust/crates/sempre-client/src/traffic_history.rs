@@ -298,7 +298,11 @@ fn summarize(
             upload: total.upload,
         })
         .collect::<Vec<_>>();
-    totals.sort_by_key(|item| std::cmp::Reverse(item.download + item.upload));
+    totals.sort_by(|left, right| {
+        (right.download + right.upload)
+            .cmp(&(left.download + left.upload))
+            .then_with(|| left.label.cmp(&right.label))
+    });
     Ok(TrafficHistory {
         settings: inner.settings.clone(),
         storage_bytes: encoded(inner)?.len(),
