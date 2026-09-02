@@ -96,7 +96,8 @@ pub(super) fn route(
                 .is_some_and(|tags| tags.iter().any(|tag| tag == "geoip-cn"))
         {
             // FakeIP restores a domain, not the destination addresses needed by GeoIP.
-            rules.push(json!({ "action": "resolve", "server": "local" }));
+            // Use the proxied resolver so poisoned local answers cannot replace the destination.
+            rules.push(json!({ "action": "resolve", "server": "remote" }));
         }
         rules.push(rule);
     }

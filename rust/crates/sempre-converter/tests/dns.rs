@@ -282,7 +282,7 @@ fn managed_windows_frontend_rejects_sing_box_v13() {
 }
 
 #[test]
-fn sing_box_resolves_real_addresses_before_domestic_ip_routing() {
+fn sing_box_resolves_real_addresses_through_remote_dns_before_domestic_ip_routing() {
     for format in [
         "sing-box-v12",
         "sing-box-v13",
@@ -307,7 +307,7 @@ fn sing_box_resolves_real_addresses_before_domestic_ip_routing() {
                 .expect("domestic route");
             assert_eq!(
                 rules[geoip - 1],
-                json!({ "action": "resolve", "server": "local" }),
+                json!({ "action": "resolve", "server": "remote" }),
                 "{format}, fakeip={fakeip}"
             );
             let explicit = rules
@@ -315,13 +315,11 @@ fn sing_box_resolves_real_addresses_before_domestic_ip_routing() {
                 .position(|rule| rule["domain"] == "explicit.example")
                 .expect("explicit domain rule");
             assert!(explicit < geoip - 1, "preserve explicit routing precedence");
-            assert!(output["dns"]["servers"].as_array().is_some_and(|servers| {
-                servers.iter().any(|server| {
-                    server["tag"] == "local"
-                        && server["type"] == "tls"
-                        && server["server"] == "223.5.5.5"
-                })
-            }));
+            assert!(
+                output["dns"]["servers"]
+                    .as_array()
+                    .is_some_and(|servers| servers.iter().any(|server| server["tag"] == "remote"))
+            );
         }
     }
 }
