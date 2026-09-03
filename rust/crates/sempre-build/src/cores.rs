@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use chrono::{DateTime, Utc};
 use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions, GithubClient};
-use sempre_core::{Package, STABLE, Target, built_in_registry, features};
+use sempre_core::{Package, STABLE, Target, built_in_registry};
 use sempre_state::{Document, Installation, Layout, Selection};
 
 use crate::BuildError;
@@ -47,7 +47,7 @@ pub(crate) async fn install_bundled_cores(
             package,
         });
     }
-    build_document(installed_at, &resolved, target)
+    build_document(installed_at, &resolved)
 }
 
 fn requests() -> [Request; 7] {
@@ -148,24 +148,12 @@ async fn install_core(
 fn build_document(
     installed_at: DateTime<Utc>,
     installations: &[Resolved],
-    target: &Target,
 ) -> Result<Document, BuildError> {
-    let sing_box = built_in_registry().get("sing-box")?;
-    let reference = if sing_box
-        .capabilities(Some(SING_BOX_V13), target)
-        .features
-        .iter()
-        .any(|feature| feature == features::DNS_TUN_CAPTURE)
-    {
-        STABLE
-    } else {
-        SING_BOX_V14
-    };
     let mut document = Document {
         selected: Some(Selection {
             core: "sing-box".into(),
             repository: None,
-            reference: reference.into(),
+            reference: STABLE.into(),
         }),
         ..Document::default()
     };
@@ -244,47 +232,29 @@ mod tests {
     }
 
     #[test]
-    fn release_state_selects_a_bundled_core_with_managed_dns_on_every_platform() {
+    fn release_state_selects_stable_sing_box_and_keeps_all_versions() {
         let installed_at = Utc::now();
         let resolved = requests()
             .iter()
-            .map(|request| Resolved {
+            .enumerate()
+            .map(|(index, request)| Resolved {
                 core: request.core.into(),
                 channel: request.channel.map(str::to_owned),
-                package: package(if request.reference == STABLE {
-                    "1.0.0"
-                } else {
-                    request.reference
-                }),
+                package: package(&format!("1.0.{index}")),
             })
             .collect::<Vec<_>>();
-        for os in ["windows", "darwin", "linux"] {
-            let target = Target {
-                os: os.into(),
-                arch: "amd64".into(),
-                amd64_level: 0,
-            };
-            let document = build_document(installed_at, &resolved, &target).expect("release state");
-            let selection = document.selected.as_ref().expect("selected core");
-            let source = &document.cores["sing-box"].default;
-            let version = source
-                .channels
-                .get(&selection.reference)
-                .unwrap_or(&selection.reference);
-            assert!(source.installed.contains_key(version));
-            assert!(
-                built_in_registry()
-                    .get(&selection.core)
-                    .expect("adapter")
-                    .capabilities(Some(version), &target)
-                    .features
-                    .contains(&features::DNS_TUN_CAPTURE.into())
-            );
-            assert_eq!(source.channels[STABLE], SING_BOX_V13);
-            assert_eq!(source.installed.len(), 4);
-            for core in ["sing-box", "mihomo", "xray", "v2ray"] {
-                assert!(document.cores[core].default.channels.contains_key(STABLE));
-            }
+        let document = build_document(installed_at, &resolved).expect("release state");
+        assert_eq!(
+            document.selected,
+            Some(Selection {
+                core: "sing-box".into(),
+                repository: None,
+                reference: STABLE.into()
+            })
+        );
+        assert_eq!(document.cores["sing-box"].default.installed.len(), 4);
+        for core in ["sing-box", "mihomo", "xray", "v2ray"] {
+            assert!(document.cores[core].default.channels.contains_key(STABLE));
         }
     }
 
