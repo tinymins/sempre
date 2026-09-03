@@ -27,6 +27,8 @@ struct CustomNodeInput {
     #[serde(default)]
     name: String,
     proxy: Value,
+    // Request-only inverse view of Profile.custom_node_ids; never stored on a node.
+    subscription_ids: Option<Vec<String>>,
 }
 
 async fn list(State(state): State<Arc<AppState>>) -> Response {
@@ -38,9 +40,13 @@ async fn list(State(state): State<Arc<AppState>>) -> Response {
 
 async fn create(
     State(state): State<Arc<AppState>>,
-    Json(input): Json<CustomNodeInput>,
+    Json(mut input): Json<CustomNodeInput>,
 ) -> Response {
-    match state.manager.save_custom_node(candidate("", input)) {
+    let subscriptions = input.subscription_ids.take();
+    match state
+        .manager
+        .save_custom_node_with_subscriptions(candidate("", input), subscriptions.as_deref())
+    {
         Ok(node) => (StatusCode::CREATED, Json(node)).into_response(),
         Err(error) => operation(error.to_string()),
     }
@@ -49,9 +55,13 @@ async fn create(
 async fn update(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-    Json(input): Json<CustomNodeInput>,
+    Json(mut input): Json<CustomNodeInput>,
 ) -> Response {
-    match state.manager.save_custom_node(candidate(&id, input)) {
+    let subscriptions = input.subscription_ids.take();
+    match state
+        .manager
+        .save_custom_node_with_subscriptions(candidate(&id, input), subscriptions.as_deref())
+    {
         Ok(node) => Json(node).into_response(),
         Err(error) => operation(error.to_string()),
     }

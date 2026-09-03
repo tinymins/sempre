@@ -146,9 +146,15 @@ async fn create(State(state): State<Arc<AppState>>, Json(input): Json<CreateInpu
     } else if !input.mode.is_empty() && input.mode != "local" {
         return bad_request("profile mode must be local or remote");
     }
-    let candidate = profile.clone();
     match state.manager.subscriptions().update(|catalog| {
-        catalog.profiles.push(candidate);
+        if input.mode != "remote" {
+            profile.custom_node_ids = catalog
+                .custom_nodes
+                .iter()
+                .map(|node| node.id.clone())
+                .collect();
+        }
+        catalog.profiles.push(profile.clone());
         Ok(())
     }) {
         Ok(_) => (StatusCode::CREATED, Json(profile)).into_response(),

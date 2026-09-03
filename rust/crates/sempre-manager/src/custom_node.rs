@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::{
     CoreChange, Manager, ManagerError, VersionRunner,
     pending_changes::{has_pending_profile_revision, record_pending_fields},
+    subscription::profile_mode,
 };
 
 impl<R: VersionRunner> Manager<R> {
@@ -15,7 +16,15 @@ impl<R: VersionRunner> Manager<R> {
         Ok(nodes)
     }
 
-    pub fn save_custom_node(&self, mut candidate: CustomNode) -> Result<CustomNode, ManagerError> {
+    pub fn save_custom_node(&self, candidate: CustomNode) -> Result<CustomNode, ManagerError> {
+        self.save_custom_node_with_subscriptions(candidate, None)
+    }
+
+    pub fn save_custom_node_with_subscriptions(
+        &self,
+        mut candidate: CustomNode,
+        subscription_ids: Option<&[String]>,
+    ) -> Result<CustomNode, ManagerError> {
         let _operation = self.store.acquire_operation()?;
         let create = candidate.id.trim().is_empty();
         if create {
@@ -42,6 +51,22 @@ impl<R: VersionRunner> Manager<R> {
         let mut active_affected = false;
         let mut append = false;
         self.subscriptions.update(|catalog| {
+            if let Some(ids) = subscription_ids {
+                for id in ids {
+                    let profile = catalog
+                        .profiles
+                        .iter()
+                        .find(|profile| &profile.id == id)
+                        .ok_or_else(|| {
+                            invalid(format!("subscription profile {id:?} was not found"))
+                        })?;
+                    if profile_mode(profile) == "remote" {
+                        return Err(invalid(
+                            "remote profiles are read-only; edit the profile on its Sempre server",
+                        ));
+                    }
+                }
+            }
             if let Some(index) = catalog
                 .custom_nodes
                 .iter()
@@ -51,26 +76,35 @@ impl<R: VersionRunner> Manager<R> {
                     .created_at
                     .clone_from(&catalog.custom_nodes[index].created_at);
                 catalog.custom_nodes[index] = candidate.clone();
-                for profile in &mut catalog.profiles {
-                    if profile.custom_node_ids.contains(&candidate.id) {
-                        if document.active_profile_id.as_deref() == Some(&profile.id) {
-                            active_affected = true;
-                            append = has_pending_profile_revision(&document, profile);
-                        }
-                        profile.revision += 1;
-                    }
-                }
-                saved = Some(candidate.clone());
-                return Ok(());
-            }
-            if !create {
+            } else if !create {
                 return Err(invalid(format!(
                     "custom node {:?} was not found",
                     candidate.id
                 )));
+            } else {
+                candidate.created_at = Some(now);
+                catalog.custom_nodes.push(candidate.clone());
             }
-            candidate.created_at = Some(now);
-            catalog.custom_nodes.push(candidate.clone());
+            for profile in &mut catalog.profiles {
+                if profile_mode(profile) == "remote" {
+                    continue;
+                }
+                let referenced = profile.custom_node_ids.contains(&candidate.id);
+                let selected =
+                    subscription_ids.map_or(create || referenced, |ids| ids.contains(&profile.id));
+                if referenced != selected || (referenced && !create) {
+                    if document.active_profile_id.as_deref() == Some(&profile.id) {
+                        active_affected = true;
+                        append = has_pending_profile_revision(&document, profile);
+                    }
+                    if selected && !referenced {
+                        profile.custom_node_ids.push(candidate.id.clone());
+                    } else if !selected {
+                        profile.custom_node_ids.retain(|id| id != &candidate.id);
+                    }
+                    profile.revision += 1;
+                }
+            }
             saved = Some(candidate.clone());
             Ok(())
         })?;
@@ -150,13 +184,10 @@ mod tests {
         assert_eq!(saved.proxy["name"], "proxy-name");
         assert!(saved.created_at.is_some());
 
-        manager
-            .subscriptions()
-            .update(|catalog| {
-                catalog.profiles[0].custom_node_ids.push(saved.id.clone());
-                Ok(())
-            })
-            .expect("reference node");
+        assert_eq!(
+            manager.subscriptions().read().unwrap().profiles[0].custom_node_ids,
+            std::slice::from_ref(&saved.id)
+        );
         let before = manager.subscriptions().read().expect("catalog").profiles[0].revision;
         let mut update = saved.clone();
         update.name = "renamed".into();
@@ -189,5 +220,141 @@ mod tests {
         let mut invalid = candidate("invalid");
         invalid.proxy["port"] = json!(0);
         assert!(manager.save_custom_node(invalid).is_err());
+    }
+
+    #[test]
+    fn batch_node_save_updates_existing_profile_links_and_pending_state() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let manager = manager(&root);
+        let other = manager
+            .save_custom_node_with_subscriptions(candidate("other"), Some(&[]))
+            .expect("other node");
+        let first = manager.subscriptions.read().unwrap().profiles[0].id.clone();
+        let second = sempre_subscription::new_profile("second");
+        let second_id = second.id.clone();
+        manager
+            .subscriptions
+            .update(|catalog| {
+                catalog.profiles[0].custom_node_ids.push(other.id.clone());
+                catalog.profiles.push(second);
+                Ok(())
+            })
+            .unwrap();
+        manager
+            .store
+            .update(|document| {
+                document.active_profile_id = Some(first.clone());
+                document.selected = Some(sempre_state::Selection {
+                    core: "sing-box".into(),
+                    repository: None,
+                    reference: "1.13.18".into(),
+                });
+                document.core_mut("sing-box").default.installed.insert(
+                    "1.13.18".into(),
+                    sempre_state::Installation {
+                        explicit: true,
+                        digest: "a".repeat(64),
+                        source: "https://example.com/core.zip".into(),
+                        installed_at: Utc::now(),
+                    },
+                );
+                Ok(())
+            })
+            .unwrap();
+
+        let node = manager
+            .save_custom_node_with_subscriptions(
+                candidate("shared"),
+                Some(&[first.clone(), second_id.clone(), first.clone()]),
+            )
+            .expect("create and assign once");
+        let catalog = manager.subscriptions.read().unwrap();
+        assert_eq!(
+            catalog.profiles[0].custom_node_ids,
+            [other.id.clone(), node.id.clone()]
+        );
+        assert_eq!(
+            catalog.profiles[1].custom_node_ids,
+            std::slice::from_ref(&node.id)
+        );
+        assert_eq!(catalog.profiles[0].revision, 2);
+        assert_eq!(catalog.profiles[1].revision, 2);
+        assert!(
+            manager
+                .state()
+                .unwrap()
+                .pending_config_fields
+                .contains(&sempre_state::PendingConfigField::Nodes)
+        );
+        let stored = serde_json::to_value(&catalog).unwrap();
+        assert!(stored["custom_nodes"][1].get("subscription_ids").is_none());
+
+        manager
+            .save_custom_node_with_subscriptions(node.clone(), Some(&[second_id]))
+            .unwrap();
+        let catalog = manager.subscriptions.read().unwrap();
+        assert_eq!(catalog.profiles[0].custom_node_ids, [other.id]);
+        assert_eq!(
+            catalog.profiles[1].custom_node_ids,
+            std::slice::from_ref(&node.id)
+        );
+        assert_eq!(catalog.profiles[0].revision, 3);
+        assert_eq!(catalog.profiles[1].revision, 3);
+
+        manager
+            .save_custom_node(node.clone())
+            .expect("omitted selection preserves links");
+        assert_eq!(
+            manager.subscriptions.read().unwrap().profiles[1].custom_node_ids,
+            std::slice::from_ref(&node.id)
+        );
+        manager
+            .save_custom_node_with_subscriptions(node, Some(&[]))
+            .unwrap();
+        assert!(
+            manager.subscriptions.read().unwrap().profiles[1]
+                .custom_node_ids
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn invalid_batch_assignments_leave_node_and_all_profiles_unchanged() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let manager = manager(&root);
+        let node = manager.save_custom_node(candidate("original")).unwrap();
+        let mut remote = sempre_subscription::new_profile("remote");
+        remote.extra.insert("mode".into(), json!("remote"));
+        remote.extra.insert(
+            "remote".into(),
+            json!({ "manifest_url": "https://example.com/manifest" }),
+        );
+        let remote_id = remote.id.clone();
+        manager
+            .subscriptions
+            .update(|catalog| {
+                catalog.profiles.push(remote);
+                Ok(())
+            })
+            .unwrap();
+        let catalog_path = &manager.store.layout().subscription_catalog;
+        let before = std::fs::read(catalog_path).unwrap();
+        let first = manager.subscriptions.read().unwrap().profiles[0].id.clone();
+        for rejected in ["missing".to_owned(), remote_id] {
+            let selected = [first.clone(), rejected];
+            assert!(
+                manager
+                    .save_custom_node_with_subscriptions(candidate("new"), Some(&selected))
+                    .is_err()
+            );
+            let mut edited = node.clone();
+            edited.name = "changed".into();
+            assert!(
+                manager
+                    .save_custom_node_with_subscriptions(edited, Some(&selected))
+                    .is_err()
+            );
+            assert_eq!(std::fs::read(catalog_path).unwrap(), before);
+        }
     }
 }
