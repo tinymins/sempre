@@ -1,7 +1,10 @@
 use std::{fs, io, path::Path};
 
 #[cfg(windows)]
-use std::process::Command;
+mod windows;
+
+#[cfg(windows)]
+use windows::remove_installation_root;
 
 use sempre_state::{Document, Layout, Mode, Runtime, Store};
 
@@ -120,47 +123,6 @@ fn remove_installation_root(path: &Path) -> Result<bool, ManagerError> {
         )
     })?;
     Ok(false)
-}
-
-#[cfg(windows)]
-fn remove_installation_root(path: &Path) -> Result<bool, ManagerError> {
-    let executable = std::env::current_exe()
-        .map_err(|error| ManagerError::io("locate current executable", error))?;
-    let executable_parent = executable.parent().unwrap_or_else(|| Path::new(""));
-    if !paths_equal(executable_parent, path) {
-        remove_tree(path).map_err(|error| {
-            ManagerError::io(
-                format!("remove installation directory {}", path.display()),
-                error,
-            )
-        })?;
-        return Ok(false);
-    }
-    let root = path
-        .to_str()
-        .ok_or_else(|| ManagerError::NonUnicodePath(path.to_path_buf()))?;
-    if root.chars().any(|character| {
-        matches!(
-            character,
-            '"' | '\r' | '\n' | '&' | '|' | '<' | '>' | '^' | '%'
-        )
-    }) {
-        return Err(ManagerError::InvalidOperation(
-            "installation path cannot be scheduled for removal".into(),
-        ));
-    }
-    let script = format!("ping 127.0.0.1 -n 3 >NUL & rmdir /S /Q \"{root}\"");
-    Command::new("cmd.exe")
-        .args(["/D", "/S", "/C", &script])
-        .spawn()
-        .map_err(|error| ManagerError::io("schedule installation removal", error))?;
-    Ok(true)
-}
-
-#[cfg(windows)]
-fn paths_equal(left: &Path, right: &Path) -> bool {
-    left.to_string_lossy()
-        .eq_ignore_ascii_case(&right.to_string_lossy())
 }
 
 fn incomplete(problems: &[String]) -> ManagerError {

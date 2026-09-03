@@ -110,12 +110,7 @@ fn platform_ensure(
         .map(|argument| quote_windows_argument(argument))
         .collect::<Vec<_>>()
         .join(" ");
-    let script = format!(
-        "$process = Start-Process -FilePath {} -ArgumentList {} -WorkingDirectory {} -Verb RunAs -Wait -PassThru; exit $process.ExitCode",
-        powershell_literal(executable),
-        powershell_literal(&command_line),
-        powershell_literal(working_directory)
-    );
+    let script = windows_elevation_script(executable, &command_line, working_directory);
     let status = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .status()
@@ -124,6 +119,18 @@ fn platform_ensure(
             source,
         })?;
     Ok(Outcome::Exit(status.code().unwrap_or(1)))
+}
+
+#[cfg(windows)]
+fn windows_elevation_script(executable: &str, arguments: &str, working_directory: &str) -> String {
+    // Start-Process -Wait also waits for the cleanup descendant. The original
+    // executable must exit first so that descendant can remove the installation.
+    format!(
+        "$ErrorActionPreference = 'Stop'; $process = Start-Process -FilePath {} -ArgumentList {} -WorkingDirectory {} -Verb RunAs -PassThru; $null = $process.Handle; $process.WaitForExit(); exit $process.ExitCode",
+        powershell_literal(executable),
+        powershell_literal(arguments),
+        powershell_literal(working_directory)
+    )
 }
 
 #[cfg(windows)]
@@ -198,3 +205,6 @@ mod tests {
         assert_eq!(powershell_literal("a'b"), "'a''b'");
     }
 }
+
+#[cfg(all(test, windows))]
+mod windows_tests;

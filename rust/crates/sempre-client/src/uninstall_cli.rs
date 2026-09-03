@@ -10,17 +10,23 @@ pub async fn run(purge: bool, yes: bool) -> Result<(), ClientError> {
     }
     let layout = Layout::for_mode(Mode::System)?;
     let result = sempre_manager::uninstall_application(&layout, purge).await?;
-    if result.purged {
-        println!("Sempre and all data were removed.");
-    } else {
-        println!(
-            "Sempre was removed. Configuration, subscriptions, Web listener, and password were retained."
-        );
-    }
-    if result.installation_removal_scheduled {
-        println!("The installation directory will be removed after this process exits.");
-    }
+    println!("{}", completion_message(result));
     Ok(())
+}
+
+fn completion_message(result: sempre_manager::ApplicationUninstall) -> &'static str {
+    if result.installation_removal_scheduled {
+        return if result.purged {
+            "Service and data removed. Installation directory removal is pending until this process exits."
+        } else {
+            "Service removed; configuration, subscriptions, Web listener, and password retained. Installation directory removal is pending until this process exits."
+        };
+    }
+    if result.purged {
+        "Sempre and all data were removed."
+    } else {
+        "Sempre was removed. Configuration, subscriptions, Web listener, and password were retained."
+    }
 }
 
 fn confirm(purge: bool) -> Result<bool, ClientError> {
@@ -41,4 +47,22 @@ fn confirm(purge: bool) -> Result<bool, ClientError> {
         answer.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_removal_never_claims_application_is_already_removed() {
+        for purged in [false, true] {
+            let message = completion_message(sempre_manager::ApplicationUninstall {
+                purged,
+                installation_removal_scheduled: true,
+            });
+            assert!(message.contains("pending"));
+            assert!(!message.contains("Sempre was removed"));
+            assert!(!message.contains("Sempre and all data were removed"));
+        }
+    }
 }

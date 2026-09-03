@@ -127,7 +127,7 @@ jobs:
           ./smoke/sempre.exe --portable service stop
           ./smoke/sempre.exe --portable service start
           ./smoke/sempre.exe --portable service restart
-          ./smoke/sempre.exe --portable service uninstall
+          ./rust/scripts/windows_uninstall_smoke.ps1 -PortableExecutable ./smoke/sempre.exe
       - name: Clean Linux service data
         if: always() && runner.os == 'Linux'
         shell: bash
