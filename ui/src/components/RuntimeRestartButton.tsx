@@ -28,14 +28,14 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
     refetchInterval: (query) => query.state.data?.pending || ['starting', 'stopping', 'restarting'].includes(query.state.data?.runtime_state || '') ? 1000 : 3000,
   })
   const restarting = submitting || task?.state === 'running'
-  const disabled = restarting || !runtimeStatus.data?.actions?.restart.allowed || ['starting', 'stopping', 'restarting'].includes(runtimeStatus.data?.runtime_state || '')
+  const restartDisabled = restarting || !runtimeStatus.data?.actions?.restart.allowed || ['starting', 'stopping', 'restarting'].includes(runtimeStatus.data?.runtime_state || '')
   const needsRestart = Boolean(runtimeStatus.data?.pending)
-  const label = t(panel ? 'restartCore' : 'restartNow')
+  const label = restarting ? (locale === 'zh-CN' ? '正在重启核心 · 查看日志' : 'Restarting core · view log') : t(panel ? 'restartCore' : 'restartNow')
   const visibleTask = mutation.error && task && task.started_at < submittedAt ? null : task
 
   return <>
     <span className="relative inline-flex items-center gap-1">
-      <Button variant={showLabel || panel ? 'default' : 'text'} className={showLabel ? 'h-9' : '!size-9 !p-0'} title={label} aria-label={label} disabled={disabled} onClick={() => setConfirmOpen(true)}>
+      <Button variant={showLabel || panel ? 'default' : 'text'} className={showLabel ? 'h-9' : '!size-9 !p-0'} title={label} aria-label={label} disabled={!restarting && restartDisabled} onClick={() => restarting ? setTaskOpen(true) : setConfirmOpen(true)}>
         {restarting ? <LoaderCircle size={18} className="animate-spin" /> : <RotateCw size={18} />}
         {showLabel ? label : null}
       </Button>
@@ -44,14 +44,14 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
     </span>
     <ConfirmDialog open={confirmOpen} title={t('coreRestartConfirmTitle')}
       detail={<RestartChangeSummary detail={t('coreRestartConfirmDetail')} changes={runtimeStatus.data?.pending_changes ?? []} />}
-      confirmLabel={t('restartNow')} cancelLabel={t('cancel')} pending={disabled} onCancel={() => setConfirmOpen(false)}
+      confirmLabel={t('restartNow')} cancelLabel={t('cancel')} pending={restartDisabled} onCancel={() => setConfirmOpen(false)}
       onConfirm={() => {
-        if (disabled) return
+        if (restartDisabled) return
         setConfirmOpen(false)
         setSubmittedAt(new Date().toISOString())
         setTaskOpen(true)
         mutation.mutate()
       }} />
-    {taskOpen ? <RuntimeRestartModal open task={visibleTask} submittedAt={submittedAt} submitting={mutation.isPending} error={mutation.error?.message || query.error?.message} onClose={() => setTaskOpen(false)} /> : null}
+    {taskOpen ? <RuntimeRestartModal open task={visibleTask} submittedAt={submittedAt} submitting={submitting} error={mutation.error?.message || query.error?.message} onClose={() => setTaskOpen(false)} /> : null}
   </>
 }
