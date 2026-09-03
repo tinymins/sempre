@@ -25,7 +25,7 @@ impl VersionRunner for FakeRunner {
         _: &'a dyn Adapter,
         _: &'a Path,
     ) -> Pin<Box<dyn Future<Output = Result<String, ManagerError>> + Send + 'a>> {
-        Box::pin(async { Ok("1.13.2".into()) })
+        Box::pin(async { Ok("1.14.0-beta.13".into()) })
     }
 }
 
@@ -59,7 +59,7 @@ fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>) {
             });
             let source = &mut document.core_mut("sing-box").default;
             source.installed.insert(
-                "1.13.2".into(),
+                "1.14.0-beta.13".into(),
                 Installation {
                     explicit: false,
                     digest: "b".repeat(64),
@@ -67,7 +67,9 @@ fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>) {
                     installed_at: Utc::now(),
                 },
             );
-            source.channels.insert("stable".into(), "1.13.2".into());
+            source
+                .channels
+                .insert("stable".into(), "1.14.0-beta.13".into());
             document.configs.insert("sing-box".into(), hash.clone());
             Ok(())
         })
@@ -75,7 +77,7 @@ fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>) {
     let binary = manager
         .store
         .layout()
-        .core_binary("sing-box", None, "1.13.2");
+        .core_binary("sing-box", None, "1.14.0-beta.13");
     fs::create_dir_all(binary.parent().expect("binary parent")).expect("core directory");
     fs::write(binary, b"fixture").expect("core binary");
     let config = manager.store.layout().config("sing-box", &hash);
@@ -172,6 +174,34 @@ async fn start_prepares_the_default_profile_when_configuration_is_missing() {
         document.config_builds["sing-box"].profile_id,
         active_profile_id
     );
+    assert!(manager.dns_settings().enabled);
+    let content = fs::read(
+        manager
+            .store
+            .layout()
+            .config("sing-box", &document.configs["sing-box"]),
+    )
+    .expect("default configuration");
+    let config: serde_json::Value = serde_json::from_slice(&content).expect("configuration JSON");
+    assert!(
+        config["inbounds"]
+            .as_array()
+            .expect("inbounds")
+            .iter()
+            .any(|inbound| inbound["tag"] == "sempre-dns-core-in")
+    );
+    if cfg!(any(target_os = "windows", target_os = "macos")) {
+        let tun = config["inbounds"]
+            .as_array()
+            .expect("inbounds")
+            .iter()
+            .find(|inbound| inbound["type"] == "tun")
+            .expect("TUN");
+        assert_eq!(
+            tun["route_address"],
+            serde_json::json!(["198.18.0.0/15", "fc00::/18"])
+        );
+    }
 }
 
 #[test]
@@ -227,7 +257,7 @@ fn status_describes_directly_recorded_profile_changes_without_exposing_values() 
                 core: "sing-box".into(),
                 repository: None,
                 reference: "stable".into(),
-                version: "1.13.2".into(),
+                version: "1.14.0-beta.13".into(),
                 config_hash: "a".repeat(64),
             });
             document.config_builds.insert(
@@ -280,7 +310,8 @@ fn status_describes_a_pending_core_switch_without_calling_it_a_config_edit() {
     manager
         .store
         .update(|document| {
-            let installation = document.cores["sing-box"].default.installed["1.13.2"].clone();
+            let installation =
+                document.cores["sing-box"].default.installed["1.14.0-beta.13"].clone();
             document
                 .core_mut("sing-box")
                 .default
@@ -294,7 +325,7 @@ fn status_describes_a_pending_core_switch_without_calling_it_a_config_edit() {
                 config_hash: "a".repeat(64),
             };
             let current = Deployment {
-                version: "1.13.2".into(),
+                version: "1.14.0-beta.13".into(),
                 ..previous.clone()
             };
             document.previous = Some(previous);
@@ -310,7 +341,7 @@ fn status_describes_a_pending_core_switch_without_calling_it_a_config_edit() {
         status.pending_changes,
         vec![RuntimePendingChange::Core {
             previous: Some("sing-box@1.12.20".into()),
-            current: "sing-box@1.13.2".into(),
+            current: "sing-box@1.14.0-beta.13".into(),
         }]
     );
 }

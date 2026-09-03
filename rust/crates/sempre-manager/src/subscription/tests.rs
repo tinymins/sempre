@@ -54,6 +54,13 @@ fn fixture_with_core_version(
     let root = tempfile::tempdir().expect("temporary directory");
     let manager = Manager::with_runner(Store::new(Layout::at(root.path())), FakeRunner::default())
         .expect("manager");
+    // These fixtures cover opt-in transitions and older cores without a frontend.
+    let mut dns = manager.dns_settings.read();
+    dns.enabled = false;
+    manager
+        .dns_settings
+        .replace(dns)
+        .expect("legacy DNS fixture");
     manager
         .store
         .update(|document| {

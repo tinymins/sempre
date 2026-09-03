@@ -342,8 +342,8 @@ mod tests {
                 .as_ref()
                 .expect("recommendation")
                 .candidate;
-            assert_eq!(recommendation.reference, "sing-box@stable");
-            assert_eq!(recommendation.score, Some(93));
+            assert_eq!(recommendation.reference, "sing-box@1.14.0-beta.13");
+            assert_eq!(recommendation.score, Some(70));
         }
         assert_eq!(
             report.checks.last().expect("profile check").status,

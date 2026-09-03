@@ -52,7 +52,7 @@ impl DnsSettings {
         Self {
             schema: SCHEMA_VERSION,
             revision: 1,
-            enabled: boolean(shared, "systemDnsTakeoverEnabled", false),
+            enabled: boolean(shared, "systemDnsTakeoverEnabled", true),
             direct_upstreams: Vec::new(),
             rule_sets: Vec::new(),
             reject_https: boolean(shared, "rejectHttps", true),
@@ -363,6 +363,31 @@ fn write_queries(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fresh_settings_enable_frontend_and_preserve_a_saved_opt_out() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("dns.json");
+        let queries = temp.path().join("queries.ndjson");
+        let profile = Profile::default();
+        let store = DnsSettingsStore::open(path.clone(), queries.clone(), &profile).expect("store");
+        assert!(
+            store.read().enabled,
+            "new installations must enable the DNS frontend"
+        );
+        let mut disabled = store.read();
+        disabled.enabled = false;
+        let saved = store.replace(disabled).expect("explicit opt out");
+        let reopened = DnsSettingsStore::open(path, queries, &profile).expect("reopen");
+        assert_eq!(reopened.read(), saved);
+    }
+
+    #[test]
+    fn initial_profile_keeps_an_explicit_legacy_opt_out() {
+        let mut profile = Profile::default();
+        profile.editor.dns_config = r#"{"shared":{"systemDnsTakeoverEnabled":false}}"#.into();
+        assert!(!DnsSettings::from_profile(&profile).enabled);
+    }
 
     #[test]
     fn migrates_only_frontend_fields_from_legacy_device_dns() {

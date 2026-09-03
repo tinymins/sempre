@@ -38,6 +38,14 @@ fn fixture(script: &str) -> (tempfile::TempDir, Arc<Manager<FakeRunner>>) {
     let manager = Arc::new(
         Manager::with_runner(Store::new(Layout::at(root.path())), FakeRunner).expect("manager"),
     );
+    // The shell fixture has no DNS listener or system networking support.
+    manager
+        .dns_settings
+        .replace(crate::DnsSettings {
+            enabled: false,
+            ..manager.dns_settings.read()
+        })
+        .expect("disable fixture DNS frontend");
     manager
         .subscriptions
         .update(|catalog| {
