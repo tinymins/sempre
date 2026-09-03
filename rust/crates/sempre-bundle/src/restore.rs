@@ -9,6 +9,11 @@ use uuid::Uuid;
 
 use crate::{BundleError, METADATA_NAME, PORTABLE_MARKER, copy_file, copy_tree};
 
+#[cfg(windows)]
+mod windows_rename;
+#[cfg(windows)]
+use windows_rename::rename_with_retry;
+
 #[derive(Deserialize)]
 struct SnapshotMetadata {
     schema: u32,
@@ -263,7 +268,7 @@ impl Swap {
             && let Err(error) = rename(staged, &self.target, "activate deployment target")
         {
             if self.had_target {
-                let _ = fs::rename(&self.backup, &self.target);
+                let _ = rename_with_retry(&self.backup, &self.target);
             }
             return Err(error);
         }
@@ -275,7 +280,7 @@ impl Swap {
         if self.activated {
             let _ = remove_path(&self.target);
             if self.had_target {
-                let _ = fs::rename(&self.backup, &self.target);
+                let _ = rename_with_retry(&self.backup, &self.target);
             }
             self.activated = false;
         }
@@ -313,24 +318,6 @@ fn rename_with_retry(source: &Path, target: &Path) -> io::Result<()> {
     fs::rename(source, target)
 }
 
-#[cfg(windows)]
-fn rename_with_retry(source: &Path, target: &Path) -> io::Result<()> {
-    use std::{thread, time::Duration};
-
-    const ATTEMPTS: usize = 40;
-    const DELAY: Duration = Duration::from_millis(50);
-    for attempt in 1..=ATTEMPTS {
-        match fs::rename(source, target) {
-            Ok(()) => return Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::PermissionDenied && attempt < ATTEMPTS => {
-                thread::sleep(DELAY);
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    unreachable!("rename retry loop always returns")
-}
-
 pub(super) fn remove_path(path: &Path) -> Result<(), BundleError> {
     let metadata = match path.symlink_metadata() {
         Ok(metadata) => metadata,
@@ -359,32 +346,6 @@ pub(super) fn remove_path(path: &Path) -> Result<(), BundleError> {
 mod tests {
     use super::*;
     use sempre_state::Store;
-
-    #[cfg(windows)]
-    #[test]
-    fn rename_retries_transient_windows_file_locks() {
-        use std::{fs::OpenOptions, os::windows::fs::OpenOptionsExt as _, thread, time::Duration};
-
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let source = temporary.path().join("source");
-        let target = temporary.path().join("target");
-        fs::create_dir_all(&source).expect("source directory");
-        let executable = source.join("core.exe");
-        fs::write(&executable, b"executable").expect("source executable");
-        let locked = OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(&executable)
-            .expect("exclusive file handle");
-        let release = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(100));
-            drop(locked);
-        });
-
-        rename(&source, &target, "rename locked directory").expect("retry rename");
-        release.join().expect("release file handle");
-        assert!(target.join("core.exe").is_file());
-    }
 
     #[test]
     fn restore_transaction_rolls_back_and_commits_complete_snapshots() {
