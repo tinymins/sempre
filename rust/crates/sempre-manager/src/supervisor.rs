@@ -20,13 +20,14 @@ const STOP_GRACE: Duration = Duration::from_secs(10);
 const MAX_BACKOFF: Duration = Duration::from_mins(1);
 
 pub(crate) struct RuntimePlan {
-    deployment: Deployment,
+    pub(crate) deployment: Deployment,
     spec: CommandSpec,
     runtime_config: PathBuf,
     runtime_config_hash: String,
     control: Option<ControlSpec>,
     transparent: TransparentPlan,
     pub(crate) dns_frontend: Option<DnsFrontendPlan>,
+    pub(crate) rules: crate::rule_bootstrap::RuleBootstrap,
 }
 
 enum CycleResult {
@@ -217,7 +218,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
         }
 
-        match wait_running(self, shutdown, &mut process).await {
+        match wait_running(self, shutdown, &mut process, plan).await {
             ProcessEvent::Reload => {
                 self.stop_process(&mut process, false).await?;
                 Ok(CycleResult::Restart)
@@ -289,6 +290,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .map_err(|error| ManagerError::io("reset core control directory", error))?;
         }
         let runtime = adapter.prepare_runtime(&config, &control_directory)?;
+        let rules = if deployment.core == "sing-box" {
+            crate::rule_bootstrap::RuleBootstrap::prepare(&self.fetcher, &runtime.config)?
+        } else {
+            crate::rule_bootstrap::RuleBootstrap::default()
+        };
         let transparent = self
             .prepare_dns_transparent_plan(&document, &deployment, &reference, &runtime.config)
             .await?;
@@ -317,6 +323,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             control: runtime.control,
             transparent,
             dns_frontend,
+            rules,
         })
     }
 
@@ -351,7 +358,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 
     fn mark_runtime_healthy(&self, plan: &RuntimePlan) -> Result<(), ManagerError> {
         state::mark_healthy(self, plan).and_then(|()| {
-            self.log_supervisor(&format!("healthy {}", deployment_label(&plan.deployment)))
+            self.log_supervisor(&format!(
+                "healthy {}; pending online rule sets: {}",
+                deployment_label(&plan.deployment),
+                plan.rules.pending_count()
+            ))
         })
     }
 

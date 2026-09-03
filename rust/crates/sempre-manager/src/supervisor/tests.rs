@@ -285,3 +285,52 @@ async fn wait_until(timeout: Duration, condition: impl Fn() -> bool) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
+
+#[tokio::test]
+async fn stalled_rule_download_keeps_basic_core_running_and_does_not_block_stop() {
+    let (_root, manager) = fixture("#!/bin/sh\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n");
+    let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let config = serde_json::json!({
+        "inbounds":[{"type":"http","listen":"127.0.0.1","listen_port":proxy.local_addr().unwrap().port()}],
+        "route":{
+            "rule_set":[{"tag":"user","type":"remote","format":"source","url":"http://user.invalid/rules"}],
+            "rules":[{"rule_set":["user"],"outbound":"proxy"}],"final":"proxy"
+        }
+    });
+    fs::write(
+        manager.store.layout().config("sing-box", &"a".repeat(64)),
+        config.to_string(),
+    )
+    .unwrap();
+    let (shutdown, receiver) = watch::channel(false);
+    let running = Arc::clone(&manager);
+    let task = tokio::spawn(async move {
+        running
+            .run_supervisor_with_grace(receiver, Duration::from_millis(50))
+            .await
+    });
+    wait_for_state(&manager, sempre_state::RuntimeState::Running).await;
+    let (_connection, _) = tokio::time::timeout(Duration::from_secs(2), proxy.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let runtime = manager.state().unwrap().runtime;
+    let config: serde_json::Value =
+        serde_json::from_slice(&fs::read(runtime.runtime_config.unwrap()).unwrap()).unwrap();
+    assert_eq!(config["route"]["rule_set"], serde_json::json!([]));
+    assert!(runtime.pid.is_some());
+    tokio::time::timeout(Duration::from_secs(1), manager.runtime_action("stop"))
+        .await
+        .expect("stop cannot wait for rule download")
+        .unwrap();
+    wait_for_state(&manager, sempre_state::RuntimeState::Stopped).await;
+    shutdown.send(true).unwrap();
+    task.await.unwrap().unwrap();
+    assert!(
+        manager
+            .fetcher
+            .cached_rule_set("http://user.invalid/rules", "source")
+            .unwrap()
+            .is_none()
+    );
+}

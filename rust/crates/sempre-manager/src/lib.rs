@@ -20,6 +20,7 @@ mod lifecycle;
 mod network_settings;
 mod pending_changes;
 mod process;
+mod rule_bootstrap;
 mod rule_provider;
 mod runtime;
 mod scheduler;

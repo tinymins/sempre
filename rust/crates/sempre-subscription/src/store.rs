@@ -16,10 +16,6 @@ impl SubscriptionStore {
         Self { layout }
     }
 
-    pub(crate) fn bundled_rules_path(&self) -> std::path::PathBuf {
-        self.layout.resources.join("sempre-system-rules.json")
-    }
-
     pub fn initialize(&self) -> Result<Catalog, SubscriptionError> {
         self.with_lock(|| {
             if self.layout.subscription_catalog.exists() {
@@ -105,6 +101,10 @@ impl SubscriptionStore {
     pub(crate) fn cache_path(&self, key: &str) -> std::path::PathBuf {
         let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
         self.layout.subscription_cache.join(format!("{hash}.json"))
+    }
+
+    pub(crate) fn blob_path(&self, hash: &str) -> std::path::PathBuf {
+        self.layout.subscription_blobs.join(hash)
     }
 
     fn with_lock<T>(

@@ -60,8 +60,10 @@ pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(
     manager: &Manager<R>,
     shutdown: &mut watch::Receiver<bool>,
     process: &mut ManagedProcess,
+    plan: &RuntimePlan,
 ) -> ProcessEvent {
     tokio::select! {
+        () = manager.complete_rule_bootstrap(plan) => ProcessEvent::Reload,
         result = process.wait() => ProcessEvent::Exited(result),
         () = manager.wait_runtime_reload() => ProcessEvent::Reload,
         () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,

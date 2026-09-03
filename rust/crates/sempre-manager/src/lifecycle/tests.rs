@@ -65,7 +65,6 @@ fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>) {
     let root = tempfile::tempdir().expect("temporary directory");
     let store = Store::new(Layout::at(root.path()));
     let manager = Manager::with_runner(store, FakeRunner::default()).expect("manager");
-    crate::rule_provider::write_bundled_rule_fixture(manager.store.layout());
     for version in ["1.12.20", "1.14.0-beta.13"] {
         let directory = manager
             .store
