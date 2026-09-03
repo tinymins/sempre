@@ -30,7 +30,7 @@ impl Controller {
                 .discover_upstreams(self.runner.as_ref())
                 .await?;
             return Ok(crate::desktop_plan::managed_frontend_plan(
-                crate::desktop_plan::Platform::Windows,
+                crate::desktop_plan::windows_platform(),
                 core,
                 profile,
                 upstreams,

@@ -110,6 +110,10 @@ async fn activate_component(
         restore_service_state(previous).await;
         return Err(error.into());
     }
+    if let Err(error) = crate::dns_capture::cleanup(&target.resources).await {
+        restore_service_state(previous).await;
+        return Err(error);
+    }
     if let Err(error) = transaction.activate() {
         restore_service_state(previous).await;
         return Err(error.into());

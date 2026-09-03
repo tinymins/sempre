@@ -63,8 +63,10 @@ pub(crate) fn validate(config: &DnsConfig, errors: &mut Vec<String>) {
         .iter()
         .chain([&config.remote_upstream])
     {
-        if !valid_upstream(upstream) {
-            errors.push(format!("DNS upstream {upstream:?} must be host:port"));
+        if crate::validate_upstream(upstream).is_err() {
+            errors.push(format!(
+                "DNS upstream {upstream:?} must use tls://, tcp://, udp:// or host:port"
+            ));
         }
     }
     if !matches!(
@@ -84,10 +86,10 @@ pub(crate) fn validate(config: &DnsConfig, errors: &mut Vec<String>) {
         }
         if !rule_set.upstream.is_empty()
             && !matches!(rule_set.upstream.as_str(), "local" | "remote")
-            && !valid_upstream(&rule_set.upstream)
+            && crate::validate_upstream(&rule_set.upstream).is_err()
         {
             errors.push(format!(
-                "DNS upstream {:?} must be host:port",
+                "DNS upstream {:?} must use tls://, tcp://, udp:// or host:port",
                 rule_set.upstream
             ));
         }
@@ -101,21 +103,4 @@ fn valid_ipv4_prefix(value: &str) -> bool {
     value.split_once('/').is_some_and(|(address, prefix)| {
         address.parse::<Ipv4Addr>().is_ok() && prefix.parse::<u8>().is_ok_and(|prefix| prefix <= 32)
     })
-}
-
-fn valid_upstream(value: &str) -> bool {
-    let value = value.trim();
-    if let Some((host, port)) = value
-        .strip_prefix('[')
-        .and_then(|value| value.split_once("]:"))
-    {
-        return !host.is_empty() && valid_port(port);
-    }
-    value
-        .rsplit_once(':')
-        .is_some_and(|(host, port)| !host.is_empty() && !host.contains(':') && valid_port(port))
-}
-
-fn valid_port(value: &str) -> bool {
-    value.parse::<u16>().is_ok_and(|port| port != 0)
 }

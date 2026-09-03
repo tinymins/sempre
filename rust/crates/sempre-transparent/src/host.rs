@@ -84,7 +84,7 @@ impl Controller {
                 .discover_upstreams(self.runner.as_ref())
                 .await?;
             return crate::desktop_plan::prepare(
-                crate::desktop_plan::Platform::Windows,
+                crate::desktop_plan::windows_platform(),
                 core,
                 core_version,
                 profile,
@@ -163,8 +163,12 @@ impl Controller {
             return Ok(());
         }
         if cfg!(target_os = "windows") {
-            if plan.system_dns.is_some() {
-                self.windows_dns.verify(self.runner.as_ref()).await?;
+            if let Some(system_dns) = &plan.system_dns {
+                if cfg!(target_arch = "x86_64") {
+                    self.wait_system_dns(system_dns).await?;
+                } else {
+                    self.windows_dns.verify(self.runner.as_ref()).await?;
+                }
             }
             return Ok(());
         }
@@ -262,6 +266,10 @@ impl Controller {
             return Ok(());
         }
         self.require_root().await?;
+        if cfg!(target_arch = "x86_64") {
+            self.windows_dns.restore(self.runner.as_ref()).await?;
+            return self.verify(plan).await;
+        }
         if plan.system_dns.is_some() && self.windows_dns.verify(self.runner.as_ref()).await.is_ok()
         {
             return Ok(());

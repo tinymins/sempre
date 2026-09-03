@@ -29,6 +29,7 @@ pub async fn uninstall_application(
     let store = Store::new(layout.clone());
     let operation = store.acquire_operation()?;
     sempre_service::uninstall().await?;
+    crate::dns_capture::cleanup(&layout.resources).await?;
 
     let mut problems = Vec::new();
     if let Err(error) = sempre_transparent::Controller::new(layout).cleanup().await {

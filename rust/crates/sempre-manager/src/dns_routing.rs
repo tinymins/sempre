@@ -211,11 +211,8 @@ fn compiled_proxy_names(document: &Value) -> Result<Vec<String>, ManagerError> {
 
 pub(crate) fn validate(settings: &DnsSettings) -> Result<(), ManagerError> {
     for upstream in &settings.direct_upstreams {
-        if upstream.parse::<std::net::SocketAddr>().is_err() {
-            return Err(ManagerError::InvalidOperation(format!(
-                "direct DNS upstream {upstream:?} must be an IP address with a port"
-            )));
-        }
+        sempre_dns::validate_upstream(upstream)
+            .map_err(|error| ManagerError::InvalidOperation(error.to_string()))?;
     }
     let mut rule_set_ids = HashSet::new();
     let mut rule_set_names = HashSet::new();
@@ -248,9 +245,18 @@ pub(crate) fn normalize(settings: &mut DnsSettings) {
     settings.direct_upstreams = settings
         .direct_upstreams
         .drain(..)
-        .map(|value| value.trim().to_owned())
+        .flat_map(|value| {
+            value
+                .split([',', '\n'])
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
         .filter(|value| !value.is_empty() && upstreams.insert(value.clone()))
         .collect();
+    if settings.direct_upstreams.is_empty() {
+        settings.direct_upstreams = sempre_dns::default_upstreams();
+    }
     for rule_set in &mut settings.rule_sets {
         rule_set.name = rule_set.name.trim().to_owned();
         for entry in &mut rule_set.domains {

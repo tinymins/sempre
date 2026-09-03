@@ -36,7 +36,6 @@ fn runtime_key(profile: &Profile, dns_settings: &DnsSettings) -> Result<String, 
         "management_api": profile.management_api,
         "dns_frontend": {
             "enabled": dns_settings.enabled,
-            "direct_upstreams": dns_settings.direct_upstreams,
             "rule_sets": dns_settings.rule_sets,
         },
     });
@@ -59,5 +58,29 @@ fn canonical(value: Value) -> Value {
             )
         }
         value => value,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Profile, Target, config_build};
+    use crate::{Manager, ProcessRunner};
+    use sempre_state::{Layout, Store};
+
+    #[test]
+    fn frontend_upstreams_do_not_change_core_build_identity() {
+        let profile = Profile::default();
+        let directory = tempfile::tempdir().expect("directory");
+        let manager = Manager::with_runner(Store::new(Layout::at(directory.path())), ProcessRunner)
+            .expect("manager");
+        let before = manager.dns_settings();
+        let mut after = before.clone();
+        after.direct_upstreams = vec!["udp://223.5.5.5".into()];
+        assert!(!before.requires_core_rebuild(&after));
+        let target = Target::parse("sing-box").expect("target");
+        assert_eq!(
+            config_build(&profile, &target, &before).expect("before"),
+            config_build(&profile, &target, &after).expect("after")
+        );
     }
 }

@@ -27,6 +27,8 @@ struct Arguments {
 
 #[derive(Clone, Copy, Debug, Subcommand)]
 enum Task {
+    /// Download and verify the Windows x64 DNS capture SDK, then print its path.
+    DnsCaptureSdk,
     /// Run Rust and frontend quality gates without packaging.
     Verify,
     /// Build and package only the current native release target.
@@ -44,9 +46,14 @@ async fn main() {
 async fn run(arguments: Arguments) -> Result<(), BuildError> {
     let root = repository_root()?;
     let rust = root.join("rust");
+    if matches!(arguments.task, Some(Task::DnsCaptureSdk)) {
+        let sdk = sempre_build::prepare_dns_capture(&rust.join("target/windivert")).await?;
+        println!("{}", sdk.join("x64").display());
+        return Ok(());
+    }
     let output = absolute_output(&root, &arguments.output)?;
     if !matches!(arguments.task, Some(Task::Package)) {
-        verify(&root, &rust)?;
+        verify(&root, &rust).await?;
     }
     if matches!(arguments.task, Some(Task::Verify)) {
         return Ok(());
@@ -54,9 +61,23 @@ async fn run(arguments: Arguments) -> Result<(), BuildError> {
     build_release(&root, &rust, &output, arguments.version).await
 }
 
-fn verify(root: &Path, rust: &Path) -> Result<(), BuildError> {
+async fn verify(root: &Path, rust: &Path) -> Result<(), BuildError> {
+    let mut environment = Vec::new();
+    let sdk;
+    let search_path;
+    if sempre_build::dns_capture_supported(&BuildTarget::current()?) {
+        let directory = sempre_build::prepare_dns_capture(&rust.join("target/windivert"))
+            .await?
+            .join("x64");
+        sdk = directory.to_string_lossy().into_owned();
+        search_path = format!("{sdk};{}", std::env::var("PATH").unwrap_or_default());
+        environment.extend([
+            ("WINDIVERT_PATH", sdk.as_str()),
+            ("PATH", search_path.as_str()),
+        ]);
+    }
     run_command(rust, "cargo", ["fmt", "--all", "--", "--check"], &[])?;
-    run_command(rust, "cargo", ["test", "--workspace"], &[])?;
+    run_command(rust, "cargo", ["test", "--workspace"], &environment)?;
     run_command(
         rust,
         "cargo",
@@ -68,7 +89,7 @@ fn verify(root: &Path, rust: &Path) -> Result<(), BuildError> {
             "-D",
             "warnings",
         ],
-        &[],
+        &environment,
     )?;
     for script in ["lint", "tsc"] {
         run_command(root, "bun", ["run", script], &[])?;
@@ -112,6 +133,23 @@ async fn build_release(
         &environment,
     )?;
     let target = BuildTarget::current()?;
+    if sempre_build::dns_capture_supported(&target) {
+        let distribution =
+            sempre_build::prepare_dns_capture(&rust.join("target/windivert")).await?;
+        let library = distribution.join("x64").to_string_lossy().into_owned();
+        let mut capture_environment = environment.to_vec();
+        capture_environment.push(("WINDIVERT_PATH", library.as_str()));
+        run_command(
+            rust,
+            "cargo",
+            ["build", "--release", "-p", "sempre-dns-capture"],
+            &capture_environment,
+        )?;
+        sempre_build::assemble_dns_capture(
+            &rust.join("target/release/sempre-dns-capture.exe"),
+            &distribution,
+        )?;
+    }
     let executable = rust.join("target/release").join(target.executable_name());
     let result = sempre_build::package(&BuildInput {
         executable,

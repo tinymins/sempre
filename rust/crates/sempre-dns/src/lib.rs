@@ -9,6 +9,10 @@ mod model;
 mod probe;
 mod resolver;
 mod socket;
+mod upstream;
+mod upstream_endpoint;
+
+pub use upstream_endpoint::{default_upstreams, validate_upstream};
 
 pub use dns::{DnsDebugResult, debug_query, managed_probe_names};
 pub use dns_policy::{DnsQueryEvent, DnsRewrite, DnsRuntimePolicy};

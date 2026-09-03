@@ -1,5 +1,6 @@
 mod checksum;
 mod cores;
+mod dns_capture;
 mod package;
 mod target;
 mod ui;
@@ -8,6 +9,7 @@ use std::{io, path::PathBuf};
 
 use thiserror::Error;
 
+pub use dns_capture::{assemble_dns_capture, dns_capture_supported, prepare_dns_capture};
 pub use package::{BuildInput, BuildOutput, package};
 pub use target::BuildTarget;
 pub use ui::prepare_ui;

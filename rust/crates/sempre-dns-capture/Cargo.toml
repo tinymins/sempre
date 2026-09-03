@@ -1,0 +1,22 @@
+[package]
+name = "sempre-dns-capture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Windows DNS packet interception owned by the Sempre daemon"
+
+[dependencies]
+etherparse = "0.13"
+
+[target.'cfg(all(target_os = "windows", target_arch = "x86_64"))'.dependencies]
+netstat2 = "0.11"
+socket2.workspace = true
+sysinfo.workspace = true
+tokio.workspace = true
+windivert-sys = "=0.10.0"
+windivert = "=0.6.0"
+windows-service.workspace = true
+
+[lints]
+workspace = true

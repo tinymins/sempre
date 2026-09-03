@@ -236,7 +236,7 @@ flowchart TD
     rewrite -- 否 --> https{"拒绝 HTTPS 记录？"}
     https -- 是 --> rejected["返回拒绝响应"]
     https -- 否 --> custom{"首个匹配的自定义规则集？"}
-    custom -- 直连 --> original["捕获或配置的<br/>原始 DNS"]
+    custom -- 直连 --> original["配置的前置上游<br/>默认 DoT"]
     custom -- 代理 --> core["活动核心 DNS<br/>loopback 入口"]
     custom -- 未命中 --> domestic{"内置国内域名？"}
     domestic -- 是 --> original
@@ -250,7 +250,17 @@ flowchart TD
     remote --> coreReal["返回 Real-IP"]
 ```
 
-自定义规则集按顺序在内置国内域名集之前求值。直连规则使用原始 DNS 路径；代理规则和默认路径使用活动核心 DNS。同一组规则还会被编译成高优先级业务路由：直连规则集路由到 `direct`，代理规则集则获得独立代理选择组。
+自定义规则集按顺序在内置国内域名集之前求值。直连规则使用配置的前置上游；代理规则和默认路径使用活动核心 DNS。同一组规则还会被编译成高优先级业务路由：直连规则集路由到 `direct`，代理规则集则获得独立代理选择组。
+
+在 **DNS → 设置与状态** 中配置前置上游。输入框接受 `tls://`、`tcp://`、`udp://`，也兼容旧的 `host:port`；多个地址用逗号分隔，按顺序尝试。留空保存恢复默认值：
+
+```text
+tls://223.6.6.6:853?server_name=dns.alidns.com, tls://223.5.5.5:853?server_name=dns.alidns.com
+```
+
+默认使用[阿里公共 DNS 的 DoT 服务](https://alidns.com/)，直接连接 IP 并按 `dns.alidns.com` 校验证书，避免先依赖系统 DNS 解析上游地址。域名形式的上游也通过默认 DoT 引导解析，不依赖系统解析器。TCP/TLS 连接会复用。保存上游直接更新前置层，无需重新编译或重启核心；已有自定义上游会保留。不建议修改默认配置：普通 UDP/TCP 53 端口可能被本机其他软件再次劫持，造成循环查询或超时。遇到问题时清空输入框并保存，即可恢复 DoT。
+
+Windows x64 使用安装包内的 WinDivert 辅助进程截获出站 UDP/TCP 53，转交 loopback 1054 上的前置层；无需监听 53，也不依赖核心的 TUN DNS 重定向。辅助进程随所属 daemon 退出；升级和卸载前，Sempre 仅在确认无人使用时卸载属于本安装目录的驱动。WinDivert 优先级仅排序其自身网络层句柄，不能保证绕过其他 WFP 层。原生 x64 构建使用校验过的官方 WinDivert 2.2.2 SDK（`cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- dns-capture-sdk`）；直接运行 Cargo 检查时需设置 `WINDIVERT_PATH` 并将 SDK 的 `x64` 目录加入 `PATH`。打包工具自动完成这一步，附带 DLL、签名驱动、许可证和校验文件。Windows ARM64 保留现有接管方式。
 
 ### 托管桌面 TUN 模式
 
@@ -264,7 +274,7 @@ flowchart TB
         fpd --> fpri["私网 Real-IP"]
         fpri --> ft["FakeIP 网段与配置的<br/>私网 CIDR 进入 TUN"]
         fp -- 否 --> fc{"直连或国内域名？"}
-        fc -- 是 --> fo["原始 DNS"]
+        fc -- 是 --> fo["前置上游（DoT）"]
         fo --> fr["Real-IP"]
         fr --> fb["普通系统路由<br/>绕过核心"]
         fc -- 否 --> fcd["核心 DNS"]
@@ -275,7 +285,7 @@ flowchart TB
     end
     subgraph real["Real-IP 模式"]
         rq["DNS 查询"] --> rc{"直连或国内域名？"}
-        rc -- 是 --> ro["原始 DNS"]
+        rc -- 是 --> ro["前置上游（DoT）"]
         rc -- 否 --> rcd["核心远程 DNS"]
         ro --> rip["Real-IP"]
         rcd --> rip
@@ -285,7 +295,7 @@ flowchart TB
     end
 ```
 
-FakeIP 模式下，直连和国内域名返回真实地址并绕过核心。代理和默认域名返回 `198.18.0.0/15` 或 `fc00::/18` 范围内的地址；这些网段以及每个已启用私网连接器的 `routes.ipCidrs` 都会进入 TUN。因此私网 DNS 可以返回真实私网地址，而匹配的私网 CIDR 仍会进入核心。Real-IP 模式下，直连和国内域名仍使用原始 DNS，代理和默认域名使用核心远程 DNS；随后所有应用流量进入核心并遵循核心路由规则。
+FakeIP 模式下，直连和国内域名返回真实地址并绕过核心。代理和默认域名返回 `198.18.0.0/15` 或 `fc00::/18` 范围内的地址；这些网段以及每个已启用私网连接器的 `routes.ipCidrs` 都会进入 TUN。因此私网 DNS 可以返回真实私网地址，而匹配的私网 CIDR 仍会进入核心。Real-IP 模式下，直连和国内域名仍使用前置上游，代理和默认域名使用核心远程 DNS；随后所有应用流量进入核心并遵循核心路由规则。
 
 ### 私网 DNS 与私网路由
 

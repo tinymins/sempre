@@ -7,6 +7,7 @@ mod config_build;
 mod context;
 mod custom_node;
 mod direct;
+mod dns_capture;
 mod dns_frontend;
 mod dns_routing;
 mod dns_runtime;
@@ -126,7 +127,11 @@ impl<R: VersionRunner> Manager<R> {
         let gateway = Arc::new(sempre_gateway::Controller::new(store.layout())?);
         let tunnels = Arc::new(TunnelController::new(store.layout().clone())?);
         let transparent = Arc::new(TransparentController::new(store.layout()));
-        let dns_frontend = dns_runtime::DnsFrontendRuntime::new(dns_settings.clone());
+        let dns_frontend = dns_runtime::DnsFrontendRuntime::new(
+            dns_settings.clone(),
+            (store.layout().mode == sempre_state::Mode::System)
+                .then(|| store.layout().resources.clone()),
+        );
         Ok(Self {
             store,
             registry: built_in_registry(),

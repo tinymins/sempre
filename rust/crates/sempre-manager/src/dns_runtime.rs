@@ -1,6 +1,6 @@
 use std::{
     net::IpAddr,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -22,6 +22,8 @@ pub(crate) struct DnsFrontendRuntime {
     running: Mutex<Option<RunningFrontend>>,
     status: RwLock<DnsFrontendStatus>,
     policy: Arc<dyn DnsRuntimePolicy>,
+    resources: Option<PathBuf>,
+    capture_error: crate::dns_capture::CaptureError,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -43,6 +45,7 @@ pub struct DnsFrontendStatus {
 struct RunningFrontend {
     plan: DnsFrontendPlan,
     service: DnsService,
+    capture: Option<crate::dns_capture::Capture>,
 }
 
 #[derive(Clone)]
@@ -58,11 +61,31 @@ pub(crate) struct DnsFrontendPlan {
 }
 
 impl DnsFrontendRuntime {
-    pub(crate) fn new(policy: Arc<dyn DnsRuntimePolicy>) -> Arc<Self> {
+    pub(crate) async fn update_upstreams(&self, upstreams: &[String]) -> Result<(), ManagerError> {
+        let mut running = self.running.lock().await;
+        if let Some(current) = running.as_mut() {
+            if current.plan.config.local_upstreams == upstreams {
+                return Ok(());
+            }
+            let mut config = current.plan.config.clone();
+            config.local_upstreams = upstreams.to_vec();
+            current.service.update(config.clone())?;
+            current.plan.config = config;
+            self.status
+                .write()
+                .expect("DNS frontend status")
+                .direct_upstreams = upstreams.to_vec();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn new(policy: Arc<dyn DnsRuntimePolicy>, resources: Option<PathBuf>) -> Arc<Self> {
         Arc::new(Self {
             running: Mutex::new(None),
             status: RwLock::new(DnsFrontendStatus::default()),
             policy,
+            resources,
+            capture_error: Arc::default(),
         })
     }
 
@@ -126,9 +149,13 @@ impl DnsFrontendRuntime {
 
     pub(crate) async fn stop(&self) {
         if let Some(running) = self.running.lock().await.take() {
+            if let Some(capture) = running.capture {
+                capture.stop().await;
+            }
             running.service.stop().await;
         }
         *self.status.write().expect("DNS frontend status") = DnsFrontendStatus::default();
+        *self.capture_error.write().expect("capture status") = None;
     }
 
     fn configure(&self, plan: &DnsFrontendPlan, core_dns_healthy: bool) {
@@ -153,7 +180,12 @@ impl DnsFrontendRuntime {
     }
 
     pub(crate) fn status(&self) -> DnsFrontendStatus {
-        self.status.read().expect("DNS frontend status").clone()
+        let mut status = self.status.read().expect("DNS frontend status").clone();
+        if let Some(error) = &*self.capture_error.read().expect("capture status") {
+            status.running = false;
+            status.last_error.clone_from(error);
+        }
+        status
     }
 
     pub(crate) fn record_failure(&self, error: &impl ToString) {
@@ -164,14 +196,37 @@ impl DnsFrontendRuntime {
 
     async fn start_if_missing(&self, plan: &DnsFrontendPlan) -> Result<(), ManagerError> {
         let mut running = self.running.lock().await;
-        if running.is_some() {
+        if let Some(current) = running.as_mut() {
+            if self.capture_error.read().expect("capture status").is_none() {
+                return Ok(());
+            }
+            current.capture = crate::dns_capture::Capture::start(
+                self.resources.as_deref(),
+                current.plan.config.listen_port,
+                Arc::clone(&self.capture_error),
+            )
+            .await?;
             return Ok(());
         }
         let service =
             DnsService::start_with_policy(plan.config.clone(), Arc::clone(&self.policy)).await?;
+        let capture = match crate::dns_capture::Capture::start(
+            self.resources.as_deref(),
+            plan.config.listen_port,
+            Arc::clone(&self.capture_error),
+        )
+        .await
+        {
+            Ok(capture) => capture,
+            Err(error) => {
+                service.stop().await;
+                return Err(error);
+            }
+        };
         *running = Some(RunningFrontend {
             plan: plan.clone(),
             service,
+            capture,
         });
         self.configure(plan, false);
         Ok(())
@@ -346,10 +401,7 @@ impl DnsFrontendPlan {
             fakeip_ranges.push(parse_range(&policy.fakeip_ipv6_range)?);
         }
         let local_upstreams = if settings.direct_upstreams.is_empty() {
-            original_upstreams
-                .iter()
-                .map(|ip| dns_endpoint(ip, 53))
-                .collect()
+            sempre_dns::default_upstreams()
         } else {
             settings.direct_upstreams.clone()
         };

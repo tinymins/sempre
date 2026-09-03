@@ -262,7 +262,7 @@ flowchart TD
     rewrite -- No --> https{"Reject HTTPS record?"}
     https -- Yes --> rejected["Return rejected response"]
     https -- No --> custom{"First matching custom rule set?"}
-    custom -- Direct --> original["Captured or configured<br/>original DNS"]
+    custom -- Direct --> original["Configured upstreams<br/>DoT by default"]
     custom -- Proxy --> core["Active core DNS<br/>loopback ingress"]
     custom -- No match --> domestic{"Bundled domestic domain?"}
     domestic -- Yes --> original --> physical["Physical/WAN network"] --> real["Return Real-IP"]
@@ -271,7 +271,17 @@ flowchart TD
     mode -- No --> remote["Resolve through core remote DNS"] --> coreReal["Return Real-IP"]
 ```
 
-Custom rule sets are evaluated in order before the bundled domestic-domain set. A direct rule uses the original DNS path; a proxy rule and the default path use the active core DNS. The same rule sets are compiled into priority traffic-routing rules: direct sets route to `direct`, while proxy sets receive an independent proxy selector.
+Custom rule sets are evaluated in order before the bundled domestic-domain set. A direct rule uses the configured frontend upstreams; a proxy rule and the default path use the active core DNS. The same rule sets are compiled into priority traffic-routing rules: direct sets route to `direct`, while proxy sets receive an independent proxy selector.
+
+Frontend upstreams are configured in **DNS → Settings and status**. The comma-separated field accepts `tls://`, `tcp://`, `udp://`, and legacy `host:port` addresses. Servers are tried in order. Empty settings restore the defaults:
+
+```text
+tls://223.6.6.6:853?server_name=dns.alidns.com, tls://223.5.5.5:853?server_name=dns.alidns.com
+```
+
+These [AliDNS DoT endpoints](https://alidns.com/) connect directly by IP and validate the TLS certificate against `dns.alidns.com`, avoiding system-DNS bootstrap. Upstream hostnames are also bootstrapped through the IP-addressed DoT defaults rather than the system resolver. TCP/TLS connections are reused. Saving upstreams updates the frontend without rebuilding or restarting the core. Existing custom upstreams are preserved. Changing the defaults is discouraged: other local software may intercept UDP/TCP port 53 again and create loops or timeouts. Clear the field and save to restore DoT.
+
+Windows x64 captures outbound UDP/TCP port 53 with the bundled WinDivert helper and forwards queries to the frontend on loopback port 1054. It does not bind port 53 or depend on the core's TUN DNS redirect. The helper exits with its owning daemon. Before upgrades and removal, Sempre unloads its own driver only after verifying that no process is using it. WinDivert priority only orders its own network-layer handles; other WFP layers can still interfere. Native x64 builds use the verified official WinDivert 2.2.2 SDK (`cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- dns-capture-sdk`); set `WINDIVERT_PATH` and add its `x64` directory to `PATH` for direct Cargo checks. The package builder does this automatically and bundles the DLL, signed driver, license, and checksums. Windows ARM64 retains the existing takeover implementation.
 
 ### Managed Desktop TUN Modes
 
@@ -283,17 +293,17 @@ flowchart TB
         fq["DNS query"] --> fp{"Private DNS suffix?"}
         fp -- Yes --> fpd["Core private DNS<br/>detour through connector"] --> fpri["Private Real-IP"] --> ft["FakeIP ranges and configured<br/>private CIDRs enter the TUN"]
         fp -- No --> fc{"Direct or domestic?"}
-        fc -- Yes --> fo["Original DNS"] --> fr["Real-IP"] --> fb["Normal OS route<br/>bypasses the core"]
+        fc -- Yes --> fo["Frontend upstreams (DoT)"] --> fr["Real-IP"] --> fb["Normal OS route<br/>bypasses the core"]
         fc -- No --> fcd["Core DNS"] --> ff["FakeIP"] --> ft --> frr["Core routing rules"] --> fe["Proxy / private connector / reject"]
     end
     subgraph real["Real-IP mode"]
         rq["DNS query"] --> rc{"Direct or domestic?"}
-        rc -- Yes --> ro["Original DNS"] --> rip["Real-IP"]
+        rc -- Yes --> ro["Frontend upstreams (DoT)"] --> rip["Real-IP"]
         rc -- No --> rcd["Core remote DNS"] --> rip --> rt["All application traffic<br/>enters the external-core TUN"] --> rrr["Core routing rules"] --> re["Direct / proxy / private connector / reject"]
     end
 ```
 
-In FakeIP mode, direct and domestic names return real addresses and bypass the core. Proxy and default names return addresses from `198.18.0.0/15` or `fc00::/18`; those ranges and every enabled private connector's `routes.ipCidrs` enter the TUN. Private DNS can therefore return a real private address while the matching private CIDR still reaches the core. In Real-IP mode, direct and domestic names still use original DNS, while proxy and default names use core remote DNS; all application traffic then enters the core and follows its route rules.
+In FakeIP mode, direct and domestic names return real addresses and bypass the core. Proxy and default names return addresses from `198.18.0.0/15` or `fc00::/18`; those ranges and every enabled private connector's `routes.ipCidrs` enter the TUN. Private DNS can therefore return a real private address while the matching private CIDR still reaches the core. In Real-IP mode, direct and domestic names still use frontend upstreams, while proxy and default names use core remote DNS; all application traffic then enters the core and follows its route rules.
 
 ### Private DNS and Private Routes
 

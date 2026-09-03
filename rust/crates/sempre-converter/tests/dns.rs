@@ -272,13 +272,8 @@ fn managed_desktop_frontend_rejects_legacy_sing_box() {
 }
 
 #[test]
-fn managed_windows_frontend_rejects_sing_box_v13() {
-    assert!(
-        compile(&takeover_request("sing-box-v13-windows"))
-            .expect_err("Windows sing-box v13 frontend must fail")
-            .to_string()
-            .contains("requires sing-box 1.14")
-    );
+fn managed_windows_frontend_supports_sing_box_v13() {
+    assert_managed_desktop_frontend("sing-box-v13-windows");
 }
 
 #[test]

@@ -33,6 +33,14 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: cargo fmt --manifest-path=rust/Cargo.toml --all -- --check
+      - name: Prepare Windows DNS capture SDK
+        if: matrix.name == 'windows-amd64'
+        shell: pwsh
+        run: |
+          $sdk = cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- dns-capture-sdk
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "WINDIVERT_PATH=$sdk" >> $env:GITHUB_ENV
+          $sdk >> $env:GITHUB_PATH
       - run: cargo test --manifest-path=rust/Cargo.toml --workspace
       - run: cargo clippy --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings
 

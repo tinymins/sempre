@@ -13,7 +13,7 @@ impl DnsConfig {
     ) -> Result<Self, DnsError> {
         if local_upstreams.is_empty() {
             return Err(DnsError::invalid(
-                "managed DNS frontend requires at least one original DNS upstream",
+                "managed DNS frontend requires at least one direct DNS upstream",
             ));
         }
         push_inline_rules(

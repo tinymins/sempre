@@ -1,11 +1,10 @@
 use std::{
     net::Ipv4Addr,
     sync::{Arc, RwLock},
-    time::Duration,
 };
 
 use chrono::Utc;
-use tokio::{net::lookup_host, time::Instant, time::timeout};
+use tokio::time::Instant;
 
 use crate::{
     DnsError,
@@ -29,6 +28,7 @@ struct ResolverState {
     config: DnsConfig,
     domestic_cidrs: Vec<(Ipv4Addr, u8)>,
     rule_sets: Vec<ResolvedRuleSet>,
+    upstreams: crate::upstream::UpstreamClient,
 }
 
 #[derive(Clone)]
@@ -120,6 +120,7 @@ impl ResolverState {
             config,
             domestic_cidrs,
             rule_sets,
+            upstreams: crate::upstream::UpstreamClient::default(),
         })
     }
 
@@ -275,33 +276,10 @@ impl ResolverState {
     }
 
     async fn exchange(&self, packet: &[u8], upstream: &str) -> Result<Resolved, DnsError> {
-        let address = lookup_host(upstream)
-            .await
-            .map_err(|error| DnsError::io(format!("resolve DNS upstream {upstream}"), error))?
-            .next()
-            .ok_or_else(|| DnsError::invalid(format!("DNS upstream {upstream:?} is empty")))?;
-        let socket = crate::socket::upstream_socket(self.config.outbound_mark).await?;
-        socket
-            .connect(address)
-            .await
-            .map_err(|error| DnsError::io(format!("connect DNS upstream {upstream}"), error))?;
-        socket
-            .send(packet)
-            .await
-            .map_err(|error| DnsError::io(format!("send DNS query to {upstream}"), error))?;
-        let mut response = vec![0_u8; u16::MAX as usize];
-        let count = timeout(Duration::from_secs(5), socket.recv(&mut response))
-            .await
-            .map_err(|_| DnsError::invalid(format!("DNS upstream {upstream} timed out")))?
-            .map_err(|error| {
-                DnsError::io(format!("receive DNS response from {upstream}"), error)
-            })?;
-        response.truncate(count);
-        if response.get(..2) != packet.get(..2) {
-            return Err(DnsError::invalid(format!(
-                "DNS upstream {upstream} returned a mismatched transaction"
-            )));
-        }
+        let response = self
+            .upstreams
+            .exchange(upstream, packet, self.config.outbound_mark)
+            .await?;
         Ok(Resolved {
             packet: response,
             upstream: upstream.into(),

@@ -23,7 +23,7 @@ pub struct DnsSettings {
     pub schema: u32,
     pub revision: u64,
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default = "sempre_dns::default_upstreams")]
     pub direct_upstreams: Vec<String>,
     #[serde(default)]
     pub rule_sets: Vec<DnsRoutingRuleSet>,
@@ -53,7 +53,7 @@ impl DnsSettings {
             schema: SCHEMA_VERSION,
             revision: 1,
             enabled: boolean(shared, "systemDnsTakeoverEnabled", true),
-            direct_upstreams: Vec::new(),
+            direct_upstreams: sempre_dns::default_upstreams(),
             rule_sets: Vec::new(),
             reject_https: boolean(shared, "rejectHttps", true),
             rewrites: Vec::new(),
@@ -63,9 +63,7 @@ impl DnsSettings {
     }
 
     pub(crate) fn requires_core_rebuild(&self, candidate: &Self) -> bool {
-        self.enabled != candidate.enabled
-            || self.direct_upstreams != candidate.direct_upstreams
-            || self.rule_sets != candidate.rule_sets
+        self.enabled != candidate.enabled || self.rule_sets != candidate.rule_sets
     }
 }
 
@@ -112,7 +110,7 @@ impl DnsSettingsStore {
         query_path: PathBuf,
         initial_profile: &Profile,
     ) -> Result<Self, ManagerError> {
-        let settings = match fs::read(&path) {
+        let mut settings = match fs::read(&path) {
             Ok(data) => decode_settings(&data)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let settings = DnsSettings::from_profile(initial_profile);
@@ -121,6 +119,7 @@ impl DnsSettingsStore {
             }
             Err(error) => return Err(ManagerError::io("read DNS settings", error)),
         };
+        crate::dns_routing::normalize(&mut settings);
         validate(&settings)?;
         write(&path, &settings)?;
         let queries = load_queries(&query_path, settings.query_log_max_entries)?;
@@ -252,7 +251,7 @@ fn migrate_v2(value: Value) -> Result<DnsSettings, ManagerError> {
         schema: SCHEMA_VERSION,
         revision: previous.revision.saturating_add(1),
         enabled: previous.enabled,
-        direct_upstreams: Vec::new(),
+        direct_upstreams: sempre_dns::default_upstreams(),
         rule_sets: Vec::new(),
         reject_https: previous.reject_https,
         rewrites: previous.rewrites,
@@ -271,7 +270,7 @@ fn migrate_legacy(value: Value) -> Result<DnsSettings, ManagerError> {
         schema: SCHEMA_VERSION,
         revision: legacy.revision.saturating_add(1),
         enabled: boolean(shared, "systemDnsTakeoverEnabled", false),
-        direct_upstreams: Vec::new(),
+        direct_upstreams: sempre_dns::default_upstreams(),
         rule_sets: Vec::new(),
         reject_https: boolean(shared, "rejectHttps", true),
         rewrites: legacy.rewrites,
@@ -383,6 +382,40 @@ mod tests {
     }
 
     #[test]
+    fn default_dot_migration_and_custom_upstreams_round_trip() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("dns.json");
+        let queries = temp.path().join("queries.ndjson");
+        let profile = Profile::default();
+        let mut legacy = DnsSettings::from_profile(&profile);
+        legacy.direct_upstreams.clear();
+        write(&path, &legacy).expect("old automatic settings");
+        let store = DnsSettingsStore::open(path.clone(), queries.clone(), &profile).expect("store");
+        assert_eq!(
+            store.read().direct_upstreams,
+            sempre_dns::default_upstreams()
+        );
+        let mut custom = store.read();
+        custom.direct_upstreams = vec![" tcp://1.1.1.1:53, udp://223.5.5.5 ".into()];
+        let saved = store.replace(custom).expect("protocol addresses");
+        assert_eq!(
+            saved.direct_upstreams,
+            ["tcp://1.1.1.1:53", "udp://223.5.5.5"]
+        );
+        let reopened = DnsSettingsStore::open(path, queries, &profile).expect("reopen");
+        assert_eq!(reopened.read(), saved);
+        let mut reset = saved;
+        reset.direct_upstreams.clear();
+        assert_eq!(
+            store
+                .replace(reset)
+                .expect("reset defaults")
+                .direct_upstreams,
+            sempre_dns::default_upstreams()
+        );
+    }
+
+    #[test]
     fn initial_profile_keeps_an_explicit_legacy_opt_out() {
         let mut profile = Profile::default();
         profile.editor.dns_config = r#"{"shared":{"systemDnsTakeoverEnabled":false}}"#.into();
@@ -450,7 +483,7 @@ mod tests {
         .expect("migration");
         assert_eq!(settings.schema, 3);
         assert_eq!(settings.revision, 10);
-        assert!(settings.direct_upstreams.is_empty());
+        assert_eq!(settings.direct_upstreams, sempre_dns::default_upstreams());
         assert!(settings.rule_sets.is_empty());
         assert!(!settings.reject_https);
     }

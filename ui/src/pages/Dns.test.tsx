@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
@@ -10,7 +10,7 @@ const settings = {
     schema: 3,
     revision: 3,
     enabled: true,
-    direct_upstreams: [],
+    direct_upstreams: ['tls://223.6.6.6:853?server_name=dns.alidns.com'],
     rule_sets: [],
     reject_https: true,
     rewrites: [],
@@ -77,5 +77,23 @@ describe('DNS page', () => {
     expect(screen.getByText('启用前置 DNS')).toBeInTheDocument()
     expect(screen.queryByText('远程 DNS')).not.toBeInTheDocument()
     expect(screen.queryByText('FakeIP')).not.toBeInTheDocument()
+  })
+
+  it('keeps comma entry editable and saves protocol upstreams with a warning', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: '设置与状态' }))
+    const input = screen.getByRole('textbox', { name: '前置 DNS 上游' })
+    expect(input).toHaveValue(settings.settings.direct_upstreams[0])
+    const first = 'tls://dns.alidns.com'
+    fireEvent.change(input, { target: { value: `${first},` } })
+    expect(input).toHaveValue(`${first},`)
+    fireEvent.change(input, { target: { value: `${first}, tcp://1.1.1.1:53` } })
+    fireEvent.focus(screen.getByRole('button', { name: '修改上游的风险' }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('可能造成循环查询、解析超时')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/dns/settings'), expect.objectContaining({
+      method: 'PUT', body: expect.stringContaining('"direct_upstreams":["tls://dns.alidns.com","tcp://1.1.1.1:53"]'),
+    })))
   })
 })

@@ -42,10 +42,15 @@ async fn answering_upstream(
 }
 
 async fn frontend_port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("frontend port");
-    listener.local_addr().expect("frontend address").port()
+    // Windows may reserve different port ranges for UDP and TCP.
+    for _ in 0..32 {
+        let udp = UdpSocket::bind("127.0.0.1:0").await.expect("UDP port");
+        let address = udp.local_addr().expect("frontend address");
+        if TcpListener::bind(address).await.is_ok() {
+            return address.port();
+        }
+    }
+    panic!("no shared UDP/TCP frontend port available");
 }
 
 fn plan(hash: &str, port: u16, local: String, remote: String) -> DnsFrontendPlan {
@@ -70,7 +75,7 @@ async fn frontend_starts_and_keeps_domestic_dns_when_core_is_down() {
     drop(dead);
     let port = frontend_port().await;
     let plan = plan("first", port, local, remote);
-    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy));
+    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
 
     runtime
         .prepare(Some(&plan), Duration::from_millis(200))
@@ -104,7 +109,7 @@ async fn healthy_candidate_promotes_new_core_upstream_without_stopping_frontend(
     let port = frontend_port().await;
     let first_plan = plan("first", port, local.clone(), first);
     let second_plan = plan("second", port, local, second.clone());
-    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy));
+    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
 
     runtime
         .prepare(Some(&first_plan), Duration::from_millis(200))
@@ -141,7 +146,7 @@ async fn unhealthy_candidate_keeps_the_last_healthy_core_upstream() {
     let port = frontend_port().await;
     let first_plan = plan("first", port, local.clone(), first.clone());
     let second_plan = plan("second", port, local, second);
-    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy));
+    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
 
     runtime
         .prepare(Some(&first_plan), Duration::from_millis(200))
@@ -172,5 +177,32 @@ async fn unhealthy_candidate_keeps_the_last_healthy_core_upstream() {
 
     local_task.await.expect("local responder");
     first_task.await.expect("first responder");
+    runtime.stop().await;
+}
+
+#[tokio::test]
+async fn changes_upstreams_while_core_is_down_without_rebinding() {
+    let (first, first_task) = answering_upstream(1, [223, 5, 5, 5]).await;
+    let (second, second_task) = answering_upstream(1, [223, 6, 6, 6]).await;
+    let port = frontend_port().await;
+    let plan = plan("same-core", port, first, "127.0.0.1:1".into());
+    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
+    runtime
+        .prepare(Some(&plan), Duration::from_millis(200))
+        .await
+        .expect("frontend");
+    let upstreams = vec![format!("udp://{second}")];
+    runtime.update_upstreams(&upstreams).await.expect("update");
+    assert_eq!(runtime.status().direct_upstreams, upstreams);
+    assert!(!runtime.status().core_dns_healthy);
+    let reply = probe_dns(&format!("127.0.0.1:{port}"), "baidu.com", "A")
+        .await
+        .expect("new upstream");
+    assert_eq!(
+        reply.addresses,
+        ["223.6.6.6".parse::<IpAddr>().expect("IP")]
+    );
+    first_task.await.expect("first");
+    second_task.await.expect("second");
     runtime.stop().await;
 }

@@ -56,7 +56,8 @@ fn sing_box(version: Option<&str>, target: &Target) -> Capabilities {
     if target.os == "linux"
         || target.os == "darwin"
         || target.os.is_empty()
-        || (target.os == "windows" && compiler == "14")
+        || (target.os == "windows"
+            && (compiler == "14" || (target.arch == "amd64" && compiler != "11")))
     {
         features.push(f::DNS_SYSTEM_TAKEOVER.into());
     }
@@ -335,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_dns_capture_requires_sing_box_v14() {
+    fn windows_frontend_capture_is_independent_of_tun_dns_support() {
         let target = Target {
             os: "windows".into(),
             arch: "amd64".into(),
@@ -343,7 +344,16 @@ mod tests {
         };
         let stable = capabilities(BuiltInKind::SingBox, Some("1.13.18"), &target);
         assert!(!stable.features.contains(&f::DNS_TUN_CAPTURE.into()));
-        assert!(!stable.features.contains(&f::DNS_SYSTEM_TAKEOVER.into()));
+        assert!(stable.features.contains(&f::DNS_SYSTEM_TAKEOVER.into()));
+        let arm = Target {
+            arch: "arm64".into(),
+            ..target.clone()
+        };
+        assert!(
+            !capabilities(BuiltInKind::SingBox, Some("1.13.18"), &arm)
+                .features
+                .contains(&f::DNS_SYSTEM_TAKEOVER.into())
+        );
         let v14 = capabilities(BuiltInKind::SingBox, Some("1.14.0-beta.13"), &target);
         assert!(v14.features.contains(&f::DNS_TUN_CAPTURE.into()));
         assert!(v14.features.contains(&f::DNS_SYSTEM_TAKEOVER.into()));

@@ -1,6 +1,4 @@
-use std::{net::IpAddr, time::Duration};
-
-use tokio::{net::UdpSocket, time::timeout};
+use std::net::IpAddr;
 
 use crate::{
     DnsError,
@@ -20,28 +18,9 @@ pub async fn probe_dns(
 ) -> Result<DnsProbeResult, DnsError> {
     let (_, record_type) = record_number(record_type)?;
     let request = build_query(name, record_type)?;
-    let socket = UdpSocket::bind("0.0.0.0:0")
-        .await
-        .map_err(|error| DnsError::io("bind DNS probe socket", error))?;
-    socket
-        .connect(upstream)
-        .await
-        .map_err(|error| DnsError::io(format!("connect DNS probe {upstream}"), error))?;
-    socket
-        .send(&request)
-        .await
-        .map_err(|error| DnsError::io(format!("send DNS probe to {upstream}"), error))?;
-    let mut response = vec![0_u8; u16::MAX as usize];
-    let count = timeout(Duration::from_secs(6), socket.recv(&mut response))
-        .await
-        .map_err(|_| DnsError::invalid(format!("DNS probe {upstream} timed out")))?
-        .map_err(|error| DnsError::io(format!("receive DNS probe from {upstream}"), error))?;
-    response.truncate(count);
-    if response.get(..2) != request.get(..2) {
-        return Err(DnsError::invalid(format!(
-            "DNS probe {upstream} returned a mismatched transaction"
-        )));
-    }
+    let response = crate::upstream::UpstreamClient::default()
+        .exchange(upstream, &request, None)
+        .await?;
     Ok(DnsProbeResult {
         response_code: response_code(&response)?,
         addresses: answer_ip_addresses(&response)?,
