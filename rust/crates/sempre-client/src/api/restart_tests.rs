@@ -1,5 +1,5 @@
 use axum::{
-    body::{Body, to_bytes},
+    body::Body,
     http::{HeaderValue, StatusCode},
 };
 use tower::ServiceExt;
@@ -43,6 +43,7 @@ async fn restart_task_and_configuration_require_authentication() {
 #[cfg(unix)]
 #[tokio::test]
 async fn restart_http_response_does_not_wait_for_validation_or_allow_a_second_restart() {
+    use axum::body::to_bytes;
     use chrono::Utc;
     use sempre_state::{Installation, Selection};
     use std::{fs, os::unix::fs::PermissionsExt, time::Duration};
