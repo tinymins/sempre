@@ -16,6 +16,10 @@ impl SubscriptionStore {
         Self { layout }
     }
 
+    pub(crate) fn bundled_rules_path(&self) -> std::path::PathBuf {
+        self.layout.resources.join("sempre-system-rules.json")
+    }
+
     pub fn initialize(&self) -> Result<Catalog, SubscriptionError> {
         self.with_lock(|| {
             if self.layout.subscription_catalog.exists() {

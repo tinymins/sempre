@@ -48,6 +48,7 @@ fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>) {
     let root = tempfile::tempdir().expect("temporary directory");
     let manager = Manager::with_runner(Store::new(Layout::at(root.path())), FakeRunner::default())
         .expect("manager");
+    crate::rule_provider::write_bundled_rule_fixture(manager.store.layout());
     let hash = "a".repeat(64);
     manager
         .store
@@ -107,6 +108,75 @@ async fn runtime_actions_stage_start_and_serialize_stop_intent() {
             .runtime_state,
         RuntimeState::Stopping
     );
+}
+
+#[tokio::test]
+async fn restart_compiles_bundled_rules_after_cached_state_is_removed() {
+    let (_root, manager) = fixture();
+    let layout = manager.store.layout();
+    let providers = sempre_converter::system_defaults().rule_providers;
+    for _ in 0..2 {
+        manager.subscriptions.clear_cache().expect("clear cache");
+        fs::remove_dir_all(&layout.subscription_blobs).expect("remove snapshots");
+        manager
+            .store
+            .update(|document| {
+                document.configs.clear();
+                document.config_builds.clear();
+                document.active = None;
+                document.runtime = sempre_state::Runtime::default();
+                Ok(())
+            })
+            .expect("clear compiled state");
+        let status = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            manager.runtime_action(RESTART),
+        )
+        .await
+        .expect("restart must not wait for network")
+        .expect("restart");
+        assert_eq!(status.runtime_state, RuntimeState::Restarting);
+        let document = manager.state().expect("state");
+        let content = fs::read(layout.config("sing-box", &document.configs["sing-box"]))
+            .expect("compiled configuration");
+        let config: serde_json::Value = serde_json::from_slice(&content).expect("JSON");
+        let rules = config["route"]["rule_set"].as_array().expect("rule sets");
+        for provider in &providers {
+            let rule = rules
+                .iter()
+                .find(|rule| rule["tag"] == provider.tag)
+                .expect("bundled provider compiled");
+            assert_eq!(rule["type"], "inline");
+            assert!(rule.get("url").is_none());
+        }
+    }
+}
+
+#[tokio::test]
+async fn missing_rule_snapshot_fails_before_staging_an_invalid_core_config() {
+    let (_root, manager) = fixture();
+    fs::remove_file(
+        manager
+            .store
+            .layout()
+            .resources
+            .join("sempre-system-rules.json"),
+    )
+    .expect("remove bundled rules");
+    let original = manager.state().expect("state").configs;
+    let error = manager
+        .runtime_action(RESTART)
+        .await
+        .expect_err("missing rules");
+    assert_eq!(
+        error.runtime_action_code(),
+        Some("RUNTIME_PREPARATION_FAILED")
+    );
+    assert!(error.to_string().contains("no local snapshot"));
+    let document = manager.state().expect("state");
+    assert_eq!(document.configs, original);
+    assert!(document.active.is_none());
+    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test]

@@ -88,6 +88,9 @@ fn fixture_with_core_version(
         .subscriptions
         .update(|catalog| {
             let profile = &mut catalog.profiles[0];
+            profile
+                .extra
+                .insert("use_system_rules".into(), json!(false));
             profile_id.clone_from(&profile.id);
             profile.sources.push(raw_source());
             Ok(())
@@ -406,13 +409,13 @@ fn config_build_schema_invalidates_legacy_target_key() {
     let profile = Profile::default();
     let target = Target::parse("sing-box-v14-macos").expect("target");
     let build = config_build(&profile, &target, &manager.dns_settings()).expect("build");
-    for schema in [1, 2, 3, 4] {
+    for schema in [1, 2, 3, 4, 5] {
         let mut legacy = build.clone();
         legacy.target_key = format!(
             "{}|build:{schema}",
             build
                 .target_key
-                .strip_suffix("|build:5")
+                .strip_suffix("|build:6")
                 .expect("schema suffix")
         );
 

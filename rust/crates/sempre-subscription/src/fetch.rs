@@ -9,6 +9,8 @@ use serde_json::Value;
 
 use crate::{MAX_SOURCE_SIZE, SubscriptionError, SubscriptionStore};
 
+mod rule_provider;
+
 const DEFAULT_USER_AGENT: &str = "clash.meta";
 const DEFAULT_FETCH_MODE: &str = "auto";
 

@@ -50,7 +50,15 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     let resource_ui = source.resources.join("sempre-ui.zip");
     fs::copy(&input.ui_archive, &resource_ui)
         .map_err(|error| BuildError::io("copy bundled UI", &resource_ui, error))?;
-    checksum::write(&source.resources, &["sempre-ui.zip".into()])?;
+    let bundled_rules = sempre_subscription::Fetcher::new(
+        sempre_subscription::SubscriptionStore::new(source.clone()),
+    )?
+    .bundle_system_rule_providers()
+    .await?;
+    checksum::write(
+        &source.resources,
+        &["sempre-ui.zip".into(), file_name(&bundled_rules)?],
+    )?;
     crate::dns_capture::bundle_dns_capture(&input.executable, &source.resources, &input.target)?;
 
     let downloader = Downloader::new("Sempre release builder")?;

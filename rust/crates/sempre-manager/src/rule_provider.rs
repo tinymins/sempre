@@ -1,11 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use sempre_converter::{
-    Profile, Source, SourceSnapshot, Target, prepare_profile, rule_provider_has_rules,
-    rule_provider_snapshot_id,
-};
-use sempre_subscription::SubscriptionError;
-use serde_json::{Map, Value, json};
+use sempre_converter::{Profile, SourceSnapshot, Target, prepare_profile};
 
 use crate::{Manager, ManagerError, VersionRunner};
 
@@ -20,11 +15,6 @@ impl<R: VersionRunner> Manager<R> {
             return Ok((Vec::new(), Vec::new()));
         }
         let effective = prepare_profile(profile, target)?;
-        let allow_failures = effective
-            .extra
-            .get("use_system_rules")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
         let mut jobs = tokio::task::JoinSet::new();
         let concurrency = Arc::new(tokio::sync::Semaphore::new(6));
         for (index, provider) in effective.rule_providers.into_iter().enumerate() {
@@ -32,22 +22,7 @@ impl<R: VersionRunner> Manager<R> {
             let concurrency = Arc::clone(&concurrency);
             jobs.spawn(async move {
                 let _permit = concurrency.acquire_owned().await.expect("semaphore open");
-                let mut extra = Map::new();
-                extra.insert("cache_ttl_minutes".into(), json!(24 * 60));
-                let source = Source {
-                    id: rule_provider_snapshot_id(&provider.tag),
-                    kind: "url".into(),
-                    enabled: true,
-                    url: provider.url,
-                    remark: provider.tag.clone(),
-                    prefix: String::new(),
-                    content: String::new(),
-                    user_agent: String::new(),
-                    extra,
-                };
-                let result = fetcher
-                    .load(source, force, validate_rule_provider_content)
-                    .await;
+                let result = fetcher.load_rule_provider(&provider, force).await;
                 (index, provider.tag, result)
             });
         }
@@ -59,29 +34,40 @@ impl<R: VersionRunner> Manager<R> {
             loaded.insert(index, (tag, result));
         }
         let mut snapshots = Vec::new();
-        let mut warnings = Vec::new();
         let mut indexes = loaded.keys().copied().collect::<Vec<_>>();
         indexes.sort_unstable();
         for index in indexes {
             let (tag, result) = loaded.remove(&index).expect("provider result");
             match result {
                 Ok(result) => snapshots.push(result.snapshot),
-                Err(error) if allow_failures => {
-                    warnings.push(format!("rule provider {tag:?}: {error}"));
+                Err(error) => {
+                    return Err(sempre_subscription::SubscriptionError::Fetch(format!(
+                        "rule provider {tag:?}: {error}"
+                    ))
+                    .into());
                 }
-                Err(error) => return Err(error.into()),
             }
         }
-        Ok((snapshots, warnings))
+        Ok((snapshots, Vec::new()))
     }
 }
 
-fn validate_rule_provider_content(content: &str) -> Result<(), SubscriptionError> {
-    if rule_provider_has_rules(content) {
-        Ok(())
-    } else {
-        Err(SubscriptionError::Invalid(
-            "provider has no convertible rules".into(),
-        ))
-    }
+#[cfg(test)]
+pub(crate) fn write_bundled_rule_fixture(layout: &sempre_state::Layout) {
+    let bundled = sempre_converter::system_defaults()
+        .rule_providers
+        .into_iter()
+        .map(|provider| {
+            (
+                provider.url,
+                "payload:\n  - DOMAIN-SUFFIX,offline.example\n",
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    std::fs::create_dir_all(&layout.resources).expect("resources");
+    std::fs::write(
+        layout.resources.join("sempre-system-rules.json"),
+        serde_json::to_vec(&bundled).expect("bundled rules"),
+    )
+    .expect("write bundled rules");
 }
