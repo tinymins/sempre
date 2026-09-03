@@ -113,11 +113,12 @@ describe('RuntimeControlPanel', () => {
     const restart = screen.getByRole('button', { name: 'Restart managed core' })
     expect(restart).toBeEnabled()
     fireEvent.click(restart)
-
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/restart', expect.objectContaining({ method: 'POST' })))
   })
 
-  it('replaces the accepted restart notice with rollback details after startup fails', async () => {
+  it('opens the shared restart task log and keeps the runtime failure details', async () => {
+    const task = { id: 'restart', state: 'rolled_back', started_at: '2026-09-03T00:00:00Z', finished_at: '2026-09-03T00:00:10Z', omitted_logs: 0, config_available: false, logs: [{ sequence: 0, timestamp: '2026-09-03T00:00:10Z', stage: 'rolled_back', message: 'exit status 1; restored sing-box@1.2.3' }] }
     const failed = { ...runningStatus.active!, config_hash: 'b'.repeat(64) }
     const failure = {
       stage: 'startup failed for sing-box@1.2.3',
@@ -133,9 +134,11 @@ describe('RuntimeControlPanel', () => {
         current = { ...runningStatus, restart_count: 1, last_exit: 'exit status 1', last_failure: failure }
         return new Response(JSON.stringify({
           action: 'restart',
+          task,
           status: { ...runningStatus, runtime_state: 'stopping', active: failed, pending: true },
         }), { status: 202, headers: { 'Content-Type': 'application/json' } })
       }
+      if (url.endsWith('/api/v1/runtime/restart')) return Response.json({ task: current === runningStatus ? null : task })
       return new Response(JSON.stringify(current), { status: 200, headers: { 'Content-Type': 'application/json' } })
     })
     vi.stubGlobal('fetch', fetch)
@@ -144,12 +147,11 @@ describe('RuntimeControlPanel', () => {
     const restart = await screen.findByRole('button', { name: 'Restart managed core' })
     await waitFor(() => expect(restart).toBeEnabled())
     fireEvent.click(restart)
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Managed core startup failed. The last working configuration was restored.')
-    expect(alert).toHaveTextContent('Failure stage: startup failed for sing-box@1.2.3')
-    expect(alert).toHaveTextContent('Error: exit status 1')
-    expect(alert).toHaveTextContent('Rollback: sing-box@1.2.3 · bbbbbbbb...bbbbbb → sing-box@1.2.3 · aaaaaaaa...aaaaaa')
+    const log = await screen.findByRole('log')
+    await waitFor(() => expect(log).toHaveTextContent('Core restart failed; previous deployment restored'))
+    expect(log).toHaveTextContent('exit status 1; restored sing-box@1.2.3')
   })
 
   it('describes a starting pending deployment as health-checking', async () => {

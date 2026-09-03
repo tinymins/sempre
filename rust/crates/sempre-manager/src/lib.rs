@@ -20,6 +20,7 @@ mod lifecycle;
 mod network_settings;
 mod pending_changes;
 mod process;
+mod restart_task;
 mod rule_bootstrap;
 mod rule_provider;
 mod runtime;
@@ -58,6 +59,7 @@ pub use lifecycle::CoreChange;
 pub use network_settings::{NetworkMode, NetworkSettings};
 pub use pending_changes::RuntimePendingChange;
 pub use process::{ProcessRunner, ValidationRunner, VersionRunner};
+pub use restart_task::{RestartLogEntry, RestartTask};
 pub use runtime::{RuntimeActionAvailability, RuntimeActions, RuntimeDeployment, RuntimeStatus};
 pub use sempre_bundle::DeployComponent;
 pub use sempre_bundle::Export as BundleExport;
@@ -79,6 +81,7 @@ pub struct Manager<R = ProcessRunner> {
     remote: RemoteClient,
     gateway: Arc<sempre_gateway::Controller>,
     runtime_reload: Arc<Notify>,
+    restart_tasks: Arc<restart_task::RestartTasks>,
     subscription_schedule_changed: Arc<Notify>,
     tunnels: Arc<TunnelController>,
     transparent: Arc<TransparentController>,
@@ -145,6 +148,7 @@ impl<R: VersionRunner> Manager<R> {
             remote,
             gateway,
             runtime_reload: Arc::new(Notify::new()),
+            restart_tasks: Arc::default(),
             subscription_schedule_changed: Arc::new(Notify::new()),
             tunnels,
             transparent,

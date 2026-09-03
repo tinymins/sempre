@@ -28,6 +28,14 @@ const fieldKeys = {
   manual_configuration: 'changeFieldManualConfiguration',
 } as const
 
+export function formatPendingChange(change: RuntimePendingChange, t: ReturnType<typeof useI18n>['t'], locale: string) {
+  const label = t(change.type === 'core' ? 'changeCore' : change.type === 'profile' ? 'changeProfile' : 'changeConfiguration')
+  const detail = change.type === 'configuration'
+    ? new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(change.fields.map((field) => t(fieldKeys[field])))
+    : `${change.previous || t('changeNone')} → ${change.current}`
+  return `${label}: ${detail}`
+}
+
 export function RestartChangeSummary({ detail, changes }: { detail: string; changes: RuntimePendingChange[] }) {
   const { locale, t } = useI18n()
   if (!changes.length) return <p>{detail}</p>

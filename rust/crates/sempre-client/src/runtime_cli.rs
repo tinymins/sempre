@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+mod restart;
+
 use sempre_manager::RuntimeStatus;
 use sempre_state::{DesiredState, Layout, Mode, RuntimeState};
 use serde::Deserialize;
@@ -21,6 +23,7 @@ const DEFAULT_DELAY_TIMEOUT_MS: u64 = 5_000;
 #[derive(Deserialize)]
 struct ActionOutput {
     status: RuntimeStatus,
+    task: Option<restart::Task>,
 }
 
 #[derive(Deserialize)]
@@ -212,6 +215,9 @@ fn print_json(value: &impl serde::Serialize) -> Result<(), ClientError> {
 async fn action(client: &LocalApi, action: &str) -> Result<RuntimeStatus, ClientError> {
     let before: RuntimeStatus = client.get("/api/v1/runtime/status").await?;
     let accepted: ActionOutput = client.post(&format!("/api/v1/runtime/{action}")).await?;
+    if let Some(task) = accepted.task {
+        return restart::wait(client, task).await;
+    }
     if complete(action, &before, &accepted.status) {
         return Ok(accepted.status);
     }

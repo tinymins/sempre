@@ -81,11 +81,22 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 
     pub async fn runtime_action(&self, action: &str) -> Result<RuntimeStatus, ManagerError> {
+        self.runtime_action_inner(action, false).await
+    }
+
+    pub(crate) async fn runtime_action_inner(
+        &self,
+        action: &str,
+        restart_task: bool,
+    ) -> Result<RuntimeStatus, ManagerError> {
         if !matches!(action, START | STOP | RESTART) {
             return Err(action_error(
                 "INVALID_RUNTIME_ACTION",
                 "runtime action must be start, stop, or restart",
             ));
+        }
+        if !restart_task && self.restart_tasks.running() {
+            return Err(crate::restart_task::busy());
         }
         let _operation = self.store.acquire_operation()?;
         let mut document = self.store.read()?;
@@ -101,22 +112,15 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         {
             return Ok(current);
         }
-        if action == RESTART
-            && document.desired_state == DesiredState::Running
-            && is_transition(current.runtime_state)
-            && !configuration_pending
-        {
-            return Ok(current);
+        if action == RESTART && is_transition(current.runtime_state) {
+            return Err(crate::restart_task::busy());
         }
         if matches!(action, START | RESTART) {
             self.ensure_runtime_action_preparable(&document, configuration_pending)?;
-            if let Err(error) = self.prepare_active_subscription_for_runtime_locked().await {
-                self.record_runtime_preparation_failure(&error)?;
-                return Err(action_error(
-                    "RUNTIME_PREPARATION_FAILED",
-                    error.to_string(),
-                ));
+            if restart_task {
+                self.restart_tasks.log("compiling", "");
             }
+            self.prepare_runtime_action().await?;
             document = self.store.read()?;
         }
         let expected = self.runtime_deployment(&document);
@@ -177,8 +181,22 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             _ => unreachable!("validated runtime action"),
         }
+        if restart_task {
+            self.restart_tasks.prepared(self.current_config()?);
+        }
         self.request_runtime_reload();
         self.runtime_status()
+    }
+
+    async fn prepare_runtime_action(&self) -> Result<(), ManagerError> {
+        if let Err(error) = self.prepare_active_subscription_for_runtime_locked().await {
+            self.record_runtime_preparation_failure(&error)?;
+            return Err(action_error(
+                "RUNTIME_PREPARATION_FAILED",
+                error.to_string(),
+            ));
+        }
+        Ok(())
     }
 
     fn ensure_runtime_action_preparable(
@@ -227,6 +245,18 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 0
             }
         });
+        let mut actions = runtime_actions(
+            document,
+            runtime_state,
+            target.as_ref().err(),
+            configuration_pending,
+        );
+        if self.restart_tasks.running() {
+            for action in [&mut actions.start, &mut actions.stop, &mut actions.restart] {
+                action.allowed = false;
+                action.reason = "a core restart is already in progress".into();
+            }
+        }
         RuntimeStatus {
             desired_state: document.desired_state,
             runtime_state,
@@ -246,12 +276,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             last_exit: document.runtime.last_exit.clone(),
             last_error,
             last_failure: document.runtime.last_failure.clone().map(failure_value),
-            actions: runtime_actions(
-                document,
-                runtime_state,
-                target.as_ref().err(),
-                configuration_pending,
-            ),
+            actions,
             dns_frontend: self.dns_frontend.status(),
         }
     }

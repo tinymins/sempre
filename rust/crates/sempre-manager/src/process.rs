@@ -21,6 +21,20 @@ pub trait ValidationRunner: Send + Sync {
         config: &'a Path,
         data_directory: &'a Path,
     ) -> Pin<Box<dyn Future<Output = Result<(), ManagerError>> + Send + 'a>>;
+
+    fn validate_output<'a>(
+        &'a self,
+        adapter: &'a dyn Adapter,
+        binary: &'a Path,
+        config: &'a Path,
+        data_directory: &'a Path,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ManagerError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.validate(adapter, binary, config, data_directory)
+                .await?;
+            Ok(String::new())
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -80,13 +94,27 @@ impl ValidationRunner for ProcessRunner {
         data_directory: &'a Path,
     ) -> Pin<Box<dyn Future<Output = Result<(), ManagerError>> + Send + 'a>> {
         Box::pin(async move {
+            self.validate_output(adapter, binary, config, data_directory)
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn validate_output<'a>(
+        &'a self,
+        adapter: &'a dyn Adapter,
+        binary: &'a Path,
+        config: &'a Path,
+        data_directory: &'a Path,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ManagerError>> + Send + 'a>> {
+        Box::pin(async move {
             let binary = path_text(binary)?;
             let config = path_text(config)?;
             let data_directory = path_text(data_directory)?;
             let spec = adapter.validation_command(binary, config, data_directory);
             let output = run(&spec, adapter.id(), "configuration validation").await?;
             if output.status.success() {
-                Ok(())
+                Ok(combined_output(&output))
             } else {
                 Err(ManagerError::ValidationCommand {
                     core: adapter.id().into(),

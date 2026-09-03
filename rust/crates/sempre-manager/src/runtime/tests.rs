@@ -14,6 +14,8 @@ use serde_json::Map;
 
 use super::*;
 
+mod restart;
+
 #[derive(Default)]
 struct FakeRunner {
     validations: AtomicUsize,

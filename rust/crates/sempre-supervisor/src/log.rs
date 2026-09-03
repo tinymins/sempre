@@ -12,16 +12,35 @@ pub async fn copy_rolling(
     path: PathBuf,
     limit: u64,
     backups: usize,
+    observer: Option<crate::OutputObserver>,
+    stream: &'static str,
 ) -> io::Result<()> {
     let mut writer = RollingWriter::open(&path, limit, backups)?;
     let mut buffer = vec![0_u8; 16 << 10];
+    let mut pending = Vec::new();
     loop {
         let count = reader.read(&mut buffer).await?;
         if count == 0 {
+            if let Some(observer) = &observer
+                && !pending.is_empty()
+            {
+                observer(stream, &String::from_utf8_lossy(&pending));
+            }
             writer.flush()?;
             return Ok(());
         }
         writer.write_all(&buffer[..count])?;
+        if let Some(observer) = &observer {
+            pending.extend_from_slice(&buffer[..count]);
+            while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
+                observer(stream, &String::from_utf8_lossy(&pending[..end]));
+                pending.drain(..=end);
+            }
+            if pending.len() >= 16 << 10 {
+                observer(stream, &String::from_utf8_lossy(&pending));
+                pending.clear();
+            }
+        }
     }
 }
 

@@ -139,6 +139,7 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
     increment_restart: bool,
 ) -> Result<bool, ManagerError> {
     let mut retry = false;
+    let mut restored_label = None;
     manager.store.update(|document| {
         let now = Utc::now();
         let failed = document.active.clone();
@@ -153,6 +154,7 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
         if rollback_pending && document.pending {
             if let Some(restored) = document.previous.take() {
                 failure.rolled_back_to = Some(restored.clone());
+                restored_label = Some(format!("{}@{}", restored.core, restored.version));
                 match document.previous_config_build.take() {
                     Some(build) => {
                         document.config_builds.insert(restored.core.clone(), build);
@@ -190,6 +192,9 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
         document.runtime.last_transition = Some(now);
         Ok(())
     })?;
+    manager
+        .restart_tasks
+        .failure(stage, error, restored_label.as_deref());
     Ok(retry)
 }
 

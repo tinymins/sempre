@@ -37,6 +37,8 @@ const runtimeStatus = {
 
 const networkSettings = (mode: 'local' | 'gateway' = 'local') => ({ settings: { schema: 1, revision: 1, mode, gateway_capture_host: false }, platform: 'linux', gateway_available: true })
 
+const restartTask = { id: 'restart', state: 'running', started_at: '2026-09-03T00:00:00Z', finished_at: null, logs: [{ sequence: 0, timestamp: '2026-09-03T00:00:00Z', stage: 'begin', message: '' }], omitted_logs: 0, config_available: false }
+
 describe('Shell sidebar', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -134,6 +136,7 @@ describe('Shell sidebar', () => {
   })
 
   it('places restart before language and marks pending changes with a red dot', async () => {
+    let accepted = false
     const pendingStatus = {
       ...runtimeStatus,
       pending: true,
@@ -145,8 +148,10 @@ describe('Shell sidebar', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const path = new URL(String(input)).pathname
       if (path.endsWith('/runtime/restart') && init.method === 'POST') {
-        return Response.json({ action: 'restart', status: pendingStatus }, { status: 202 })
+        accepted = true
+        return Response.json({ action: 'restart', status: pendingStatus, task: restartTask }, { status: 202 })
       }
+      if (path.endsWith('/runtime/restart')) return Response.json({ task: accepted ? restartTask : null })
       return Response.json(path.endsWith('/runtime/status') ? pendingStatus : systemStatus)
     }))
     renderShell()
@@ -166,7 +171,7 @@ describe('Shell sidebar', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Restart core' }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/restart', expect.objectContaining({ method: 'POST' })))
-    expect(await screen.findByRole('status')).toHaveTextContent('Operation accepted')
+    expect(await screen.findByRole('log')).toHaveTextContent('Starting core restart')
   })
 
   it('shows restart failures from the global control', async () => {
@@ -179,12 +184,13 @@ describe('Shell sidebar', () => {
     }))
     renderShell()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Restart core' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restart core' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Restart core' }))
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Managed core is unavailable')
   })
 
-  it('replaces the accepted restart notice with an asynchronous rollback result', async () => {
+  it('shows asynchronous rollback output in the task log', async () => {
     const failed = { ...runtimeStatus.active, config_hash: 'b'.repeat(64) }
     const finalStatus = {
       ...runtimeStatus,
@@ -195,8 +201,9 @@ describe('Shell sidebar', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const path = new URL(String(input)).pathname
       if (path.endsWith('/runtime/restart') && init.method === 'POST') {
-        return Response.json({ action: 'restart', status: { ...runtimeStatus, runtime_state: 'stopping', active: failed, pending: true } }, { status: 202 })
+        return Response.json({ action: 'restart', task: restartTask, status: { ...runtimeStatus, runtime_state: 'stopping', active: failed, pending: true } }, { status: 202 })
       }
+      if (path.endsWith('/runtime/restart')) return Response.json({ task: { ...restartTask, state: 'rolled_back', finished_at: '2026-09-03T00:01:00Z', logs: [{ sequence: 0, timestamp: '2026-09-03T00:01:00Z', stage: 'rolled_back', message: 'exit status 1; sing-box@1.13.18 restored' }] } })
       if (path.endsWith('/runtime/status')) {
         statusReads += 1
         return Response.json(statusReads > 1 ? finalStatus : runtimeStatus)
@@ -205,13 +212,13 @@ describe('Shell sidebar', () => {
     }))
     renderShell()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Restart core' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restart core' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Restart core' }))
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Managed core startup failed. The last working configuration was restored.')
-    expect(alert).toHaveTextContent('Error: exit status 1')
-    expect(alert).toHaveTextContent('Rollback: sing-box@1.13.18 · bbbbbbbb...bbbbbb → sing-box@1.13.18 · aaaaaaaa...aaaaaa')
+    const log = await screen.findByRole('log')
+    await waitFor(() => expect(log).toHaveTextContent('Core restart failed; previous deployment restored'))
+    expect(log).toHaveTextContent('exit status 1; sing-box@1.13.18 restored')
   })
 
   it('dismisses the password warning only for the current shell mount', async () => {

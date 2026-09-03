@@ -93,9 +93,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .prefix("validate-")
             .tempdir_in(&self.store.layout().runtime)
             .map_err(|error| ManagerError::io("create validation directory", error))?;
-        self.runner
-            .validate(adapter.as_ref(), &binary, config, data.path())
-            .await
+        let output = self
+            .runner
+            .validate_output(adapter.as_ref(), &binary, config, data.path())
+            .await?;
+        for line in output.lines() {
+            self.restart_tasks.log("validation", line);
+        }
+        Ok(())
     }
 
     pub(crate) async fn prepare_config_content_for(

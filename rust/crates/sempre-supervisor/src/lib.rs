@@ -5,6 +5,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
+    sync::Arc,
     time::Duration,
 };
 
@@ -18,6 +19,8 @@ use tokio::{
 
 const LOG_LIMIT: u64 = 10 << 20;
 const LOG_BACKUPS: usize = 3;
+
+pub type OutputObserver = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 #[derive(Debug, Error)]
 pub enum SupervisorError {
@@ -47,6 +50,15 @@ impl ManagedProcess {
         stdout_path: impl Into<PathBuf>,
         stderr_path: impl Into<PathBuf>,
     ) -> Result<Self, SupervisorError> {
+        Self::spawn_observed(spec, stdout_path, stderr_path, None)
+    }
+
+    pub fn spawn_observed(
+        spec: &CommandSpec,
+        stdout_path: impl Into<PathBuf>,
+        stderr_path: impl Into<PathBuf>,
+        observer: Option<OutputObserver>,
+    ) -> Result<Self, SupervisorError> {
         let mut command = Command::new(&spec.program);
         command
             .args(&spec.arguments)
@@ -67,6 +79,8 @@ impl ManagedProcess {
                 stdout_path.into(),
                 LOG_LIMIT,
                 LOG_BACKUPS,
+                observer.clone(),
+                "stdout",
             )));
         }
         if let Some(stderr) = child.stderr.take() {
@@ -75,6 +89,8 @@ impl ManagedProcess {
                 stderr_path.into(),
                 LOG_LIMIT,
                 LOG_BACKUPS,
+                observer,
+                "stderr",
             )));
         }
         Ok(Self { child, pid, output })

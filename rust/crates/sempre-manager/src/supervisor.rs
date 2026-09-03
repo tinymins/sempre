@@ -41,8 +41,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         shutdown: watch::Receiver<bool>,
     ) -> Result<(), ManagerError> {
-        self.run_supervisor_with_grace(shutdown, STARTUP_GRACE)
-            .await
+        let result = self
+            .run_supervisor_with_grace(shutdown, STARTUP_GRACE)
+            .await;
+        self.restart_tasks.supervisor_exited(result.as_ref().err());
+        result
     }
 
     async fn run_supervisor_with_grace(
@@ -148,6 +151,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         startup_grace: Duration,
     ) -> Result<CycleResult, ManagerError> {
         self.log_supervisor(&format!("starting {}", deployment_label(&plan.deployment)))?;
+        self.restart_tasks
+            .runtime_log("starting", &deployment_label(&plan.deployment));
         if let Err(error) = self.start_gateway().await {
             let retry =
                 self.handle_process_failure(plan, "gateway startup failed", &error, true)?;
@@ -155,10 +160,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 retry_immediately: retry,
             });
         }
-        let mut process = match ManagedProcess::spawn(
+        let tasks = self.restart_tasks.clone();
+        let mut process = match ManagedProcess::spawn_observed(
             &plan.spec,
             &self.store.layout().core_stdout_log,
             &self.store.layout().core_stderr_log,
+            Some(std::sync::Arc::new(move |stream, line| {
+                tasks.runtime_log(stream, line);
+            })),
         ) {
             Ok(process) => process,
             Err(error) => {
@@ -260,6 +269,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             repository: deployment.repository.clone(),
             reference: deployment.reference.clone(),
         };
+        self.restart_tasks.runtime_log("network", "");
         let dns_frontend = self
             .prepare_dns_frontend_plan(&document, &deployment, &reference)
             .await?;
@@ -333,6 +343,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         service_stopped: bool,
     ) -> Result<(), ManagerError> {
         let transition = state::mark_stopping(self);
+        self.log_restart_stopping(process.pid());
         let transparent = if service_stopped {
             self.dns_frontend.stop().await;
             self.stop_gateway().await;
@@ -341,6 +352,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             self.cleanup_after_core_failure().await
         };
         let terminated = process.terminate(STOP_GRACE).await;
+        self.restart_tasks.stopped(&terminated);
         self.remove_control();
         transition?;
         let state = state::mark_intentional_exit(self, service_stopped);
@@ -363,10 +375,16 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 deployment_label(&plan.deployment),
                 plan.rules.pending_count()
             ))
-        })
+        })?;
+        self.restart_tasks.healthy();
+        Ok(())
     }
 
     fn mark_runtime_started(&self, plan: &RuntimePlan, pid: u32) -> Result<(), ManagerError> {
+        self.restart_tasks.runtime_log(
+            "health_check",
+            &format!("{} · PID {pid}", deployment_label(&plan.deployment)),
+        );
         state::mark_started(self, plan, pid)
             .and_then(|()| self.write_control(plan.control.as_ref()))
             .and_then(|()| {
@@ -430,6 +448,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 
     pub(crate) fn log_supervisor(&self, message: &str) -> Result<(), ManagerError> {
+        self.restart_tasks.runtime_log("supervisor", message);
         let line = format!("{} {message}\n", Utc::now().to_rfc3339());
         append_log(&self.store.layout().manager_log, &line)?;
         Ok(())

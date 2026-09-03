@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, CircleCheck, Clock3, Play, RotateCw, Square, Terminal } from 'lucide-react'
+import { AlertCircle, CircleCheck, Clock3, Play, Square, Terminal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { compactHash, formatDate, formatDuration } from '../lib/format'
@@ -9,8 +9,9 @@ import { useSession } from '../lib/session'
 import { formatRuntimeFailure, useRuntimeActionFeedback, type RuntimeActionNotice } from '../lib/useRuntimeActionFeedback'
 import type { ManagedRuntimeStatus } from '../lib/types'
 import { Badge, Button, Card, ConfirmDialog, Spinner } from './ui'
+import { RuntimeRestartButton } from './RuntimeRestartButton'
 
-type RuntimeAction = 'start' | 'stop' | 'restart'
+type RuntimeAction = 'start' | 'stop'
 
 const transientStates = new Set(['starting', 'stopping', 'restarting'])
 
@@ -64,7 +65,7 @@ export function RuntimeControlPanel() {
         <div className="flex h-9 items-center gap-1">
           <RuntimeButton label={t('startCore')} reason={value?.actions.start.reason} disabled={!value?.actions.start.allowed || action.isPending} pending={actionPending === 'start'} onClick={() => run('start')}><Play size={17} /></RuntimeButton>
           <RuntimeButton label={t('stopCore')} reason={value?.actions.stop.reason} disabled={!value?.actions.stop.allowed || action.isPending} pending={actionPending === 'stop'} danger onClick={() => setConfirmStop(true)}><Square size={16} /></RuntimeButton>
-          <RuntimeButton label={t('restartCore')} reason={value?.actions.restart.reason} disabled={!value?.actions.restart.allowed || action.isPending} pending={actionPending === 'restart'} onClick={() => run('restart')}><RotateCw size={17} /></RuntimeButton>
+          <RuntimeRestartButton panel />
         </div>
       </div>
       {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`whitespace-pre-line border-b border-[var(--border)] px-4 py-2 text-sm md:px-5 ${notice.tone === 'error' ? 'bg-red-500/8 text-red-700 dark:text-red-300' : 'bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}

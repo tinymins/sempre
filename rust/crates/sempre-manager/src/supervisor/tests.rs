@@ -113,6 +113,72 @@ fn transparent_cleanup_requires_owned_runtime_evidence() {
 }
 
 #[tokio::test]
+async fn async_restart_tracks_real_process_output_until_healthy() {
+    let (_root, manager) = fixture(
+        "#!/bin/sh\ntrap 'exit 0' TERM\necho core-stdout\necho core-stderr >&2\nwhile :; do sleep 1; done\n",
+    );
+    let (shutdown, receiver) = watch::channel(false);
+    let running = manager.clone();
+    let supervisor = tokio::spawn(async move {
+        running
+            .run_supervisor_with_grace(receiver, Duration::from_millis(100))
+            .await
+    });
+    wait_for_state(&manager, sempre_state::RuntimeState::Running).await;
+    let original_pid = manager.state().unwrap().runtime.pid;
+    manager.start_restart_task().unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while manager.restart_task().unwrap().state == "running" {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let task = manager.restart_task().unwrap();
+    shutdown.send(true).unwrap();
+    supervisor.await.unwrap().unwrap();
+    assert_eq!(task.state, "succeeded");
+    for stage in [
+        "begin",
+        "compiling",
+        "compiled",
+        "stopping",
+        "stopped",
+        "network",
+        "starting",
+        "health_check",
+        "healthy",
+        "succeeded",
+    ] {
+        assert!(
+            task.logs.iter().any(|entry| entry.stage == stage),
+            "missing {stage}: {:?}",
+            task.logs
+        );
+    }
+    assert!(
+        task.logs
+            .iter()
+            .any(|entry| entry.stage == "stdout" && entry.message == "core-stdout")
+    );
+    assert!(
+        task.logs
+            .iter()
+            .any(|entry| entry.stage == "stderr" && entry.message == "core-stderr")
+    );
+    let started = task
+        .logs
+        .iter()
+        .find(|entry| entry.stage == "health_check")
+        .unwrap();
+    assert!(
+        !started
+            .message
+            .ends_with(&format!("PID {}", original_pid.unwrap()))
+    );
+}
+
+#[tokio::test]
 async fn resolve_failure_clears_stale_frontend_status_without_a_running_service() {
     let (_root, manager) = fixture("#!/bin/sh\nexit 0\n");
     let hash = manager.state().expect("state").configs["sing-box"].clone();
