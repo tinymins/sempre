@@ -118,26 +118,32 @@ fn main() {
         .init();
     let raw_arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     let arguments = Arguments::parse();
+    let explicitly_elevated = arguments.elevated;
     let mode = match portable_cli::resolve_mode(&arguments) {
         Ok(mode) => mode,
         Err(error) => {
-            eprintln!("ERROR: {error}");
+            elevate::report_error(&error, explicitly_elevated);
             std::process::exit(1);
         }
     };
     #[cfg(windows)]
     if matches!(arguments.command, Command::ServiceHost) {
         if let Err(error) = windows_service_host::dispatch() {
-            eprintln!("ERROR: {error}");
+            elevate::report_error(&error, explicitly_elevated);
             std::process::exit(1);
         }
         return;
     }
     match elevate::ensure(&arguments, &raw_arguments, mode) {
         Ok(elevate::Outcome::Continue) => {}
-        Ok(elevate::Outcome::Exit(code)) => std::process::exit(code),
+        Ok(elevate::Outcome::Exit(code)) => {
+            if code != 0 {
+                eprintln!("ERROR: administrator command exited with code {code}");
+            }
+            std::process::exit(code);
+        }
         Err(error) => {
-            eprintln!("ERROR: {error}");
+            elevate::report_error(&error, explicitly_elevated);
             std::process::exit(1);
         }
     }
@@ -146,7 +152,7 @@ fn main() {
         .build()
         .expect("build Sempre runtime");
     if let Err(error) = runtime.block_on(run(arguments, mode)) {
-        eprintln!("ERROR: {error}");
+        elevate::report_error(&error, explicitly_elevated);
         std::process::exit(1);
     }
 }

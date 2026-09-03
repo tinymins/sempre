@@ -59,3 +59,29 @@ fn elevation_waits_only_for_command_and_preserves_its_exit_code() {
     assert_eq!(status.code(), Some(7));
     assert!(descendant_pending, "wrapper waited for cleanup descendant");
 }
+
+#[test]
+fn elevated_failure_fixture() {
+    if std::env::var_os("SEMPRE_ELEVATION_FAILURE_FIXTURE").is_some() {
+        report_error(&"elevated failure fixture", true);
+        std::process::exit(7);
+    }
+}
+
+#[test]
+fn elevated_failure_without_a_console_reports_the_error_and_exits() {
+    let output = Command::new(std::env::current_exe().expect("test executable"))
+        .args([
+            "--exact",
+            "elevate::windows_tests::elevated_failure_fixture",
+            "--nocapture",
+        ])
+        .env("SEMPRE_ELEVATION_FAILURE_FIXTURE", "1")
+        .stdin(Stdio::null())
+        .output()
+        .expect("failure fixture");
+    assert_eq!(output.status.code(), Some(7));
+    let error = String::from_utf8(output.stderr).expect("error output");
+    assert!(error.contains("ERROR: elevated failure fixture"));
+    assert!(!error.contains("Press Enter"));
+}

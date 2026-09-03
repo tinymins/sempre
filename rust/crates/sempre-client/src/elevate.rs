@@ -49,6 +49,25 @@ pub fn ensure(
     platform_ensure(arguments.elevated, raw_arguments)
 }
 
+pub fn report_error(error: &dyn std::fmt::Display, explicitly_elevated: bool) {
+    eprintln!("ERROR: {error}");
+    preserve_error_console(explicitly_elevated);
+}
+
+#[cfg(windows)]
+fn preserve_error_console(explicitly_elevated: bool) {
+    use std::io::IsTerminal as _;
+
+    let input = io::stdin();
+    if explicitly_elevated && input.is_terminal() {
+        eprintln!("Press Enter to close this window...");
+        let _ = input.read_line(&mut String::new());
+    }
+}
+
+#[cfg(not(windows))]
+fn preserve_error_console(_explicitly_elevated: bool) {}
+
 #[cfg(unix)]
 fn platform_ensure(
     explicitly_elevated: bool,
