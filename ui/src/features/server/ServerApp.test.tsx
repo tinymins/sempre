@@ -25,6 +25,13 @@ function renderServerApp() {
 }
 
 describe('ServerApp', () => {
+	it('creates profiles with high local proxy ports', () => {
+		expect(newServerProfile('New profile').local_proxy).toMatchObject({
+			socks_port: 20580,
+			http_port: 20581,
+		})
+	})
+
   beforeEach(() => {
     window.location.hash = '#/subscriptions/profile-1'
     localStorage.setItem('sempre.server.session.v1', JSON.stringify({

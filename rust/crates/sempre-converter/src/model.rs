@@ -6,6 +6,8 @@ use serde_json::{Map, Value};
 use crate::Target;
 
 pub const DEFAULT_CORE_DNS_PORT: u16 = 20_553;
+pub const DEFAULT_LOCAL_SOCKS_PORT: u16 = 20_580;
+pub const DEFAULT_LOCAL_HTTP_PORT: u16 = 20_581;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompileRequest {
@@ -222,10 +224,10 @@ impl Default for LocalProxy {
 }
 
 const fn default_socks_port() -> u16 {
-    1080
+    DEFAULT_LOCAL_SOCKS_PORT
 }
 const fn default_http_port() -> u16 {
-    8080
+    DEFAULT_LOCAL_HTTP_PORT
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

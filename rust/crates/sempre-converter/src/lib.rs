@@ -16,9 +16,10 @@ pub use defaults::{
 pub use domain_policy::{DnsFrontendPolicy, apply_dns_frontend_settings, dns_frontend_policy};
 pub use inspection::{PreviewNode, preview_nodes, preview_proxy, trace_node_steps};
 pub use model::{
-    CompileOverlay, CompileRequest, CompileResult, CustomNode, DEFAULT_CORE_DNS_PORT, Diagnostic,
-    EbpfConfig, EditorConfig, FieldDiff, LocalProxy, ManagementApi, Profile, Proxy, ProxyGroup,
-    RuleProvider, Source, SourceSnapshot, TProxyConfig, TransparentProxy, TunConfig,
+    CompileOverlay, CompileRequest, CompileResult, CustomNode, DEFAULT_CORE_DNS_PORT,
+    DEFAULT_LOCAL_HTTP_PORT, DEFAULT_LOCAL_SOCKS_PORT, Diagnostic, EbpfConfig, EditorConfig,
+    FieldDiff, LocalProxy, ManagementApi, Profile, Proxy, ProxyGroup, RuleProvider, Source,
+    SourceSnapshot, TProxyConfig, TransparentProxy, TunConfig,
 };
 pub use parser::{ParseResult, parse_subscription};
 pub use rule_set::{convert_clash_rule_set, rule_provider_has_rules, rule_provider_snapshot_id};

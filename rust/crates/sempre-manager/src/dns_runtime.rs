@@ -323,7 +323,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 "managed DNS frontend and core listener ports do not match".into(),
             ));
         }
-        crate::dns_port::ensure_available(policy.core_listen_port)?;
+        crate::runtime_ports::ensure_dns_available(policy.core_listen_port)?;
         Ok(Some(DnsFrontendPlan::from_policy(
             &deployment.config_hash,
             &policy,

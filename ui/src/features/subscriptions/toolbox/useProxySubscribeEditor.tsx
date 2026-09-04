@@ -139,8 +139,8 @@ export function useProxySubscribeEditor({
         sources: [...sources, ...rawSourcesRef.current],
         custom_node_ids: values.selectedCustomNodeIds ?? [],
 			local_proxy: {
-				socks_port: values.localProxySOCKSPort ?? 1080,
-				http_port: values.localProxyHTTPPort ?? 1081,
+				socks_port: values.localProxySOCKSPort ?? 20580,
+				http_port: values.localProxyHTTPPort ?? 20581,
 				username: values.localProxyUsername || "sempre",
 				password: values.localProxyPassword || profileRef.current.local_proxy?.password || "",
 			},

@@ -59,7 +59,7 @@ export function profileFormValues(profile: SubscriptionProfile, configurationCon
 			tproxy: { listen_port: 7893, dns_listen_port: 20553 },
 			ebpf: { wan_interface: "auto", auto_config_kernel_parameter: false },
 		};
-	const localProxy = profile.local_proxy ?? { socks_port: 1080, http_port: 1081, username: "sempre", password: "" };
+	const localProxy = profile.local_proxy ?? { socks_port: 20580, http_port: 20581, username: "sempre", password: "" };
 	const managementAPI = profile.management_api ?? { external_controller: "0.0.0.0:9090", secret: "", allow_origins: [], allow_private_network: false };
 	const features = new Set(configurationContext.capabilities.features);
 	const transparentMode = (

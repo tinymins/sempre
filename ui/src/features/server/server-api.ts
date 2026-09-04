@@ -159,7 +159,7 @@ export function newServerProfile(name: string): SubscriptionProfile {
     id: crypto.randomUUID(), revision: 1, name, mode: 'local', log_level: 'info',
     editor: { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' },
     sources: [], custom_node_ids: [], groups: [], rules: [], rule_providers: [], filters: [], core_overrides: {},
-    local_proxy: { socks_port: 1080, http_port: 1081, username: 'sempre', password: secret },
+    local_proxy: { socks_port: 20580, http_port: 20581, username: 'sempre', password: secret },
     transparent_proxy: {
       mode: 'tun-router', capture_host: false, lan_interfaces: [], route_exclusions: [], interface_mode: 'all', interfaces: [],
       auto_exclude_local_routes: true, auto_exclude_vpn_routes: true, tun: { interface_name: 'sempre-tun' },

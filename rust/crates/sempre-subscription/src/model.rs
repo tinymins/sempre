@@ -36,8 +36,8 @@ pub fn new_profile(name: &str) -> Profile {
         ..Profile::default()
     };
     profile.editor.servers = "[]".into();
-    profile.local_proxy.socks_port = 1080;
-    profile.local_proxy.http_port = 1081;
+    profile.local_proxy.socks_port = sempre_converter::DEFAULT_LOCAL_SOCKS_PORT;
+    profile.local_proxy.http_port = sempre_converter::DEFAULT_LOCAL_HTTP_PORT;
     profile.local_proxy.username = "sempre".into();
     profile.local_proxy.password = random_secret();
     profile.management_api.external_controller = "0.0.0.0:9090".into();

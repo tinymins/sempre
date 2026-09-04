@@ -182,6 +182,15 @@ describe('ProxySubscribeEditor', () => {
 		})
 	})
 
+	it('uses high local proxy ports when an older profile has no local proxy settings', () => {
+		localStorage.setItem('sempre.locale', 'en')
+		renderEditor({ profile: { ...profile, local_proxy: undefined } })
+
+		fireEvent.click(screen.getByRole('button', { name: 'Runtime' }))
+		expect(screen.getByLabelText('Local SOCKS port')).toHaveDisplayValue('20580')
+		expect(screen.getByLabelText('Local HTTP port')).toHaveDisplayValue('20581')
+	})
+
 	it('edits core DNS in the profile without exposing frontend takeover', async () => {
 		localStorage.setItem('sempre.locale', 'en')
 		const { onSave } = renderEditor({
@@ -288,6 +297,10 @@ describe('ProxySubscribeEditor', () => {
 		localStorage.setItem('sempre.locale', 'en')
 		const { onSave } = renderEditor()
 		fireEvent.click(screen.getByRole('button', { name: 'Runtime' }))
+		expect(screen.getByLabelText('Local SOCKS port')).toHaveDisplayValue('1080')
+		expect(screen.getByLabelText('Local HTTP port')).toHaveDisplayValue('1081')
+		fireEvent.change(screen.getByLabelText('Local SOCKS port'), { target: { value: '30580' } })
+		fireEvent.change(screen.getByLabelText('Local HTTP port'), { target: { value: '30581' } })
 		fireEvent.click(screen.getByText('TUN Router'))
 		fireEvent.click(screen.getByText('TProxy'))
 		expect(screen.queryByText('vmbr1')).not.toBeInTheDocument()
@@ -298,7 +311,7 @@ describe('ProxySubscribeEditor', () => {
 
 		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({
-			local_proxy: { socks_port: 1080, http_port: 1081, username: 'sempre', password: 'local-secret' },
+			local_proxy: { socks_port: 30580, http_port: 30581, username: 'sempre', password: 'local-secret' },
 			transparent_proxy: {
 				mode: 'tproxy',
 				capture_host: false,

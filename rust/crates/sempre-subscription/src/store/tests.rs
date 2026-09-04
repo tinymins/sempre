@@ -18,6 +18,14 @@ fn initializes_a_private_catalog_with_runtime_credentials() {
         profile.transparent_proxy.tproxy.dns_listen_port,
         sempre_converter::DEFAULT_CORE_DNS_PORT
     );
+    assert_eq!(
+        profile.local_proxy.socks_port,
+        sempre_converter::DEFAULT_LOCAL_SOCKS_PORT
+    );
+    assert_eq!(
+        profile.local_proxy.http_port,
+        sempre_converter::DEFAULT_LOCAL_HTTP_PORT
+    );
     assert!(!profile.local_proxy.password.is_empty());
     assert!(!profile.management_api.secret.is_empty());
     assert_eq!(

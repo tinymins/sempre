@@ -270,6 +270,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             reference: deployment.reference.clone(),
         };
         self.restart_tasks.runtime_log("network", "");
+        self.ensure_local_proxy_ports_available(&document, &deployment)?;
         let dns_frontend = self
             .prepare_dns_frontend_plan(&document, &deployment, &reference)
             .await?;
