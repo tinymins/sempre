@@ -138,6 +138,13 @@ fn managed_desktop_private_access_routes_dns_and_traffic_through_core() {
         })
         .expect("compile");
         let document: Value = serde_json::from_str(&result.content).expect("JSON");
+        assert_eq!(
+            document["experimental"]["cache_file"],
+            json!({
+                "enabled": true, "path": "cache.db",
+                "store_fakeip": true, "store_rdrc": false
+            })
+        );
         let tun = document["inbounds"]
             .as_array()
             .expect("inbounds")

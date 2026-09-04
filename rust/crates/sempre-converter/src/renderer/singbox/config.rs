@@ -184,7 +184,8 @@ pub(super) fn experimental(profile: &Profile, target: &Target, store_fakeip: boo
     };
     json!({
         "cache_file": {
-            "enabled": true, "store_fakeip": store_fakeip, "store_rdrc": false
+            "enabled": true, "path": "cache.db",
+            "store_fakeip": store_fakeip, "store_rdrc": false
         },
         "clash_api": {
             "external_controller": external_controller,
