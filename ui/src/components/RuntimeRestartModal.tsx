@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, Button, Modal } from '@acme/components'
 import { CheckCircle2, CircleAlert, LoaderCircle } from 'lucide-react'
@@ -52,7 +52,7 @@ export function RuntimeRestartModal({ open, task, submittedAt, submitting, error
           <span>{running ? (zh ? '执行中 · 实时日志' : 'Running · live output') : current?.state === 'rolled_back' ? (zh ? '失败 · 已回滚' : 'Failed · rolled back') : title}</span>
         </div>
         {error ? <div role="alert"><Alert type="error" showIcon message={error} /></div> : null}
-        <div ref={attachLog} role="log" aria-label={zh ? '核心重启日志' : 'Core restart log'} aria-live="polite" tabIndex={0}
+        <div ref={attachLog} role="log" aria-label={zh ? '核心重启日志' : 'Core restart log'} aria-live="polite" tabIndex={0} onKeyDown={selectAllContents}
           className="h-[min(56vh,560px)] min-h-48 overflow-auto rounded-md border border-slate-700 bg-slate-950 p-4 font-mono text-xs leading-6 text-slate-200 [color-scheme:dark]">
           {current?.omitted_logs ? <p className="text-amber-300">{zh ? `已省略前 ${current.omitted_logs} 条日志` : `${current.omitted_logs} earlier entries omitted`}</p> : null}
           {current?.logs.map((entry) => <LogLine key={entry.sequence} entry={entry} configAvailable={current.config_available} onConfig={() => setConfigOpen(true)} />)}
@@ -86,6 +86,17 @@ function RestartConfigModal({ task, onClose }: { task: RestartTask; onClose: () 
     staleTime: Infinity,
   })
   return <Modal open centered width="min(1100px, calc(100vw - 32px))" zIndex={1100} title={locale === 'zh-CN' ? '本次重启的完整配置（含敏感信息）' : 'Configuration for this restart (contains sensitive values)'} footer={null} onCancel={onClose}>
-    {config.isPending ? <LoaderCircle className="animate-spin" /> : config.error ? <Alert type="error" message={config.error.message} /> : <pre className="max-h-[65vh] overflow-auto rounded-md bg-slate-950 p-4 text-xs leading-5 text-slate-200">{config.data.content}</pre>}
+    {config.isPending ? <LoaderCircle className="animate-spin" /> : config.error ? <Alert type="error" message={config.error.message} /> : <pre aria-label={locale === 'zh-CN' ? '完整配置' : 'Full configuration'} tabIndex={0} onKeyDown={selectAllContents} className="max-h-[65vh] overflow-auto rounded-md bg-slate-950 p-4 text-xs leading-5 text-slate-200">{config.data.content}</pre>}
   </Modal>
+}
+
+function selectAllContents(event: KeyboardEvent<HTMLElement>) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'a') return
+  event.preventDefault()
+  const selection = window.getSelection()
+  if (!selection) return
+  const range = document.createRange()
+  range.selectNodeContents(event.currentTarget)
+  selection.removeAllRanges()
+  selection.addRange(range)
 }
