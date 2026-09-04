@@ -137,8 +137,11 @@ fn write_installer(
             .as_bytes(),
         ),
         "darwin" => {
-            write(directory.join("install.command"), unix.as_bytes())?;
-            write(directory.join("install.sh"), unix.as_bytes())
+            let macos = format!(
+                "#!/bin/sh\nset -eu\ncd -- \"$(dirname -- \"$0\")\"\n/usr/bin/xattr -cr \"./{executable}\" ./.sempre\n\"./{executable}\" install \"$@\"\n"
+            );
+            write(directory.join("install.command"), macos.as_bytes())?;
+            write(directory.join("install.sh"), macos.as_bytes())
         }
         _ => {
             write(directory.join("install.sh"), unix.as_bytes())?;
@@ -219,6 +222,17 @@ mod tests {
                 } else {
                     assert!(content.contains(" install "));
                 }
+                if os == "darwin" {
+                    let cleanup = content
+                        .find(&format!("/usr/bin/xattr -cr \"./{executable}\" ./.sempre"))
+                        .unwrap();
+                    let install = content
+                        .find(&format!("\"./{executable}\" install"))
+                        .unwrap();
+                    assert!(cleanup < install);
+                } else {
+                    assert!(!content.contains("xattr"));
+                }
                 assert!(!content.contains("--yes"));
             }
             for name in absent {
@@ -232,5 +246,53 @@ mod tests {
             };
             assert_eq!(metadata["kind"], "release");
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_installer_clears_quarantine_before_starting_release() {
+        use std::process::Command;
+
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let source = Layout::at(&temporary.path().join("source"));
+        let document = Store::new(source.clone()).initialize().expect("state");
+        fs::write(
+            &source.web_config,
+            b"{\"schema\":1,\"listen\":\"127.0.0.1:33211\"}",
+        )
+        .expect("web config");
+        let executable = temporary.path().join("sempre-source");
+        fs::write(
+            &executable,
+            b"#!/bin/sh\nif /usr/bin/xattr -p com.apple.quarantine \"$0\" >/dev/null 2>&1; then exit 41; fi\nprintf '%s' \"$*\" > installer-invoked\n",
+        )
+        .expect("fake executable");
+        let package = temporary.path().join("sempre-darwin-arm64");
+        let layout = Layout::portable_at(&package.join("sempre"));
+        layout.ensure().expect("package layout");
+        write_release_directory(
+            &source,
+            &layout,
+            &document,
+            &executable,
+            &ReleaseTarget::new("darwin", "arm64").expect("target"),
+        )
+        .expect("release directory");
+        let quarantine = Command::new("/usr/bin/xattr")
+            .args(["-w", "com.apple.quarantine", "0081;00000000;Sempre test;"])
+            .arg(&layout.service_executable)
+            .status()
+            .expect("set quarantine attribute");
+        assert!(quarantine.success());
+
+        let status = Command::new("sh")
+            .arg(package.join("install.command"))
+            .status()
+            .expect("run installer");
+        assert!(status.success());
+        assert_eq!(
+            fs::read_to_string(package.join("installer-invoked")).unwrap(),
+            "install"
+        );
     }
 }
