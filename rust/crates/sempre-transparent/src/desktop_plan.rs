@@ -23,6 +23,26 @@ pub(crate) fn prepare(
     runtime_config: &Path,
     original_upstreams: Vec<String>,
 ) -> Result<Plan, TransparentError> {
+    prepare_with_windows_ipv6(
+        platform,
+        core,
+        core_version,
+        profile,
+        runtime_config,
+        original_upstreams,
+        windows_ipv6_default_route_available(),
+    )
+}
+
+fn prepare_with_windows_ipv6(
+    platform: Platform,
+    core: &str,
+    core_version: &str,
+    profile: &Profile,
+    runtime_config: &Path,
+    original_upstreams: Vec<String>,
+    windows_ipv6_available: bool,
+) -> Result<Plan, TransparentError> {
     let Some(system_dns) = managed_frontend_plan(platform, core, profile, original_upstreams)
     else {
         return Ok(Plan::default());
@@ -32,6 +52,9 @@ pub(crate) fn prepare(
         source,
     })?;
     let mut config = crate::decode(core, &data)?;
+    if matches!(platform, Platform::Windows | Platform::WindowsDivert) && !windows_ipv6_available {
+        disable_fake_ipv6(&mut config);
+    }
     let plan = Plan {
         core: core.into(),
         system_dns: Some(system_dns),
@@ -56,6 +79,18 @@ pub(crate) fn prepare(
         }
     })?;
     Ok(plan)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_ipv6_default_route_available() -> bool {
+    std::net::UdpSocket::bind("[::]:0")
+        .and_then(|socket| socket.connect("[2001:4860:4860::8888]:53"))
+        .is_ok()
+}
+
+#[cfg(not(target_os = "windows"))]
+const fn windows_ipv6_default_route_available() -> bool {
+    true
 }
 
 pub(crate) fn managed_frontend_plan(
@@ -87,6 +122,73 @@ pub(crate) const fn windows_platform() -> Platform {
     } else {
         Platform::Windows
     }
+}
+
+fn disable_fake_ipv6(config: &mut Value) {
+    let Some(dns) = config.get_mut("dns").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let mut removed_prefixes = Vec::new();
+    if let Some(servers) = dns.get_mut("servers").and_then(Value::as_array_mut) {
+        for server in servers
+            .iter_mut()
+            .filter(|server| server["type"] == "fakeip")
+        {
+            if let Some(prefix) = server
+                .as_object_mut()
+                .and_then(|server| server.remove("inet6_range"))
+                .and_then(|value| value.as_str().map(str::to_owned))
+            {
+                removed_prefixes.push(prefix);
+            }
+        }
+    }
+    if let Some(fakeip) = dns.get_mut("fakeip").and_then(Value::as_object_mut)
+        && let Some(prefix) = fakeip
+            .remove("inet6_range")
+            .and_then(|value| value.as_str().map(str::to_owned))
+    {
+        removed_prefixes.push(prefix);
+    }
+    if let Some(rules) = dns.get_mut("rules").and_then(Value::as_array_mut) {
+        rules.retain_mut(restrict_fakeip_rule_to_ipv4);
+    }
+    for inbound in config
+        .get_mut("inbounds")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+        .filter(|inbound| inbound["type"] == "tun")
+    {
+        if let Some(routes) = inbound
+            .get_mut("route_address")
+            .and_then(Value::as_array_mut)
+        {
+            routes.retain(|route| {
+                route
+                    .as_str()
+                    .is_none_or(|route| !removed_prefixes.iter().any(|prefix| prefix == route))
+            });
+        }
+    }
+}
+
+fn restrict_fakeip_rule_to_ipv4(rule: &mut Value) -> bool {
+    if rule["server"] != "fakeip" {
+        return true;
+    }
+    let Some(rule) = rule.as_object_mut() else {
+        return true;
+    };
+    let Some(query_type) = rule.get_mut("query_type") else {
+        rule.insert("query_type".into(), json!(["A"]));
+        return true;
+    };
+    if let Some(query_types) = query_type.as_array_mut() {
+        query_types.retain(|query_type| query_type != "AAAA");
+        return !query_types.is_empty();
+    }
+    query_type != "AAAA"
 }
 
 fn configure_windows_routes(config: &mut Value, plan: &Plan) -> Result<(), TransparentError> {

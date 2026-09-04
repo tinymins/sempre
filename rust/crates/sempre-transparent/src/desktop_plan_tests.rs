@@ -167,13 +167,14 @@ fn windows_redirects_dns_to_non_privileged_frontend_and_routes_only_fake_ip() {
         "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
     }))
     .expect("profile");
-    let plan = prepare(
+    let plan = prepare_with_windows_ipv6(
         Platform::Windows,
         "sing-box",
         "1.14.0-beta.13",
         &profile,
         &config,
         vec!["223.6.6.6".into()],
+        true,
     )
     .expect("plan");
     assert_eq!(plan.system_dns.expect("system DNS").listen_port, 1054);
@@ -198,6 +199,68 @@ fn windows_redirects_dns_to_non_privileged_frontend_and_routes_only_fake_ip() {
             "override_address": "127.0.0.1", "override_port": 1054,
             "udp_connect": true
         })
+    );
+}
+
+#[test]
+fn windows_without_ipv6_routes_only_ipv4_fakeip() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let config = root.path().join("config.json");
+    fs::write(
+        &config,
+        serde_json::to_vec(&json!({
+            "dns": {
+                "servers": [{
+                    "type": "fakeip", "tag": "fakeip",
+                    "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18"
+                }],
+                "rules": [
+                    { "server": "fakeip", "query_type": ["A", "AAAA"], "action": "route" },
+                    { "server": "remote", "action": "route" }
+                ]
+            },
+            "inbounds": [
+                {
+                    "type": "tun", "tag": "tun-in",
+                    "route_address": ["198.18.0.0/15", "fc00::/18", "10.8.28.0/24"]
+                },
+                {
+                    "type": "direct", "tag": "sempre-dns-core-in",
+                    "listen": "127.0.0.1", "listen_port": 1053,
+                    "override_address": "1.1.1.1", "override_port": 53
+                }
+            ],
+            "route": { "rules": [
+                { "inbound": "sempre-dns-core-in", "action": "sniff" },
+                { "inbound": "sempre-dns-core-in", "protocol": "dns", "action": "hijack-dns" }
+            ] }
+        }))
+        .expect("encode config"),
+    )
+    .expect("write config");
+    let profile: Profile = serde_json::from_value(json!({
+        "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
+    }))
+    .expect("profile");
+
+    prepare_with_windows_ipv6(
+        Platform::WindowsDivert,
+        "sing-box",
+        "1.13.18",
+        &profile,
+        &config,
+        vec!["223.6.6.6".into()],
+        false,
+    )
+    .expect("plan");
+
+    let output: Value =
+        serde_json::from_slice(&fs::read(config).expect("read config")).expect("decode config");
+    assert!(output["dns"]["servers"][0]["inet6_range"].is_null());
+    assert_eq!(output["dns"]["rules"][0]["query_type"], json!(["A"]));
+    assert_eq!(
+        output["inbounds"][0]["route_address"],
+        json!(["198.18.0.0/15", "10.8.28.0/24"])
     );
 }
 
