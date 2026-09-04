@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use crate::{Plan, TransparentError};
 
 const WINDOWS_FRONTEND_PORT: u16 = 1054;
+const MACOS_FRONTEND_PORT: u16 = 20554;
 const WINDOWS_DNS_TARGET_PREFIX: &str = "192.0.2.1/32";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,9 +110,10 @@ pub(crate) fn managed_frontend_plan(
         0 => sempre_converter::DEFAULT_CORE_DNS_PORT,
         port => port,
     };
-    if matches!(platform, Platform::Windows | Platform::WindowsDivert) {
-        system_dns.listen_port = WINDOWS_FRONTEND_PORT;
-    }
+    system_dns.listen_port = match platform {
+        Platform::Macos => MACOS_FRONTEND_PORT,
+        Platform::Windows | Platform::WindowsDivert => WINDOWS_FRONTEND_PORT,
+    };
     system_dns.original_upstreams = original_upstreams;
     Some(system_dns)
 }

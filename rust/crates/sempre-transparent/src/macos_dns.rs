@@ -4,9 +4,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{TransparentError, command};
 
+#[path = "macos_preferences.rs"]
+mod preferences;
+
 const NETWORK_SETUP: &str = "/usr/sbin/networksetup";
 const SCUTIL: &str = "/usr/sbin/scutil";
 const MANAGED_SERVER: &str = "127.0.0.1";
+const STANDARD_DNS_PORT: u16 = 53;
 
 pub(crate) struct SystemDns {
     allowed: bool,
@@ -17,13 +21,23 @@ pub(crate) struct SystemDns {
 struct State {
     #[serde(default)]
     original_upstreams: Vec<String>,
+    #[serde(default = "standard_dns_port")]
+    managed_port: u16,
     services: Vec<ServiceState>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct ServiceState {
+    #[serde(default)]
+    id: Option<String>,
     name: String,
     original: Vec<String>,
+    #[serde(default)]
+    original_port: Option<u16>,
+}
+
+const fn standard_dns_port() -> u16 {
+    STANDARD_DNS_PORT
 }
 
 impl SystemDns {
@@ -64,6 +78,7 @@ impl SystemDns {
         &self,
         runner: &dyn command::Runner,
         original_upstreams: &[String],
+        listen_port: u16,
     ) -> Result<(), TransparentError> {
         if !self.allowed {
             return Err(TransparentError::Invalid(
@@ -80,19 +95,30 @@ impl SystemDns {
             .map_err(|source| Self::io("create macOS DNS state directory", source))?;
         self.write_state(&State {
             original_upstreams: original_upstreams.to_vec(),
+            managed_port: listen_port,
             services: services.clone(),
         })?;
         let mut changed: Vec<ServiceState> = Vec::new();
         for service in &services {
-            if let Err(error) = set_servers(runner, &service.name, &[MANAGED_SERVER.into()]).await {
+            let configuration = preferences::DnsConfiguration {
+                servers: vec![MANAGED_SERVER.into()],
+                port: Some(listen_port),
+            };
+            if let Err(error) = preferences::set_dns_configuration(
+                runner,
+                service.id.as_deref().expect("captured service identifier"),
+                &configuration,
+            )
+            .await
+            {
                 for service in changed.iter().rev() {
-                    let _ = set_servers(runner, &service.name, &service.original).await;
+                    let _ = restore_service(runner, service).await;
                 }
                 return Err(error);
             }
             changed.push(service.clone());
         }
-        self.verify(runner).await
+        self.verify(runner, listen_port).await
     }
 
     pub(crate) async fn restore(
@@ -105,10 +131,14 @@ impl SystemDns {
         let Some(state) = self.read_state()? else {
             return Ok(());
         };
+        let active_services = preferences::active_services(runner).await?;
         for service in &state.services {
-            let current = configured_servers(runner, &service.name).await?;
-            if current == [MANAGED_SERVER] {
-                set_servers(runner, &service.name, &service.original).await?;
+            let id = resolve_service_id(service, &active_services)?;
+            let current = preferences::dns_configuration(runner, id).await?;
+            if current.servers == [MANAGED_SERVER]
+                && current.port.unwrap_or(STANDARD_DNS_PORT) == state.managed_port
+            {
+                restore_service_with_id(runner, service, id).await?;
             }
         }
         match fs::remove_file(self.state_path()) {
@@ -121,15 +151,27 @@ impl SystemDns {
     pub(crate) async fn verify(
         &self,
         runner: &dyn command::Runner,
+        expected_port: u16,
     ) -> Result<(), TransparentError> {
         let state = self.read_state()?.ok_or_else(|| {
             TransparentError::Invalid("macOS DNS takeover has no ownership state".into())
         })?;
+        if state.managed_port != expected_port {
+            return Err(TransparentError::Invalid(format!(
+                "macOS DNS takeover owns port {}, expected {expected_port}",
+                state.managed_port
+            )));
+        }
+        let active_services = preferences::active_services(runner).await?;
         for service in state.services {
-            if configured_servers(runner, &service.name).await? != [MANAGED_SERVER] {
+            let id = resolve_service_id(&service, &active_services)?;
+            let current = preferences::dns_configuration(runner, id).await?;
+            if current.servers != [MANAGED_SERVER]
+                || current.port.unwrap_or(STANDARD_DNS_PORT) != expected_port
+            {
                 return Err(TransparentError::Invalid(format!(
-                    "macOS network service {:?} is not using the Sempre DNS frontend",
-                    service.name
+                    "macOS network service {:?} is not using the Sempre DNS frontend on port {expected_port}",
+                    service.name,
                 )));
             }
         }
@@ -146,10 +188,22 @@ impl SystemDns {
                 .run(NETWORK_SETUP, &["-listallnetworkservices"], None)
                 .await?,
         )?;
+        let active_services = preferences::active_services(runner).await?;
         let mut services = Vec::new();
         for name in parse_services(&output.stdout) {
+            let service = active_services
+                .iter()
+                .find(|service| service.name == name)
+                .ok_or_else(|| {
+                    TransparentError::Invalid(format!(
+                        "enabled macOS network service {name:?} is not in the active location"
+                    ))
+                })?;
+            let configuration = preferences::dns_configuration(runner, &service.id).await?;
             services.push(ServiceState {
-                original: configured_servers(runner, &name).await?,
+                id: Some(service.id.clone()),
+                original: configuration.servers,
+                original_port: configuration.port,
                 name,
             });
         }
@@ -187,42 +241,51 @@ impl SystemDns {
     }
 }
 
-async fn configured_servers(
-    runner: &dyn command::Runner,
-    service: &str,
-) -> Result<Vec<String>, TransparentError> {
-    let output = command::require_success(
-        NETWORK_SETUP,
-        runner
-            .run(NETWORK_SETUP, &["-getdnsservers", service], None)
-            .await?,
-    )?;
-    Ok(output
-        .stdout
-        .lines()
-        .map(str::trim)
-        .filter(|value| value.parse::<IpAddr>().is_ok())
-        .map(str::to_owned)
-        .collect())
+fn resolve_service_id<'a>(
+    service: &ServiceState,
+    active_services: &'a [preferences::NetworkService],
+) -> Result<&'a str, TransparentError> {
+    active_services
+        .iter()
+        .find(|candidate| {
+            service.id.as_ref().is_some_and(|id| id == &candidate.id)
+                || candidate.name == service.name
+        })
+        .map(|service| service.id.as_str())
+        .ok_or_else(|| {
+            TransparentError::Invalid(format!(
+                "macOS network service {:?} is not in the active location",
+                service.name
+            ))
+        })
 }
 
-async fn set_servers(
+async fn restore_service(
     runner: &dyn command::Runner,
-    service: &str,
-    servers: &[String],
+    service: &ServiceState,
 ) -> Result<(), TransparentError> {
-    let values = if servers.is_empty() {
-        vec!["Empty"]
-    } else {
-        servers.iter().map(String::as_str).collect()
-    };
-    let mut arguments = vec!["-setdnsservers", service];
-    arguments.extend(values);
-    command::require_success(
-        NETWORK_SETUP,
-        runner.run(NETWORK_SETUP, &arguments, None).await?,
-    )?;
-    Ok(())
+    restore_service_with_id(
+        runner,
+        service,
+        service.id.as_deref().expect("captured service identifier"),
+    )
+    .await
+}
+
+async fn restore_service_with_id(
+    runner: &dyn command::Runner,
+    service: &ServiceState,
+    id: &str,
+) -> Result<(), TransparentError> {
+    preferences::set_dns_configuration(
+        runner,
+        id,
+        &preferences::DnsConfiguration {
+            servers: service.original.clone(),
+            port: service.original_port,
+        },
+    )
+    .await
 }
 
 fn parse_scutil_dns(data: &str) -> Vec<String> {
@@ -272,29 +335,39 @@ mod tests {
 
     #[derive(Default)]
     struct FakeRunner {
-        calls: Mutex<Vec<Vec<String>>>,
+        calls: Mutex<Vec<String>>,
     }
 
     impl command::Runner for FakeRunner {
         fn run<'a>(
             &'a self,
-            _program: &'a str,
+            program: &'a str,
             arguments: &'a [&'a str],
-            _input: Option<&'a [u8]>,
+            input: Option<&'a [u8]>,
         ) -> Pin<Box<dyn Future<Output = Result<command::Output, TransparentError>> + Send + 'a>>
         {
             Box::pin(async move {
+                let input = input.map(String::from_utf8_lossy).unwrap_or_default();
                 self.calls
                     .lock()
                     .expect("calls")
-                    .push(arguments.iter().map(|value| (*value).into()).collect());
+                    .push(format!("{program} {}\n{input}", arguments.join(" ")));
+                let stdout = if program == "/usr/sbin/scselect" {
+                    "Defined sets include: (* == current set)\n * SET-ID\t(Automatic)\n".into()
+                } else if input.contains("list /Sets/SET-ID/Network/Service") {
+                    "path [0] = /Sets/SET-ID/Network/Service/SERVICE-A\npath [1] = /Sets/SET-ID/Network/Service/SERVICE-B\n".into()
+                } else if input.contains("/Sets/SET-ID/Network/Service/SERVICE-A") {
+                    "<dictionary> {\n UserDefinedName : Wi-Fi\n}\n".into()
+                } else if input.contains("/Sets/SET-ID/Network/Service/SERVICE-B") {
+                    "<dictionary> {\n UserDefinedName : USB LAN\n}\n".into()
+                } else if input.contains("d.show") {
+                    "<dictionary> {\n ServerAddresses : <array> {\n  0 : 127.0.0.1\n }\n ServerPort : 20554\n}\n".into()
+                } else {
+                    String::new()
+                };
                 Ok(command::Output {
                     success: true,
-                    stdout: if arguments.first() == Some(&"-getdnsservers") {
-                        "127.0.0.1\n".into()
-                    } else {
-                        String::new()
-                    },
+                    stdout,
                     stderr: String::new(),
                 })
             })
@@ -324,14 +397,19 @@ mod tests {
         fs::create_dir_all(root.path()).expect("state directory");
         dns.write_state(&State {
             original_upstreams: vec!["223.6.6.6".into()],
+            managed_port: 20554,
             services: vec![
                 ServiceState {
+                    id: Some("SERVICE-A".into()),
                     name: "Wi-Fi".into(),
                     original: Vec::new(),
+                    original_port: None,
                 },
                 ServiceState {
+                    id: Some("SERVICE-B".into()),
                     name: "USB LAN".into(),
                     original: vec!["223.6.6.6".into()],
+                    original_port: Some(5353),
                 },
             ],
         })
@@ -339,17 +417,28 @@ mod tests {
         let runner = FakeRunner::default();
         dns.restore(&runner).await.expect("restore stale ownership");
         let calls = runner.calls.lock().expect("calls");
-        assert!(calls.contains(&vec![
-            "-setdnsservers".into(),
-            "Wi-Fi".into(),
-            "Empty".into()
-        ]));
-        assert!(calls.contains(&vec![
-            "-setdnsservers".into(),
-            "USB LAN".into(),
-            "223.6.6.6".into()
-        ]));
+        assert!(calls.iter().any(|call| {
+            call.contains("get /NetworkServices/SERVICE-A/DNS")
+                && call.contains("commit\napply\nquit")
+                && !call.contains("d.add ServerAddresses")
+        }));
+        assert!(calls.iter().any(|call| {
+            call.contains("get /NetworkServices/SERVICE-B/DNS")
+                && call.contains("d.add ServerAddresses * 223.6.6.6")
+                && call.contains("d.add ServerPort # 5353")
+        }));
         assert!(!dns.state_path().exists());
+    }
+
+    #[test]
+    fn old_ownership_state_defaults_to_standard_dns_port() {
+        let state: State = serde_json::from_str(
+            r#"{"original_upstreams":["223.6.6.6"],"services":[{"name":"Wi-Fi","original":[]}]}"#,
+        )
+        .expect("old ownership state");
+        assert_eq!(state.managed_port, 53);
+        assert_eq!(state.services[0].id, None);
+        assert_eq!(state.services[0].original_port, None);
     }
 
     #[tokio::test]

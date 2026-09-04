@@ -157,8 +157,10 @@ impl Controller {
 
     pub async fn verify(&self, plan: &Plan) -> Result<(), TransparentError> {
         if cfg!(target_os = "macos") {
-            if plan.system_dns.is_some() {
-                self.macos_dns.verify(self.runner.as_ref()).await?;
+            if let Some(system_dns) = &plan.system_dns {
+                self.macos_dns
+                    .verify(self.runner.as_ref(), system_dns.listen_port)
+                    .await?;
             }
             return Ok(());
         }
@@ -239,7 +241,13 @@ impl Controller {
             return Ok(());
         }
         self.require_root().await?;
-        if plan.system_dns.is_some() && self.macos_dns.verify(self.runner.as_ref()).await.is_ok() {
+        if let Some(system_dns) = &plan.system_dns
+            && self
+                .macos_dns
+                .verify(self.runner.as_ref(), system_dns.listen_port)
+                .await
+                .is_ok()
+        {
             return Ok(());
         }
         self.macos_dns.restore(self.runner.as_ref()).await?;
@@ -247,7 +255,11 @@ impl Controller {
             self.wait_system_dns(system_dns).await?;
             if let Err(error) = self
                 .macos_dns
-                .apply(self.runner.as_ref(), &system_dns.original_upstreams)
+                .apply(
+                    self.runner.as_ref(),
+                    &system_dns.original_upstreams,
+                    system_dns.listen_port,
+                )
                 .await
             {
                 let _ = self.macos_dns.restore(self.runner.as_ref()).await;

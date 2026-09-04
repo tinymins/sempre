@@ -83,7 +83,7 @@ fn managed_frontend_plan_does_not_depend_on_core_runtime_state() {
     )
     .expect("frontend plan");
 
-    assert_eq!(plan.listen_port, 53);
+    assert_eq!(plan.listen_port, 20554);
     assert_eq!(plan.core_listen_port, 2053);
     assert_eq!(plan.original_upstreams, ["223.5.5.5"]);
 }
