@@ -163,7 +163,7 @@ export function newServerProfile(name: string): SubscriptionProfile {
     transparent_proxy: {
       mode: 'tun-router', capture_host: false, lan_interfaces: [], route_exclusions: [], interface_mode: 'all', interfaces: [],
       auto_exclude_local_routes: true, auto_exclude_vpn_routes: true, tun: { interface_name: 'sempre-tun' },
-      tproxy: { listen_port: 7893, dns_listen_port: 1053 }, ebpf: { wan_interface: 'auto', auto_config_kernel_parameter: false },
+      tproxy: { listen_port: 7893, dns_listen_port: 20553 }, ebpf: { wan_interface: 'auto', auto_config_kernel_parameter: false },
     },
     management_api: { external_controller: '0.0.0.0:9090', secret: randomSecret(), allow_origins: [], allow_private_network: false },
     use_system_groups: true, use_system_rules: true, use_system_filters: true, use_system_dns: true, use_system_custom_config: true,

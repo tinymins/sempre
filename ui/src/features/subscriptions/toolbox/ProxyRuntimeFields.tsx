@@ -57,6 +57,11 @@ export function ProxyRuntimeFields({
 							}}
 						/>
 					</Form.Item>
+					{features.has("dns.system_takeover") || transparentMode === "tproxy" ? (
+						<Form.Item label={t("proxy.form.coreDNSPort")} name="tproxyDNSPort" tooltip={t("proxy.form.coreDNSPortTip")}>
+							<InputNumber min={1} max={65535} className="w-full" />
+						</Form.Item>
+					) : null}
 					{transparentMode === "tun-router" && features.has("transparent.tun") ? (
 						<>
 							<div className="grid gap-4 md:grid-cols-2">
@@ -103,16 +108,9 @@ export function ProxyRuntimeFields({
 						</>
 					) : null}
 					{transparentMode === "tproxy" && features.has("transparent.tproxy") ? (
-						<>
-							<div className="grid gap-4 md:grid-cols-2">
-								<Form.Item label={t("proxy.form.tproxyPort")} name="tproxyPort">
-									<InputNumber min={1} max={65535} className="w-full" />
-								</Form.Item>
-								<Form.Item label={t("proxy.form.tproxyDNSPort")} name="tproxyDNSPort">
-									<InputNumber min={1} max={65535} className="w-full" />
-								</Form.Item>
-							</div>
-						</>
+						<Form.Item label={t("proxy.form.tproxyPort")} name="tproxyPort">
+							<InputNumber min={1} max={65535} className="w-full" />
+						</Form.Item>
 					) : null}
 					{transparentMode === "ebpf-router" && features.has("transparent.ebpf") ? (
 						<>

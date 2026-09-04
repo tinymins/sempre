@@ -199,7 +199,7 @@ pub(crate) fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
                 listen_hosts: vec![host],
                 core_listen_port: if managed_frontend {
                     match profile.transparent_proxy.tproxy.dns_listen_port {
-                        0 => 1053,
+                        0 => sempre_converter::DEFAULT_CORE_DNS_PORT,
                         port => port,
                     }
                 } else {
@@ -222,7 +222,7 @@ pub(crate) fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
         listen_hosts,
         core_listen_port: if managed_frontend {
             match profile.transparent_proxy.tproxy.dns_listen_port {
-                0 => 1053,
+                0 => sempre_converter::DEFAULT_CORE_DNS_PORT,
                 port => port,
             }
         } else {

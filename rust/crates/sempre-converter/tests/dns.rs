@@ -223,7 +223,7 @@ fn assert_managed_desktop_frontend(format: &str) {
     assert!(inbounds.iter().any(|inbound| {
         inbound["tag"] == "sempre-dns-core-in"
             && inbound["listen"] == "127.0.0.1"
-            && inbound["listen_port"] == 1053
+            && inbound["listen_port"] == sempre_converter::DEFAULT_CORE_DNS_PORT
     }));
     let tun = inbounds
         .iter()

@@ -161,6 +161,7 @@ describe('ProxySubscribeEditor', () => {
 		expect(container.querySelector('form')).toHaveAttribute('autocomplete', 'off')
 		expect(container.querySelector('input[type="password"]')).not.toBeInTheDocument()
 		fireEvent.click(screen.getByRole('button', { name: 'Runtime' }))
+		expect(screen.getByLabelText('Core DNS port')).toHaveDisplayValue('20553')
 		expect(screen.getByLabelText('Local proxy username')).toHaveAttribute('autocomplete', 'off')
 		expect(screen.getByLabelText('Local proxy password')).toHaveAttribute('autocomplete', 'off')
 		expect(screen.getByLabelText('Fixed secret')).toHaveAttribute('autocomplete', 'off')
@@ -302,7 +303,7 @@ describe('ProxySubscribeEditor', () => {
 				mode: 'tproxy',
 				capture_host: false,
 				lan_interfaces: [],
-				tproxy: { listen_port: 7893, dns_listen_port: 1053 },
+				tproxy: { listen_port: 7893, dns_listen_port: 20553 },
 			},
 			management_api: { external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
 		})

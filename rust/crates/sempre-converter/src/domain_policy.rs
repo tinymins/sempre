@@ -54,7 +54,7 @@ pub fn dns_frontend_policy(
         fakeip_ipv4_range: string(shared, "fakeipIpv4Range", "198.18.0.0/15"),
         fakeip_ipv6_range: string(shared, "fakeipIpv6Range", "fc00::/18"),
         core_listen_port: match profile.transparent_proxy.tproxy.dns_listen_port {
-            0 => 1053,
+            0 => crate::DEFAULT_CORE_DNS_PORT,
             port => port,
         },
         complete: true,
@@ -142,7 +142,7 @@ mod tests {
         assert_eq!(overlaid.dns["shared"]["managedDnsFrontend"], true);
         let policy = dns_frontend_policy(&overlaid, &target).expect("policy");
         assert!(policy.enabled);
-        assert_eq!(policy.core_listen_port, 1053);
+        assert_eq!(policy.core_listen_port, crate::DEFAULT_CORE_DNS_PORT);
     }
 
     #[test]

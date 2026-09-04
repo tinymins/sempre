@@ -159,7 +159,7 @@ export function useProxySubscribeEditor({
 				},
 				tproxy: {
 					listen_port: values.tproxyPort ?? 7893,
-					dns_listen_port: values.tproxyDNSPort ?? 1053,
+					dns_listen_port: values.tproxyDNSPort ?? 20553,
 				},
 				ebpf: {
 					wan_interface: values.ebpfWANInterface || "auto",

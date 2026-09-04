@@ -38,7 +38,7 @@ impl Default for DnsConfig {
             listen_hosts: vec!["127.0.0.1".into()],
             listen_port: 1054,
             local_upstreams: Vec::new(),
-            remote_upstream: "127.0.0.1:1053".into(),
+            remote_upstream: "127.0.0.1:20553".into(),
             strategy: "rules-first".into(),
             reject_https: false,
             rule_sets: Vec::new(),

@@ -5,6 +5,8 @@ use serde_json::{Map, Value};
 
 use crate::Target;
 
+pub const DEFAULT_CORE_DNS_PORT: u16 = 20_553;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompileRequest {
     #[serde(default = "protocol_version")]

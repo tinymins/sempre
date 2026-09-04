@@ -9,6 +9,7 @@ mod custom_node;
 mod direct;
 mod dns_capture;
 mod dns_frontend;
+mod dns_port;
 mod dns_routing;
 mod dns_runtime;
 mod dns_settings;

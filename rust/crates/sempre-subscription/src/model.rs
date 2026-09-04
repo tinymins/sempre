@@ -49,7 +49,7 @@ pub fn new_profile(name: &str) -> Profile {
     profile.transparent_proxy.auto_exclude_vpn_routes = true;
     profile.transparent_proxy.tun.interface_name = "sempre-tun".into();
     profile.transparent_proxy.tproxy.listen_port = 7893;
-    profile.transparent_proxy.tproxy.dns_listen_port = 1053;
+    profile.transparent_proxy.tproxy.dns_listen_port = sempre_converter::DEFAULT_CORE_DNS_PORT;
     profile.transparent_proxy.ebpf.wan_interface = "auto".into();
     profile.extra.insert("mode".into(), json!("local"));
     for key in [

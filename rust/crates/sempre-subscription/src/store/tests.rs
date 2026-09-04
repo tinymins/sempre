@@ -14,6 +14,10 @@ fn initializes_a_private_catalog_with_runtime_credentials() {
     assert_eq!(catalog.profiles.len(), 1);
     let profile = &catalog.profiles[0];
     assert_eq!(profile.revision, 1);
+    assert_eq!(
+        profile.transparent_proxy.tproxy.dns_listen_port,
+        sempre_converter::DEFAULT_CORE_DNS_PORT
+    );
     assert!(!profile.local_proxy.password.is_empty());
     assert!(!profile.management_api.secret.is_empty());
     assert_eq!(

@@ -290,7 +290,7 @@ pub(super) fn system_inbounds(
     }
     if managed_frontend(shared, target) {
         let listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
-            0 => 1053,
+            0 => crate::DEFAULT_CORE_DNS_PORT,
             port => port,
         };
         return vec![json!({

@@ -7,7 +7,7 @@ fn windivert_frontend_accepts_v13_without_a_tun() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("config.json");
     let config = json!({
-        "inbounds": [{ "type": "direct", "tag": "sempre-dns-core-in", "listen": "127.0.0.1", "listen_port": 1053, "override_address": "1.1.1.1", "override_port": 53 }],
+        "inbounds": [{ "type": "direct", "tag": "sempre-dns-core-in", "listen": "127.0.0.1", "listen_port": sempre_converter::DEFAULT_CORE_DNS_PORT, "override_address": "1.1.1.1", "override_port": 53 }],
         "route": { "rules": [{ "inbound": "sempre-dns-core-in", "action": "sniff" }, { "inbound": "sempre-dns-core-in", "protocol": "dns", "action": "hijack-dns" }] }
     });
     fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
@@ -97,7 +97,7 @@ fn writes_original_dns_bypass_before_global_hijack() {
         serde_json::to_vec(&json!({
             "inbounds": [{
                 "type": "direct", "tag": "sempre-dns-core-in", "listen": "127.0.0.1",
-                "listen_port": 1053, "override_address": "1.1.1.1", "override_port": 53
+                "listen_port": sempre_converter::DEFAULT_CORE_DNS_PORT, "override_address": "1.1.1.1", "override_port": 53
             }],
             "route": { "rules": [
                 { "inbound": "sempre-dns-core-in", "action": "sniff" },
@@ -121,7 +121,10 @@ fn writes_original_dns_bypass_before_global_hijack() {
         vec!["223.6.6.6".into(), "2400:3200::1".into()],
     )
     .expect("plan");
-    assert_eq!(plan.system_dns.expect("system DNS").core_listen_port, 1053);
+    assert_eq!(
+        plan.system_dns.expect("system DNS").core_listen_port,
+        sempre_converter::DEFAULT_CORE_DNS_PORT
+    );
     let output: Value =
         serde_json::from_slice(&fs::read(config).expect("read config")).expect("decode config");
     assert_eq!(
@@ -151,7 +154,7 @@ fn windows_redirects_dns_to_non_privileged_frontend_and_routes_only_fake_ip() {
                 },
                 {
                     "type": "direct", "tag": "sempre-dns-core-in", "listen": "127.0.0.1",
-                    "listen_port": 1053, "override_address": "1.1.1.1", "override_port": 53
+                    "listen_port": sempre_converter::DEFAULT_CORE_DNS_PORT, "override_address": "1.1.1.1", "override_port": 53
                 }
             ],
             "route": { "rules": [
@@ -226,7 +229,7 @@ fn windows_without_ipv6_routes_only_ipv4_fakeip() {
                 },
                 {
                     "type": "direct", "tag": "sempre-dns-core-in",
-                    "listen": "127.0.0.1", "listen_port": 1053,
+                    "listen": "127.0.0.1", "listen_port": sempre_converter::DEFAULT_CORE_DNS_PORT,
                     "override_address": "1.1.1.1", "override_port": 53
                 }
             ],

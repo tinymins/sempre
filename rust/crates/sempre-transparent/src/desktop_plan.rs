@@ -106,7 +106,7 @@ pub(crate) fn managed_frontend_plan(
     system_dns.managed_frontend = true;
     system_dns.takeover_host = true;
     system_dns.core_listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
-        0 => 1053,
+        0 => sempre_converter::DEFAULT_CORE_DNS_PORT,
         port => port,
     };
     if matches!(platform, Platform::Windows | Platform::WindowsDivert) {
