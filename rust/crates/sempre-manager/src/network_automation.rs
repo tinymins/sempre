@@ -38,7 +38,7 @@ impl<R: VersionRunner> Manager<R> {
         let matched = match_network(&settings.known_networks, &observed.gateway_mac);
         let path = if !settings.automatic_switching || !runtime_active(&document) {
             "inactive"
-        } else if observed.gateway_mac.is_empty() {
+        } else if automation_config_pending(&document) || observed.gateway_mac.is_empty() {
             "unknown"
         } else if matched.is_some_and(|network| network.disable_proxy) {
             "direct"
@@ -50,6 +50,7 @@ impl<R: VersionRunner> Manager<R> {
 
     pub(crate) async fn activate_network_automation(&self, grace: Duration) {
         if !self.network_settings.read().automatic_switching {
+            let _ = self.sync_network_mode().await;
             return;
         }
         let deadline = Instant::now() + grace;
@@ -65,10 +66,15 @@ impl<R: VersionRunner> Manager<R> {
     where
         R: ValidationRunner,
     {
+        let mut last_enabled = None;
         loop {
-            if let Err(error) = self.sync_network_mode().await {
+            let enabled = self.network_settings.read().automatic_switching;
+            if (enabled || last_enabled != Some(false))
+                && let Err(error) = self.sync_network_mode().await
+            {
                 let _ = self.log_supervisor(&format!("network automation probe failed: {error}"));
             }
+            last_enabled = Some(enabled);
             sleep(POLL_INTERVAL).await;
         }
     }
@@ -158,6 +164,17 @@ fn runtime_active(document: &sempre_state::Document) -> bool {
                 | sempre_state::RuntimeState::Stopping
                 | sempre_state::RuntimeState::Restarting
         )
+}
+
+fn automation_config_pending(document: &sempre_state::Document) -> bool {
+    document.pending_config_fields.iter().any(|field| {
+        matches!(
+            field,
+            sempre_state::PendingConfigField::TransparentProxy
+                | sempre_state::PendingConfigField::Dns
+                | sempre_state::PendingConfigField::PrivateAccess
+        )
+    })
 }
 
 #[cfg(test)]

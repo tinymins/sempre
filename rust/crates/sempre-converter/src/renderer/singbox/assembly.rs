@@ -13,12 +13,17 @@ pub(super) fn render(
     snapshots: &[SourceSnapshot],
 ) -> Result<(String, Vec<FieldDiff>, Vec<String>), CompileError> {
     let modern = target.version != "11";
+    let automatic_switching = profile
+        .network_policy
+        .get("enabled")
+        .and_then(Value::as_bool)
+        == Some(true);
     let private = private_access::resolve(
         &profile.private_access,
         &target.version,
         target.platform != "default",
-    )
-    .map_err(CompileError::Render)?;
+        automatic_switching,
+    );
     let mut outbounds = vec![
         json!({ "type": "direct", "tag": "direct" }),
         json!({ "type": "block", "tag": "reject" }),
@@ -104,9 +109,7 @@ pub(super) fn render(
 }
 
 fn ensure_network_local(dns: &mut Value, modern: bool) -> Option<String> {
-    let Some(servers) = dns.get_mut("servers").and_then(Value::as_array_mut) else {
-        return None;
-    };
+    let servers = dns.get_mut("servers").and_then(Value::as_array_mut)?;
     if servers
         .iter()
         .any(|server| server.get("tag").and_then(Value::as_str) == Some("local"))
@@ -123,6 +126,9 @@ fn ensure_network_local(dns: &mut Value, modern: bool) -> Option<String> {
 }
 
 fn network_direct_modes(policy: &Value) -> Vec<String> {
+    if policy.get("enabled").and_then(Value::as_bool) != Some(true) {
+        return Vec::new();
+    }
     policy
         .get("directNetworkIds")
         .and_then(Value::as_array)

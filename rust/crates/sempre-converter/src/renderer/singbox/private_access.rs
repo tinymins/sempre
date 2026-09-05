@@ -12,14 +12,19 @@ pub(super) struct Resolved {
     pub dns_rules: Vec<Value>,
 }
 
-pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Resolved, String> {
+pub(super) fn resolve(
+    config: &Value,
+    version: &str,
+    desktop: bool,
+    automatic_switching: bool,
+) -> Resolved {
     let mut resolved = Resolved::default();
     let modern = version != "11";
     if !modern || config.get("enabled").and_then(Value::as_bool) != Some(true) {
-        return Ok(resolved);
+        return resolved;
     }
     let Some(connectors) = config.get("connectors").and_then(Value::as_array) else {
-        return Ok(resolved);
+        return resolved;
     };
     for (index, value) in connectors.iter().enumerate() {
         let Some(connector) = value.as_object() else {
@@ -41,7 +46,11 @@ pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Re
         if !represented {
             continue;
         }
-        let home_modes = home_network_modes(connector);
+        let home_modes = if automatic_switching {
+            home_network_modes(connector)
+        } else {
+            Vec::new()
+        };
         if let Some(routes) = connector.get("routes").and_then(Value::as_object) {
             for cidr in clean_strings(routes.get("ipCidrs")) {
                 push_unique(&mut resolved.capture_cidrs, cidr);
@@ -89,7 +98,7 @@ pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Re
             }
         }
     }
-    Ok(resolved)
+    resolved
 }
 
 fn home_network_modes(connector: &Map<String, Value>) -> Vec<String> {

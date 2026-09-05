@@ -61,15 +61,24 @@ pub(super) fn route(
         }));
     }
     rules.extend(private.route_rules.iter().cloned());
-    let direct_modes = profile
+    let direct_modes = if profile
         .network_policy
-        .get("directNetworkIds")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(crate::network_mode)
-        .collect::<Vec<_>>();
+        .get("enabled")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        profile
+            .network_policy
+            .get("directNetworkIds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(crate::network_mode)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     if !direct_modes.is_empty() {
         rules.push(json!({
             "clash_mode": direct_modes, "action": "route", "outbound": "direct"

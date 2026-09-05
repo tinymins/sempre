@@ -233,6 +233,7 @@ fn assert_home_auto_rules(document: &Value) {
 #[test]
 fn gateway_identity_home_detection_supports_sing_box_v12() {
     let profile: Profile = serde_json::from_value(json!({
+        "network_policy": { "enabled": true },
         "private_access": {
             "enabled": true,
             "connectors": [{
@@ -262,6 +263,44 @@ fn gateway_identity_home_detection_supports_sing_box_v12() {
     })
     .expect("v1.12 supports clash mode matching");
     assert!(result.content.contains("Sempre Network d286d2f8"));
+}
+
+#[test]
+fn disabled_gateway_switching_does_not_emit_network_modes() {
+    let profile: Profile = serde_json::from_value(json!({
+        "network_policy": {
+            "enabled": false,
+            "directNetworkIds": ["d286d2f8-33c5-4f1e-b871-d22a9ba91143"]
+        },
+        "private_access": {
+            "enabled": true,
+            "connectors": [{
+                "type": "wireguard", "tag": "private-wg",
+                "endpoint": {
+                    "privateKey": "private", "address": ["192.0.2.2/32"],
+                    "peers": [{
+                        "address": "vpn.example.com", "port": 51820,
+                        "publicKey": "public", "allowedIps": ["0.0.0.0/0"]
+                    }]
+                },
+                "homeNetwork": {
+                    "enabled": true,
+                    "networkIds": ["d286d2f8-33c5-4f1e-b871-d22a9ba91143"]
+                },
+                "routes": { "ipCidrs": ["10.8.28.0/24"] }
+            }]
+        }
+    }))
+    .expect("profile");
+    let result = compile(&CompileRequest {
+        protocol: 1,
+        profile,
+        snapshots: vec![],
+        custom_nodes: vec![],
+        target: Target::parse("sing-box-v13-macos").expect("target"),
+    })
+    .expect("compile without automatic switching");
+    assert!(!result.content.contains("Sempre Network d286d2f8"));
 }
 
 #[test]
