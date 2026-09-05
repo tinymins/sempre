@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-use std::{fs, future::Future, path::Path, pin::Pin, sync::Arc, time::Duration};
+use std::{fs, future::Future, net::TcpListener, path::Path, pin::Pin, sync::Arc, time::Duration};
 
 use chrono::Utc;
 use sempre_core::Adapter;
@@ -46,13 +46,20 @@ fn fixture(script: &str) -> (tempfile::TempDir, Arc<Manager<FakeRunner>>) {
             ..manager.dns_settings.read()
         })
         .expect("disable fixture DNS frontend");
+    let socks_listener = TcpListener::bind(("127.0.0.1", 0)).expect("free SOCKS port");
+    let http_listener = TcpListener::bind(("127.0.0.1", 0)).expect("free HTTP port");
+    let socks_port = socks_listener.local_addr().expect("SOCKS address").port();
+    let http_port = http_listener.local_addr().expect("HTTP address").port();
     manager
         .subscriptions
         .update(|catalog| {
             catalog.profiles[0].transparent_proxy.mode = "disabled".into();
+            catalog.profiles[0].local_proxy.socks_port = socks_port;
+            catalog.profiles[0].local_proxy.http_port = http_port;
             Ok(())
         })
         .expect("disable transparent proxy");
+    drop((socks_listener, http_listener));
     let hash = "a".repeat(64);
     manager
         .store
@@ -127,8 +134,20 @@ async fn async_restart_tracks_real_process_output_until_healthy() {
     wait_for_state(&manager, sempre_state::RuntimeState::Running).await;
     let original_pid = manager.state().unwrap().runtime.pid;
     manager.start_restart_task().unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while manager.restart_task().unwrap().state == "running" {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let task = manager.restart_task().unwrap();
+            let output_complete = task
+                .logs
+                .iter()
+                .any(|entry| entry.stage == "stdout" && entry.message == "core-stdout")
+                && task
+                    .logs
+                    .iter()
+                    .any(|entry| entry.stage == "stderr" && entry.message == "core-stderr");
+            if task.state != "running" && output_complete {
+                break;
+            }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
@@ -274,6 +293,7 @@ async fn early_exit_rolls_back_a_pending_deployment() {
                 profile_revision: 1,
                 target_key: "sing-box|13|default".into(),
                 runtime_key: None,
+                private_access_policy: serde_json::json!({ "enabled": false, "connectors": [] }),
             };
             let mut previous = document.active.clone().expect("active");
             previous.config_hash.clone_from(&old_hash);
@@ -287,6 +307,7 @@ async fn early_exit_rolls_back_a_pending_deployment() {
                     profile_revision: 2,
                     target_key: "sing-box|13|default".into(),
                     runtime_key: Some("candidate-runtime".into()),
+                    private_access_policy: serde_json::json!({ "enabled": false, "connectors": [] }),
                 },
             );
             document.active_profile_id = Some(candidate_profile_id.clone());

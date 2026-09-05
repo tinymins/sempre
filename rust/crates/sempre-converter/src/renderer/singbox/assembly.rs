@@ -15,9 +15,10 @@ pub(super) fn render(
     let modern = target.version != "11";
     let private = private_access::resolve(
         &profile.private_access,
-        modern,
+        &target.version,
         target.platform != "default",
-    );
+    )
+    .map_err(CompileError::Render)?;
     let mut outbounds = vec![
         json!({ "type": "direct", "tag": "direct" }),
         json!({ "type": "block", "tag": "reject" }),

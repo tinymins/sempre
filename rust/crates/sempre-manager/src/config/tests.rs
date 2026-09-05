@@ -126,6 +126,7 @@ async fn activation_validates_then_stages_a_content_addressed_deployment() {
         profile_revision: 2,
         target_key: "sing-box-v13|1.13.0|linux".into(),
         runtime_key: Some("runtime-a".into()),
+        private_access_policy: serde_json::json!({ "enabled": false, "connectors": [] }),
     };
     let content = br#"{"log":{"level":"info"}}"#;
     let first = manager

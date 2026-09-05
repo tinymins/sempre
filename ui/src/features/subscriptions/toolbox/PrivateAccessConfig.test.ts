@@ -17,3 +17,35 @@ describe('PrivateAccessConfig tunnel forwarding', () => {
     expect(JSON.parse(serialized).connectors[0]).toMatchObject({ transport_endpoint_ref: 'hz-wg' })
   })
 })
+
+describe('PrivateAccessConfig home network detection', () => {
+  it('round-trips the enabled home CIDRs and adds host prefixes', () => {
+    const connector = {
+      ...emptyConnector(),
+      tag: 'home-wg',
+      homeNetworkEnabled: true,
+      homeNetworkCidrs: '10.8.28.0/24, 2001:db8::1',
+    }
+    const serialized = serializeConfig(true, [connector])
+    expect(JSON.parse(serialized).connectors[0].homeNetwork).toEqual({
+      enabled: true,
+      addressCidrs: ['10.8.28.0/24', '2001:db8::1/128'],
+    })
+    expect(parseConfig(serialized).connectors[0]).toMatchObject({
+      homeNetworkEnabled: true,
+      homeNetworkCidrs: '10.8.28.0/24, 2001:db8::1/128',
+    })
+  })
+
+  it('preserves CIDRs while the switch is disabled', () => {
+    const connector = {
+      ...emptyConnector(),
+      homeNetworkEnabled: false,
+      homeNetworkCidrs: '10.8.28.0/24',
+    }
+    expect(JSON.parse(serializeConfig(true, [connector])).connectors[0].homeNetwork).toEqual({
+      enabled: false,
+      addressCidrs: ['10.8.28.0/24'],
+    })
+  })
+})

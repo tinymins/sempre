@@ -15,7 +15,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
 import { useOptionalSession } from "@/lib/session";
-import type { TunnelStatus } from "@/lib/types";
+import type { ManagedRuntimeStatus, Session, TunnelStatus } from "@/lib/types";
+import { PrivateAccessHomeNetwork } from "./PrivateAccessHomeNetwork";
 import {
   CONNECTOR_TYPES,
   type ConnectorType,
@@ -31,13 +32,15 @@ import {
 interface Props {
   value?: string;
   onChange?: (value: string) => void;
+  profileId: string;
 }
 
-const PrivateAccessEditor = ({ value, onChange }: Props) => {
+const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
   const { t } = useTranslation();
   const sessionContext = useOptionalSession();
   const session = sessionContext?.session;
   const [state, setState] = useState(() => parseConfig(value));
+  const runtime = useRuntimeStatus(session);
   const lastEmittedValueRef = useRef<string | undefined>(undefined);
   const connectorTypeOptions = useMemo(
     () =>
@@ -321,6 +324,14 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
               </div>
             )}
 
+            {connector.type === "wireguard" ? <PrivateAccessHomeNetwork
+              enabled={connector.homeNetworkEnabled}
+              cidrs={connector.homeNetworkCidrs}
+              runtime={runtime?.private_access?.profile_id === profileId ? runtime.private_access : undefined}
+              connectorStatus={runtime?.private_access?.profile_id === profileId ? runtime.private_access.connectors.find((item) => item.tag === (connector.tag.trim() || `private-access-${index + 1}`)) : undefined}
+              onChange={(patch) => updateConnector(index, patch)}
+            /> : null}
+
             <div className="grid grid-cols-1 gap-2 border-t border-gray-100 pt-3 dark:border-gray-800 md:grid-cols-2">
               <label className="space-y-1">
                 <FieldLabel>{t("proxy.form.privateRouteCidrs")}</FieldLabel>
@@ -413,6 +424,26 @@ const PrivateAccessEditor = ({ value, onChange }: Props) => {
     </div>
   );
 };
+
+function useRuntimeStatus(session?: Session | null) {
+  const [status, setStatus] = useState<ManagedRuntimeStatus>();
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    const load = () => {
+      void api<ManagedRuntimeStatus>(session, "/runtime/status")
+        .then((value) => { if (active) setStatus(value); })
+        .catch(() => { if (active) setStatus(undefined); });
+    };
+    load();
+    const timer = window.setInterval(load, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [session]);
+  return status;
+}
 
 function TransportTunnelSelect({ session, value, onChange }: { session: NonNullable<ReturnType<typeof useOptionalSession>>['session']; value: string; onChange: (value: string) => void }) {
   const { t } = useTranslation();

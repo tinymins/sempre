@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 use url::Url;
 
@@ -52,6 +53,12 @@ pub struct ConfigBuild {
     pub profile_revision: u64,
     pub target_key: String,
     pub runtime_key: Option<String>,
+    #[serde(default = "default_private_access_policy")]
+    pub private_access_policy: Value,
+}
+
+fn default_private_access_policy() -> Value {
+    serde_json::json!({ "enabled": false, "connectors": [] })
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

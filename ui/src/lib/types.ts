@@ -46,6 +46,23 @@ export interface ManagedRuntimeFailure {
   rolled_back_to?: ManagedRuntimeDeployment
 }
 
+export interface PrivateAccessConnectorStatus {
+  tag: string
+  mode: 'direct' | 'wireguard' | 'unknown' | 'inactive'
+  home_cidrs: string[]
+  matched_cidr?: string
+}
+
+export interface PrivateAccessStatus {
+  profile_id?: string
+  profile_revision: number
+  active: boolean
+  interface?: string
+  interface_addresses: string[]
+  probe_error?: string
+  connectors: PrivateAccessConnectorStatus[]
+}
+
 export interface ManagedRuntimeStatus {
   desired_state: 'running' | 'stopped'
   runtime_state: 'idle' | 'stopped' | 'starting' | 'running' | 'stopping' | 'restarting' | 'failed'
@@ -72,6 +89,7 @@ export interface ManagedRuntimeStatus {
     domestic_domain_count: number
     last_error?: string
   }
+  private_access?: PrivateAccessStatus
   actions: {
     start: RuntimeActionAvailability
     stop: RuntimeActionAvailability
@@ -92,6 +110,7 @@ export interface SystemStatus {
   active?: { core: string; repository?: string; ref: string; version: string; config_hash: string }
   pending: boolean
   last_error?: string
+  private_access?: PrivateAccessStatus
   web: { listen: string; local_url: string; password_set: boolean; password_warning: boolean }
   ui: { installed: boolean; metadata?: UIMetadata }
   capabilities: Record<string, boolean>

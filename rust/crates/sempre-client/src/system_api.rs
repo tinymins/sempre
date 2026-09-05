@@ -27,6 +27,10 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         Ok(document) => document,
         Err(error) => return internal(error.to_string()),
     };
+    let private_access = match state.manager.private_access_status() {
+        Ok(status) => status,
+        Err(error) => return internal(error.to_string()),
+    };
     let web = match state.web.read() {
         Ok(web) => web,
         Err(error) => return internal(error.to_string()),
@@ -75,6 +79,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         "active": active,
         "pending": document.pending,
         "last_error": document.last_error,
+        "private_access": private_access,
         "web": {
             "listen": web.listen,
             "local_url": endpoint.local_url,

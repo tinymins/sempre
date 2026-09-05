@@ -95,6 +95,7 @@ fn staging_preserves_the_last_confirmed_deployment() {
         profile_revision: 1,
         target_key: "sing-box|13|default".into(),
         runtime_key: None,
+        private_access_policy: serde_json::json!({ "enabled": false, "connectors": [] }),
     };
     let first = Deployment {
         core: "sing-box".into(),

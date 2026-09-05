@@ -23,6 +23,7 @@ const runningStatus: ManagedRuntimeStatus = {
   uptime_seconds: 90,
   restart_count: 0,
   pending: false,
+  private_access: { profile_revision: 2, active: true, interface: 'en0', interface_addresses: ['10.8.28.19/24'], connectors: [{ tag: 'home-wg', mode: 'direct', home_cidrs: ['10.8.28.0/24'], matched_cidr: '10.8.28.0/24' }] },
   last_transition: '2026-08-03T10:00:10Z',
   actions: {
     start: { allowed: false, reason: 'managed core is already running' },
@@ -91,6 +92,17 @@ describe('RuntimeControlPanel', () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/stop', expect.objectContaining({ method: 'POST' })))
     await waitFor(() => expect(screen.getAllByText('Stopped').length).toBeGreaterThan(0))
+  })
+
+  it('shows the active home-network decision and its evidence', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(runningStatus)))
+    renderRuntimePanel()
+
+    expect(await screen.findByText('Home network auto-direct')).toBeInTheDocument()
+    expect(screen.getByText('home-wg')).toBeInTheDocument()
+    expect(screen.getByText('en0')).toBeInTheDocument()
+    expect(screen.getByText('10.8.28.19/24')).toBeInTheDocument()
+    expect(screen.getAllByText('10.8.28.0/24')).toHaveLength(2)
   })
 
   it('keeps all lifecycle actions available after a retryable startup failure', async () => {

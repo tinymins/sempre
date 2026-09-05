@@ -27,6 +27,8 @@ export interface PrivateConnectorForm {
   preSharedKey: string;
   allowedIps: string;
   persistentKeepaliveInterval: number | null;
+  homeNetworkEnabled: boolean;
+  homeNetworkCidrs: string;
   server: string;
   serverPort: number | null;
   uuid: string;
@@ -99,6 +101,8 @@ export const emptyConnector = (): PrivateConnectorForm => ({
   preSharedKey: "",
   allowedIps: "",
   persistentKeepaliveInterval: 25,
+  homeNetworkEnabled: false,
+  homeNetworkCidrs: "",
   server: "",
   serverPort: null,
   uuid: "",
@@ -131,6 +135,9 @@ export const parseConfig = (value?: string) => {
           | Record<string, unknown>
           | undefined;
         const routes = connector.routes as Record<string, unknown> | undefined;
+        const homeNetwork = connector.homeNetwork as
+          | Record<string, unknown>
+          | undefined;
         const dnsRules = Array.isArray(connector.dns)
           ? (connector.dns as Array<Record<string, unknown>>)
           : [];
@@ -200,6 +207,8 @@ export const parseConfig = (value?: string) => {
               : typeof peer.persistentKeepaliveInterval === "number"
                 ? peer.persistentKeepaliveInterval
                 : null,
+          homeNetworkEnabled: homeNetwork?.enabled === true,
+          homeNetworkCidrs: joinList(homeNetwork?.addressCidrs),
           server: typeof outbound?.server === "string" ? outbound.server : "",
           serverPort:
             typeof outbound?.server_port === "number"
@@ -260,6 +269,14 @@ export const serializeConfig = (enabled: boolean, connectors: PrivateConnectorFo
 
     if (Object.keys(routes).length > 0) {
       base.routes = routes;
+    }
+
+    const homeNetworkCidrs = splitCidrList(connector.homeNetworkCidrs);
+    if (connector.homeNetworkEnabled || homeNetworkCidrs.length > 0) {
+      base.homeNetwork = {
+        enabled: connector.homeNetworkEnabled,
+        addressCidrs: homeNetworkCidrs,
+      };
     }
 
     const dnsDomainSuffixes = splitList(connector.dnsDomainSuffixes);

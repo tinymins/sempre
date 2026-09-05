@@ -15,6 +15,7 @@ const systemStatus = {
   service: 'running',
   desired_state: 'running',
   runtime: { state: 'running' },
+  private_access: { profile_revision: 2, active: true, interface: 'en0', interface_addresses: ['10.8.28.19/24'], connectors: [{ tag: 'home-wg', mode: 'direct', home_cidrs: ['10.8.28.0/24'], matched_cidr: '10.8.28.0/24' }] },
   pending: false,
   web: { listen: '127.0.0.1:33211', local_url: 'http://sempre.test', password_set: true, password_warning: false },
   ui: { installed: true },
@@ -73,7 +74,12 @@ describe('Shell sidebar', () => {
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('link', { name: 'Subscription Config' })).toHaveAttribute('title', 'Subscription Config')
     expect(screen.getByRole('button', { name: 'Analysis & diagnostics' })).toHaveAttribute('title', 'Analysis & diagnostics')
-    expect(await screen.findByLabelText('Core: running')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Core: running · Direct')).toBeInTheDocument()
+  })
+
+  it('shows the private access path beside the sing-box status', async () => {
+    renderShell()
+    expect((await screen.findAllByText('Direct')).length).toBeGreaterThanOrEqual(2)
   })
 
   it('groups primary controls and keeps analysis tools collapsed by default', () => {

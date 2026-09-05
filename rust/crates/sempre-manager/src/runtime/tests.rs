@@ -269,6 +269,7 @@ fn status_describes_directly_recorded_profile_changes_without_exposing_values() 
                     profile_revision: profile.revision,
                     target_key: "baseline".into(),
                     runtime_key: None,
+                    private_access_policy: serde_json::json!({ "enabled": false, "connectors": [] }),
                 },
             );
             Ok(())

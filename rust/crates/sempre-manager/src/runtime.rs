@@ -7,6 +7,7 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 use crate::{
     Manager, ManagerError, RuntimePendingChange, ValidationRunner, VersionRunner,
     config::configuration_target, dns_runtime::DnsFrontendStatus,
+    private_access_status::PrivateAccessStatus,
 };
 
 const START: &str = "start";
@@ -73,6 +74,8 @@ pub struct RuntimeStatus {
     pub actions: RuntimeActions,
     #[serde(default)]
     pub dns_frontend: DnsFrontendStatus,
+    #[serde(default)]
+    pub private_access: PrivateAccessStatus,
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
@@ -278,6 +281,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             last_failure: document.runtime.last_failure.clone().map(failure_value),
             actions,
             dns_frontend: self.dns_frontend.status(),
+            private_access: Self::private_access_status_value(document),
         }
     }
 

@@ -302,7 +302,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                 label={t("proxy.form.privateAccessConfigLabel")}
                 name="privateAccessConfig"
               >
-                <PrivateAccessEditor />
+                <PrivateAccessEditor profileId={props.profile.id} />
               </Form.Item>
             </div>
 

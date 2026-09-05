@@ -119,6 +119,9 @@ fn managed_desktop_private_access_routes_dns_and_traffic_through_core() {
                         "publicKey": "public", "allowedIps": ["0.0.0.0/0"]
                     }]
                 },
+                "homeNetwork": {
+                    "enabled": true, "addressCidrs": ["10.8.28.0/24"]
+                },
                 "routes": { "ipCidrs": ["10.8.28.0/24"] },
                 "dns": [{
                     "tag": "private-dns", "server": "10.8.28.1",
@@ -163,26 +166,83 @@ fn managed_desktop_private_access_routes_dns_and_traffic_through_core() {
             .find(|server| server["tag"] == "private-dns")
             .expect("private DNS server");
         assert_eq!(private_dns["detour"], "private-wg");
-        let dns_rules = document["dns"]["rules"].as_array().expect("DNS rules");
-        let private_dns_index = dns_rules
-            .iter()
-            .position(|rule| rule["server"] == "private-dns")
-            .expect("private DNS rule");
-        let fakeip_index = dns_rules
-            .iter()
-            .position(|rule| rule["server"] == "fakeip")
-            .expect("FakeIP rule");
-        assert!(private_dns_index < fakeip_index);
-        assert!(
-            document["route"]["rules"]
-                .as_array()
-                .expect("route rules")
-                .iter()
-                .any(|rule| {
-                    rule["ip_cidr"] == json!(["10.8.28.0/24"]) && rule["outbound"] == "private-wg"
-                })
-        );
+        assert_home_auto_rules(&document);
     }
+}
+
+fn assert_home_auto_rules(document: &Value) {
+    let servers = document["dns"]["servers"].as_array().expect("DNS servers");
+    let direct_server = servers
+        .iter()
+        .find(|server| server["tag"] == "private-dns-home-direct")
+        .expect("direct private DNS server");
+    assert_eq!(direct_server["detour"], "direct");
+    let dns_rules = document["dns"]["rules"].as_array().expect("DNS rules");
+    let dns_index = |tag| {
+        dns_rules
+            .iter()
+            .position(|rule| rule["server"] == tag)
+            .expect("DNS rule")
+    };
+    let direct_dns = dns_index("private-dns-home-direct");
+    assert!(
+        direct_dns < dns_index("private-dns") && dns_index("private-dns") < dns_index("fakeip")
+    );
+    assert_eq!(
+        dns_rules[direct_dns]["default_interface_address"],
+        json!(["10.8.28.0/24"])
+    );
+
+    let route_rules = document["route"]["rules"].as_array().expect("route rules");
+    let route_index = |outbound| {
+        route_rules
+            .iter()
+            .position(|rule| {
+                rule["ip_cidr"] == json!(["10.8.28.0/24"]) && rule["outbound"] == outbound
+            })
+            .expect("private route rule")
+    };
+    let direct = route_index("direct");
+    assert!(direct < route_index("private-wg"));
+    assert_eq!(
+        route_rules[direct]["default_interface_address"],
+        json!(["10.8.28.0/24"])
+    );
+}
+
+#[test]
+fn home_network_detection_rejects_sing_box_before_v13() {
+    let profile: Profile = serde_json::from_value(json!({
+        "private_access": {
+            "enabled": true,
+            "connectors": [{
+                "type": "wireguard", "tag": "private-wg",
+                "endpoint": {
+                    "privateKey": "private", "address": ["192.0.2.2/32"],
+                    "peers": [{
+                        "address": "vpn.example.com", "port": 51820,
+                        "publicKey": "public", "allowedIps": ["0.0.0.0/0"]
+                    }]
+                },
+                "homeNetwork": { "enabled": true, "addressCidrs": ["10.8.28.0/24"] },
+                "routes": { "ipCidrs": ["10.8.28.0/24"] }
+            }]
+        }
+    }))
+    .expect("profile");
+    let error = compile(&CompileRequest {
+        protocol: 1,
+        profile,
+        snapshots: vec![],
+        custom_nodes: vec![],
+        target: Target::parse("sing-box-v12-macos").expect("target"),
+    })
+    .expect_err("v1.12 must reject home network matching");
+    assert!(
+        error
+            .to_string()
+            .contains("requires sing-box 1.13 or newer")
+    );
 }
 
 #[test]

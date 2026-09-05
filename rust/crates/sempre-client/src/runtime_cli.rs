@@ -329,6 +329,7 @@ mod tests {
                 restart: available(),
             },
             dns_frontend: sempre_manager::DnsFrontendStatus::default(),
+            private_access: sempre_manager::PrivateAccessStatus::default(),
         }
     }
 

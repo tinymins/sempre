@@ -166,6 +166,7 @@ mod tests {
                 profile_revision: 1,
                 target_key: "sing-box".into(),
                 runtime_key: None,
+                private_access_policy: serde_json::json!({ "enabled": false, "connectors": [] }),
             },
         );
         document.active_profile_id = Some("default".into());

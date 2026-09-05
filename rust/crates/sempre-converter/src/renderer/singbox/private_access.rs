@@ -1,5 +1,6 @@
 use std::net::IpAddr;
 
+use ipnet::IpNet;
 use serde_json::{Map, Value, json};
 
 #[derive(Default)]
@@ -13,13 +14,14 @@ pub(super) struct Resolved {
     pub dns_rules: Vec<Value>,
 }
 
-pub(super) fn resolve(config: &Value, modern: bool, desktop: bool) -> Resolved {
+pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Resolved, String> {
     let mut resolved = Resolved::default();
+    let modern = version != "11";
     if !modern || config.get("enabled").and_then(Value::as_bool) != Some(true) {
-        return resolved;
+        return Ok(resolved);
     }
     let Some(connectors) = config.get("connectors").and_then(Value::as_array) else {
-        return resolved;
+        return Ok(resolved);
     };
     for (index, value) in connectors.iter().enumerate() {
         let Some(connector) = value.as_object() else {
@@ -41,6 +43,12 @@ pub(super) fn resolve(config: &Value, modern: bool, desktop: bool) -> Resolved {
         if !represented {
             continue;
         }
+        let home_cidrs = home_network_cidrs(connector, &tag)?;
+        if !home_cidrs.is_empty() && version.parse::<u8>().unwrap_or_default() < 13 {
+            return Err(format!(
+                "private access connector {tag:?} home network detection requires sing-box 1.13 or newer"
+            ));
+        }
         if let Some(routes) = connector.get("routes").and_then(Value::as_object) {
             for cidr in clean_strings(routes.get("ipCidrs")) {
                 push_unique(&mut resolved.capture_cidrs, cidr);
@@ -48,6 +56,12 @@ pub(super) fn resolve(config: &Value, modern: bool, desktop: bool) -> Resolved {
             let mut rule = json!({ "action": "route", "outbound": tag });
             add_matchers(&mut rule, routes);
             if rule.as_object().is_some_and(|rule| rule.len() > 2) {
+                if !home_cidrs.is_empty() {
+                    let mut direct = rule.clone();
+                    direct["outbound"] = json!("direct");
+                    direct["default_interface_address"] = json!(home_cidrs);
+                    resolved.route_rules.push(direct);
+                }
                 resolved.route_rules.push(rule);
             }
         }
@@ -61,6 +75,17 @@ pub(super) fn resolve(config: &Value, modern: bool, desktop: bool) -> Resolved {
                 };
                 let dns_tag = string(dns, "tag")
                     .map_or_else(|| format!("{tag}-dns-{}", dns_index + 1), str::to_owned);
+                if !home_cidrs.is_empty() {
+                    let direct_tag = format!("{dns_tag}-home-direct");
+                    resolved.dns_servers.push(json!({
+                        "type": "udp", "tag": direct_tag, "server": server,
+                        "server_port": integer(dns.get("serverPort"), 53), "detour": "direct"
+                    }));
+                    let mut direct_rule = json!({ "action": "route", "server": direct_tag });
+                    add_matchers(&mut direct_rule, dns);
+                    direct_rule["default_interface_address"] = json!(home_cidrs);
+                    resolved.dns_rules.push(direct_rule);
+                }
                 resolved.dns_servers.push(json!({
                     "type": "udp", "tag": dns_tag, "server": server,
                     "server_port": integer(dns.get("serverPort"), 53), "detour": tag
@@ -71,7 +96,23 @@ pub(super) fn resolve(config: &Value, modern: bool, desktop: bool) -> Resolved {
             }
         }
     }
-    resolved
+    Ok(resolved)
+}
+
+fn home_network_cidrs(connector: &Map<String, Value>, tag: &str) -> Result<Vec<String>, String> {
+    let Some(home) = connector.get("homeNetwork").and_then(Value::as_object) else {
+        return Ok(Vec::new());
+    };
+    if home.get("enabled").and_then(Value::as_bool) != Some(true) {
+        return Ok(Vec::new());
+    }
+    let cidrs = clean_strings(home.get("addressCidrs"));
+    for cidr in &cidrs {
+        cidr.parse::<IpNet>().map_err(|_| {
+            format!("private access connector {tag:?} has invalid home network CIDR {cidr:?}")
+        })?;
+    }
+    Ok(cidrs)
 }
 
 fn endpoint(
