@@ -31,6 +31,10 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         Ok(status) => status,
         Err(error) => return internal(error.to_string()),
     };
+    let network_automation = match state.manager.network_automation_status() {
+        Ok(status) => status,
+        Err(error) => return internal(error.to_string()),
+    };
     let web = match state.web.read() {
         Ok(web) => web,
         Err(error) => return internal(error.to_string()),
@@ -80,6 +84,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         "pending": document.pending,
         "last_error": document.last_error,
         "private_access": private_access,
+        "network_automation": network_automation,
         "web": {
             "listen": web.listen,
             "local_url": endpoint.local_url,

@@ -66,6 +66,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let saved = self.network_settings.replace(candidate)?;
         if saved.mode == previous.mode
             && saved.gateway_capture_host == previous.gateway_capture_host
+            && saved.automatic_switching == previous.automatic_switching
+            && saved.known_networks == previous.known_networks
         {
             return Ok((CoreChange::default(), saved));
         }
@@ -87,6 +89,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                             &[
                                 PendingConfigField::TransparentProxy,
                                 PendingConfigField::Dns,
+                                PendingConfigField::PrivateAccess,
                             ],
                             true,
                         );

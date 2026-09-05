@@ -2546,6 +2546,7 @@ dependencies = [
  "sempre-control",
  "sempre-converter",
  "sempre-core",
+ "sempre-core-control",
  "sempre-dns",
  "sempre-gateway",
  "sempre-network",

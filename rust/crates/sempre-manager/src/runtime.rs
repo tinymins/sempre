@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use crate::{
-    Manager, ManagerError, RuntimePendingChange, ValidationRunner, VersionRunner,
-    config::configuration_target, dns_runtime::DnsFrontendStatus,
+    Manager, ManagerError, NetworkAutomationStatus, RuntimePendingChange, ValidationRunner,
+    VersionRunner, config::configuration_target, dns_runtime::DnsFrontendStatus,
     private_access_status::PrivateAccessStatus,
 };
 
@@ -76,6 +76,8 @@ pub struct RuntimeStatus {
     pub dns_frontend: DnsFrontendStatus,
     #[serde(default)]
     pub private_access: PrivateAccessStatus,
+    #[serde(default)]
+    pub network_automation: NetworkAutomationStatus,
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
@@ -281,7 +283,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             last_failure: document.runtime.last_failure.clone().map(failure_value),
             actions,
             dns_frontend: self.dns_frontend.status(),
-            private_access: Self::private_access_status_value(document),
+            private_access: self.private_access_status_value(document),
+            network_automation: self.network_automation_status().unwrap_or_default(),
         }
     }
 

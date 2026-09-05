@@ -61,6 +61,8 @@ pub struct Profile {
     pub dns: Value,
     #[serde(default)]
     pub private_access: Value,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub network_policy: Value,
     #[serde(default)]
     pub core_overrides: HashMap<String, Value>,
     #[serde(default)]

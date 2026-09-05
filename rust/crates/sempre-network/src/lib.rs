@@ -3,7 +3,7 @@ mod dns_probe;
 mod inventory;
 mod probe;
 
-pub use default_interface::{DefaultInterface, default_interface};
+pub use default_interface::{DefaultInterface, default_interface, normalize_mac};
 pub use dns_probe::DnsAnswer;
 pub use inventory::{Interface, Inventory, inventory};
 pub use probe::{IpMetadata, NetworkTestReport, NetworkTestResult, run_network_test};

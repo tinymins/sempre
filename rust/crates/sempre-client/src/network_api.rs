@@ -19,8 +19,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
 }
 
 async fn settings(State(state): State<Arc<AppState>>) -> Response {
+    let current = sempre_network::default_interface().unwrap_or_default();
     Json(json!({
         "settings": state.manager.network_settings(),
+        "current": current,
         "platform": std::env::consts::OS,
         "gateway_available": cfg!(target_os = "linux"),
     }))
@@ -35,6 +37,7 @@ async fn update_settings(
         Ok((change, settings)) => Json(json!({
             "change": change,
             "settings": settings,
+            "current": sempre_network::default_interface().unwrap_or_default(),
             "platform": std::env::consts::OS,
             "gateway_available": cfg!(target_os = "linux"),
         }))

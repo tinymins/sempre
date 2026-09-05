@@ -50,6 +50,10 @@ pub enum CompileError {
     Render(String),
 }
 
+pub fn network_mode(id: &str) -> String {
+    format!("Sempre Network {id}")
+}
+
 pub fn compile(request: &CompileRequest) -> Result<CompileResult, CompileError> {
     compile_with_overlay(request, &CompileOverlay::default())
 }

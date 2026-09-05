@@ -39,6 +39,7 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
     plan: &RuntimePlan,
     grace: Duration,
 ) -> Result<(), sempre_transparent::TransparentError> {
+    manager.activate_network_automation(grace).await;
     if plan.dns_frontend.is_none() && !plan.transparent.active() {
         sleep(grace).await;
     } else {
@@ -64,6 +65,7 @@ pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(
 ) -> ProcessEvent {
     tokio::select! {
         () = manager.complete_rule_bootstrap(plan) => ProcessEvent::Reload,
+        () = manager.monitor_network_automation() => unreachable!("network monitor does not exit"),
         result = process.wait() => ProcessEvent::Exited(result),
         () = manager.wait_runtime_reload() => ProcessEvent::Reload,
         () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,

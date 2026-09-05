@@ -1,7 +1,5 @@
-use std::net::IpAddr;
-
-use ipnet::IpNet;
 use serde_json::{Map, Value, json};
+use std::net::IpAddr;
 
 #[derive(Default)]
 pub(super) struct Resolved {
@@ -43,12 +41,7 @@ pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Re
         if !represented {
             continue;
         }
-        let home_cidrs = home_network_cidrs(connector, &tag)?;
-        if !home_cidrs.is_empty() && version.parse::<u8>().unwrap_or_default() < 13 {
-            return Err(format!(
-                "private access connector {tag:?} home network detection requires sing-box 1.13 or newer"
-            ));
-        }
+        let home_modes = home_network_modes(connector);
         if let Some(routes) = connector.get("routes").and_then(Value::as_object) {
             for cidr in clean_strings(routes.get("ipCidrs")) {
                 push_unique(&mut resolved.capture_cidrs, cidr);
@@ -56,10 +49,10 @@ pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Re
             let mut rule = json!({ "action": "route", "outbound": tag });
             add_matchers(&mut rule, routes);
             if rule.as_object().is_some_and(|rule| rule.len() > 2) {
-                if !home_cidrs.is_empty() {
+                if !home_modes.is_empty() {
                     let mut direct = rule.clone();
                     direct["outbound"] = json!("direct");
-                    direct["default_interface_address"] = json!(home_cidrs);
+                    direct["clash_mode"] = json!(home_modes);
                     resolved.route_rules.push(direct);
                 }
                 resolved.route_rules.push(rule);
@@ -75,7 +68,7 @@ pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Re
                 };
                 let dns_tag = string(dns, "tag")
                     .map_or_else(|| format!("{tag}-dns-{}", dns_index + 1), str::to_owned);
-                if !home_cidrs.is_empty() {
+                if !home_modes.is_empty() {
                     let direct_tag = format!("{dns_tag}-home-direct");
                     resolved.dns_servers.push(json!({
                         "type": "udp", "tag": direct_tag, "server": server,
@@ -83,7 +76,7 @@ pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Re
                     }));
                     let mut direct_rule = json!({ "action": "route", "server": direct_tag });
                     add_matchers(&mut direct_rule, dns);
-                    direct_rule["default_interface_address"] = json!(home_cidrs);
+                    direct_rule["clash_mode"] = json!(home_modes);
                     resolved.dns_rules.push(direct_rule);
                 }
                 resolved.dns_servers.push(json!({
@@ -99,20 +92,17 @@ pub(super) fn resolve(config: &Value, version: &str, desktop: bool) -> Result<Re
     Ok(resolved)
 }
 
-fn home_network_cidrs(connector: &Map<String, Value>, tag: &str) -> Result<Vec<String>, String> {
+fn home_network_modes(connector: &Map<String, Value>) -> Vec<String> {
     let Some(home) = connector.get("homeNetwork").and_then(Value::as_object) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     if home.get("enabled").and_then(Value::as_bool) != Some(true) {
-        return Ok(Vec::new());
+        return Vec::new();
     }
-    let cidrs = clean_strings(home.get("addressCidrs"));
-    for cidr in &cidrs {
-        cidr.parse::<IpNet>().map_err(|_| {
-            format!("private access connector {tag:?} has invalid home network CIDR {cidr:?}")
-        })?;
-    }
-    Ok(cidrs)
+    clean_strings(home.get("networkIds"))
+        .into_iter()
+        .map(|id| crate::network_mode(&id))
+        .collect()
 }
 
 fn endpoint(

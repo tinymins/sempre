@@ -3,10 +3,11 @@ use std::{fs, path::PathBuf, sync::Mutex};
 use sempre_converter::{Profile, Target};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::ManagerError;
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -17,11 +18,29 @@ pub enum NetworkMode {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnownNetwork {
+    pub id: String,
+    pub name: String,
+    pub gateway_mac: String,
+    #[serde(default = "default_true")]
+    pub disable_proxy: bool,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NetworkSettings {
     pub schema: u32,
     pub revision: u64,
     pub mode: NetworkMode,
     pub gateway_capture_host: bool,
+    #[serde(default)]
+    pub automatic_switching: bool,
+    #[serde(default)]
+    pub known_networks: Vec<KnownNetwork>,
 }
 
 impl Default for NetworkSettings {
@@ -31,6 +50,8 @@ impl Default for NetworkSettings {
             revision: 1,
             mode: NetworkMode::Local,
             gateway_capture_host: false,
+            automatic_switching: false,
+            known_networks: Vec::new(),
         }
     }
 }
@@ -65,8 +86,13 @@ impl NetworkSettingsStore {
         &self,
         mut candidate: NetworkSettings,
     ) -> Result<NetworkSettings, ManagerError> {
-        validate(&candidate)?;
         let mut current = self.settings.lock().expect("network settings lock");
+        if candidate.schema == 1 {
+            candidate.schema = SCHEMA_VERSION;
+            candidate.automatic_switching = current.automatic_switching;
+            candidate.known_networks.clone_from(&current.known_networks);
+        }
+        validate(&candidate)?;
         candidate.revision = current.revision.saturating_add(1);
         write(&self.path, &candidate)?;
         *current = candidate.clone();
@@ -81,7 +107,15 @@ impl NetworkSettingsStore {
 }
 
 fn decode(data: &[u8]) -> Result<NetworkSettings, ManagerError> {
-    let settings = serde_json::from_slice(data).map_err(|error| {
+    let mut value: Value = serde_json::from_slice(data).map_err(|error| {
+        ManagerError::InvalidOperation(format!("decode network settings: {error}"))
+    })?;
+    if value.get("schema").and_then(Value::as_u64) == Some(1) {
+        value["schema"] = json!(SCHEMA_VERSION);
+        value["automatic_switching"] = Value::Bool(false);
+        value["known_networks"] = json!([]);
+    }
+    let settings = serde_json::from_value(value).map_err(|error| {
         ManagerError::InvalidOperation(format!("decode network settings: {error}"))
     })?;
     validate(&settings)?;
@@ -93,6 +127,36 @@ fn validate(settings: &NetworkSettings) -> Result<(), ManagerError> {
         return Err(ManagerError::InvalidOperation(format!(
             "network settings schema must be {SCHEMA_VERSION}"
         )));
+    }
+    if settings.known_networks.len() > 64 {
+        return Err(ManagerError::InvalidOperation(
+            "at most 64 known networks may be configured".into(),
+        ));
+    }
+    let mut ids = std::collections::HashSet::new();
+    let mut macs = std::collections::HashSet::new();
+    for network in &settings.known_networks {
+        if Uuid::parse_str(&network.id).is_err() || !ids.insert(network.id.clone()) {
+            return Err(ManagerError::InvalidOperation(
+                "known network IDs must be unique UUIDs".into(),
+            ));
+        }
+        if network.name.trim().is_empty() || network.name.chars().count() > 64 {
+            return Err(ManagerError::InvalidOperation(
+                "known network names must contain 1 to 64 characters".into(),
+            ));
+        }
+        let Some(mac) = sempre_network::normalize_mac(&network.gateway_mac) else {
+            return Err(ManagerError::InvalidOperation(format!(
+                "known network {:?} has an invalid gateway MAC address",
+                network.name
+            )));
+        };
+        if !macs.insert(mac) {
+            return Err(ManagerError::InvalidOperation(
+                "each gateway MAC address may only identify one known network".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -113,6 +177,13 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
     ) -> Result<Profile, ManagerError> {
         let settings = self.network_settings.read();
         let mut profile = profile.clone();
+        profile.network_policy = json!({
+            "enabled": settings.automatic_switching,
+            "directNetworkIds": settings.known_networks.iter()
+                .filter(|network| settings.automatic_switching && network.disable_proxy)
+                .map(|network| network.id.clone())
+                .collect::<Vec<_>>(),
+        });
         match settings.mode {
             NetworkMode::Local => {
                 profile.transparent_proxy.capture_host = true;
@@ -195,6 +266,21 @@ mod tests {
         assert_eq!(saved.revision, 2);
         let reopened = NetworkSettingsStore::open(path).expect("reopen");
         assert_eq!(reopened.read(), saved);
+    }
+
+    #[test]
+    fn migrates_schema_one_without_enabling_automatic_switching() {
+        let root = tempfile::tempdir().expect("directory");
+        let path = root.path().join("network.json");
+        fs::write(
+            &path,
+            br#"{"schema":1,"revision":3,"mode":"local","gateway_capture_host":false}"#,
+        )
+        .expect("legacy settings");
+        let store = NetworkSettingsStore::open(path).expect("store");
+        assert_eq!(store.read().schema, 2);
+        assert!(!store.read().automatic_switching);
+        assert!(store.read().known_networks.is_empty());
     }
 
     #[test]

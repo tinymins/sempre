@@ -330,6 +330,7 @@ mod tests {
             },
             dns_frontend: sempre_manager::DnsFrontendStatus::default(),
             private_access: sempre_manager::PrivateAccessStatus::default(),
+            network_automation: sempre_manager::NetworkAutomationStatus::default(),
         }
     }
 

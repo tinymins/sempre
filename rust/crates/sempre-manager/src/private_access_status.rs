@@ -1,4 +1,3 @@
-use ipnet::IpNet;
 use sempre_network::DefaultInterface;
 use sempre_state::{ConfigBuild, Document, RuntimeState};
 use serde::{Deserialize, Serialize};
@@ -24,17 +23,17 @@ pub struct PrivateAccessStatus {
 pub struct PrivateAccessConnectorStatus {
     pub tag: String,
     pub mode: String,
-    pub home_cidrs: Vec<String>,
+    pub home_networks: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub matched_cidr: Option<String>,
+    pub matched_network: Option<String>,
 }
 
 impl<R: VersionRunner> Manager<R> {
     pub fn private_access_status(&self) -> Result<PrivateAccessStatus, ManagerError> {
-        Ok(Self::private_access_status_value(&self.store.read()?))
+        Ok(self.private_access_status_value(&self.store.read()?))
     }
 
-    pub(crate) fn private_access_status_value(document: &Document) -> PrivateAccessStatus {
+    pub(crate) fn private_access_status_value(&self, document: &Document) -> PrivateAccessStatus {
         let Some(build) = applied_build(document) else {
             return PrivateAccessStatus::default();
         };
@@ -50,7 +49,15 @@ impl<R: VersionRunner> Manager<R> {
             Ok(value) => (value, None),
             Err(error) => (DefaultInterface::default(), Some(error.to_string())),
         };
-        evaluate(build, active, observed, probe_error)
+        let settings = self.network_settings.read();
+        evaluate(
+            build,
+            active,
+            observed,
+            probe_error,
+            settings.automatic_switching,
+            &settings.known_networks,
+        )
     }
 }
 
@@ -75,24 +82,35 @@ fn evaluate(
     active: bool,
     observed: DefaultInterface,
     probe_error: Option<String>,
+    automatic_switching: bool,
+    known_networks: &[crate::KnownNetwork],
 ) -> PrivateAccessStatus {
     let connectors = configured_connectors(&build.private_access_policy)
         .into_iter()
-        .map(|(tag, home_cidrs)| {
-            let matched_cidr = observed.addresses.iter().find_map(|address| {
-                let address = address.parse::<IpNet>().ok()?.addr();
-                home_cidrs.iter().find_map(|cidr| {
-                    cidr.parse::<IpNet>()
-                        .ok()
-                        .filter(|network| network.contains(&address))
-                        .map(|_| cidr.clone())
+        .map(|(tag, home_network_ids)| {
+            let observed_mac = sempre_network::normalize_mac(&observed.gateway_mac);
+            let matched_network = observed_mac.and_then(|mac| {
+                known_networks.iter().find_map(|network| {
+                    (home_network_ids.contains(&network.id)
+                        && sempre_network::normalize_mac(&network.gateway_mac).as_deref()
+                            == Some(mac.as_str()))
+                    .then(|| network.name.clone())
                 })
             });
+            let home_networks = home_network_ids
+                .iter()
+                .map(|id| {
+                    known_networks
+                        .iter()
+                        .find(|network| network.id == *id)
+                        .map_or_else(|| id.clone(), |network| network.name.clone())
+                })
+                .collect();
             let mode = if !active {
                 "inactive"
-            } else if matched_cidr.is_some() {
+            } else if automatic_switching && matched_network.is_some() {
                 "direct"
-            } else if observed.supported && !observed.addresses.is_empty() {
+            } else if observed.supported && !observed.gateway_mac.is_empty() {
                 "wireguard"
             } else {
                 "unknown"
@@ -100,8 +118,8 @@ fn evaluate(
             PrivateAccessConnectorStatus {
                 tag,
                 mode: mode.into(),
-                home_cidrs,
-                matched_cidr,
+                home_networks,
+                matched_network,
             }
         })
         .collect();
@@ -136,8 +154,8 @@ fn configured_connectors(config: &Value) -> Vec<(String, Vec<String>)> {
             if home.get("enabled").and_then(Value::as_bool) != Some(true) {
                 return None;
             }
-            let home_cidrs = home
-                .get("addressCidrs")
+            let home_network_ids = home
+                .get("networkIds")
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
@@ -146,14 +164,14 @@ fn configured_connectors(config: &Value) -> Vec<(String, Vec<String>)> {
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
-            (!home_cidrs.is_empty()).then(|| {
+            (!home_network_ids.is_empty()).then(|| {
                 let tag = connector
                     .get("tag")
                     .and_then(Value::as_str)
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .map_or_else(|| format!("private-access-{}", index + 1), str::to_owned);
-                (tag, home_cidrs)
+                (tag, home_network_ids)
             })
         })
         .collect()
@@ -176,7 +194,7 @@ mod tests {
                 "enabled": true,
                 "connectors": [{
                     "type": "wireguard", "tag": "home-wg",
-                    "homeNetwork": { "enabled": true, "addressCidrs": ["10.8.28.0/24"] }
+                    "homeNetwork": { "enabled": true, "networkIds": ["d286d2f8-33c5-4f1e-b871-d22a9ba91143"] }
                 }]
             }),
         }
@@ -191,13 +209,22 @@ mod tests {
                 supported: true,
                 name: "en0".into(),
                 addresses: vec!["10.8.28.19/24".into()],
+                gateway: "10.8.28.1".into(),
+                gateway_mac: "aa:bb:cc:dd:ee:ff".into(),
             },
             None,
+            true,
+            &[crate::KnownNetwork {
+                id: "d286d2f8-33c5-4f1e-b871-d22a9ba91143".into(),
+                name: "Home".into(),
+                gateway_mac: "aa:bb:cc:dd:ee:ff".into(),
+                disable_proxy: true,
+            }],
         );
         assert_eq!(status.connectors[0].mode, "direct");
         assert_eq!(
-            status.connectors[0].matched_cidr.as_deref(),
-            Some("10.8.28.0/24")
+            status.connectors[0].matched_network.as_deref(),
+            Some("Home")
         );
 
         let away = evaluate(
@@ -207,15 +234,26 @@ mod tests {
                 supported: true,
                 name: "en0".into(),
                 addresses: vec!["10.44.7.169/20".into()],
+                gateway: "10.44.0.1".into(),
+                gateway_mac: "00:11:22:33:44:55".into(),
             },
             None,
+            true,
+            &[],
         );
         assert_eq!(away.connectors[0].mode, "wireguard");
     }
 
     #[test]
     fn reports_inactive_when_the_core_is_not_using_the_policy() {
-        let status = evaluate(&build(), false, DefaultInterface::default(), None);
+        let status = evaluate(
+            &build(),
+            false,
+            DefaultInterface::default(),
+            None,
+            false,
+            &[],
+        );
         assert_eq!(status.connectors[0].mode, "inactive");
     }
 }

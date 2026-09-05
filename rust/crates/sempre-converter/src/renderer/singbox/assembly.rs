@@ -47,6 +47,12 @@ pub(super) fn render(
     outbounds.extend(selector_outbounds(&profile.groups, &names)?);
 
     let mut dns = super::super::dns::sing_box(profile, proxies, target)?;
+    let direct_modes = network_direct_modes(&profile.network_policy);
+    let network_local = if direct_modes.is_empty() {
+        None
+    } else {
+        ensure_network_local(&mut dns, modern)
+    };
     if let Some(servers) = dns.get_mut("servers").and_then(Value::as_array_mut) {
         servers.extend(private.dns_servers.iter().cloned());
     }
@@ -57,6 +63,11 @@ pub(super) fn render(
                 0,
                 json!({ "domain": private.direct_domains, "action": "route", "server": "local" }),
             );
+        }
+        if let Some(server) = network_local {
+            private_rules.push(json!({
+                "clash_mode": direct_modes, "action": "route", "server": server
+            }));
         }
         private_rules.append(rules);
         *rules = private_rules;
@@ -90,6 +101,36 @@ pub(super) fn render(
         .map_err(|error| CompileError::Render(error.to_string()))?;
     content.push('\n');
     Ok((content, diffs, warnings))
+}
+
+fn ensure_network_local(dns: &mut Value, modern: bool) -> Option<String> {
+    let Some(servers) = dns.get_mut("servers").and_then(Value::as_array_mut) else {
+        return None;
+    };
+    if servers
+        .iter()
+        .any(|server| server.get("tag").and_then(Value::as_str) == Some("local"))
+    {
+        return Some("local".into());
+    }
+    let tag = "sempre-network-local";
+    servers.push(if modern {
+        json!({ "type": "local", "tag": tag })
+    } else {
+        json!({ "tag": tag, "address": "local" })
+    });
+    Some(tag.into())
+}
+
+fn network_direct_modes(policy: &Value) -> Vec<String> {
+    policy
+        .get("directNetworkIds")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(crate::network_mode)
+        .collect()
 }
 
 fn selector_outbounds(groups: &[ProxyGroup], names: &[String]) -> Result<Vec<Value>, CompileError> {

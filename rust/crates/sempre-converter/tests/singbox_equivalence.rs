@@ -120,7 +120,8 @@ fn managed_desktop_private_access_routes_dns_and_traffic_through_core() {
                     }]
                 },
                 "homeNetwork": {
-                    "enabled": true, "addressCidrs": ["10.8.28.0/24"]
+                    "enabled": true,
+                    "networkIds": ["d286d2f8-33c5-4f1e-b871-d22a9ba91143"]
                 },
                 "routes": { "ipCidrs": ["10.8.28.0/24"] },
                 "dns": [{
@@ -128,6 +129,13 @@ fn managed_desktop_private_access_routes_dns_and_traffic_through_core() {
                     "domainSuffixes": ["internal.example"]
                 }]
             }]
+        },
+        "network_policy": {
+            "enabled": true,
+            "directNetworkIds": [
+                "d286d2f8-33c5-4f1e-b871-d22a9ba91143",
+                "450c5c7f-6ac8-4433-92a2-a4991dd06cc4"
+            ]
         }
     }))
     .expect("profile");
@@ -189,8 +197,8 @@ fn assert_home_auto_rules(document: &Value) {
         direct_dns < dns_index("private-dns") && dns_index("private-dns") < dns_index("fakeip")
     );
     assert_eq!(
-        dns_rules[direct_dns]["default_interface_address"],
-        json!(["10.8.28.0/24"])
+        dns_rules[direct_dns]["clash_mode"],
+        json!(["Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143"])
     );
 
     let route_rules = document["route"]["rules"].as_array().expect("route rules");
@@ -205,13 +213,25 @@ fn assert_home_auto_rules(document: &Value) {
     let direct = route_index("direct");
     assert!(direct < route_index("private-wg"));
     assert_eq!(
-        route_rules[direct]["default_interface_address"],
-        json!(["10.8.28.0/24"])
+        route_rules[direct]["clash_mode"],
+        json!(["Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143"])
     );
+    let public_direct = route_rules
+        .iter()
+        .position(|rule| {
+            rule["outbound"] == "direct"
+                && rule["clash_mode"]
+                    == json!([
+                        "Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143",
+                        "Sempre Network 450c5c7f-6ac8-4433-92a2-a4991dd06cc4"
+                    ])
+        })
+        .expect("public direct rule");
+    assert!(route_index("private-wg") < public_direct);
 }
 
 #[test]
-fn home_network_detection_rejects_sing_box_before_v13() {
+fn gateway_identity_home_detection_supports_sing_box_v12() {
     let profile: Profile = serde_json::from_value(json!({
         "private_access": {
             "enabled": true,
@@ -224,25 +244,24 @@ fn home_network_detection_rejects_sing_box_before_v13() {
                         "publicKey": "public", "allowedIps": ["0.0.0.0/0"]
                     }]
                 },
-                "homeNetwork": { "enabled": true, "addressCidrs": ["10.8.28.0/24"] },
+                "homeNetwork": {
+                    "enabled": true,
+                    "networkIds": ["d286d2f8-33c5-4f1e-b871-d22a9ba91143"]
+                },
                 "routes": { "ipCidrs": ["10.8.28.0/24"] }
             }]
         }
     }))
     .expect("profile");
-    let error = compile(&CompileRequest {
+    let result = compile(&CompileRequest {
         protocol: 1,
         profile,
         snapshots: vec![],
         custom_nodes: vec![],
         target: Target::parse("sing-box-v12-macos").expect("target"),
     })
-    .expect_err("v1.12 must reject home network matching");
-    assert!(
-        error
-            .to_string()
-            .contains("requires sing-box 1.13 or newer")
-    );
+    .expect("v1.12 supports clash mode matching");
+    assert!(result.content.contains("Sempre Network d286d2f8"));
 }
 
 #[test]
