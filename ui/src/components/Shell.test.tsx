@@ -15,7 +15,8 @@ const systemStatus = {
   service: 'running',
   desired_state: 'running',
   runtime: { state: 'running' },
-  private_access: { profile_revision: 2, active: true, interface: 'en0', interface_addresses: ['10.8.28.19/24'], connectors: [{ tag: 'home-wg', mode: 'direct', home_cidrs: ['10.8.28.0/24'], matched_cidr: '10.8.28.0/24' }] },
+  private_access: { profile_revision: 2, active: true, interface: 'en0', interface_addresses: ['10.8.28.19/24'], connectors: [{ tag: 'home-wg', mode: 'direct', home_networks: ['家'], matched_network: '家' }] },
+  network_automation: { enabled: true, active: true, path: 'direct', network_name: 'Home' },
   pending: false,
   web: { listen: '127.0.0.1:33211', local_url: 'http://sempre.test', password_set: true, password_warning: false },
   ui: { installed: true },
@@ -74,12 +75,23 @@ describe('Shell sidebar', () => {
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('link', { name: 'Subscription Config' })).toHaveAttribute('title', 'Subscription Config')
     expect(screen.getByRole('button', { name: 'Analysis & diagnostics' })).toHaveAttribute('title', 'Analysis & diagnostics')
-    expect(await screen.findByLabelText('Core: running · Direct')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Core: running · Public direct · Direct')).toBeInTheDocument()
   })
 
   it('shows the private access path beside the sing-box status', async () => {
     renderShell()
     expect((await screen.findAllByText('Direct')).length).toBeGreaterThanOrEqual(2)
+    expect((await screen.findAllByText('Public direct')).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('shows that automatic switching is waiting when the core is stopped', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : { ...systemStatus, runtime: { state: 'idle' }, network_automation: { ...systemStatus.network_automation, active: false, path: 'inactive' } })
+    }))
+    renderShell()
+
+    expect((await screen.findAllByText('Core stopped')).length).toBeGreaterThanOrEqual(2)
   })
 
   it('groups primary controls and keeps analysis tools collapsed by default', () => {

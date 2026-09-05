@@ -49,8 +49,8 @@ export interface ManagedRuntimeFailure {
 export interface PrivateAccessConnectorStatus {
   tag: string
   mode: 'direct' | 'wireguard' | 'unknown' | 'inactive'
-  home_cidrs: string[]
-  matched_cidr?: string
+  home_networks: string[]
+  matched_network?: string
 }
 
 export interface PrivateAccessStatus {
@@ -90,6 +90,7 @@ export interface ManagedRuntimeStatus {
     last_error?: string
   }
   private_access?: PrivateAccessStatus
+  network_automation?: import('./networkTypes').NetworkAutomationStatus
   actions: {
     start: RuntimeActionAvailability
     stop: RuntimeActionAvailability
@@ -111,6 +112,7 @@ export interface SystemStatus {
   pending: boolean
   last_error?: string
   private_access?: PrivateAccessStatus
+  network_automation?: import('./networkTypes').NetworkAutomationStatus
   web: { listen: string; local_url: string; password_set: boolean; password_warning: boolean }
   ui: { installed: boolean; metadata?: UIMetadata }
   capabilities: Record<string, boolean>
@@ -393,18 +395,7 @@ export interface GatewayHostPlan {
   output?: string[]
 }
 
-export interface NetworkSettings {
-  schema: number
-  revision: number
-  mode: 'local' | 'gateway'
-  gateway_capture_host: boolean
-}
-
-export interface NetworkSettingsResponse {
-  settings: NetworkSettings
-  platform: string
-  gateway_available: boolean
-}
+export type { CurrentNetwork, KnownNetwork, NetworkAutomationStatus, NetworkSettings, NetworkSettingsResponse } from './networkTypes'
 
 export interface TunnelForward {
   id: string

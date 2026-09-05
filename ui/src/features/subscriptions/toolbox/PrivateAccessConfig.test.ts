@@ -19,33 +19,33 @@ describe('PrivateAccessConfig tunnel forwarding', () => {
 })
 
 describe('PrivateAccessConfig home network detection', () => {
-  it('round-trips the enabled home CIDRs and adds host prefixes', () => {
+  it('round-trips the selected home network IDs', () => {
     const connector = {
       ...emptyConnector(),
       tag: 'home-wg',
       homeNetworkEnabled: true,
-      homeNetworkCidrs: '10.8.28.0/24, 2001:db8::1',
+      homeNetworkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
     }
     const serialized = serializeConfig(true, [connector])
     expect(JSON.parse(serialized).connectors[0].homeNetwork).toEqual({
       enabled: true,
-      addressCidrs: ['10.8.28.0/24', '2001:db8::1/128'],
+      networkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
     })
     expect(parseConfig(serialized).connectors[0]).toMatchObject({
       homeNetworkEnabled: true,
-      homeNetworkCidrs: '10.8.28.0/24, 2001:db8::1/128',
+      homeNetworkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
     })
   })
 
-  it('preserves CIDRs while the switch is disabled', () => {
+  it('preserves network IDs while the switch is disabled', () => {
     const connector = {
       ...emptyConnector(),
       homeNetworkEnabled: false,
-      homeNetworkCidrs: '10.8.28.0/24',
+      homeNetworkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
     }
     expect(JSON.parse(serializeConfig(true, [connector])).connectors[0].homeNetwork).toEqual({
       enabled: false,
-      addressCidrs: ['10.8.28.0/24'],
+      networkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
     })
   })
 })

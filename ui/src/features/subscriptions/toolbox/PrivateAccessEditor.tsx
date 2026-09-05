@@ -326,7 +326,7 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
 
             {connector.type === "wireguard" ? <PrivateAccessHomeNetwork
               enabled={connector.homeNetworkEnabled}
-              cidrs={connector.homeNetworkCidrs}
+              networkIds={connector.homeNetworkIds}
               runtime={runtime?.private_access?.profile_id === profileId ? runtime.private_access : undefined}
               connectorStatus={runtime?.private_access?.profile_id === profileId ? runtime.private_access.connectors.find((item) => item.tag === (connector.tag.trim() || `private-access-${index + 1}`)) : undefined}
               onChange={(patch) => updateConnector(index, patch)}

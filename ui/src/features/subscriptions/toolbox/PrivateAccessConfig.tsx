@@ -28,7 +28,7 @@ export interface PrivateConnectorForm {
   allowedIps: string;
   persistentKeepaliveInterval: number | null;
   homeNetworkEnabled: boolean;
-  homeNetworkCidrs: string;
+  homeNetworkIds: string[];
   server: string;
   serverPort: number | null;
   uuid: string;
@@ -102,7 +102,7 @@ export const emptyConnector = (): PrivateConnectorForm => ({
   allowedIps: "",
   persistentKeepaliveInterval: 25,
   homeNetworkEnabled: false,
-  homeNetworkCidrs: "",
+  homeNetworkIds: [],
   server: "",
   serverPort: null,
   uuid: "",
@@ -208,7 +208,9 @@ export const parseConfig = (value?: string) => {
                 ? peer.persistentKeepaliveInterval
                 : null,
           homeNetworkEnabled: homeNetwork?.enabled === true,
-          homeNetworkCidrs: joinList(homeNetwork?.addressCidrs),
+          homeNetworkIds: Array.isArray(homeNetwork?.networkIds)
+            ? homeNetwork.networkIds.filter((item): item is string => typeof item === "string")
+            : [],
           server: typeof outbound?.server === "string" ? outbound.server : "",
           serverPort:
             typeof outbound?.server_port === "number"
@@ -271,11 +273,10 @@ export const serializeConfig = (enabled: boolean, connectors: PrivateConnectorFo
       base.routes = routes;
     }
 
-    const homeNetworkCidrs = splitCidrList(connector.homeNetworkCidrs);
-    if (connector.homeNetworkEnabled || homeNetworkCidrs.length > 0) {
+    if (connector.homeNetworkEnabled || connector.homeNetworkIds.length > 0) {
       base.homeNetwork = {
         enabled: connector.homeNetworkEnabled,
-        addressCidrs: homeNetworkCidrs,
+        networkIds: connector.homeNetworkIds,
       };
     }
 

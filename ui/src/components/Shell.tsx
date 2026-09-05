@@ -96,7 +96,9 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   const statusDetail = chrome?.statusDetail ?? (system.data?.active ? `${system.data.active.core} ${system.data.active.version}` : t('noCore'))
   const statusTone = chrome?.statusTone ?? (runtime === 'running' ? 'success' : runtime === 'idle' ? 'warning' : 'neutral')
   const privateMode = chrome ? null : privateAccessMode(system.data?.private_access)
-  const collapsedStatusDetail = chrome?.statusDetail ?? `${runtime}${privateMode ? ` · ${modeLabel(privateMode, t)}` : ''}`
+  const networkPath = chrome ? null : system.data?.network_automation?.enabled ? system.data.network_automation.path : null
+  const networkPathLabel = networkPath === 'direct' ? t('publicDirect') : networkPath === 'proxy' ? t('publicProxy') : networkPath === 'inactive' ? t('privateAccessInactive') : networkPath ? t('privateAccessUnknown') : ''
+  const collapsedStatusDetail = chrome?.statusDetail ?? `${runtime}${networkPath ? ` · ${networkPathLabel}` : ''}${privateMode ? ` · ${modeLabel(privateMode, t)}` : ''}`
   const sidebarAction = desktopCollapsed ? t('expandSidebar') : t('collapseSidebar')
   const shellStyle = {
     '--shell-sidebar-width': desktopCollapsed ? '4rem' : '14rem',
@@ -131,7 +133,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           })}
         </nav>
         <div className="border-t border-[var(--border)] p-3">
-          <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><span className="flex items-center gap-1"><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge>{privateMode ? <Tag color={privateAccessTone(privateMode)}>{modeLabel(privateMode, t)}</Tag> : null}</span></div>
+          <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><span className="flex items-center gap-1"><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge>{networkPath ? <Tag color={networkPath === 'direct' ? 'green' : networkPath === 'proxy' ? 'blue' : 'orange'}>{networkPathLabel}</Tag> : null}{privateMode ? <Tag color={privateAccessTone(privateMode)}>{modeLabel(privateMode, t)}</Tag> : null}</span></div>
           {desktopCollapsed ? <div className="hidden place-items-center lg:grid" aria-label={`${statusLabel}: ${collapsedStatusDetail}`} title={`${statusLabel}: ${collapsedStatusDetail}`}><span className={cn('size-2.5 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /></div> : null}
         </div>
       </aside>
@@ -141,7 +143,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           <Button className="mr-2 hidden lg:inline-flex" size="icon" variant="ghost" title={sidebarAction} aria-label={sidebarAction} aria-controls="primary-navigation" aria-expanded={!desktopCollapsed} onClick={() => setDesktopCollapsed((collapsed) => !collapsed)}>
             {desktopCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </Button>
-          <div className="flex items-center gap-2 text-sm"><span className={cn('size-2 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /><span className="hidden text-[var(--muted)] sm:inline">{statusDetail}</span>{privateMode ? <Tag color={privateAccessTone(privateMode)}>{modeLabel(privateMode, t)}</Tag> : null}</div>
+          <div className="flex items-center gap-2 text-sm"><span className={cn('size-2 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /><span className="hidden text-[var(--muted)] sm:inline">{statusDetail}</span>{networkPath ? <Tag color={networkPath === 'direct' ? 'green' : networkPath === 'proxy' ? 'blue' : 'orange'}>{networkPathLabel}</Tag> : null}{privateMode ? <Tag color={privateAccessTone(privateMode)}>{modeLabel(privateMode, t)}</Tag> : null}</div>
           <div className="ml-auto flex items-center gap-1">
             {!chrome ? <RuntimeRestartButton /> : null}
             <Button size="icon" variant="ghost" title={t('language')} onClick={() => setLocale(locale === 'zh-CN' ? 'en' : 'zh-CN')}><Languages size={18} /></Button>

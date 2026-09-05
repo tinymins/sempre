@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, CircleCheck, Clock3, Play, Square, Terminal } from 'lucide-react'
+import { AlertCircle, CircleCheck, Clock3, Play, Route, Square, Terminal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { compactHash, formatDate, formatDuration } from '../lib/format'
@@ -83,6 +83,10 @@ export function RuntimeControlPanel() {
         <RuntimeInfo label={t('restarts')} value={String(value?.restart_count || 0)} />
         <RuntimeInfo label={t('lastTransition')} value={formatDate(value?.last_transition || undefined)} />
       </div>
+      {value?.network_automation?.enabled ? <div className="mx-4 mb-4 rounded-md border border-[var(--border)] bg-[var(--surface-subtle)] p-3 text-sm md:mx-5 md:mb-5">
+        <div className="flex flex-wrap items-center gap-2"><Route size={16} className="text-emerald-600" /><span className="font-medium">{t('networkAutomation')}</span><Badge tone={value.network_automation.path === 'direct' ? 'success' : value.network_automation.path === 'proxy' ? 'info' : 'warning'}>{networkPathLabel(value.network_automation.path, t)}</Badge></div>
+        <div className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-4"><RuntimeInfo label={t('currentNetwork')} value={value.network_automation.network_name || t('unknownNetwork')} /><RuntimeInfo label={t('gateway')} value={value.network_automation.gateway || '-'} mono /><RuntimeInfo label={t('gatewayMac')} value={value.network_automation.gateway_mac || '-'} mono /><RuntimeInfo label={t('privateAccessInterface')} value={value.network_automation.interface || '-'} mono /></div>
+      </div> : null}
       <PrivateAccessRuntimePanel status={value?.private_access} />
       {value?.dns_frontend?.enabled ? <div className="mx-4 mb-4 rounded-md border border-[var(--border)] bg-[var(--surface-subtle)] p-3 text-sm md:mx-5 md:mb-5"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{t('dnsFrontend')}</span><Badge tone={value.dns_frontend.running ? 'success' : 'danger'}>{value.dns_frontend.running ? t('running') : t('failed')}</Badge><Badge tone={value.dns_frontend.core_dns_healthy ? 'success' : 'danger'}>{value.dns_frontend.core_dns_healthy ? t('dnsCoreHealthy') : t('dnsCoreUnavailable')}</Badge></div><div className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-4"><RuntimeInfo label={t('dnsMode')} value={value.dns_frontend.mode === 'fake-ip' ? 'FakeIP' : 'Real-IP'} /><RuntimeInfo label={t('dnsOriginalUpstreams')} value={value.dns_frontend.original_upstreams.join(', ') || '-'} mono /><RuntimeInfo label={t('dnsCoreUpstream')} value={value.dns_frontend.core_upstream || '-'} mono /><RuntimeInfo label={t('dnsDomesticRules')} value={`${value.dns_frontend.domestic_domain_count} · ${compactHash(value.dns_frontend.domestic_domain_sha256)}`} mono /></div>{value.dns_frontend.last_error ? <p className="mt-3 break-words text-xs text-red-700 dark:text-red-300">{value.dns_frontend.last_error}</p> : null}</div> : null}
       {value?.pending ? <div className="mx-4 mb-4 flex items-start gap-2 rounded-md border border-amber-500/35 bg-amber-500/8 px-3 py-2 text-sm text-amber-800 dark:text-amber-300 md:mx-5 md:mb-5"><Clock3 size={16} className="mt-0.5 shrink-0" /><span>{pendingMessage}</span></div> : null}
@@ -90,6 +94,13 @@ export function RuntimeControlPanel() {
     </Card>
 	<ConfirmDialog open={confirmStop} title={t('coreStopTitle')} detail={t('coreStopWarning').replace('{core}', coreName)} confirmLabel={t('stopCore')} cancelLabel={t('cancel')} pending={actionPending === 'stop'} onCancel={() => setConfirmStop(false)} onConfirm={() => run('stop')} />
   </>
+}
+
+function networkPathLabel(path: string, t: ReturnType<typeof useI18n>['t']) {
+  if (path === 'direct') return t('publicDirect')
+  if (path === 'proxy') return t('publicProxy')
+  if (path === 'inactive') return t('privateAccessInactive')
+  return t('privateAccessUnknown')
 }
 
 function RuntimeButton({ label, reason, disabled, pending, danger = false, onClick, children }: { label: string; reason?: string; disabled: boolean; pending: boolean; danger?: boolean; onClick: () => void; children: ReactNode }) {

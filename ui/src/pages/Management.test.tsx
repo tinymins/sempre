@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
@@ -6,15 +6,39 @@ import { SessionProvider } from '../lib/session'
 import { Management } from './Management'
 
 describe('Management page', () => {
+  let savedSettings: Record<string, unknown> | undefined
+
   beforeEach(() => {
+    savedSettings = undefined
     localStorage.setItem('sempre.locale', 'zh-CN')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input)).pathname
       if (path.endsWith('/cores')) return Response.json({ supported: [], installed: [], selected: null })
-      if (path.endsWith('/network/settings')) return Response.json({ settings: { schema: 1, revision: 1, mode: 'local', gateway_capture_host: false }, platform: 'windows', gateway_available: false })
+      if (path.endsWith('/network/settings')) {
+        const settings = { schema: 2, revision: 1, mode: 'local', gateway_capture_host: false, automatic_switching: false, known_networks: [] }
+        if (init?.method === 'PUT') savedSettings = JSON.parse(String(init.body))
+        return Response.json({ settings: savedSettings ?? settings, current: { supported: true, name: 'en0', addresses: ['10.8.28.19/24'], gateway: '10.8.28.1', gateway_mac: 'aa:bb:cc:dd:ee:ff' }, platform: 'windows', gateway_available: false })
+      }
+      if (path.endsWith('/system')) return Response.json({ network_automation: { enabled: false, active: false, path: 'inactive' } })
       return Response.json({}, { status: 404 })
     }))
+  })
+
+  it('adds the current gateway MAC without manual entry', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    fireEvent.click(screen.getByRole('button', { name: '模式' }))
+    const add = await screen.findByRole('button', { name: '将当前网络加入' })
+    await waitFor(() => expect(add).toBeEnabled())
+    fireEvent.click(add)
+
+    await waitFor(() => expect(savedSettings).toBeDefined())
+    expect(savedSettings).toMatchObject({
+      automatic_switching: true,
+      known_networks: [{ gateway_mac: 'aa:bb:cc:dd:ee:ff', disable_proxy: true }],
+    })
   })
 
   afterEach(() => {

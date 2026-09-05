@@ -23,7 +23,8 @@ const runningStatus: ManagedRuntimeStatus = {
   uptime_seconds: 90,
   restart_count: 0,
   pending: false,
-  private_access: { profile_revision: 2, active: true, interface: 'en0', interface_addresses: ['10.8.28.19/24'], connectors: [{ tag: 'home-wg', mode: 'direct', home_cidrs: ['10.8.28.0/24'], matched_cidr: '10.8.28.0/24' }] },
+  private_access: { profile_revision: 2, active: true, interface: 'en0', interface_addresses: ['10.8.28.19/24'], connectors: [{ tag: 'home-wg', mode: 'direct', home_networks: ['家'], matched_network: '家' }] },
+  network_automation: { enabled: true, active: true, path: 'direct', network_name: '家', interface: 'en0', gateway: '10.8.28.1', gateway_mac: 'aa:bb:cc:dd:ee:ff' },
   last_transition: '2026-08-03T10:00:10Z',
   actions: {
     start: { allowed: false, reason: 'managed core is already running' },
@@ -99,10 +100,12 @@ describe('RuntimeControlPanel', () => {
     renderRuntimePanel()
 
     expect(await screen.findByText('Home network auto-direct')).toBeInTheDocument()
+    expect(screen.getByText('Automatic network switching')).toBeInTheDocument()
+    expect(screen.getByText('aa:bb:cc:dd:ee:ff')).toBeInTheDocument()
     expect(screen.getByText('home-wg')).toBeInTheDocument()
-    expect(screen.getByText('en0')).toBeInTheDocument()
+    expect(screen.getAllByText('en0')).toHaveLength(2)
     expect(screen.getByText('10.8.28.19/24')).toBeInTheDocument()
-    expect(screen.getAllByText('10.8.28.0/24')).toHaveLength(2)
+    expect(screen.getAllByText('家').length).toBeGreaterThanOrEqual(2)
   })
 
   it('keeps all lifecycle actions available after a retryable startup failure', async () => {

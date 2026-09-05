@@ -16,8 +16,8 @@ export function PrivateAccessRuntimePanel({ status }: { status?: PrivateAccessSt
         <Info label={t('privateAccessPath')} value={modeLabel(connector.mode, t)} />
         <Info label={t('privateAccessInterface')} value={status.interface || '-'} mono />
         <Info label={t('privateAccessAddress')} value={status.interface_addresses.join(', ') || '-'} mono />
-        <Info label={t('privateAccessHomeCidrs')} value={connector.home_cidrs.join(', ')} mono />
-        <Info label={t('privateAccessMatch')} value={connector.matched_cidr || t('privateAccessNoMatch')} mono />
+        <Info label={t('privateAccessHomeCidrs')} value={connector.home_networks.join(', ')} />
+        <Info label={t('privateAccessMatch')} value={connector.matched_network || t('privateAccessNoMatch')} />
       </div>)}
     </div>
     {status.probe_error ? <p className="mt-3 break-words text-xs text-amber-700 dark:text-amber-300">{status.probe_error}</p> : null}

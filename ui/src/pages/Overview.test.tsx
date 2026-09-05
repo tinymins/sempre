@@ -13,7 +13,7 @@ const configuredSystem = {
   service_memory: 10 * 1024 * 1024,
   runtime: { state: 'running', pid: 1234 }, selected: { core: 'sing-box', ref: 'stable' },
   active: { core: 'sing-box', ref: 'stable', version: '1.13.18', config_hash: 'abc' }, pending: false,
-  private_access: { profile_revision: 2, active: true, interface: 'en0', interface_addresses: ['10.8.28.19/24'], connectors: [{ tag: 'home-wg', mode: 'direct', home_cidrs: ['10.8.28.0/24'], matched_cidr: '10.8.28.0/24' }] },
+  private_access: { profile_revision: 2, active: true, interface: 'en0', interface_addresses: ['10.8.28.19/24'], connectors: [{ tag: 'home-wg', mode: 'direct', home_networks: ['家'], matched_network: '家' }] },
   web: { listen: '127.0.0.1:33211', local_url: 'http://sempre.test', password_set: true, password_warning: false }, ui: { installed: true }, capabilities: {},
 }
 
