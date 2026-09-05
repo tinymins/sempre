@@ -34,6 +34,7 @@ pub fn default_interface() -> Result<DefaultInterface, NetworkError> {
     Ok(value)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn interface(name: &str, gateway: &str, gateway_mac: &str) -> DefaultInterface {
     use sysinfo::Networks;
 

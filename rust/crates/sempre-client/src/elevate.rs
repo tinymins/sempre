@@ -145,7 +145,7 @@ fn windows_elevation_script(executable: &str, arguments: &str, working_directory
     // Start-Process -Wait also waits for the cleanup descendant. The original
     // executable must exit first so that descendant can remove the installation.
     format!(
-        "$ErrorActionPreference = 'Stop'; $process = Start-Process -FilePath {} -ArgumentList {} -WorkingDirectory {} -Verb RunAs -PassThru; $null = $process.Handle; $process.WaitForExit(); exit $process.ExitCode",
+        "$ErrorActionPreference = 'Stop'; $process = Start-Process -FilePath {} -ArgumentList {} -WorkingDirectory {} -Verb RunAs -PassThru; $null = $process.Handle; $process.WaitForExit(); $process.Refresh(); exit $process.ExitCode",
         powershell_literal(executable),
         powershell_literal(arguments),
         powershell_literal(working_directory)
