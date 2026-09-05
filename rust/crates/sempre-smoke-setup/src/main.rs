@@ -33,13 +33,9 @@ fn setup(root: &std::path::Path, core: &std::path::Path) -> Result<(), Box<dyn s
     subscriptions.initialize()?;
     subscriptions.update(|catalog| {
         catalog.profiles[0].transparent_proxy.mode = "disabled".into();
+        catalog.profiles[0].dns["shared"]["systemDnsTakeoverEnabled"] = false.into();
         Ok(())
     })?;
-    write_atomic(
-        &layout.dns_settings,
-        br#"{"schema":3,"revision":1,"enabled":false}"#,
-        0o600,
-    )?;
 
     let core_data = fs::read(core)?;
     let core_digest = format!("sha256:{:x}", Sha256::digest(&core_data));
@@ -108,9 +104,11 @@ mod tests {
             .read()
             .expect("subscriptions");
         assert_eq!(catalog.profiles[0].transparent_proxy.mode, "disabled");
-        assert_eq!(
-            fs::read(Layout::at(root.path()).dns_settings).expect("DNS settings"),
-            br#"{"schema":3,"revision":1,"enabled":false}"#
+        assert!(
+            catalog.profiles[0]
+                .dns
+                .pointer("/shared/systemDnsTakeoverEnabled")
+                .is_some_and(|value| value.as_bool() == Some(false))
         );
     }
 }
