@@ -211,8 +211,8 @@ export interface CoresResponse {
   supported: string[]
   installed: CoreInstallation[]
 	catalog?: CoreDefinition[]
-  selected?: { core: string; repository?: string; ref: string }
-  active?: { core: string; repository?: string; ref: string; version: string; config_hash: string }
+  selected?: { core: string; repository?: string; reference: string }
+  active?: { core: string; repository?: string; reference: string; version: string; config_hash: string }
 }
 
 export interface CoreDownloadTask {

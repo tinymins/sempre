@@ -56,7 +56,7 @@ export function CorePanel() {
     { title: t('version'), dataIndex: 'version', sorter: (left, right) => compareText(left.version, right.version), render: (value) => <span className="font-mono text-xs">{value}</span> },
     { title: t('channel'), dataIndex: 'channels', sorter: (left, right) => compareText(left.channels.join(' '), right.channels.join(' ')), render: (value) => (value as string[]).map((channel) => <Badge key={channel}>{channel}</Badge>) },
     { title: t('details'), key: 'details', sorter: (left, right) => compareDate(left.installation.installed_at, right.installation.installed_at), render: (_value, item) => <span className="text-xs text-[var(--muted)]">{compactHash(item.installation.digest)} · {formatDate(item.installation.installed_at)}</span> },
-    { title: '', key: 'actions', width: 192, render: (_value, item) => { const selected = isSelectedCore(cores.data, item); return <div className="flex justify-end gap-2">{selected ? <Badge tone="success">{t('selected')}</Badge> : <Button size="small" onClick={() => action.mutate({ operation: 'use', value: item.reference })}>{t('use')}</Button>}<Button size="icon" variant="ghost" title={t('remove')} disabled={selected} onClick={() => action.mutate({ operation: 'remove', value: item.reference })}><Trash2 size={15} /></Button></div> } },
+    { title: '', key: 'actions', width: 192, render: (_value, item) => { const selected = isSelectedCore(cores.data, item); return <div className="flex justify-end gap-2">{selected ? <Button size="small" disabled>{t('currentUse')}</Button> : <Button size="small" onClick={() => action.mutate({ operation: 'use', value: item.reference })}>{t('use')}</Button>}<Button size="icon" variant="ghost" title={t('remove')} disabled={selected} onClick={() => action.mutate({ operation: 'remove', value: item.reference })}><Trash2 size={15} /></Button></div> } },
   ]
   const taskColumns: Array<TableColumn<CoreDownloadTask>> = [
     { title: t('reference'), dataIndex: 'reference', render: (value) => <span className="font-mono text-xs">{value}</span> },
@@ -107,7 +107,7 @@ function taskStage(task: CoreDownloadTask, t: ReturnType<typeof useI18n>['t']) {
 function isSelectedCore(cores: CoresResponse | undefined, item: CoreInstallation) {
   const selectedRepository = cores?.selected?.repository || ''
   const itemRepository = item.official ? '' : item.repository
-  return cores?.selected?.core === item.core && selectedRepository === itemRepository && (cores.selected.ref === item.version || item.channels.includes(cores.selected.ref))
+  return cores?.selected?.core === item.core && selectedRepository === itemRepository && (cores.selected.reference === item.version || item.channels.includes(cores.selected.reference))
 }
 
 function refreshCoreQueries(queryClient: QueryClient) {

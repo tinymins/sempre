@@ -8,11 +8,13 @@ import { Management } from './Management'
 describe('Management page', () => {
   let savedSettings: Record<string, unknown> | undefined
   let coreTask: Record<string, unknown> | null
+  let coresResponse: Record<string, unknown>
   let cancelledTask = ''
 
   beforeEach(() => {
     savedSettings = undefined
     coreTask = null
+    coresResponse = { supported: [], installed: [], selected: null }
     cancelledTask = ''
     localStorage.setItem('sempre.locale', 'zh-CN')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
@@ -25,7 +27,7 @@ describe('Management page', () => {
         }
         return Response.json({ task: coreTask })
       }
-      if (path.endsWith('/cores')) return Response.json({ supported: [], installed: [], selected: null })
+      if (path.endsWith('/cores')) return Response.json(coresResponse)
       if (path.endsWith('/network/settings')) {
         const settings = { schema: 2, revision: 1, mode: 'local', gateway_capture_host: false, automatic_switching: false, known_networks: [] }
         if (init?.method === 'PUT') savedSettings = JSON.parse(String(init.body))
@@ -71,6 +73,23 @@ describe('Management page', () => {
 
     expect(gateway).toHaveClass('cursor-not-allowed')
     expect(within(gateway as HTMLElement).getByText('仅 Linux 系统服务可用')).toHaveClass('text-xs', 'text-[var(--text-muted)]')
+  })
+
+  it('shows the selected core as a disabled current-use action', async () => {
+    const installation = { explicit: true, digest: 'sha256:digest', source: 'release', installed_at: '2026-09-07T00:00:00Z' }
+    coresResponse = {
+      supported: ['sing-box'],
+      selected: { core: 'sing-box', reference: 'stable' },
+      installed: [
+        { core: 'sing-box', repository: 'SagerNet/sing-box', reference: 'sing-box@1.13.18', official: true, version: '1.13.18', channels: ['stable'], installation },
+        { core: 'sing-box', repository: 'SagerNet/sing-box', reference: 'sing-box@1.12.20', official: true, version: '1.12.20', channels: [], installation },
+      ],
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    expect(await screen.findByRole('button', { name: '当前使用' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '使用' })).toBeEnabled()
   })
 
   it('shows byte progress and clears a cancelled download after confirmation', async () => {
