@@ -123,7 +123,12 @@ pub(super) fn route(
         &mut rule_sets,
         &mut rules,
     );
-    let mut route = json!({ "rules": rules, "rule_set": rule_sets, "final": final_outbound });
+    let mut route = json!({
+        "rules": rules,
+        "rule_set": rule_sets,
+        "final": final_outbound,
+        "find_process": true
+    });
     if target.version != "11" {
         route["default_domain_resolver"] =
             json!({ "server": "bootstrap", "strategy": "ipv4_only" });

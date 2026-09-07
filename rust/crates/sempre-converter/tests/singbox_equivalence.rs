@@ -60,6 +60,7 @@ fn compile_document(format: &str) -> Value {
 fn modern_sing_box_preserves_v1_runtime_and_private_access_semantics() {
     let document = compile_document("sing-box-v12-macos");
     assert_eq!(document["route"]["final"], "⚓️ 其他流量");
+    assert_eq!(document["route"]["find_process"], true);
     assert_eq!(document["inbounds"][2]["sniff"], true);
     assert_eq!(document["inbounds"][2]["sniff_override_destination"], true);
     assert_eq!(document["outbounds"][0]["tag"], "direct");

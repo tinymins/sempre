@@ -181,7 +181,7 @@ impl From<RawConnection> for Connection {
                 destination_port: item.metadata.destination_port,
                 host: item.metadata.host,
                 dns_mode: item.metadata.dns_mode,
-                process: item.metadata.process,
+                process: connection_process(&item.metadata.process, &item.metadata.process_path),
                 process_path: item.metadata.process_path,
                 inbound_user: item.metadata.inbound_user,
             },
@@ -192,6 +192,18 @@ impl From<RawConnection> for Connection {
             upload: item.upload,
             start: item.start,
         }
+    }
+}
+
+fn connection_process(process: &str, process_path: &str) -> String {
+    if process.is_empty() {
+        process_path
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or_default()
+            .into()
+    } else {
+        process.into()
     }
 }
 
@@ -274,7 +286,10 @@ mod tests {
             "downloadTotal": 10,
             "uploadTotal": 20,
             "connections": [{
-                "id": "connection-1", "metadata": { "sourceIP": "127.0.0.1" },
+                "id": "connection-1", "metadata": {
+                    "sourceIP": "127.0.0.1",
+                    "processPath": "/Applications/Curl.app/Contents/MacOS/curl"
+                },
                 "chains": ["edge"], "rulePayload": "example.com"
             }]
         }))
@@ -282,7 +297,13 @@ mod tests {
         let normalized = ConnectionSnapshot::from(raw);
         assert_eq!(normalized.download_total, 10);
         assert_eq!(normalized.connections[0].metadata.source_ip, "127.0.0.1");
+        assert_eq!(normalized.connections[0].metadata.process, "curl");
         assert_eq!(normalized.connections[0].rule_payload, "example.com");
+        assert_eq!(
+            connection_process("", r"C:\Program Files\Browser\browser.exe"),
+            "browser.exe"
+        );
+        assert_eq!(connection_process("browser", "/ignored/path"), "browser");
     }
 
     #[test]
