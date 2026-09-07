@@ -12,6 +12,7 @@ import {
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { Button } from "./Button";
+import { lockBodyScroll } from "./body-scroll-lock";
 import { pushEscapeHandler, removeEscapeHandler } from "./escape-stack";
 import { cn } from "./utils";
 
@@ -138,11 +139,7 @@ export function Modal({
   // Body scroll lock — skip when rendering inside a container
   useEffect(() => {
     if (visible && !resolvedContainer?.current) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = prev;
-      };
+      return lockBodyScroll();
     }
   }, [visible, resolvedContainer]);
 

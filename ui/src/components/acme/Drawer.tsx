@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "./body-scroll-lock";
 import { pushEscapeHandler, removeEscapeHandler } from "./escape-stack";
 import { ModalContainerContext } from "./Modal";
 import { cn } from "./utils";
@@ -143,11 +144,7 @@ export function Drawer({
   // Body scroll lock — skip when rendering inside a container
   useEffect(() => {
     if (open && !resolvedContainer?.current) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = prev;
-      };
+      return lockBodyScroll();
     }
   }, [open, resolvedContainer]);
 

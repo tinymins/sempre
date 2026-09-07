@@ -70,6 +70,34 @@ describe('Modal', () => {
     expect(screen.queryByRole('dialog', { name: 'Animated' })).not.toBeInTheDocument()
   })
 
+  it('keeps scrolling locked while ownership passes between overlapping modals', async () => {
+    document.body.style.overflow = 'auto'
+    const rendered = render(<>
+      <Modal open title="First" footer={null}>First body</Modal>
+      <Modal open={false} title="Second" footer={null}>Second body</Modal>
+    </>)
+
+    await screen.findByRole('dialog', { name: 'First' })
+    await waitFor(() => expect(document.body.style.overflow).toBe('hidden'))
+
+    rendered.rerender(<>
+      <Modal open={false} title="First" footer={null}>First body</Modal>
+      <Modal open title="Second" footer={null}>Second body</Modal>
+    </>)
+
+    await screen.findByRole('dialog', { name: 'Second' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'First' })).not.toBeInTheDocument())
+    expect(document.body.style.overflow).toBe('hidden')
+
+    rendered.rerender(<>
+      <Modal open={false} title="First" footer={null}>First body</Modal>
+      <Modal open={false} title="Second" footer={null}>Second body</Modal>
+    </>)
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Second' })).not.toBeInTheDocument())
+    expect(document.body.style.overflow).toBe('auto')
+  })
+
   it('dispatches Escape only to the topmost modal', async () => {
     const closeParent = vi.fn()
     const closeChild = vi.fn()
