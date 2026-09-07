@@ -193,7 +193,9 @@ impl SystemDns {
         for name in parse_services(&output.stdout) {
             let service = active_services
                 .iter()
-                .find(|service| service.name == name)
+                .find(|service| {
+                    service.name == name || service.interface_name.as_deref() == Some(&name)
+                })
                 .ok_or_else(|| {
                     TransparentError::Invalid(format!(
                         "enabled macOS network service {name:?} is not in the active location"
@@ -204,7 +206,7 @@ impl SystemDns {
                 id: Some(service.id.clone()),
                 original: configuration.servers,
                 original_port: configuration.port,
-                name,
+                name: service.name.clone(),
             });
         }
         Ok(services)
@@ -250,6 +252,7 @@ fn resolve_service_id<'a>(
         .find(|candidate| {
             service.id.as_ref().is_some_and(|id| id == &candidate.id)
                 || candidate.name == service.name
+                || candidate.interface_name.as_deref() == Some(&service.name)
         })
         .map(|service| service.id.as_str())
         .ok_or_else(|| {
@@ -354,12 +357,19 @@ mod tests {
                     .push(format!("{program} {}\n{input}", arguments.join(" ")));
                 let stdout = if program == "/usr/sbin/scselect" {
                     "Defined sets include: (* == current set)\n * SET-ID\t(Automatic)\n".into()
+                } else if program == "/usr/sbin/networksetup" {
+                    "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\niPhone USB\n"
+                        .into()
                 } else if input.contains("list /Sets/SET-ID/Network/Service") {
                     "path [0] = /Sets/SET-ID/Network/Service/SERVICE-A\npath [1] = /Sets/SET-ID/Network/Service/SERVICE-B\n".into()
                 } else if input.contains("/Sets/SET-ID/Network/Service/SERVICE-A") {
                     "<dictionary> {\n UserDefinedName : Wi-Fi\n}\n".into()
                 } else if input.contains("/Sets/SET-ID/Network/Service/SERVICE-B") {
-                    "<dictionary> {\n UserDefinedName : USB LAN\n}\n".into()
+                    "<dictionary> {\n UserDefinedName : iPhone\n}\n".into()
+                } else if input.contains("/NetworkServices/SERVICE-A/Interface") {
+                    "<dictionary> {\n UserDefinedName : Wi-Fi\n}\n".into()
+                } else if input.contains("/NetworkServices/SERVICE-B/Interface") {
+                    "<dictionary> {\n UserDefinedName : iPhone USB\n}\n".into()
                 } else if input.contains("d.show") {
                     "<dictionary> {\n ServerAddresses : <array> {\n  0 : 127.0.0.1\n }\n ServerPort : 20554\n}\n".into()
                 } else {
@@ -388,6 +398,18 @@ mod tests {
             ),
             ["Wi-Fi", "USB LAN"]
         );
+    }
+
+    #[tokio::test]
+    async fn resolves_enabled_service_by_interface_name() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let dns = SystemDns::new(true, root.path().into());
+        let services = dns
+            .capture_services(&FakeRunner::default())
+            .await
+            .expect("capture services");
+        assert_eq!(services[1].id.as_deref(), Some("SERVICE-B"));
+        assert_eq!(services[1].name, "iPhone");
     }
 
     #[tokio::test]

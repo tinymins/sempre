@@ -15,6 +15,7 @@ pub(crate) struct DnsConfiguration {
 pub(crate) struct NetworkService {
     pub(crate) id: String,
     pub(crate) name: String,
+    pub(crate) interface_name: Option<String>,
 }
 
 pub(crate) async fn active_services(
@@ -44,7 +45,19 @@ pub(crate) async fn active_services(
         let name = parse_value(&output.stdout, "UserDefinedName").ok_or_else(|| {
             TransparentError::Invalid(format!("macOS network service {id} has no name"))
         })?;
-        services.push(NetworkService { id, name });
+        let interface_path = format!("/NetworkServices/{id}/Interface");
+        let script = format!("d.init\nget {interface_path}\nd.show\nquit\n");
+        let output = command::require_success(
+            SCUTIL,
+            runner
+                .run(SCUTIL, &["--prefs"], Some(script.as_bytes()))
+                .await?,
+        )?;
+        services.push(NetworkService {
+            id,
+            name,
+            interface_name: parse_value(&output.stdout, "UserDefinedName"),
+        });
     }
     Ok(services)
 }
