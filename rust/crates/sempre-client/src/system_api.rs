@@ -24,6 +24,7 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
             "/api/v1/service/update",
             get(service_update_check).post(service_update),
         )
+        .route("/api/v1/service/update/task", get(service_update_task))
 }
 
 async fn system(State(state): State<Arc<AppState>>) -> Response {
@@ -198,39 +199,20 @@ async fn service_update(State(state): State<Arc<AppState>>) -> Response {
         )
             .into_response();
     }
-    let Ok(_update) = state.service_update.try_lock() else {
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({
-                "error": {
-                    "code": "UPDATE_IN_PROGRESS",
-                    "message": "a Sempre update is already being prepared"
-                }
-            })),
-        )
-            .into_response();
-    };
-    match crate::service_update::prepare_and_schedule().await {
-        Ok(status) => (
-            StatusCode::ACCEPTED,
-            Json(json!({ "status": "scheduled", "update": status })),
-        )
-            .into_response(),
-        Err(error) if error == "Sempre is already up to date" => (
-            StatusCode::CONFLICT,
-            Json(json!({
-                "error": { "code": "ALREADY_UP_TO_DATE", "message": error }
-            })),
-        )
-            .into_response(),
+    match crate::service_update::start(Arc::clone(&state.service_updates)) {
+        Ok(task) => (StatusCode::ACCEPTED, Json(json!({ "task": task }))).into_response(),
         Err(error) => (
-            StatusCode::BAD_GATEWAY,
+            StatusCode::CONFLICT,
             Json(json!({
-                "error": { "code": "UPDATE_FAILED", "message": error }
+                "error": { "code": "UPDATE_IN_PROGRESS", "message": error }
             })),
         )
             .into_response(),
     }
+}
+
+async fn service_update_task(State(state): State<Arc<AppState>>) -> Response {
+    Json(json!({ "task": state.service_updates.snapshot() })).into_response()
 }
 
 async fn network_inventory() -> Response {

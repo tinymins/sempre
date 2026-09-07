@@ -27,7 +27,7 @@ pub(crate) struct AppState {
     daemon_token: String,
     pub(crate) endpoint: EndpointStore,
     pub(crate) rebind: Option<RebindHandle>,
-    pub(crate) service_update: tokio::sync::Mutex<()>,
+    pub(crate) service_updates: Arc<crate::service_update_task::ServiceUpdateTasks>,
 }
 
 impl AppState {
@@ -39,6 +39,10 @@ impl AppState {
         bind: String,
         local_url: String,
     ) -> Self {
+        let service_updates = Arc::new(crate::service_update_task::ServiceUpdateTasks::new(
+            &manager.store().layout().home,
+            VERSION,
+        ));
         Self {
             manager,
             web,
@@ -47,7 +51,7 @@ impl AppState {
             daemon_token,
             endpoint: EndpointStore::new(bind, local_url),
             rebind: None,
-            service_update: tokio::sync::Mutex::new(()),
+            service_updates,
         }
     }
 

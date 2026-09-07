@@ -22,6 +22,7 @@ mod runtime_cli;
 mod runtime_control_api;
 mod runtime_events_api;
 mod service_update;
+mod service_update_task;
 mod subscription_api;
 mod subscription_cli;
 mod subscription_debug_api;

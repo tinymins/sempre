@@ -126,6 +126,22 @@ export interface ServiceUpdateStatus {
   release_history?: Array<{ version: string; published_at: string; notes: string }>
   repository: string
 }
+export interface ServiceUpdateTask {
+  id: string
+  state: 'running' | 'succeeded' | 'failed'
+  stage: 'checking' | 'resolving' | 'downloading' | 'verifying' | 'extracting' | 'validating' | 'installing' | 'completed' | 'failed'
+  current_version: string
+  target_version: string
+  artifact?: string
+  downloaded_bytes: number
+  total_bytes: number
+  bytes_per_second: number
+  eta_seconds?: number
+  started_at: string
+  updated_at: string
+  finished_at?: string
+  error?: string
+}
 export interface Overview {
   core: string
   version: string

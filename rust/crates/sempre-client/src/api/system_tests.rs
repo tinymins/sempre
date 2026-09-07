@@ -98,6 +98,18 @@ async fn system_and_network_inventory_match_the_control_ui_contract() {
 }
 
 #[tokio::test]
+async fn service_update_task_starts_empty() {
+    let (_root, app, token) = fixture();
+    let response = authenticated_get(app, &token, "/api/v1/service/update/task").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 16 * 1024)
+        .await
+        .expect("task body");
+    let task: serde_json::Value = serde_json::from_slice(&body).expect("task JSON");
+    assert!(task["task"].is_null());
+}
+
+#[tokio::test]
 async fn service_action_rejects_unsupported_operations_without_side_effects() {
     let (_root, app, token) = fixture();
     let mut request = Request::builder()

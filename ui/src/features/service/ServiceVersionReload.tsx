@@ -1,13 +1,19 @@
 import { useEffect, useRef } from 'react'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { readServiceUpdateMarker, serviceUpdateTaskKey } from '../../lib/useServiceUpdateTask'
+import type { ServiceUpdateTask } from '../../lib/types'
 
 const POLL_INTERVAL_MS = 5000
 
 export function ServiceVersionReload() {
-  useServiceVersionChange(() => window.location.reload())
+  const client = useQueryClient()
+  useServiceVersionChange((version) => {
+    if (!completeServiceUpdateOnVersionChange(client, version)) window.location.reload()
+  })
   return null
 }
 
-export function useServiceVersionChange(onChange: () => void) {
+export function useServiceVersionChange(onChange: (version: string) => void) {
   const onChangeRef = useRef(onChange)
   useEffect(() => {
     onChangeRef.current = onChange
@@ -28,7 +34,7 @@ export function useServiceVersionChange(onChange: () => void) {
           const health = await response.json() as { version?: string }
           const version = health.version?.trim() || ''
           if (version && baseline && version !== baseline) {
-            onChangeRef.current()
+            onChangeRef.current(version)
             return
           }
           if (version) baseline = version
@@ -45,4 +51,19 @@ export function useServiceVersionChange(onChange: () => void) {
       if (timer) clearTimeout(timer)
     }
   }, [])
+}
+
+function normalizeVersion(version: string) {
+  return version.replace(/^v/, '')
+}
+
+export function completeServiceUpdateOnVersionChange(client: QueryClient, version: string) {
+  const marker = readServiceUpdateMarker()
+  if (!marker || normalizeVersion(marker.targetVersion) !== normalizeVersion(version)) return false
+  client.setQueryData<{ task: ServiceUpdateTask | null }>(serviceUpdateTaskKey, (current) => {
+    if (!current?.task) return current
+    const now = new Date().toISOString()
+    return { task: { ...current.task, state: 'succeeded', stage: 'completed', target_version: version, updated_at: now, finished_at: now, eta_seconds: undefined, error: undefined } }
+  })
+  return true
 }

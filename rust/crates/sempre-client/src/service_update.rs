@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path, time::Duration};
+use std::{collections::HashSet, path::Path, sync::Arc, time::Duration};
 
 use reqwest::{Client, StatusCode};
 use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions, Sha256Digest};
@@ -8,7 +8,10 @@ use tempfile::TempDir;
 use tokio::process::Command;
 use url::Url;
 
-use crate::VERSION;
+use crate::{
+    VERSION,
+    service_update_task::{ServiceUpdateTask, ServiceUpdateTasks},
+};
 
 const MANIFEST_URL: &str = "https://sempre.run/api/releases/latest.json";
 const MAX_MANIFEST_SIZE: usize = 1 << 20;
@@ -63,7 +66,18 @@ pub(crate) async fn check() -> Result<Status, String> {
     status(&fetch_manifest().await?)
 }
 
-pub(crate) async fn prepare_and_schedule() -> Result<Status, String> {
+pub(crate) fn start(tasks: Arc<ServiceUpdateTasks>) -> Result<ServiceUpdateTask, String> {
+    let task = tasks.begin()?;
+    let task_id = task.id.clone();
+    tokio::spawn(async move {
+        if let Err(error) = run_task(&tasks, &task_id).await {
+            tasks.fail(&task_id, &error);
+        }
+    });
+    Ok(task)
+}
+
+async fn run_task(tasks: &ServiceUpdateTasks, task_id: &str) -> Result<(), String> {
     let manifest = fetch_manifest().await?;
     let status = status(&manifest)?;
     if !status.update_available {
@@ -76,17 +90,23 @@ pub(crate) async fn prepare_and_schedule() -> Result<Status, String> {
         .find(|asset| asset.target == target)
         .ok_or_else(|| format!("release {} has no asset for {target}", manifest.version))?;
     let artifact = release_artifact(asset, &target)?;
+    tasks.set_release(task_id, &manifest.version, &asset.name, asset.size)?;
     let temporary = tempfile::Builder::new()
         .prefix("sempre-update-")
         .tempdir()
         .map_err(|error| format!("create update directory: {error}"))?;
     let archive = temporary.path().join(&asset.name);
+    let progress_tasks = tasks;
     Downloader::new(&format!("Sempre/{VERSION}"))
         .map_err(|error| error.to_string())?
-        .verified(&artifact, &archive)
+        .verified_with_progress(&artifact, &archive, |downloaded, total| {
+            progress_tasks.download_progress(task_id, downloaded, total);
+        })
         .await
         .map_err(|error| error.to_string())?;
+    tasks.set_stage(task_id, "verifying")?;
     let extracted = temporary.path().join("bundle");
+    tasks.set_stage(task_id, "extracting")?;
     sempre_artifact::extract(
         &archive,
         &extracted,
@@ -96,12 +116,14 @@ pub(crate) async fn prepare_and_schedule() -> Result<Status, String> {
         },
     )
     .map_err(|error| error.to_string())?;
+    tasks.set_stage(task_id, "validating")?;
     let root = extracted.join(format!("sempre-{target}"));
     sempre_bundle::validate_release(&root).map_err(|error| error.to_string())?;
     let executable = root.join(executable_name());
     validate_version(&executable, &manifest.version).await?;
-    schedule(temporary, &executable)?;
-    Ok(status)
+    tasks.set_stage(task_id, "installing")?;
+    schedule(temporary, &executable, tasks.result_path())?;
+    Ok(())
 }
 
 async fn fetch_manifest() -> Result<Manifest, String> {
@@ -306,25 +328,26 @@ fn executable_name() -> &'static str {
     }
 }
 
-fn schedule(temporary: TempDir, executable: &Path) -> Result<(), String> {
+fn schedule(temporary: TempDir, executable: &Path, result: &Path) -> Result<(), String> {
     let root = temporary.keep();
-    let result = platform_schedule(executable, &root);
-    if result.is_err() {
+    let scheduled = platform_schedule(executable, &root, result);
+    if scheduled.is_err() {
         let _ = std::fs::remove_dir_all(&root);
     }
-    result
+    scheduled
 }
 
 #[cfg(target_os = "linux")]
-fn platform_schedule(executable: &Path, root: &Path) -> Result<(), String> {
+fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
     let unit = format!("sempre-update-{}", uuid::Uuid::new_v4());
-    let script = "sleep 1; \"$1\" --portable install --yes; code=$?; rm -rf -- \"$2\"; exit $code";
+    let script = "sleep 1; \"$1\" --portable install --yes; code=$?; tmp=\"$3.tmp\"; if [ \"$code\" -eq 0 ]; then printf 'succeeded\\n' >\"$tmp\"; else printf 'failed:%s\\n' \"$code\" >\"$tmp\"; fi; mv -f -- \"$tmp\" \"$3\"; rm -rf -- \"$2\"; exit $code";
     let status = std::process::Command::new("systemd-run")
         .args(["--quiet", "--collect", "--no-block", "--unit", &unit])
         .arg("/bin/sh")
         .args(["-c", script, "sempre-update"])
         .arg(executable)
         .arg(root)
+        .arg(result)
         .status()
         .map_err(|error| format!("schedule systemd update: {error}"))?;
     if status.success() {
@@ -335,9 +358,9 @@ fn platform_schedule(executable: &Path, root: &Path) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_schedule(executable: &Path, root: &Path) -> Result<(), String> {
+fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
     let label = format!("io.sempre.update.{}", uuid::Uuid::new_v4());
-    let script = "sleep 1; \"$1\" --portable install --yes; code=$?; rm -rf -- \"$2\"; exit $code";
+    let script = "sleep 1; \"$1\" --portable install --yes; code=$?; tmp=\"$3.tmp\"; if [ \"$code\" -eq 0 ]; then printf 'succeeded\\n' >\"$tmp\"; else printf 'failed:%s\\n' \"$code\" >\"$tmp\"; fi; mv -f -- \"$tmp\" \"$3\"; rm -rf -- \"$2\"; exit $code";
     let status = std::process::Command::new("launchctl")
         .args([
             "submit",
@@ -351,6 +374,7 @@ fn platform_schedule(executable: &Path, root: &Path) -> Result<(), String> {
         ])
         .arg(executable)
         .arg(root)
+        .arg(result)
         .status()
         .map_err(|error| format!("schedule launchd update: {error}"))?;
     if status.success() {
@@ -361,16 +385,20 @@ fn platform_schedule(executable: &Path, root: &Path) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn platform_schedule(executable: &Path, root: &Path) -> Result<(), String> {
+fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
     let executable = executable
         .to_str()
         .ok_or_else(|| "update executable path is not Unicode".to_string())?;
     let root = root
         .to_str()
         .ok_or_else(|| "update directory path is not Unicode".to_string())?;
+    let result = result
+        .to_str()
+        .ok_or_else(|| "update result path is not Unicode".to_string())?;
     let script = format!(
-        "$ErrorActionPreference='Stop'; Start-Sleep -Seconds 1; $p=Start-Process -FilePath {} -ArgumentList '--portable install --yes' -PassThru -Wait; $code=$p.ExitCode; Remove-Item -LiteralPath {} -Recurse -Force -ErrorAction SilentlyContinue; exit $code",
+        "$ErrorActionPreference='Stop'; Start-Sleep -Seconds 1; $code=1; try {{ $p=Start-Process -FilePath {} -ArgumentList '--portable install --yes' -PassThru -Wait; $code=$p.ExitCode }} catch {{ $code=1 }}; $result={}; $temporary=\"$result.tmp\"; if ($code -eq 0) {{ $value='succeeded' }} else {{ $value=\"failed:$code\" }}; [IO.File]::WriteAllText($temporary,$value,[Text.UTF8Encoding]::new($false)); Move-Item -LiteralPath $temporary -Destination $result -Force; Remove-Item -LiteralPath {} -Recurse -Force -ErrorAction SilentlyContinue; exit $code",
         powershell_literal(executable),
+        powershell_literal(result),
         powershell_literal(root),
     );
     std::process::Command::new("powershell.exe")
@@ -393,7 +421,7 @@ fn powershell_literal(value: &str) -> String {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn platform_schedule(_: &Path, _: &Path) -> Result<(), String> {
+fn platform_schedule(_: &Path, _: &Path, _: &Path) -> Result<(), String> {
     Err("Sempre updates are unavailable on this operating system".into())
 }
 

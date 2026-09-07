@@ -11,6 +11,7 @@ describe('Management page', () => {
   let coresResponse: Record<string, unknown>
   let cancelledTask = ''
   let upgradeRequested = false
+  let serviceUpdateTask: Record<string, unknown> | null
 
   beforeEach(() => {
     savedSettings = undefined
@@ -18,6 +19,7 @@ describe('Management page', () => {
     coresResponse = { supported: [], installed: [], selected: null }
     cancelledTask = ''
     upgradeRequested = false
+    serviceUpdateTask = null
     localStorage.setItem('sempre.locale', 'zh-CN')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -35,10 +37,15 @@ describe('Management page', () => {
         if (init?.method === 'PUT') savedSettings = JSON.parse(String(init.body))
         return Response.json({ settings: savedSettings ?? settings, current: { supported: true, name: 'en0', addresses: ['10.8.28.19/24'], gateway: '10.8.28.1', gateway_mac: 'aa:bb:cc:dd:ee:ff' }, platform: 'windows', gateway_available: false })
       }
+      if (path.endsWith('/service/update/task')) return Response.json({ task: serviceUpdateTask })
       if (path.endsWith('/service/update')) {
         const update = { current_version: '2.0.8', latest_version: '2.1.0', update_available: true, published_at: '2026-09-07T09:15:18Z', release_notes: '## Highlights\n\n- Safer one-click upgrades.', repository: 'https://code.example/sempre' }
-        if (init?.method === 'POST') upgradeRequested = true
-        return Response.json(init?.method === 'POST' ? { status: 'scheduled', update } : update, { status: init?.method === 'POST' ? 202 : 200 })
+        if (init?.method === 'POST') {
+          upgradeRequested = true
+          serviceUpdateTask = { id: 'update-1', state: 'running', stage: 'downloading', current_version: '2.0.8', target_version: '2.1.0', artifact: 'sempre-bundle-windows-amd64.zip', downloaded_bytes: 50 * 1024 * 1024, total_bytes: 100 * 1024 * 1024, bytes_per_second: 5 * 1024 * 1024, eta_seconds: 10, started_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+          return Response.json({ task: serviceUpdateTask }, { status: 202 })
+        }
+        return Response.json(update)
       }
       if (path.endsWith('/system')) return Response.json({ version: '2.0.8', mode: 'system', service: 'running', network_automation: { enabled: false, active: false, path: 'inactive' } })
       return Response.json({}, { status: 404 })
@@ -99,7 +106,12 @@ describe('Management page', () => {
     fireEvent.click(screen.getByRole('button', { name: '立即升级' }))
 
     await waitFor(() => expect(upgradeRequested).toBe(true))
-    expect(await screen.findByText('升级已启动。服务会短暂离线；重新连接后即可确认新版本。')).toBeInTheDocument()
+    const dialog = await screen.findByRole('dialog', { name: /正在更新 Sempre/ })
+    expect(within(dialog).getByText('正在下载安装包')).toBeInTheDocument()
+    expect(within(dialog).getByText('50.0 MiB / 100.0 MiB')).toBeInTheDocument()
+    expect(within(dialog).getByText('5.0 MiB/s')).toBeInTheDocument()
+    expect(within(dialog).getByText('约 10 秒')).toBeInTheDocument()
+    expect(within(dialog).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
   })
 
   it('shows the selected core as a disabled current-use action', async () => {
