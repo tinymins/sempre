@@ -5,7 +5,7 @@ use std::{
 };
 
 use futures_util::StreamExt;
-use reqwest::{Client, StatusCode, header};
+use reqwest::{Client, Proxy, StatusCode, header};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use url::Url;
@@ -33,6 +33,25 @@ impl Downloader {
         let client = crate::http::client_builder(user_agent, Duration::from_mins(15))
             .build()
             .map_err(|error| ArtifactError::http("build download client", error))?;
+        Ok(Self {
+            client,
+            cache: None,
+        })
+    }
+
+    pub fn new_via_http_proxy(
+        user_agent: &str,
+        address: std::net::SocketAddr,
+        username: &str,
+        password: &str,
+    ) -> Result<Self> {
+        let proxy = Proxy::all(format!("http://{address}"))
+            .map_err(|error| ArtifactError::http("configure download proxy", error))?
+            .basic_auth(username, password);
+        let client = crate::http::client_builder(user_agent, Duration::from_mins(15))
+            .proxy(proxy)
+            .build()
+            .map_err(|error| ArtifactError::http("build proxied download client", error))?;
         Ok(Self {
             client,
             cache: None,
@@ -255,6 +274,7 @@ mod tests {
     use futures_util::stream;
     use sha2::Digest;
     use tempfile::tempdir;
+    use tokio::{io::AsyncReadExt as _, io::AsyncWriteExt as _, net::TcpListener};
 
     use super::*;
 
@@ -367,5 +387,39 @@ mod tests {
                 .await
                 .expect("inspect invalid cache")
         );
+    }
+
+    #[tokio::test]
+    async fn proxied_downloader_uses_authenticated_http_connect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let request = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buffer = vec![0_u8; 4096];
+            let read = socket.read(&mut buffer).await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&buffer[..read]).into_owned()
+        });
+        let artifact = Artifact {
+            name: "release.zip".into(),
+            url: "https://example.invalid/release.zip".into(),
+            digest: format!("sha256:{}", "a".repeat(64)),
+            size: 1,
+        };
+        let root = tempdir().unwrap();
+
+        let error = Downloader::new_via_http_proxy("test", address, "sempre", "secret")
+            .unwrap()
+            .verified(&artifact, &root.path().join("release.zip"))
+            .await
+            .unwrap_err();
+        let request = request.await.unwrap();
+
+        assert!(matches!(error, ArtifactError::Http { .. }));
+        assert!(request.starts_with("CONNECT example.invalid:443 HTTP/1.1\r\n"));
+        assert!(request.contains("proxy-authorization: Basic c2VtcHJlOnNlY3JldA==\r\n"));
     }
 }

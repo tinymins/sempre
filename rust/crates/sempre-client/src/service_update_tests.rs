@@ -52,6 +52,19 @@ fn release_manifest_digest_is_normalized_for_the_verified_downloader() {
 }
 
 #[test]
+fn nested_update_errors_include_the_root_cause() {
+    #[derive(Debug, thiserror::Error)]
+    #[error("request failed")]
+    struct RequestError(#[source] std::io::Error);
+
+    let error = RequestError(std::io::Error::new(
+        std::io::ErrorKind::ConnectionRefused,
+        "connection refused",
+    ));
+    assert_eq!(describe_error(&error), "request failed: connection refused");
+}
+
+#[test]
 fn manifest_rejects_prerelease_versions() {
     assert!(validate_manifest(&manifest("2.0.10-beta.1")).is_err());
 }

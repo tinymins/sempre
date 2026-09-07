@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path, sync::Arc, time::Duration};
+use std::{collections::HashSet, error::Error, path::Path, sync::Arc, time::Duration};
 
 use reqwest::{Client, StatusCode};
 use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions, Sha256Digest};
@@ -66,18 +66,25 @@ pub(crate) async fn check() -> Result<Status, String> {
     status(&fetch_manifest().await?)
 }
 
-pub(crate) fn start(tasks: Arc<ServiceUpdateTasks>) -> Result<ServiceUpdateTask, String> {
+pub(crate) fn start(
+    tasks: Arc<ServiceUpdateTasks>,
+    manager: Arc<sempre_manager::Manager>,
+) -> Result<ServiceUpdateTask, String> {
     let task = tasks.begin()?;
     let task_id = task.id.clone();
     tokio::spawn(async move {
-        if let Err(error) = run_task(&tasks, &task_id).await {
+        if let Err(error) = run_task(&tasks, &task_id, &manager).await {
             tasks.fail(&task_id, &error);
         }
     });
     Ok(task)
 }
 
-async fn run_task(tasks: &ServiceUpdateTasks, task_id: &str) -> Result<(), String> {
+async fn run_task(
+    tasks: &ServiceUpdateTasks,
+    task_id: &str,
+    manager: &sempre_manager::Manager,
+) -> Result<(), String> {
     let manifest = fetch_manifest().await?;
     let status = status(&manifest)?;
     if !status.update_available {
@@ -96,14 +103,8 @@ async fn run_task(tasks: &ServiceUpdateTasks, task_id: &str) -> Result<(), Strin
         .tempdir()
         .map_err(|error| format!("create update directory: {error}"))?;
     let archive = temporary.path().join(&asset.name);
-    let progress_tasks = tasks;
-    Downloader::new(&format!("Sempre/{VERSION}"))
-        .map_err(|error| error.to_string())?
-        .verified_with_progress(&artifact, &archive, |downloaded, total| {
-            progress_tasks.download_progress(task_id, downloaded, total);
-        })
-        .await
-        .map_err(|error| error.to_string())?;
+    tasks.set_stage(task_id, "downloading")?;
+    download_release(tasks, task_id, manager, &artifact, &archive).await?;
     tasks.set_stage(task_id, "verifying")?;
     let extracted = temporary.path().join("bundle");
     tasks.set_stage(task_id, "extracting")?;
@@ -124,6 +125,58 @@ async fn run_task(tasks: &ServiceUpdateTasks, task_id: &str) -> Result<(), Strin
     tasks.set_stage(task_id, "installing")?;
     schedule(temporary, &executable, tasks.result_path())?;
     Ok(())
+}
+
+async fn download_release(
+    tasks: &ServiceUpdateTasks,
+    task_id: &str,
+    manager: &sempre_manager::Manager,
+    artifact: &Artifact,
+    archive: &Path,
+) -> Result<(), String> {
+    let user_agent = format!("Sempre/{VERSION}");
+    let direct = Downloader::new(&user_agent).map_err(|error| describe_error(&error))?;
+    let progress = |downloaded, total| tasks.download_progress(task_id, downloaded, total);
+    let direct_error = match direct
+        .verified_with_progress(artifact, archive, progress)
+        .await
+    {
+        Ok(()) => return Ok(()),
+        Err(error @ sempre_artifact::ArtifactError::Http { .. }) => error,
+        Err(error) => return Err(describe_error(&error)),
+    };
+    let proxy = crate::service_update_proxy::downloader(manager, &user_agent).map_err(|error| {
+        format!(
+            "{}; retry through the running core is unavailable: {}",
+            describe_error(&direct_error),
+            error
+        )
+    })?;
+    tasks.restart_download(task_id)?;
+    proxy
+        .verified_with_progress(artifact, archive, progress)
+        .await
+        .map_err(|error| {
+            format!(
+                "{}; retry through the running core failed: {}",
+                describe_error(&direct_error),
+                describe_error(&error)
+            )
+        })
+}
+
+fn describe_error(error: &dyn Error) -> String {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(error) = source {
+        let detail = error.to_string();
+        if !message.ends_with(&detail) {
+            message.push_str(": ");
+            message.push_str(&detail);
+        }
+        source = error.source();
+    }
+    message
 }
 
 async fn fetch_manifest() -> Result<Manifest, String> {

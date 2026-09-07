@@ -166,6 +166,18 @@ impl ServiceUpdateTasks {
         }
     }
 
+    pub(crate) fn restart_download(&self, id: &str) -> Result<(), String> {
+        self.update(id, true, |state, now| {
+            state.download_started = None;
+            let task = state.task.as_mut().expect("matching task");
+            task.stage = "downloading".into();
+            task.downloaded_bytes = 0;
+            task.bytes_per_second = 0;
+            task.eta_seconds = None;
+            task.updated_at = now;
+        })
+    }
+
     pub(crate) fn fail(&self, id: &str, error: &str) {
         let _ = self.update(id, true, |state, now| {
             let task = state.task.as_mut().expect("matching task");
@@ -288,6 +300,24 @@ mod tests {
             .expect("restored task");
         assert_eq!(restored.stage, "downloading");
         assert_eq!((restored.downloaded_bytes, restored.total_bytes), (50, 100));
+    }
+
+    #[test]
+    fn proxy_retry_resets_visible_download_measurements() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
+        let task = tasks.begin().expect("task");
+        tasks
+            .set_release(&task.id, "2.0.10", "bundle.zip", 100)
+            .expect("release");
+        tasks.download_progress(&task.id, 50, 100);
+        tasks.restart_download(&task.id).expect("retry");
+
+        let retried = tasks.snapshot().expect("retried task");
+        assert_eq!(retried.stage, "downloading");
+        assert_eq!(retried.downloaded_bytes, 0);
+        assert_eq!(retried.bytes_per_second, 0);
+        assert_eq!(retried.eta_seconds, None);
     }
 
     #[test]

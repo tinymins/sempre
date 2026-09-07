@@ -199,7 +199,10 @@ async fn service_update(State(state): State<Arc<AppState>>) -> Response {
         )
             .into_response();
     }
-    match crate::service_update::start(Arc::clone(&state.service_updates)) {
+    match crate::service_update::start(
+        Arc::clone(&state.service_updates),
+        Arc::clone(&state.manager),
+    ) {
         Ok(task) => (StatusCode::ACCEPTED, Json(json!({ "task": task }))).into_response(),
         Err(error) => (
             StatusCode::CONFLICT,
