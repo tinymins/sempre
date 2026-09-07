@@ -12,7 +12,33 @@ permissions:
   artifact-metadata: write
 
 jobs:
+  release-notes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Validate stable release notes
+        if: ${{ !contains(github.ref_name, '-') }}
+        shell: bash
+        run: |
+          notes_path=".github/release-notes/$GITHUB_REF_NAME.md"
+          test -s "$notes_path" || {
+            echo "Stable release notes are required at $notes_path" >&2
+            exit 1
+          }
+          awk '
+            /^## 简体中文$/ { section = "zh"; next }
+            /^## English$/ { section = "en"; next }
+            /^## / { section = "" }
+            section == "zh" && /^- / { zh = 1 }
+            section == "en" && /^- / { en = 1 }
+            END { exit !(zh && en) }
+          ' "$notes_path" || {
+            echo "Stable release notes must contain non-empty ## 简体中文 and ## English sections" >&2
+            exit 1
+          }
+
   verify:
+    needs: release-notes
     runs-on: ubuntu-24.04
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -33,6 +59,7 @@ jobs:
       - run: cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- verify
 
   build:
+    needs: release-notes
     name: Build (${{ matrix.name }})
     strategy:
       fail-fast: false
@@ -130,7 +157,7 @@ jobs:
           path: dist/
 
   publish:
-    needs: [verify, build]
+    needs: [release-notes, verify, build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -152,10 +179,11 @@ jobs:
           mapfile -d '' assets < <(find dist -maxdepth 1 -type f -print0 | sort -z)
           release_flags=()
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            release_flags+=(--prerelease)
+            release_flags+=(--prerelease --generate-notes)
+          else
+            release_flags+=(--notes-file ".github/release-notes/$GITHUB_REF_NAME.md")
           fi
           gh release create "$GITHUB_REF_NAME" \
             "${assets[@]}" \
             "${release_flags[@]}" \
-            --generate-notes \
             --verify-tag
