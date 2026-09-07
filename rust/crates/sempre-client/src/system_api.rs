@@ -20,6 +20,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/api/v1/system/network", get(network_inventory))
         .route("/api/v1/network/test", post(network_test))
         .route("/api/v1/service/action", post(service_action))
+        .route(
+            "/api/v1/service/update",
+            get(service_update_check).post(service_update),
+        )
 }
 
 async fn system(State(state): State<Arc<AppState>>) -> Response {
@@ -166,6 +170,67 @@ async fn service_action(
         Json(json!({ "status": "scheduled", "action": input.action })),
     )
         .into_response()
+}
+
+async fn service_update_check() -> Response {
+    match crate::service_update::check().await {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "error": { "code": "UPDATE_CHECK_FAILED", "message": error }
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn service_update(State(state): State<Arc<AppState>>) -> Response {
+    if state.manager.store().layout().mode != sempre_state::Mode::System {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Sempre updates require an installed system service"
+                }
+            })),
+        )
+            .into_response();
+    }
+    let Ok(_update) = state.service_update.try_lock() else {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": {
+                    "code": "UPDATE_IN_PROGRESS",
+                    "message": "a Sempre update is already being prepared"
+                }
+            })),
+        )
+            .into_response();
+    };
+    match crate::service_update::prepare_and_schedule().await {
+        Ok(status) => (
+            StatusCode::ACCEPTED,
+            Json(json!({ "status": "scheduled", "update": status })),
+        )
+            .into_response(),
+        Err(error) if error == "Sempre is already up to date" => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": { "code": "ALREADY_UP_TO_DATE", "message": error }
+            })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "error": { "code": "UPDATE_FAILED", "message": error }
+            })),
+        )
+            .into_response(),
+    }
 }
 
 async fn network_inventory() -> Response {

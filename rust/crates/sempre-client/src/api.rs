@@ -27,6 +27,7 @@ pub(crate) struct AppState {
     daemon_token: String,
     pub(crate) endpoint: EndpointStore,
     pub(crate) rebind: Option<RebindHandle>,
+    pub(crate) service_update: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -46,6 +47,7 @@ impl AppState {
             daemon_token,
             endpoint: EndpointStore::new(bind, local_url),
             rebind: None,
+            service_update: tokio::sync::Mutex::new(()),
         }
     }
 

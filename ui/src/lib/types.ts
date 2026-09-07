@@ -117,6 +117,14 @@ export interface SystemStatus {
   ui: { installed: boolean; metadata?: UIMetadata }
   capabilities: Record<string, boolean>
 }
+export interface ServiceUpdateStatus {
+  current_version: string
+  latest_version: string
+  update_available: boolean
+  published_at: string
+  release_notes: string
+  repository: string
+}
 export interface Overview {
   core: string
   version: string

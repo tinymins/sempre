@@ -9,6 +9,11 @@ on:
       - "installer/**"
       - "site/**"
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
 
 permissions:
   contents: read
@@ -19,6 +24,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -62,6 +68,52 @@ jobs:
           cp installer/install.sh site/dist/install
           cp installer/install.ps1 site/dist/install.ps1
           touch site/dist/.nojekyll
+      - name: Generate latest release manifests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/dist/api/releases
+          gh api "repos/$GITHUB_REPOSITORY/releases/latest" > "$RUNNER_TEMP/sempre-release.json"
+          jq --arg repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" '
+            {
+              schema: 1,
+              version: (.tag_name | ltrimstr("v")),
+              published_at,
+              notes: (.body // ""),
+              repository: $repository,
+              assets: [
+                .assets[]
+                | select(.name | test("^sempre-bundle-(darwin|linux|windows)-(amd64|arm64)\\.zip$"))
+                | {
+                    target: (.name | capture("^sempre-bundle-(?<target>.+)\\.zip$").target),
+                    name,
+                    url: .browser_download_url,
+                    sha256: (.digest | ltrimstr("sha256:")),
+                    size
+                  }
+              ]
+            }
+          ' "$RUNNER_TEMP/sempre-release.json" > site/dist/api/releases/latest.json
+          jq -e '
+            .schema == 1 and
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")) and
+            (.repository | startswith("https://")) and
+            (.assets | length == 6) and
+            all(.assets[]; (.sha256 | test("^[0-9a-f]{64}$")) and .size > 0 and (.url | startswith("https://")))
+          ' site/dist/api/releases/latest.json >/dev/null
+          jq -r '
+            [
+              "schema=1",
+              "version=\(.version)",
+              "repository=\(.repository)"
+            ] + [
+              .assets[]
+              | (.target | gsub("-"; "_")) as $target
+              | "asset_\($target)_url=\(.url)",
+                "asset_\($target)_sha256=\(.sha256)",
+                "asset_\($target)_size=\(.size)"
+            ] | .[]
+          ' site/dist/api/releases/latest.json > site/dist/api/releases/latest.env
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

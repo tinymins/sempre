@@ -10,12 +10,14 @@ describe('Management page', () => {
   let coreTask: Record<string, unknown> | null
   let coresResponse: Record<string, unknown>
   let cancelledTask = ''
+  let upgradeRequested = false
 
   beforeEach(() => {
     savedSettings = undefined
     coreTask = null
     coresResponse = { supported: [], installed: [], selected: null }
     cancelledTask = ''
+    upgradeRequested = false
     localStorage.setItem('sempre.locale', 'zh-CN')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -33,7 +35,12 @@ describe('Management page', () => {
         if (init?.method === 'PUT') savedSettings = JSON.parse(String(init.body))
         return Response.json({ settings: savedSettings ?? settings, current: { supported: true, name: 'en0', addresses: ['10.8.28.19/24'], gateway: '10.8.28.1', gateway_mac: 'aa:bb:cc:dd:ee:ff' }, platform: 'windows', gateway_available: false })
       }
-      if (path.endsWith('/system')) return Response.json({ network_automation: { enabled: false, active: false, path: 'inactive' } })
+      if (path.endsWith('/service/update')) {
+        const update = { current_version: '2.0.8', latest_version: '2.1.0', update_available: true, published_at: '2026-09-07T09:15:18Z', release_notes: '## Highlights\n\n- Safer one-click upgrades.', repository: 'https://code.example/sempre' }
+        if (init?.method === 'POST') upgradeRequested = true
+        return Response.json(init?.method === 'POST' ? { status: 'scheduled', update } : update, { status: init?.method === 'POST' ? 202 : 200 })
+      }
+      if (path.endsWith('/system')) return Response.json({ version: '2.0.8', mode: 'system', service: 'running', network_automation: { enabled: false, active: false, path: 'inactive' } })
       return Response.json({}, { status: 404 })
     }))
   })
@@ -73,6 +80,26 @@ describe('Management page', () => {
 
     expect(gateway).toHaveClass('cursor-not-allowed')
     expect(within(gateway as HTMLElement).getByText('仅 Linux 系统服务可用')).toHaveClass('text-xs', 'text-[var(--text-muted)]')
+  })
+
+  it('separates the console from service updates and starts a verified upgrade', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    expect(screen.queryByRole('button', { name: 'Web 与 UI' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '控制台' }))
+    expect(await screen.findByText('Web')).toBeInTheDocument()
+    expect(screen.queryByText('Sempre 系统服务')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sempre 服务' }))
+    expect(await screen.findByText('2.0.8')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
+    expect(await screen.findByText('2.1.0')).toBeInTheDocument()
+    expect(screen.getByText('Safer one-click upgrades.', { exact: false })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '立即升级' }))
+
+    await waitFor(() => expect(upgradeRequested).toBe(true))
+    expect(await screen.findByText('升级已启动。服务会短暂离线；重新连接后即可确认新版本。')).toBeInTheDocument()
   })
 
   it('shows the selected core as a disabled current-use action', async () => {

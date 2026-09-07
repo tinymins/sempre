@@ -8,24 +8,8 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$Repository = 'https://github.com/tinymins/sempre'
+$ManifestUrl = 'https://sempre.run/api/releases/latest.json'
 $TemporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("sempre-install-" + [Guid]::NewGuid().ToString('N'))
-
-function Get-EffectiveUri {
-    param([Parameter(Mandatory = $true)][string]$Uri)
-
-    $Response = Invoke-WebRequest -Uri $Uri -MaximumRedirection 10 -UseBasicParsing
-    $BaseResponse = $Response.BaseResponse
-    $ResponseUriProperty = $BaseResponse.PSObject.Properties['ResponseUri']
-    if ($ResponseUriProperty -and $ResponseUriProperty.Value) {
-        return $ResponseUriProperty.Value.AbsoluteUri
-    }
-    $RequestMessageProperty = $BaseResponse.PSObject.Properties['RequestMessage']
-    if ($RequestMessageProperty -and $RequestMessageProperty.Value.RequestUri) {
-        return $RequestMessageProperty.Value.RequestUri.AbsoluteUri
-    }
-    throw 'Could not determine the final GitHub release URL.'
-}
 
 function Save-RemoteFile {
     param(
@@ -48,29 +32,34 @@ try {
         default { throw "Unsupported Windows architecture: $MachineArchitecture" }
     }
 
-    $EffectiveUri = Get-EffectiveUri -Uri "$Repository/releases/latest"
-    $Match = [regex]::Match($EffectiveUri, '/releases/tag/(?<tag>v[0-9][0-9A-Za-z._-]*)/?$')
-    if (-not $Match.Success) {
-        throw "Could not resolve a valid latest release tag from $EffectiveUri"
+    $Manifest = Invoke-RestMethod -Uri $ManifestUrl -MaximumRedirection 10 -UseBasicParsing
+    if ($Manifest.schema -ne 1) {
+        throw "Unsupported release manifest schema: $($Manifest.schema)"
     }
-    $Tag = $Match.Groups['tag'].Value
+    if ($Manifest.version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$') {
+        throw "Invalid release version: $($Manifest.version)"
+    }
+    if ($Manifest.repository -notmatch '^https://') {
+        throw 'Invalid release repository URL.'
+    }
+    $Version = $Manifest.version
     $Asset = "sempre-bundle-windows-$Architecture.zip"
-    $ReleaseBase = "$Repository/releases/download/$Tag"
+    $Target = "windows-$Architecture"
+    $ReleaseAsset = @($Manifest.assets | Where-Object { $_.target -eq $Target -and $_.name -eq $Asset })
+    if ($ReleaseAsset.Count -ne 1) {
+        throw "Release $Version does not contain exactly one $Asset asset."
+    }
+    $ReleaseAsset = $ReleaseAsset[0]
+    if ($ReleaseAsset.url -notmatch '^https://' -or $ReleaseAsset.sha256 -notmatch '^[0-9a-fA-F]{64}$' -or $ReleaseAsset.size -le 0) {
+        throw "Release asset metadata for $Asset is invalid."
+    }
 
     New-Item -ItemType Directory -Path $TemporaryDirectory | Out-Null
     $Archive = Join-Path $TemporaryDirectory $Asset
-    $Checksums = Join-Path $TemporaryDirectory 'SHA256SUMS'
-    Write-Host "Downloading Sempre $Tag for windows/$Architecture..."
-    Save-RemoteFile -Uri "$ReleaseBase/SHA256SUMS" -Destination $Checksums
-    Save-RemoteFile -Uri "$ReleaseBase/$Asset" -Destination $Archive
+    Write-Host "Downloading Sempre $Version for windows/$Architecture..."
+    Save-RemoteFile -Uri $ReleaseAsset.url -Destination $Archive
 
-    $Pattern = '^([0-9a-fA-F]{64})\s+\*?' + [regex]::Escape($Asset) + '$'
-    $ChecksumMatches = @(Get-Content -LiteralPath $Checksums | Where-Object { $_ -match $Pattern })
-    if ($ChecksumMatches.Count -ne 1) {
-        throw "Checksum for $Asset is missing or invalid."
-    }
-    [void]($ChecksumMatches[0] -match $Pattern)
-    $Expected = $Matches[1].ToLowerInvariant()
+    $Expected = $ReleaseAsset.sha256.ToLowerInvariant()
     $Actual = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($Actual -ne $Expected) {
         throw "SHA-256 verification failed for $Asset."
@@ -104,7 +93,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Sempre installer exited with code $LASTEXITCODE."
     }
-    Write-Host "Sempre $Tag installed successfully. Open a new terminal and run: sempre status"
+    Write-Host "Sempre $Version installed successfully. Open a new terminal and run: sempre status"
 } finally {
     if (Test-Path -LiteralPath $TemporaryDirectory) {
         Remove-Item -LiteralPath $TemporaryDirectory -Recurse -Force -ErrorAction SilentlyContinue

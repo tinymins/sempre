@@ -150,11 +150,26 @@ async fn development_mode_reports_isolation_and_rejects_native_service_actions()
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
-    let response = app.oneshot(request).await.expect("response");
+    let response = app.clone().oneshot(request).await.expect("response");
     assert_eq!(response.status(), StatusCode::CONFLICT);
     let body = to_bytes(response.into_body(), 64 * 1024)
         .await
         .expect("service body");
     let error: serde_json::Value = serde_json::from_slice(&body).expect("service JSON");
     assert_eq!(error["error"]["code"], "SERVICE_UNAVAILABLE");
+
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/service/update")
+        .extension(ConnectInfo(
+            "127.0.0.1:1".parse::<SocketAddr>().expect("remote address"),
+        ))
+        .body(Body::empty())
+        .expect("request");
+    request.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::CONFLICT);
 }

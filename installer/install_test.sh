@@ -38,12 +38,23 @@ while [ \$# -gt 0 ]; do
   esac
 done
 case "\$url" in
-  */releases/latest) printf '%s' 'https://github.com/tinymins/sempre/releases/tag/v2.0.0-beta.1' ;;
-  */SHA256SUMS) printf '%s  %s\n' '$digest' 'sempre-bundle-__PLATFORM__-__ARCH__.zip' >"\$output" ;;
+  https://sempre.run/api/releases/latest.env)
+    cat >"\$output" <<'MANIFEST'
+schema=1
+version=2.0.0-beta.1
+repository=https://code.example/sempre
+asset___PLATFORM_____ARCH___url=https://downloads.example/sempre-bundle-__PLATFORM_DASH__-__ARCH__.zip
+asset___PLATFORM_____ARCH___sha256=$digest
+asset___PLATFORM_____ARCH___size=7
+MANIFEST
+    ;;
+  https://github.com/*) exit 22 ;;
   *) printf 'archive' >"\$output" ;;
 esac
 EOF
-  sed "s/__PLATFORM__/$([ "$platform" = Darwin ] && printf darwin || printf linux)/g; s/__ARCH__/$([ "$architecture" = arm64 ] && printf arm64 || printf amd64)/g" "$commands/curl" >"$commands/curl.rendered"
+  platform_name=$([ "$platform" = Darwin ] && printf darwin || printf linux)
+  arch_name=$([ "$architecture" = arm64 ] && printf arm64 || printf amd64)
+  sed "s/__PLATFORM_DASH__/$platform_name/g; s/__PLATFORM__/$platform_name/g; s/__ARCH__/$arch_name/g" "$commands/curl" >"$commands/curl.rendered"
   mv "$commands/curl.rendered" "$commands/curl"
   cat >"$commands/sha256sum" <<EOF
 #!/bin/sh

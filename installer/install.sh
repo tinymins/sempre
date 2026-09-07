@@ -2,7 +2,7 @@
 
 set -eu
 
-repository="https://github.com/tinymins/sempre"
+manifest_url="https://sempre.run/api/releases/latest.env"
 temporary_directory=""
 core=""
 subscription=""
@@ -16,6 +16,15 @@ fail() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+manifest_value() {
+  key=$1
+  value=$(awk -v prefix="$key=" '
+    index($0, prefix) == 1 { count += 1; result = substr($0, length(prefix) + 1) }
+    END { if (count == 1 && result != "") print result; else exit 1 }
+  ' "$manifest") || fail "release manifest has an invalid $key field"
+  printf '%s' "$value"
 }
 
 cleanup() {
@@ -67,6 +76,7 @@ done
 
 require_command curl
 require_command unzip
+require_command awk
 
 case "$(uname -s)" in
 Linux)
@@ -94,38 +104,41 @@ arm64 | aarch64)
   ;;
 esac
 
-latest_url="$repository/releases/latest"
-effective_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' "$latest_url")"
-case "$effective_url" in
-"$repository/releases/tag/"*) tag=${effective_url#"$repository/releases/tag/"} ;;
-*) fail "could not resolve the latest release tag" ;;
-esac
-tag=${tag%/}
-case "$tag" in
-v[0-9]*) ;;
-*) fail "invalid release tag: $tag" ;;
-esac
-case "$tag" in
-*[!0-9A-Za-z._-]*) fail "invalid release tag: $tag" ;;
-esac
-
 asset="sempre-bundle-$platform-$architecture.zip"
-release_base="$repository/releases/download/$tag"
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/sempre-install.XXXXXX")"
+manifest="$temporary_directory/latest.env"
 archive="$temporary_directory/$asset"
-checksums="$temporary_directory/SHA256SUMS"
+curl -fsSL "$manifest_url" -o "$manifest"
 
-printf 'Downloading Sempre %s for %s/%s...\n' "$tag" "$platform" "$architecture"
-curl -fsSL "$release_base/SHA256SUMS" -o "$checksums"
-curl -fsSL "$release_base/$asset" -o "$archive"
-
-expected="$(awk -v asset="$asset" '$2 == asset || $2 == "*" asset { print $1 }' "$checksums")"
+[ "$(manifest_value schema)" = 1 ] || fail "unsupported release manifest schema"
+version=$(manifest_value version)
+repository=$(manifest_value repository)
+target="${platform}_${architecture}"
+asset_url=$(manifest_value "asset_${target}_url")
+expected=$(manifest_value "asset_${target}_sha256")
+case "$version" in
+[0-9]*.[0-9]*.[0-9]*) ;;
+*) fail "invalid release version: $version" ;;
+esac
+case "$version" in
+*[!0-9A-Za-z.+-]*) fail "invalid release version: $version" ;;
+esac
+printf '%s\n' "$version" | awk '/^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$/ { valid = 1 } END { exit !valid }' || fail "invalid release version: $version"
+case "$repository" in
+https://*) ;;
+*) fail "invalid release repository URL" ;;
+esac
+case "$asset_url" in
+https://*) ;;
+*) fail "invalid release asset URL" ;;
+esac
 case "$expected" in
 '' | *[!0-9A-Fa-f]*) fail "checksum for $asset is missing or invalid" ;;
 esac
-if [ "${#expected}" -ne 64 ]; then
-  fail "checksum for $asset is missing or invalid"
-fi
+[ "${#expected}" -eq 64 ] || fail "checksum for $asset is missing or invalid"
+
+printf 'Downloading Sempre %s for %s/%s...\n' "$version" "$platform" "$architecture"
+curl -fsSL "$asset_url" -o "$archive"
 
 if [ "$platform" = "darwin" ]; then
   actual="$(shasum -a 256 "$archive" | awk '{ print $1 }')"
@@ -162,4 +175,4 @@ if [ -n "$ui_sha256" ]; then
   set -- "$@" "--ui-sha256=$ui_sha256"
 fi
 "$binary" "$@"
-printf 'Sempre %s installed successfully. Open a new terminal and run: sempre status\n' "$tag"
+printf 'Sempre %s installed successfully. Open a new terminal and run: sempre status\n' "$version"

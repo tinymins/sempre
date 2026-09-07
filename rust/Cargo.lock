@@ -2399,6 +2399,7 @@ dependencies = [
  "sempre-subscription",
  "sempre-tunnel",
  "sempre-ui",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
