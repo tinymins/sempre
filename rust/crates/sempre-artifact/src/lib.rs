@@ -2,6 +2,7 @@ mod archive;
 mod digest;
 mod download;
 mod github;
+mod http;
 
 use std::{io, path::PathBuf};
 

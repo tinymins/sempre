@@ -10,7 +10,7 @@ use sempre_core::{Adapter, Package, STABLE, Target};
 use serde::Deserialize;
 use url::Url;
 
-use crate::{ArtifactError, Result, Sha256Digest, https_redirect_policy};
+use crate::{ArtifactError, Result, Sha256Digest};
 
 const MAX_RELEASE_RESPONSE: usize = 4 << 20;
 
@@ -55,10 +55,8 @@ impl GithubClient {
     }
 
     fn with_base(user_agent: &str, base: Url) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .redirect(https_redirect_policy())
-            .user_agent(user_agent)
+        let client = crate::http::client_builder(user_agent, Duration::from_secs(30))
+            .retry(crate::http::github_retry())
             .build()
             .map_err(|error| ArtifactError::http("build GitHub client", error))?;
         let token = std::env::var("GITHUB_TOKEN")
