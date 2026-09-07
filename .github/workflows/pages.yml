@@ -74,13 +74,25 @@ jobs:
         run: |
           mkdir -p site/dist/api/releases
           gh api "repos/$GITHUB_REPOSITORY/releases/latest" > "$RUNNER_TEMP/sempre-release.json"
-          jq --arg repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" '
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq -s 'add | map(select(.draft == false and .prerelease == false))' \
+            > "$RUNNER_TEMP/sempre-releases.json"
+          jq --arg repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --slurpfile releases "$RUNNER_TEMP/sempre-releases.json" '
             {
               schema: 1,
               version: (.tag_name | ltrimstr("v")),
               published_at,
               notes: (.body // ""),
               repository: $repository,
+              releases: [
+                $releases[0][]
+                | {
+                    version: (.tag_name | ltrimstr("v")),
+                    published_at,
+                    notes: (.body // "")
+                  }
+              ],
               assets: [
                 .assets[]
                 | select(.name | test("^sempre-bundle-(darwin|linux|windows)-(amd64|arm64)\\.zip$"))
@@ -96,10 +108,17 @@ jobs:
           ' "$RUNNER_TEMP/sempre-release.json" > site/dist/api/releases/latest.json
           jq -e '
             .schema == 1 and
-            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")) and
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+][0-9A-Za-z.-]+)?$")) and
             (.notes | contains("## 简体中文")) and
             (.notes | contains("## English")) and
             (.repository | startswith("https://")) and
+            (.releases | type == "array") and
+            (.version as $latest | [.releases[] | select(.version == $latest)] | length == 1) and
+            all(.releases[];
+              (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+][0-9A-Za-z.-]+)?$")) and
+              (.published_at | type == "string") and
+              (.notes | type == "string")
+            ) and
             (.assets | length == 6) and
             all(.assets[]; (.sha256 | test("^[0-9a-f]{64}$")) and .size > 0 and (.url | startswith("https://")))
           ' site/dist/api/releases/latest.json >/dev/null

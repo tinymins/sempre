@@ -123,6 +123,7 @@ export interface ServiceUpdateStatus {
   update_available: boolean
   published_at: string
   release_notes: string
+  release_history?: Array<{ version: string; published_at: string; notes: string }>
   repository: string
 }
 export interface Overview {

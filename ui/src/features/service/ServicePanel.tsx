@@ -6,9 +6,10 @@ import { useI18n } from '../../lib/i18n'
 import { useSession } from '../../lib/session'
 import type { ServiceUpdateStatus, SystemStatus } from '../../lib/types'
 import { Badge, Button, Card, ConfirmDialog, Spinner } from '../../components/ui'
+import { ReleaseNotes } from './ReleaseNotes'
 
 export function ServicePanel() {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
   const [notice, setNotice] = useState('')
@@ -31,6 +32,8 @@ export function ServicePanel() {
   })
   const serviceAvailable = system.data?.mode === 'system' && system.data.service !== 'not installed'
   const currentVersion = update.data?.current_version ?? system.data?.version ?? '-'
+  const releaseHistory = (update.data?.release_history?.length ? update.data.release_history : update.data ? [{ version: update.data.latest_version, published_at: update.data.published_at, notes: update.data.release_notes }] : [])
+    .map((release) => ({ ...release, notes: release.notes || t('noReleaseNotes') }))
 
   return <div className="space-y-5">
     {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
@@ -43,7 +46,7 @@ export function ServicePanel() {
       {update.isError ? <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{update.error.message}</p> : null}
       {update.data ? <div className="mt-4 space-y-4">
         <div className="flex flex-wrap items-center gap-3"><Badge tone={update.data.update_available ? 'warning' : 'success'}>{update.data.update_available ? t('updateAvailable') : t('upToDate')}</Badge>{update.data.published_at ? <span className="text-xs text-[var(--muted)]">{new Date(update.data.published_at).toLocaleString()}</span> : null}</div>
-        {update.data.update_available ? <><div><h3 className="mb-2 text-sm font-semibold">{t('releaseNotes')}</h3><pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 font-sans text-sm leading-6">{update.data.release_notes || t('noReleaseNotes')}</pre></div><Button variant="primary" disabled={!serviceAvailable || upgrade.isPending} onClick={() => upgrade.mutate()}>{upgrade.isPending ? <Spinner /> : <Download size={16} />}{t('upgradeNow')}</Button>{!serviceAvailable ? <p className="text-xs text-[var(--muted)]">{t('systemServiceUpdateOnly')}</p> : null}</> : <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={17} />{t('upToDateDetail')}</div>}
+        {update.data.update_available ? <><div><h3 className="mb-2 text-sm font-semibold">{t('releaseNotes')}</h3><ReleaseNotes releases={releaseHistory.length ? releaseHistory : [{ version: update.data.latest_version, published_at: update.data.published_at, notes: t('noReleaseNotes') }]} locale={locale} /></div><Button variant="primary" disabled={!serviceAvailable || upgrade.isPending} onClick={() => upgrade.mutate()}>{upgrade.isPending ? <Spinner /> : <Download size={16} />}{t('upgradeNow')}</Button>{!serviceAvailable ? <p className="text-xs text-[var(--muted)]">{t('systemServiceUpdateOnly')}</p> : null}</> : <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={17} />{t('upToDateDetail')}</div>}
       </div> : null}
     </Card>
     <Card className="p-4 md:p-5">

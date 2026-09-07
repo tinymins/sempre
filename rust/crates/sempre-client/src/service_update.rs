@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::{collections::HashSet, path::Path, time::Duration};
 
 use reqwest::{Client, StatusCode};
 use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions};
@@ -20,7 +20,16 @@ struct Manifest {
     published_at: String,
     notes: String,
     repository: String,
+    #[serde(default)]
+    releases: Vec<ManifestRelease>,
     assets: Vec<ManifestAsset>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ManifestRelease {
+    version: String,
+    published_at: String,
+    notes: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -33,12 +42,20 @@ struct ManifestAsset {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ReleaseNote {
+    pub(crate) version: String,
+    pub(crate) published_at: String,
+    pub(crate) notes: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct Status {
     pub(crate) current_version: String,
     pub(crate) latest_version: String,
     pub(crate) update_available: bool,
     pub(crate) published_at: String,
     pub(crate) release_notes: String,
+    pub(crate) release_history: Vec<ReleaseNote>,
     pub(crate) repository: String,
 }
 
@@ -147,7 +164,10 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), String> {
             manifest.schema
         ));
     }
-    parse_version(&manifest.version)?;
+    let latest = parse_version(&manifest.version)?;
+    if !latest.pre.is_empty() {
+        return Err("update manifest latest version is a prerelease".into());
+    }
     let repository = Url::parse(&manifest.repository)
         .map_err(|_| "update manifest has an invalid repository URL".to_string())?;
     if repository.scheme() != "https" || repository.host_str().is_none() {
@@ -156,18 +176,70 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), String> {
     if manifest.published_at.len() > 128 || manifest.notes.len() > 256 * 1024 {
         return Err("update manifest metadata is too large".into());
     }
+    let mut versions = HashSet::new();
+    for release in &manifest.releases {
+        let version = parse_version(&release.version)?;
+        if !version.pre.is_empty() {
+            return Err("update manifest history contains a prerelease".into());
+        }
+        if !versions.insert(version) {
+            return Err("update manifest history contains a duplicate version".into());
+        }
+        if release.published_at.len() > 128 || release.notes.len() > 256 * 1024 {
+            return Err("update manifest release metadata is too large".into());
+        }
+    }
     Ok(())
 }
 
 fn status(manifest: &Manifest) -> Result<Status, String> {
     let current = parse_version(VERSION)?;
     let latest = parse_version(&manifest.version)?;
+    let mut history = Vec::new();
+    for release in &manifest.releases {
+        let version = parse_version(&release.version)?;
+        if version > current && version <= latest && version.pre.is_empty() {
+            history.push((
+                version,
+                ReleaseNote {
+                    version: release.version.clone(),
+                    published_at: release.published_at.clone(),
+                    notes: release.notes.clone(),
+                },
+            ));
+        }
+    }
+    if latest > current && !history.iter().any(|(version, _)| version == &latest) {
+        history.push((
+            latest.clone(),
+            ReleaseNote {
+                version: manifest.version.clone(),
+                published_at: manifest.published_at.clone(),
+                notes: manifest.notes.clone(),
+            },
+        ));
+    }
+    history.sort_by(|(left, _), (right, _)| left.cmp(right));
+    let release_history = history
+        .into_iter()
+        .map(|(_, release)| release)
+        .collect::<Vec<_>>();
+    let release_notes = match release_history.as_slice() {
+        [] => manifest.notes.clone(),
+        [release] => release.notes.clone(),
+        releases => releases
+            .iter()
+            .map(|release| format!("## v{}\n\n{}", release.version, release.notes.trim()))
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+    };
     Ok(Status {
         current_version: VERSION.strip_prefix('v').unwrap_or(VERSION).into(),
         latest_version: manifest.version.clone(),
         update_available: latest > current,
         published_at: manifest.published_at.clone(),
-        release_notes: manifest.notes.clone(),
+        release_notes,
+        release_history,
         repository: manifest.repository.clone(),
     })
 }
@@ -336,6 +408,7 @@ mod tests {
             published_at: "2026-09-07T09:15:18Z".into(),
             notes: "Fixed update handling.".into(),
             repository: "https://example.com/sempre".into(),
+            releases: Vec::new(),
             assets: Vec::new(),
         }
     }
@@ -361,5 +434,49 @@ mod tests {
             size: 1,
         };
         assert!(validate_asset(&asset, "linux-amd64").is_err());
+    }
+
+    #[test]
+    fn manifest_rejects_prerelease_versions() {
+        assert!(validate_manifest(&manifest("2.0.10-beta.1")).is_err());
+    }
+
+    #[test]
+    fn update_status_joins_stable_release_history_in_semver_order() {
+        let current = parse_version(VERSION).expect("current version");
+        let middle = format!("{}.0.0", current.major + 1);
+        let latest = format!("{}.0.0", current.major + 2);
+        let mut value = manifest(&latest);
+        value.releases = vec![
+            ManifestRelease {
+                version: latest.clone(),
+                published_at: "2026-09-08T00:00:00Z".into(),
+                notes: "Latest notes.".into(),
+            },
+            ManifestRelease {
+                version: format!("{middle}-beta.1"),
+                published_at: "2026-09-07T12:00:00Z".into(),
+                notes: "Beta notes.".into(),
+            },
+            ManifestRelease {
+                version: middle.clone(),
+                published_at: "2026-09-07T00:00:00Z".into(),
+                notes: "Middle notes.".into(),
+            },
+        ];
+
+        let result = status(&value).expect("update status");
+        assert_eq!(
+            result
+                .release_history
+                .iter()
+                .map(|release| release.version.as_str())
+                .collect::<Vec<_>>(),
+            vec![middle.as_str(), latest.as_str()]
+        );
+        assert_eq!(
+            result.release_notes,
+            format!("## v{middle}\n\nMiddle notes.\n\n## v{latest}\n\nLatest notes.")
+        );
     }
 }
