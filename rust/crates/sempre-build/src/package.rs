@@ -12,6 +12,7 @@ pub struct BuildInput {
     pub executable: PathBuf,
     pub ui_archive: PathBuf,
     pub output: PathBuf,
+    pub artifact_cache: Option<PathBuf>,
     pub version: String,
     pub installed_at: DateTime<Utc>,
     pub target: BuildTarget,
@@ -53,12 +54,19 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     checksum::write(&source.resources, &["sempre-ui.zip".into()])?;
     crate::dns_capture::bundle_dns_capture(&input.executable, &source.resources, &input.target)?;
 
-    let downloader = Downloader::new("Sempre release builder")?;
+    let mut downloader = Downloader::new("Sempre release builder")?;
+    if let Some(cache) = &input.artifact_cache {
+        downloader = downloader.with_cache(cache);
+    }
     let (tunnel_os, tunnel_arch) = input.target.tunnel_target();
     sempre_tunnel::install_for(&source, &downloader, tunnel_os, tunnel_arch).await?;
-    let document =
-        cores::install_bundled_cores(&source, &input.target.core_target(), input.installed_at)
-            .await?;
+    let document = cores::install_bundled_cores(
+        &source,
+        &input.target.core_target(),
+        input.installed_at,
+        &downloader,
+    )
+    .await?;
 
     let binary = input.output.join(input.target.binary_name());
     fs::copy(&input.executable, &binary)

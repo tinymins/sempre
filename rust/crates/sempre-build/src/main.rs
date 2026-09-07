@@ -21,6 +21,12 @@ struct Arguments {
     /// Write the target artifacts to this directory.
     #[arg(long, default_value = "dist", global = true)]
     output: PathBuf,
+    /// Reuse verified release inputs from this content-addressed cache.
+    #[arg(long, global = true)]
+    artifact_cache: Option<PathBuf>,
+    /// Build this product target (for example, darwin-amd64).
+    #[arg(long, global = true)]
+    target: Option<String>,
     #[command(subcommand)]
     task: Option<Task>,
 }
@@ -31,7 +37,7 @@ enum Task {
     DnsCaptureSdk,
     /// Run Rust and frontend quality gates without packaging.
     Verify,
-    /// Build and package only the current native release target.
+    /// Build and package one native release target.
     Package,
 }
 
@@ -58,7 +64,20 @@ async fn run(arguments: Arguments) -> Result<(), BuildError> {
     if matches!(arguments.task, Some(Task::Verify)) {
         return Ok(());
     }
-    build_release(&root, &rust, &output, arguments.version).await
+    let target = arguments
+        .target
+        .as_deref()
+        .map(BuildTarget::named)
+        .transpose()?;
+    build_release(
+        &root,
+        &rust,
+        &output,
+        arguments.artifact_cache,
+        arguments.version,
+        target,
+    )
+    .await
 }
 
 async fn verify(root: &Path, rust: &Path) -> Result<(), BuildError> {
@@ -103,8 +122,14 @@ async fn build_release(
     root: &Path,
     rust: &Path,
     output: &Path,
+    artifact_cache: Option<PathBuf>,
     version: Option<String>,
+    requested_target: Option<BuildTarget>,
 ) -> Result<(), BuildError> {
+    let host = BuildTarget::current()?;
+    let explicit_target = requested_target.is_some();
+    let target = requested_target.unwrap_or_else(|| host.clone());
+    target.ensure_buildable_on(&host)?;
     run_command(root, "bun", ["run", "build:ui"], &[])?;
 
     let version = release_version(version);
@@ -126,35 +151,37 @@ async fn build_release(
         ("SEMPRE_COMMIT", commit.as_str()),
         ("SEMPRE_BUILD_DATE", date.as_str()),
     ];
-    run_command(
+    build_package(
         rust,
-        "cargo",
-        ["build", "--release", "-p", "sempre-client"],
+        "sempre-client",
+        explicit_target.then_some(&target),
         &environment,
     )?;
-    let target = BuildTarget::current()?;
     if sempre_build::dns_capture_supported(&target) {
         let distribution =
             sempre_build::prepare_dns_capture(&rust.join("target/windivert")).await?;
         let library = distribution.join("x64").to_string_lossy().into_owned();
         let mut capture_environment = environment.to_vec();
         capture_environment.push(("WINDIVERT_PATH", library.as_str()));
-        run_command(
+        build_package(
             rust,
-            "cargo",
-            ["build", "--release", "-p", "sempre-dns-capture"],
+            "sempre-dns-capture",
+            explicit_target.then_some(&target),
             &capture_environment,
         )?;
         sempre_build::assemble_dns_capture(
-            &rust.join("target/release/sempre-dns-capture.exe"),
+            &release_directory(rust, explicit_target.then_some(&target))
+                .join("sempre-dns-capture.exe"),
             &distribution,
         )?;
     }
-    let executable = rust.join("target/release").join(target.executable_name());
+    let executable =
+        release_directory(rust, explicit_target.then_some(&target)).join(target.executable_name());
     let result = sempre_build::package(&BuildInput {
         executable,
         ui_archive,
         output: output.to_path_buf(),
+        artifact_cache,
         version,
         installed_at,
         target,
@@ -165,6 +192,27 @@ async fn build_release(
     println!("UI: {}", result.ui_archive.display());
     println!("Checksums: {}", result.checksums.display());
     Ok(())
+}
+
+fn build_package(
+    rust: &Path,
+    package: &str,
+    target: Option<&BuildTarget>,
+    environment: &[(&str, &str)],
+) -> Result<(), BuildError> {
+    let mut arguments = vec!["build", "--release", "-p", package];
+    if let Some(target) = target {
+        arguments.extend(["--target", target.rust_triple()]);
+    }
+    run_command(rust, "cargo", arguments, environment)
+}
+
+fn release_directory(rust: &Path, target: Option<&BuildTarget>) -> PathBuf {
+    let mut directory = rust.join("target");
+    if let Some(target) = target {
+        directory.push(target.rust_triple());
+    }
+    directory.join("release")
 }
 
 fn repository_root() -> Result<PathBuf, BuildError> {
@@ -274,16 +322,36 @@ mod tests {
             "artifacts",
             "--version",
             "v2.0.7",
+            "--target",
+            "darwin-amd64",
+            "--artifact-cache",
+            ".cache/artifacts",
         ])
         .expect("package");
         assert!(matches!(package.task, Some(Task::Package)));
         assert_eq!(package.output, PathBuf::from("artifacts"));
         assert_eq!(package.version.as_deref(), Some("v2.0.7"));
+        assert_eq!(package.target.as_deref(), Some("darwin-amd64"));
+        assert_eq!(
+            package.artifact_cache,
+            Some(PathBuf::from(".cache/artifacts"))
+        );
     }
 
     #[test]
     fn release_version_defaults_to_workspace_version_and_allows_tag_override() {
         assert_eq!(release_version(None), "2.0.7");
         assert_eq!(release_version(Some("v2.0.7".into())), "v2.0.7");
+    }
+
+    #[test]
+    fn explicit_targets_use_their_cargo_release_directory() {
+        let rust = Path::new("/workspace/sempre/rust");
+        let target = BuildTarget::named("darwin-amd64").expect("target");
+        assert_eq!(
+            release_directory(rust, Some(&target)),
+            rust.join("target/x86_64-apple-darwin/release")
+        );
+        assert_eq!(release_directory(rust, None), rust.join("target/release"));
     }
 }

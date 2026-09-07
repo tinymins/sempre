@@ -30,6 +30,35 @@ impl BuildTarget {
         Ok(target)
     }
 
+    pub fn named(value: &str) -> Result<Self, BuildError> {
+        let (os, arch) = value
+            .split_once('-')
+            .ok_or_else(|| BuildError::invalid(format!("invalid release target name {value}")))?;
+        Self::new(os, arch)
+    }
+
+    pub fn ensure_buildable_on(&self, host: &Self) -> Result<(), BuildError> {
+        if self == host || (self.os == "darwin" && host.os == "darwin") {
+            return Ok(());
+        }
+        Err(BuildError::invalid(format!(
+            "cannot build {}/{} on {}/{}",
+            self.os, self.arch, host.os, host.arch
+        )))
+    }
+
+    pub fn rust_triple(&self) -> &'static str {
+        match (self.os.as_str(), self.arch.as_str()) {
+            ("windows", "amd64") => "x86_64-pc-windows-msvc",
+            ("windows", "arm64") => "aarch64-pc-windows-msvc",
+            ("linux", "amd64") => "x86_64-unknown-linux-gnu",
+            ("linux", "arm64") => "aarch64-unknown-linux-gnu",
+            ("darwin", "amd64") => "x86_64-apple-darwin",
+            ("darwin", "arm64") => "aarch64-apple-darwin",
+            _ => unreachable!("validated release target"),
+        }
+    }
+
     pub fn core_target(&self) -> Target {
         Target {
             os: self.os.clone(),
@@ -74,10 +103,21 @@ mod tests {
     fn maps_product_targets_to_release_tools() {
         let darwin = BuildTarget::new("darwin", "amd64").expect("darwin target");
         assert_eq!(darwin.tunnel_target(), ("macos", "x86_64"));
+        assert_eq!(darwin.rust_triple(), "x86_64-apple-darwin");
         assert_eq!(darwin.binary_name(), "sempre-darwin-amd64");
         let windows = BuildTarget::new("windows", "arm64").expect("windows target");
         assert_eq!(windows.tunnel_target(), ("windows", "aarch64"));
         assert_eq!(windows.binary_name(), "sempre-windows-arm64.exe");
         assert!(BuildTarget::new("freebsd", "amd64").is_err());
+    }
+
+    #[test]
+    fn cross_builds_are_limited_to_macos_architectures() {
+        let darwin_arm = BuildTarget::named("darwin-arm64").expect("darwin arm64");
+        let darwin_intel = BuildTarget::named("darwin-amd64").expect("darwin amd64");
+        let linux = BuildTarget::named("linux-amd64").expect("linux amd64");
+        assert!(darwin_intel.ensure_buildable_on(&darwin_arm).is_ok());
+        assert!(linux.ensure_buildable_on(&darwin_arm).is_err());
+        assert!(BuildTarget::named("darwin").is_err());
     }
 }

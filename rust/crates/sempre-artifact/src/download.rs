@@ -1,9 +1,13 @@
-use std::{path::Path, str::FromStr, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::Duration,
+};
 
 use futures_util::StreamExt;
 use reqwest::{Client, StatusCode, header};
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use url::Url;
 
 use crate::{ArtifactError, RemoveOnDrop, Result, Sha256Digest};
@@ -21,6 +25,7 @@ pub struct Artifact {
 #[derive(Clone)]
 pub struct Downloader {
     client: Client,
+    cache: Option<PathBuf>,
 }
 
 impl Downloader {
@@ -28,7 +33,16 @@ impl Downloader {
         let client = crate::http::client_builder(user_agent, Duration::from_mins(15))
             .build()
             .map_err(|error| ArtifactError::http("build download client", error))?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            cache: None,
+        })
+    }
+
+    #[must_use]
+    pub fn with_cache(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.cache = Some(directory.into());
+        self
     }
 
     pub async fn verified(&self, artifact: &Artifact, destination: &Path) -> Result<()> {
@@ -43,6 +57,18 @@ impl Downloader {
         progress: impl Fn(u64, u64),
     ) -> Result<()> {
         let expected = validate_artifact(artifact)?;
+        if let Some(cache) = &self.cache {
+            let cached = cache.join(expected.to_string().trim_start_matches("sha256:"));
+            if cached.is_file() {
+                if verify_cached(&cached, artifact, &expected).await? {
+                    copy_cached(&cached, destination).await?;
+                    return Ok(());
+                }
+                tokio::fs::remove_file(&cached)
+                    .await
+                    .map_err(|error| ArtifactError::io("remove invalid cached artifact", error))?;
+            }
+        }
         let response = self
             .client
             .get(&artifact.url)
@@ -82,8 +108,59 @@ impl Downloader {
         });
         write_verified_stream(body, file, artifact, &expected, progress).await?;
         cleanup.keep();
+        if let Some(cache) = &self.cache {
+            tokio::fs::create_dir_all(cache)
+                .await
+                .map_err(|error| ArtifactError::io("create artifact cache", error))?;
+            let cached = cache.join(expected.to_string().trim_start_matches("sha256:"));
+            tokio::fs::copy(destination, &cached)
+                .await
+                .map_err(|error| ArtifactError::io("cache verified artifact", error))?;
+        }
         Ok(())
     }
+}
+
+async fn verify_cached(path: &Path, artifact: &Artifact, expected: &Sha256Digest) -> Result<bool> {
+    let metadata = tokio::fs::metadata(path)
+        .await
+        .map_err(|error| ArtifactError::io("inspect cached artifact", error))?;
+    if metadata.len() != artifact.size {
+        return Ok(false);
+    }
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|error| ArtifactError::io("open cached artifact", error))?;
+    let mut hash = Sha256::new();
+    let mut buffer = vec![0_u8; 64 << 10];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .await
+            .map_err(|error| ArtifactError::io("read cached artifact", error))?;
+        if read == 0 {
+            break;
+        }
+        hash.update(&buffer[..read]);
+    }
+    Ok(Sha256Digest::from_bytes(hash.finalize().into()) == *expected)
+}
+
+async fn copy_cached(source: &Path, destination: &Path) -> Result<()> {
+    let mut source = tokio::fs::File::open(source)
+        .await
+        .map_err(|error| ArtifactError::io("open cached artifact", error))?;
+    let mut output = create_destination(destination).await?;
+    let cleanup = RemoveOnDrop::new(destination.to_path_buf());
+    tokio::io::copy(&mut source, &mut output)
+        .await
+        .map_err(|error| ArtifactError::io("copy cached artifact", error))?;
+    output
+        .sync_all()
+        .await
+        .map_err(|error| ArtifactError::io("sync cached artifact", error))?;
+    cleanup.keep();
+    Ok(())
 }
 
 async fn write_verified_stream<S, B>(
@@ -252,6 +329,43 @@ mod tests {
             )
             .await
             .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn verified_download_reuses_valid_content_addressed_cache_entries() {
+        let root = tempdir().expect("temporary directory");
+        let payload = b"verified core";
+        let digest = Sha256Digest::from_bytes(Sha256::digest(payload).into());
+        let artifact = Artifact {
+            name: "core".into(),
+            url: "https://example.invalid/core".into(),
+            digest: digest.to_string(),
+            size: payload.len() as u64,
+        };
+        let cache = root.path().join("cache");
+        tokio::fs::create_dir_all(&cache).await.expect("cache");
+        let cached = cache.join(digest.to_string().trim_start_matches("sha256:"));
+        tokio::fs::write(&cached, payload)
+            .await
+            .expect("cached artifact");
+
+        let output = root.path().join("output");
+        Downloader::new("test")
+            .expect("downloader")
+            .with_cache(&cache)
+            .verified(&artifact, &output)
+            .await
+            .expect("cache hit");
+        assert_eq!(tokio::fs::read(output).await.expect("output"), payload);
+
+        tokio::fs::write(&cached, b"corrupt core")
+            .await
+            .expect("corrupt cache");
+        assert!(
+            !verify_cached(&cached, &artifact, &digest)
+                .await
+                .expect("inspect invalid cache")
         );
     }
 }

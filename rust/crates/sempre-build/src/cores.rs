@@ -30,17 +30,17 @@ pub(crate) async fn install_bundled_cores(
     layout: &Layout,
     target: &Target,
     installed_at: DateTime<Utc>,
+    downloader: &Downloader,
 ) -> Result<Document, BuildError> {
     let registry = built_in_registry();
     let releases = GithubClient::new("Sempre release builder")?;
-    let downloader = Downloader::new("Sempre release builder")?;
     let mut resolved = Vec::new();
     for request in requests() {
         let adapter = registry.get(request.core)?;
         let package = releases
             .resolve(adapter.as_ref(), "", request.reference, target)
             .await?;
-        install_core(layout, target, adapter.as_ref(), &package, &downloader).await?;
+        install_core(layout, target, adapter.as_ref(), &package, downloader).await?;
         resolved.push(Resolved {
             core: request.core.into(),
             channel: request.channel.map(str::to_owned),
