@@ -1,7 +1,7 @@
 use std::{collections::HashSet, path::Path, time::Duration};
 
 use reqwest::{Client, StatusCode};
-use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions};
+use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions, Sha256Digest};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
@@ -75,7 +75,7 @@ pub(crate) async fn prepare_and_schedule() -> Result<Status, String> {
         .iter()
         .find(|asset| asset.target == target)
         .ok_or_else(|| format!("release {} has no asset for {target}", manifest.version))?;
-    validate_asset(asset, &target)?;
+    let artifact = release_artifact(asset, &target)?;
     let temporary = tempfile::Builder::new()
         .prefix("sempre-update-")
         .tempdir()
@@ -83,15 +83,7 @@ pub(crate) async fn prepare_and_schedule() -> Result<Status, String> {
     let archive = temporary.path().join(&asset.name);
     Downloader::new(&format!("Sempre/{VERSION}"))
         .map_err(|error| error.to_string())?
-        .verified(
-            &Artifact {
-                name: asset.name.clone(),
-                url: asset.url.clone(),
-                digest: asset.sha256.clone(),
-                size: asset.size,
-            },
-            &archive,
-        )
+        .verified(&artifact, &archive)
         .await
         .map_err(|error| error.to_string())?;
     let extracted = temporary.path().join("bundle");
@@ -249,7 +241,7 @@ fn parse_version(value: &str) -> Result<Version, String> {
         .map_err(|error| format!("invalid Sempre version {value:?}: {error}"))
 }
 
-fn validate_asset(asset: &ManifestAsset, target: &str) -> Result<(), String> {
+fn release_artifact(asset: &ManifestAsset, target: &str) -> Result<Artifact, String> {
     let expected = format!("sempre-bundle-{target}.zip");
     if asset.name != expected {
         return Err(format!("update asset name must be {expected}"));
@@ -259,7 +251,15 @@ fn validate_asset(asset: &ManifestAsset, target: &str) -> Result<(), String> {
     if url.scheme() != "https" || url.host_str().is_none() {
         return Err(format!("update asset {} has an invalid URL", asset.name));
     }
-    Ok(())
+    let digest = format!("sha256:{}", asset.sha256)
+        .parse::<Sha256Digest>()
+        .map_err(|error| format!("update asset {}: {error}", asset.name))?;
+    Ok(Artifact {
+        name: asset.name.clone(),
+        url: asset.url.clone(),
+        digest: digest.to_string(),
+        size: asset.size,
+    })
 }
 
 async fn validate_version(executable: &Path, expected: &str) -> Result<(), String> {
@@ -398,85 +398,5 @@ fn platform_schedule(_: &Path, _: &Path) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn manifest(version: &str) -> Manifest {
-        Manifest {
-            schema: 1,
-            version: version.into(),
-            published_at: "2026-09-07T09:15:18Z".into(),
-            notes: "Fixed update handling.".into(),
-            repository: "https://example.com/sempre".into(),
-            releases: Vec::new(),
-            assets: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn update_status_uses_semantic_version_ordering() {
-        let newer = status(&manifest("999.0.0")).expect("newer status");
-        assert!(newer.update_available);
-        let older = status(&manifest("0.1.0")).expect("older status");
-        assert!(!older.update_available);
-    }
-
-    #[test]
-    fn manifest_rejects_untrusted_repository_and_asset_urls() {
-        let mut value = manifest("2.0.8");
-        value.repository = "http://example.com/sempre".into();
-        assert!(validate_manifest(&value).is_err());
-        let asset = ManifestAsset {
-            target: "linux-amd64".into(),
-            name: "sempre-bundle-linux-amd64.zip".into(),
-            url: "http://example.com/sempre.zip".into(),
-            sha256: "a".repeat(64),
-            size: 1,
-        };
-        assert!(validate_asset(&asset, "linux-amd64").is_err());
-    }
-
-    #[test]
-    fn manifest_rejects_prerelease_versions() {
-        assert!(validate_manifest(&manifest("2.0.10-beta.1")).is_err());
-    }
-
-    #[test]
-    fn update_status_joins_stable_release_history_in_semver_order() {
-        let current = parse_version(VERSION).expect("current version");
-        let middle = format!("{}.0.0", current.major + 1);
-        let latest = format!("{}.0.0", current.major + 2);
-        let mut value = manifest(&latest);
-        value.releases = vec![
-            ManifestRelease {
-                version: latest.clone(),
-                published_at: "2026-09-08T00:00:00Z".into(),
-                notes: "Latest notes.".into(),
-            },
-            ManifestRelease {
-                version: format!("{middle}-beta.1"),
-                published_at: "2026-09-07T12:00:00Z".into(),
-                notes: "Beta notes.".into(),
-            },
-            ManifestRelease {
-                version: middle.clone(),
-                published_at: "2026-09-07T00:00:00Z".into(),
-                notes: "Middle notes.".into(),
-            },
-        ];
-
-        let result = status(&value).expect("update status");
-        assert_eq!(
-            result
-                .release_history
-                .iter()
-                .map(|release| release.version.as_str())
-                .collect::<Vec<_>>(),
-            vec![middle.as_str(), latest.as_str()]
-        );
-        assert_eq!(
-            result.release_notes,
-            format!("## v{middle}\n\nMiddle notes.\n\n## v{latest}\n\nLatest notes.")
-        );
-    }
-}
+#[path = "service_update_tests.rs"]
+mod tests;
