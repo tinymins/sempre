@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/pages.yml"
+      - ".github/release-notes/**"
       - "installer/**"
       - "site/**"
   workflow_dispatch:
@@ -77,20 +78,30 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             | jq -s 'add | map(select(.draft == false and .prerelease == false))' \
             > "$RUNNER_TEMP/sempre-releases.json"
+          notes_map="$RUNNER_TEMP/sempre-release-notes.json"
+          jq -n '{}' > "$notes_map"
+          for notes_path in .github/release-notes/*.md; do
+            tag="${notes_path##*/}"
+            tag="${tag%.md}"
+            jq --arg tag "$tag" --rawfile notes "$notes_path" \
+              '. + {($tag): $notes}' "$notes_map" > "$notes_map.next"
+            mv "$notes_map.next" "$notes_map"
+          done
           jq --arg repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --slurpfile releases "$RUNNER_TEMP/sempre-releases.json" '
+            --slurpfile releases "$RUNNER_TEMP/sempre-releases.json" \
+            --slurpfile notes "$notes_map" '
             {
               schema: 1,
               version: (.tag_name | ltrimstr("v")),
               published_at,
-              notes: (.body // ""),
+              notes: ($notes[0][.tag_name] // .body // ""),
               repository: $repository,
               releases: [
                 $releases[0][]
                 | {
                     version: (.tag_name | ltrimstr("v")),
                     published_at,
-                    notes: (.body // "")
+                    notes: ($notes[0][.tag_name] // .body // "")
                   }
               ],
               assets: [
@@ -117,7 +128,9 @@ jobs:
             all(.releases[];
               (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+][0-9A-Za-z.-]+)?$")) and
               (.published_at | type == "string") and
-              (.notes | type == "string")
+              (.notes | type == "string") and
+              (.notes | contains("## 简体中文")) and
+              (.notes | contains("## English"))
             ) and
             (.assets | length == 6) and
             all(.assets[]; (.sha256 | test("^[0-9a-f]{64}$")) and .size > 0 and (.url | startswith("https://")))
