@@ -65,6 +65,21 @@ describe('Overview', () => {
     expect(await screen.findByText('10.0 MiB + 20.0 MiB')).toBeInTheDocument()
   })
 
+  it('hides home-network direct access when it is not applicable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      if (path.endsWith('/runtime/events')) return new Response('')
+      if (path.endsWith('/runtime/overview')) return Response.json({ core: 'sing-box', version: '1.13.18', connections: 0, download: 0, upload: 0 })
+      return Response.json({ ...configuredSystem, private_access: { ...configuredSystem.private_access, connectors: [] } })
+    }))
+    renderOverview()
+
+    expect(await screen.findByText('Sempre 0.3.0')).toBeInTheDocument()
+    expect(screen.queryByText('Home network auto-direct')).not.toBeInTheDocument()
+    expect(screen.queryByText('Not applicable')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Core Status' })).toBeInTheDocument()
+  })
+
   it('shows smart diagnosis only while initial core setup is incomplete', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ...configuredSystem, runtime: { state: 'idle' }, selected: undefined, active: undefined })))
     renderOverview()

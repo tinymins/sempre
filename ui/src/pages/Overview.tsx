@@ -74,10 +74,10 @@ function SystemSummary({ system }: { system?: SystemStatus }) {
   const coreName = system?.active ? `${system.active.core} ${system.active.version}` : system?.selected ? `${system.selected.core}@${system.selected.ref}` : t('noCore')
   const privateMode = privateAccessMode(system?.private_access)
   return <Card className="overflow-hidden">
-    <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:divide-x md:divide-[var(--border)]">
+    <div className={`grid ${privateMode ? 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]' : 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]'} md:divide-x md:divide-[var(--border)]`}>
       <SummaryItem icon={Server} label={t('sempreService')} value={system ? `Sempre ${system.version}` : t('loading')} detail={system?.mode || '-'} status={system?.service === 'running' ? t('online') : system?.service || t('loading')} tone={system?.service === 'running' ? 'success' : 'warning'} />
       <SummaryItem icon={Cpu} label={t('managedCore')} value={coreName} detail={system?.active?.ref || system?.selected?.ref || '-'} status={runtimeState ? runtimeLabel(runtimeState, t) : t('loading')} tone={runtimeState === 'running' ? 'success' : runtimeState === 'failed' ? 'danger' : 'warning'} />
-      <SummaryItem icon={Network} label={t('privateAccessAuto')} value={privateMode ? modeLabel(privateMode, t) : t('notApplicable')} detail={privateMode ? `${system?.private_access?.interface || '-'} · ${system?.private_access?.interface_addresses.join(', ') || '-'}` : '-'} status={privateMode ? modeLabel(privateMode, t) : t('notApplicable')} tone={privateMode === 'direct' ? 'success' : 'warning'} />
+      {privateMode ? <SummaryItem icon={Network} label={t('privateAccessAuto')} value={modeLabel(privateMode, t)} detail={`${system?.private_access?.interface || '-'} · ${system?.private_access?.interface_addresses.join(', ') || '-'}`} status={modeLabel(privateMode, t)} tone={privateMode === 'direct' ? 'success' : 'warning'} /> : null}
       <Link className="flex items-center justify-center gap-2 border-t border-[var(--border)] px-5 py-4 text-sm font-medium text-emerald-700 hover:bg-[var(--surface-hover)] dark:text-emerald-400 md:border-t-0" to="/runtime-status">{t('navigationCoreStatus')}<ArrowRight size={16} /></Link>
     </div>
     {system?.pending ? <div className="border-t border-amber-500/25 bg-amber-500/8 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">{t('pendingChange')}</div> : null}
