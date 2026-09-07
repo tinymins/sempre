@@ -49,12 +49,25 @@ jobs:
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
+            ~/.cargo/git
+            ~/.cargo/registry
             rust/target/debug
             rust/target/${{ matrix.target }}/release
-          key: windows-release-v1-${{ matrix.name }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}-${{ inputs.version }}
+          key: windows-release-v2-${{ matrix.name }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}-${{ inputs.version }}
           restore-keys: |
+            windows-release-v2-${{ matrix.name }}-${{ hashFiles('rust/Cargo.lock') }}-
+            windows-release-v2-${{ matrix.name }}-
             windows-release-v1-${{ matrix.name }}-${{ hashFiles('rust/Cargo.lock') }}-
             windows-release-v1-${{ matrix.name }}-
+      - name: Preserve prewarmed Cargo fingerprints
+        shell: pwsh
+        run: |
+          $timestamp = [DateTime]::Parse('2000-01-01T00:00:00Z').ToUniversalTime()
+          git ls-files rust | ForEach-Object {
+            if (Test-Path -LiteralPath $_ -PathType Leaf) {
+              (Get-Item -LiteralPath $_).LastWriteTimeUtc = $timestamp
+            }
+          }
       - name: Restore verified release inputs
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
