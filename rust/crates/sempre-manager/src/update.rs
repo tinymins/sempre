@@ -1,9 +1,20 @@
 use sempre_core::CoreRef;
 
-use crate::{CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner};
+use crate::{
+    CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner,
+    install::CoreInstallProgress,
+};
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub async fn update_cores(&self, value: &str) -> Result<Vec<CoreChange>, ManagerError> {
+        self.update_cores_observed(value, &|_| {}).await
+    }
+
+    pub(crate) async fn update_cores_observed(
+        &self,
+        value: &str,
+        progress: &(impl Fn(CoreInstallProgress) + Sync),
+    ) -> Result<Vec<CoreChange>, ManagerError> {
         let references = if value.trim().is_empty() {
             installed_channels(&self.store.read()?)
         } else {
@@ -24,7 +35,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let mut changes = Vec::new();
         for reference in references {
             let selected = selection_matches(&self.store.read()?, &reference);
-            let result = self.install_core(&reference.to_string()).await?;
+            let result = self
+                .install_core_observed(&reference.to_string(), progress)
+                .await?;
             changes.push(CoreChange {
                 changed: result.changed,
                 message: if result.changed {

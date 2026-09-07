@@ -24,8 +24,28 @@ pub struct InstallResult {
     pub changed: bool,
 }
 
+pub(crate) enum CoreInstallProgress {
+    Resolving {
+        reference: String,
+    },
+    Downloading {
+        artifact: String,
+        downloaded: u64,
+        total: u64,
+    },
+    Installing,
+}
+
 impl<R: VersionRunner> Manager<R> {
     pub async fn install_core(&self, value: &str) -> Result<InstallResult, ManagerError> {
+        self.install_core_observed(value, &|_| {}).await
+    }
+
+    pub(crate) async fn install_core_observed(
+        &self,
+        value: &str,
+        progress: &(impl Fn(CoreInstallProgress) + Sync),
+    ) -> Result<InstallResult, ManagerError> {
         let _operation = self.store.acquire_operation()?;
         let mut reference = CoreRef::parse(value)?;
         let adapter = self.registry.get(&reference.core)?;
@@ -36,6 +56,9 @@ impl<R: VersionRunner> Manager<R> {
         {
             reference.repository = None;
         }
+        progress(CoreInstallProgress::Resolving {
+            reference: reference.to_string(),
+        });
         let package = self
             .releases
             .resolve(
@@ -52,8 +75,14 @@ impl<R: VersionRunner> Manager<R> {
             .tempdir_in(&self.store.layout().runtime)
             .map_err(|error| ManagerError::io("create core install directory", error))?;
         let archive = temporary.path().join(&package.name);
+        let artifact_name = package.name.clone();
+        progress(CoreInstallProgress::Downloading {
+            artifact: artifact_name.clone(),
+            downloaded: 0,
+            total: package.size,
+        });
         self.downloader
-            .verified(
+            .verified_with_progress(
                 &Artifact {
                     name: package.name.clone(),
                     url: package.url.clone(),
@@ -61,8 +90,16 @@ impl<R: VersionRunner> Manager<R> {
                     size: package.size,
                 },
                 &archive,
+                |downloaded, total| {
+                    progress(CoreInstallProgress::Downloading {
+                        artifact: artifact_name.clone(),
+                        downloaded,
+                        total,
+                    });
+                },
             )
             .await?;
+        progress(CoreInstallProgress::Installing);
         self.install_downloaded(&reference, adapter, &package, &archive)
             .await
     }

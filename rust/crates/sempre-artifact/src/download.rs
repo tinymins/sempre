@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use url::Url;
 
-use crate::{ArtifactError, RemoveOnDrop, Result, Sha256Digest, https_redirect_policy};
+use crate::{ArtifactError, RemoveOnDrop, Result, Sha256Digest};
 
 pub const MAX_ARTIFACT_SIZE: u64 = 512 << 20;
 
@@ -25,16 +25,23 @@ pub struct Downloader {
 
 impl Downloader {
     pub fn new(user_agent: &str) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(Duration::from_mins(15))
-            .redirect(https_redirect_policy())
-            .user_agent(user_agent)
+        let client = crate::http::client_builder(user_agent, Duration::from_mins(15))
             .build()
             .map_err(|error| ArtifactError::http("build download client", error))?;
         Ok(Self { client })
     }
 
     pub async fn verified(&self, artifact: &Artifact, destination: &Path) -> Result<()> {
+        self.verified_with_progress(artifact, destination, |_, _| {})
+            .await
+    }
+
+    pub async fn verified_with_progress(
+        &self,
+        artifact: &Artifact,
+        destination: &Path,
+        progress: impl Fn(u64, u64),
+    ) -> Result<()> {
         let expected = validate_artifact(artifact)?;
         let response = self
             .client
@@ -73,7 +80,7 @@ impl Downloader {
         let body = response.bytes_stream().map(|chunk| {
             chunk.map_err(|error| ArtifactError::http(format!("download {}", artifact.name), error))
         });
-        write_verified_stream(body, file, artifact, &expected).await?;
+        write_verified_stream(body, file, artifact, &expected, progress).await?;
         cleanup.keep();
         Ok(())
     }
@@ -84,6 +91,7 @@ async fn write_verified_stream<S, B>(
     mut file: tokio::fs::File,
     artifact: &Artifact,
     expected: &Sha256Digest,
+    progress: impl Fn(u64, u64),
 ) -> Result<()>
 where
     S: futures_util::Stream<Item = Result<B>> + Unpin,
@@ -107,6 +115,7 @@ where
         file.write_all(data)
             .await
             .map_err(|error| ArtifactError::io("write download", error))?;
+        progress(written, artifact.size);
     }
     if written != artifact.size {
         return Err(ArtifactError::invalid(format!(
@@ -207,6 +216,7 @@ mod tests {
     async fn streamed_write_requires_exact_size_and_digest() {
         let root = tempdir().expect("temporary directory");
         let payload = b"verified core";
+        let progress = std::cell::Cell::new((0, 0));
         let digest = Sha256Digest::from_bytes(Sha256::digest(payload).into());
         let artifact = Artifact {
             name: "core".into(),
@@ -221,10 +231,12 @@ mod tests {
             file,
             &artifact,
             &digest,
+            |downloaded, total| progress.set((downloaded, total)),
         )
         .await
         .expect("verified stream");
         assert_eq!(tokio::fs::read(&output).await.expect("output"), payload);
+        assert_eq!(progress.get(), (payload.len() as u64, payload.len() as u64));
 
         let short_output = root.path().join("short");
         let short_file = create_destination(&short_output)
@@ -236,6 +248,7 @@ mod tests {
                 short_file,
                 &artifact,
                 &digest,
+                |_, _| {},
             )
             .await
             .is_err()

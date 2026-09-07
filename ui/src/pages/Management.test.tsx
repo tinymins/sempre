@@ -7,13 +7,24 @@ import { Management } from './Management'
 
 describe('Management page', () => {
   let savedSettings: Record<string, unknown> | undefined
+  let coreTask: Record<string, unknown> | null
+  let cancelledTask = ''
 
   beforeEach(() => {
     savedSettings = undefined
+    coreTask = null
+    cancelledTask = ''
     localStorage.setItem('sempre.locale', 'zh-CN')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/cores/download')) {
+        if (init?.method === 'DELETE') {
+          cancelledTask = new URL(String(input)).searchParams.get('id') || ''
+          coreTask = null
+        }
+        return Response.json({ task: coreTask })
+      }
       if (path.endsWith('/cores')) return Response.json({ supported: [], installed: [], selected: null })
       if (path.endsWith('/network/settings')) {
         const settings = { schema: 2, revision: 1, mode: 'local', gateway_capture_host: false, automatic_switching: false, known_networks: [] }
@@ -60,5 +71,27 @@ describe('Management page', () => {
 
     expect(gateway).toHaveClass('cursor-not-allowed')
     expect(within(gateway as HTMLElement).getByText('仅 Linux 系统服务可用')).toHaveClass('text-xs', 'text-[var(--text-muted)]')
+  })
+
+  it('shows byte progress and clears a cancelled download after confirmation', async () => {
+    coreTask = {
+      id: 'download-1', operation: 'install', reference: 'sing-box:tinymins/sing-box@1.13.15-ddns.1',
+      state: 'running', stage: 'downloading', artifact: 'sing-box-darwin-arm64.tar.gz',
+      downloaded_bytes: 5 * 1024 * 1024, total_bytes: 10 * 1024 * 1024,
+      started_at: '2026-09-07T00:00:00Z', finished_at: null, error: null,
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    expect(await screen.findByText('5.0 MiB / 10.0 MiB · 50%')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+    fireEvent.click(screen.getByRole('button', { name: '取消下载' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('下载将立即终止，临时文件和任务列表项会被清除。')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消下载' }))
+
+    await waitFor(() => expect(cancelledTask).toBe('download-1'))
+    await waitFor(() => expect(screen.queryByText('下载任务')).not.toBeInTheDocument())
   })
 })

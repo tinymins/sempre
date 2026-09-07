@@ -165,10 +165,44 @@ async fn core_auto_diagnosis_and_update_routes_use_the_rust_manager() {
         DAEMON_TOKEN_HEADER,
         HeaderValue::from_str(&token).expect("token"),
     );
-    assert_eq!(
-        app.oneshot(update).await.expect("update").status(),
-        StatusCode::BAD_REQUEST
+    let response = app.clone().oneshot(update).await.expect("update");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let task: serde_json::Value = serde_json::from_slice(&body).expect("task JSON");
+    let id = task["task"]["id"].as_str().expect("task id");
+
+    let mut current = request(
+        "GET",
+        "/api/v1/cores/download",
+        Body::empty(),
+        "127.0.0.1:1",
     );
+    current.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(current).await.expect("current task");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut cancel = request(
+        "DELETE",
+        &format!("/api/v1/cores/download?id={id}"),
+        Body::empty(),
+        "127.0.0.1:1",
+    );
+    cancel.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.oneshot(cancel).await.expect("cancel task");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let task: serde_json::Value = serde_json::from_slice(&body).expect("task JSON");
+    assert!(task["task"].is_null());
 }
 
 #[tokio::test]

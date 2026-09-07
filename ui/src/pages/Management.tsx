@@ -1,19 +1,18 @@
 import { useState, type ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, KeyRound, Package, Power, RefreshCw, Router, ServerCog, ShieldAlert, Trash2, Upload } from 'lucide-react'
-import { Select, Table, type TableColumn } from '@acme/components'
+import { Select } from '@acme/components'
 import { api, downloadBundle, uploadUI } from '../lib/api'
-import { compactHash, formatDate } from '../lib/format'
+import { compactHash } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import { compareDate, compareText } from '../lib/sort'
-import type { CoreInstallation, CoresResponse, ManagedRuntimeStatus, NetworkSettings, NetworkSettingsResponse, SystemStatus, UIMetadata } from '../lib/types'
+import type { NetworkSettings, NetworkSettingsResponse, UIMetadata } from '../lib/types'
 import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 import { NetworkAutomationPanel } from '../components/NetworkAutomationPanel'
+import { CorePanel } from '../features/core/CorePanel'
 
 type Tab = 'core' | 'network' | 'web'
-type ChangeResult = { NeedsRestart?: boolean; changes?: ChangeResult[] }
 
 export function Management() {
   const { t } = useI18n()
@@ -51,39 +50,6 @@ function NetworkModePanel() {
     </div>
     {update.isError ? <p className="mt-3 text-sm text-red-600">{update.error instanceof Error ? update.error.message : String(update.error)}</p> : null}
   </Section>
-}
-
-function CorePanel() {
-  const { t } = useI18n()
-  const { session } = useSession()
-  const queryClient = useQueryClient()
-  const [reference, setReference] = useState('sing-box@stable')
-  const [notice, setNotice] = useState('')
-  const cores = useQuery({ queryKey: ['cores'], queryFn: () => api<CoresResponse>(session!, '/cores') })
-  const action = useMutation({
-    mutationFn: ({ operation, value }: { operation: string; value?: string }) => api<ChangeResult>(session!, `/cores/${operation}`, { method: 'POST', body: JSON.stringify({ reference: value || '' }) }),
-    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); queryClient.invalidateQueries({ queryKey: ['cores'] }); queryClient.invalidateQueries({ queryKey: ['subscriptions'] }); queryClient.invalidateQueries({ queryKey: ['system'] }); queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] }) },
-    onError: (error) => setNotice(error.message),
-  })
-  const installedColumns: Array<TableColumn<CoreInstallation>> = [
-    { title: t('core'), dataIndex: 'core', sorter: (left, right) => compareText(left.core, right.core), render: (value) => <span className="font-medium">{value}</span> },
-    { title: t('repository'), dataIndex: 'repository', sorter: (left, right) => compareText(left.repository, right.repository), render: (_value, item) => <div className="flex items-center gap-2"><Badge tone={item.official ? 'success' : 'warning'}>{item.official ? t('official') : t('custom')}</Badge><span className="font-mono text-xs text-[var(--muted)]">{item.repository}</span></div> },
-    { title: t('version'), dataIndex: 'version', sorter: (left, right) => compareText(left.version, right.version), render: (value) => <span className="font-mono text-xs">{value}</span> },
-    { title: t('channel'), dataIndex: 'channels', sorter: (left, right) => compareText(left.channels.join(' '), right.channels.join(' ')), render: (value) => (value as string[]).map((channel) => <Badge key={channel}>{channel}</Badge>) },
-    { title: t('details'), key: 'details', sorter: (left, right) => compareDate(left.installation.installed_at, right.installation.installed_at), render: (_value, item) => <span className="text-xs text-[var(--muted)]">{compactHash(item.installation.digest)} · {formatDate(item.installation.installed_at)}</span> },
-    { title: '', key: 'actions', width: 192, render: (_value, item) => { const selected = isSelectedCore(cores.data, item); return <div className="flex justify-end gap-2">{selected ? <Badge tone="success">{t('selected')}</Badge> : <Button size="small" onClick={() => action.mutate({ operation: 'use', value: item.reference })}>{t('use')}</Button>}<Button size="icon" variant="ghost" title={t('remove')} disabled={selected} onClick={() => action.mutate({ operation: 'remove', value: item.reference })}><Trash2 size={15} /></Button></div> } },
-  ]
-  return <Section title={t('core')} icon={<Package size={18} />} notice={notice}>
-	<div className="grid gap-4 border-b border-[var(--border)] pb-6 md:grid-cols-[minmax(0,1fr)_auto_auto]"><Field label={t('reference')}><><Input list="supported-core-references" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="mihomo@stable" /><datalist id="supported-core-references">{cores.data?.supported.map((core) => <option key={core} value={`${core}@stable`} />)}</datalist></></Field><Button className="self-end" variant="primary" disabled={action.isPending} onClick={() => action.mutate({ operation: 'install', value: reference })}>{action.isPending ? <Spinner /> : <Download size={16} />}{t('install')}</Button><Button className="self-end" disabled={action.isPending} onClick={() => action.mutate({ operation: 'update', value: reference })}><RefreshCw size={16} />{t('update')}</Button></div>
-    <h3 className="mt-6 text-sm font-semibold">{t('installedVersions')}</h3>
-    <Table<CoreInstallation> className="mt-3" rowKey="reference" loading={cores.isLoading} pagination={false} columns={installedColumns} dataSource={cores.data?.installed || []} scroll={{ x: 820 }} />
-  </Section>
-}
-
-function isSelectedCore(cores: CoresResponse | undefined, item: CoreInstallation) {
-  const selectedRepository = cores?.selected?.repository || ''
-  const itemRepository = item.official ? '' : item.repository
-  return cores?.selected?.core === item.core && selectedRepository === itemRepository && (cores.selected.ref === item.version || item.channels.includes(cores.selected.ref))
 }
 
 function WebUIPanel() {
@@ -135,11 +101,4 @@ function WebUIPanel() {
 
 function Section({ title, icon, notice, children }: { title: string; icon: ReactNode; notice?: string; children: ReactNode }) {
   return <Card className="min-w-0 p-4 md:p-5"><div className="mb-5 flex items-center gap-2"><span className="text-emerald-600">{icon}</span><h2 className="text-sm font-semibold">{title}</h2></div>{notice ? <div className="mb-4 border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}{children}</Card>
-}
-
-function changeNotice(result: ChangeResult, queryClient: QueryClient, completed: string, deferred: string) {
-  const needsRestart = Boolean(result.NeedsRestart || result.changes?.some((change) => change.NeedsRestart))
-  const system = queryClient.getQueryData<SystemStatus>(['system'])
-  const runtime = queryClient.getQueryData<ManagedRuntimeStatus>(['runtime', 'status'])
-  return needsRestart && (system?.desired_state === 'stopped' || runtime?.desired_state === 'stopped') ? deferred : completed
 }

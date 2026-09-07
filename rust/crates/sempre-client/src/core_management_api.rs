@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -17,6 +17,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/api/v1/cores", get(cores))
         .route("/api/v1/cores/install", post(install))
         .route("/api/v1/cores/update", post(update))
+        .route(
+            "/api/v1/cores/download",
+            get(download_task).delete(cancel_download),
+        )
         .route("/api/v1/cores/use", post(select))
         .route("/api/v1/cores/remove", post(remove))
         .route("/api/v1/cores/auto/diagnose", post(auto_diagnose))
@@ -41,24 +45,45 @@ async fn cores(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn install(State(state): State<Arc<AppState>>, Json(input): Json<CoreInput>) -> Response {
-    match state.manager.install_core(&input.reference).await {
-        Ok(result) => Json(result).into_response(),
+    start_download(&state, "install", &input.reference)
+}
+
+async fn update(State(state): State<Arc<AppState>>, Json(input): Json<CoreInput>) -> Response {
+    start_download(&state, "update", &input.reference)
+}
+
+fn start_download(state: &Arc<AppState>, operation: &str, reference: &str) -> Response {
+    match state.manager.start_core_download_task(operation, reference) {
+        Ok(task) => (StatusCode::ACCEPTED, Json(json!({ "task": task }))).into_response(),
         Err(error) => api_error(
-            StatusCode::BAD_REQUEST,
-            "CORE_INSTALL_FAILED",
+            StatusCode::CONFLICT,
+            "CORE_DOWNLOAD_IN_PROGRESS",
             error.to_string(),
         ),
     }
 }
 
-async fn update(State(state): State<Arc<AppState>>, Json(input): Json<CoreInput>) -> Response {
-    match state.manager.update_cores(&input.reference).await {
-        Ok(changes) => Json(json!({ "changes": changes })).into_response(),
-        Err(error) => api_error(
-            StatusCode::BAD_REQUEST,
-            "CORE_UPDATE_FAILED",
-            error.to_string(),
-        ),
+async fn download_task(State(state): State<Arc<AppState>>) -> Response {
+    Json(json!({ "task": state.manager.core_download_task() })).into_response()
+}
+
+#[derive(Deserialize)]
+struct DownloadTaskQuery {
+    id: String,
+}
+
+async fn cancel_download(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<DownloadTaskQuery>,
+) -> Response {
+    if state.manager.cancel_core_download_task(&query.id) {
+        Json(json!({ "task": null })).into_response()
+    } else {
+        api_error(
+            StatusCode::NOT_FOUND,
+            "CORE_DOWNLOAD_NOT_FOUND",
+            "Core download task was not found",
+        )
     }
 }
 

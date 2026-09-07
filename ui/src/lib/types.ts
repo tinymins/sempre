@@ -215,6 +215,20 @@ export interface CoresResponse {
   active?: { core: string; repository?: string; ref: string; version: string; config_hash: string }
 }
 
+export interface CoreDownloadTask {
+  id: string
+  operation: 'install' | 'update'
+  reference: string
+  state: 'running' | 'succeeded' | 'failed'
+  stage: 'queued' | 'resolving' | 'downloading' | 'installing' | 'completed' | 'failed'
+  artifact?: string
+  downloaded_bytes: number
+  total_bytes: number
+  started_at: string
+  finished_at?: string
+  error?: string
+}
+
 export interface CoreDefinition {
 	id: string
 	name: string

@@ -5,6 +5,7 @@ mod component_deploy;
 mod config;
 mod config_build;
 mod context;
+mod core_download_task;
 mod custom_node;
 mod direct;
 mod dns_capture;
@@ -52,6 +53,7 @@ pub use auto_config::{
 };
 pub use config::{CurrentConfig, MAX_CONFIG_SIZE};
 pub use context::{ConfigurationContext, ConfigurationTarget, RunningCore};
+pub use core_download_task::CoreDownloadTask;
 pub use dns_routing::{DnsRoutingDomain, DnsRoutingRuleSet};
 pub use dns_runtime::DnsFrontendStatus;
 pub use dns_settings::DnsSettings;
@@ -87,6 +89,7 @@ pub struct Manager<R = ProcessRunner> {
     gateway: Arc<sempre_gateway::Controller>,
     runtime_reload: Arc<Notify>,
     restart_tasks: Arc<restart_task::RestartTasks>,
+    core_download_tasks: Arc<core_download_task::CoreDownloadTasks>,
     subscription_schedule_changed: Arc<Notify>,
     tunnels: Arc<TunnelController>,
     transparent: Arc<TransparentController>,
@@ -154,6 +157,7 @@ impl<R: VersionRunner> Manager<R> {
             gateway,
             runtime_reload: Arc::new(Notify::new()),
             restart_tasks: Arc::default(),
+            core_download_tasks: Arc::default(),
             subscription_schedule_changed: Arc::new(Notify::new()),
             tunnels,
             transparent,
