@@ -11,22 +11,18 @@ function Management() {
 }
 
 describe('Management page', () => {
-  let savedSettings: Record<string, unknown> | undefined
   let coreTask: Record<string, unknown> | null
   let coresResponse: Record<string, unknown>
   let cancelledTask = ''
   let upgradeRequested = false
   let serviceUpdateTask: Record<string, unknown> | null
-  let networkAutomation: { enabled: boolean; active: boolean; path: string }
 
   beforeEach(() => {
-    savedSettings = undefined
     coreTask = null
     coresResponse = { supported: [], installed: [], selected: null }
     cancelledTask = ''
     upgradeRequested = false
     serviceUpdateTask = null
-    networkAutomation = { enabled: false, active: false, path: 'inactive' }
     localStorage.setItem('sempre.locale', 'zh-CN')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -41,8 +37,7 @@ describe('Management page', () => {
       if (path.endsWith('/cores')) return Response.json(coresResponse)
       if (path.endsWith('/network/settings')) {
         const settings = { schema: 2, revision: 1, mode: 'local', gateway_capture_host: false, automatic_switching: false, known_networks: [] }
-        if (init?.method === 'PUT') savedSettings = JSON.parse(String(init.body))
-        return Response.json({ settings: savedSettings ?? settings, current: { supported: true, name: 'en0', addresses: ['10.8.28.19/24'], gateway: '10.8.28.1', gateway_mac: 'aa:bb:cc:dd:ee:ff' }, platform: 'windows', gateway_available: false })
+        return Response.json({ settings, current: { supported: true, name: 'en0', addresses: ['10.8.28.19/24'], gateway: '10.8.28.1', gateway_mac: 'aa:bb:cc:dd:ee:ff' }, platform: 'windows', gateway_available: false })
       }
       if (path.endsWith('/service/update/task')) return Response.json({ task: serviceUpdateTask })
       if (path.endsWith('/service/update')) {
@@ -54,46 +49,24 @@ describe('Management page', () => {
         }
         return Response.json(update)
       }
-      if (path.endsWith('/system')) return Response.json({ version: '2.0.8', mode: 'system', service: 'running', network_automation: networkAutomation })
+      if (path.endsWith('/system')) return Response.json({ version: '2.0.8', mode: 'system', service: 'running' })
       return Response.json({}, { status: 404 })
     }))
   })
 
-  it('adds the current gateway MAC without manual entry', async () => {
+  it('keeps automatic network switching out of management mode', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
 
     fireEvent.click(screen.getByRole('button', { name: '模式' }))
-    const add = await screen.findByRole('button', { name: '将当前网络加入' })
-    await waitFor(() => expect(add).toBeEnabled())
-    fireEvent.click(add)
-
-    await waitFor(() => expect(savedSettings).toBeDefined())
-    expect(savedSettings).toMatchObject({
-      automatic_switching: true,
-      known_networks: [{ gateway_mac: 'aa:bb:cc:dd:ee:ff', disable_proxy: true }],
-    })
+    expect(await screen.findByText('仅管理本机流量与 DNS，不加载网关配置。')).toBeInTheDocument()
+    expect(screen.queryByText('自动网络切换')).not.toBeInTheDocument()
   })
 
   afterEach(() => {
     cleanup()
     sessionStorage.clear()
     vi.unstubAllGlobals()
-  })
-
-  it.each([
-    [false, 'inactive', '自动切换未开启'],
-    [true, 'inactive', '核心未运行'],
-    [true, 'direct', '公网直连'],
-    [true, 'proxy', '公网代理'],
-  ])('labels network automation with enabled=%s and path=%s', async (enabled, path, label) => {
-    networkAutomation = { enabled, active: path !== 'inactive', path }
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    fireEvent.click(screen.getByRole('button', { name: '模式' }))
-    expect(await screen.findByText(label)).toBeInTheDocument()
-    if (!enabled) expect(screen.queryByText('核心未运行')).not.toBeInTheDocument()
   })
 
   it('keeps an unavailable gateway reason inside the disabled option', async () => {

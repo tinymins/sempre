@@ -99,7 +99,7 @@ describe('Shell sidebar', () => {
     const navigation = screen.getByRole('navigation')
     const labels = within(navigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
 
-    expect(labels).toEqual(['Overview', 'Proxies', 'Routing Rules', 'Subscription Config', 'Custom Nodes', 'DNS', 'Tunnels', 'Management'])
+    expect(labels).toEqual(['Overview', 'Proxies', 'Routing Rules', 'Subscription Config', 'Custom Nodes', 'Automatic network switching', 'DNS', 'Tunnels', 'Management'])
     expect(within(navigation).getByText('Strategy')).toBeInTheDocument()
     expect(within(navigation).getByText('Configuration')).toBeInTheDocument()
     expect(within(navigation).getByText('Network capabilities')).toBeInTheDocument()

@@ -9,7 +9,6 @@ import { useSession } from '../lib/session'
 import type { NetworkSettings, NetworkSettingsResponse, UIMetadata } from '../lib/types'
 import { Badge, Button, Card, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
-import { NetworkAutomationPanel } from '../components/NetworkAutomationPanel'
 import { CorePanel } from '../features/core/CorePanel'
 import { ServicePanel } from '../features/service/ServicePanel'
 
@@ -21,7 +20,7 @@ export function Management() {
   const tabs: Array<{ value: Tab; label: string; icon: typeof Package }> = [
     { value: 'core', label: t('coreTab'), icon: Package }, { value: 'network', label: t('mode'), icon: Router }, { value: 'console', label: t('consoleTab'), icon: MonitorCog }, { value: 'service', label: t('serviceTab'), icon: ServerCog },
   ]
-  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : tab === 'network' ? <div className="space-y-5"><NetworkModePanel /><NetworkAutomationPanel /></div> : tab === 'console' ? <WebUIPanel /> : <ServicePanel />}</div>
+  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : tab === 'network' ? <NetworkModePanel /> : tab === 'console' ? <WebUIPanel /> : <ServicePanel />}</div>
 }
 
 function NetworkModePanel() {

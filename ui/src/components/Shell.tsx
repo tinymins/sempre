@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Activity, Cable, ChartNoAxesCombined, ChevronDown, ChevronLeft, ChevronRight, CircleGauge, Cpu, DatabaseZap, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
+import { Activity, Cable, ChartNoAxesCombined, ChevronDown, ChevronLeft, ChevronRight, CircleGauge, Cpu, DatabaseZap, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Radar, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -74,6 +74,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
     { key: 'configuration', label: t('navigationConfiguration'), items: [
       { path: '/subscriptions', label: t('navigationSubscriptions'), icon: Rss },
       { path: '/custom-nodes', label: t('customNodes'), icon: Library },
+      { path: '/network-automation', label: t('networkAutomation'), icon: Radar },
     ] },
     { key: 'network', label: t('navigationNetwork'), items: [
       { path: '/dns', label: t('dns'), icon: DatabaseZap },
