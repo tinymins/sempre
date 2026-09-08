@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import type { KnownNetwork, NetworkSettings, NetworkSettingsResponse, SystemStatus } from '../lib/types'
+import { networkAutomationDisplayPath } from '../lib/networkAutomation'
 import { Card } from './ui'
 
 export function NetworkAutomationPanel() {
@@ -22,7 +23,7 @@ export function NetworkAutomationPanel() {
     onSuccess: (result) => {
       queryClient.setQueryData(['network', 'settings'], result)
       queryClient.invalidateQueries({ queryKey: ['system'] })
-      setNotice(zh ? '已保存，配置变更需要应用后生效。' : 'Saved. Apply the pending configuration to activate it.')
+      setNotice(zh ? '已保存，点击顶部重启按钮应用改动。' : 'Saved. Use the restart button at the top to apply the changes.')
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : String(error)),
   })
@@ -84,9 +85,10 @@ export function NetworkAutomationPanel() {
 
 function pathLabel(status: SystemStatus['network_automation'], zh: boolean) {
   if (status?.enabled === false) return zh ? '自动切换未开启' : 'Automatic switching disabled'
-  const path = status?.path
+  const path = networkAutomationDisplayPath(status)
   if (path === 'direct') return zh ? '公网直连' : 'Public direct'
   if (path === 'proxy') return zh ? '公网代理' : 'Public proxy'
+  if (path === 'pending') return zh ? '待应用' : 'Pending'
   if (path === 'inactive') return zh ? '核心未运行' : 'Core stopped'
-  return zh ? '检测中' : 'Detecting'
+  return zh ? '无法判定' : 'Unknown'
 }

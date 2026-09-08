@@ -11,6 +11,10 @@ export type RuntimePendingChange =
   | { type: 'profile'; previous?: string; current: string }
   | { type: 'configuration'; fields: RuntimeConfigField[]; previous_revision?: number; current_revision?: number }
 
+export function pendingChangeCount(changes: RuntimePendingChange[]) {
+  return changes.reduce((total, change) => total + (change.type === 'configuration' ? change.fields.length : 1), 0)
+}
+
 const fieldKeys = {
   sources: 'changeFieldSources',
   subscription_content: 'changeFieldSubscriptionContent',

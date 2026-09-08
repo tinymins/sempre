@@ -8,6 +8,7 @@ import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import { formatRuntimeFailure, useRuntimeActionFeedback, type RuntimeActionNotice } from '../lib/useRuntimeActionFeedback'
 import type { ManagedRuntimeStatus } from '../lib/types'
+import { networkAutomationDisplayPath } from '../lib/networkAutomation'
 import { Badge, Button, Card, ConfirmDialog, Spinner } from './ui'
 import { PrivateAccessRuntimePanel } from './PrivateAccessRuntimePanel'
 import { RuntimeRestartButton } from './RuntimeRestartButton'
@@ -84,7 +85,7 @@ export function RuntimeControlPanel() {
         <RuntimeInfo label={t('lastTransition')} value={formatDate(value?.last_transition || undefined)} />
       </div>
       {value?.network_automation?.enabled ? <div className="mx-4 mb-4 rounded-md border border-[var(--border)] bg-[var(--surface-subtle)] p-3 text-sm md:mx-5 md:mb-5">
-        <div className="flex flex-wrap items-center gap-2"><Route size={16} className="text-emerald-600" /><span className="font-medium">{t('networkAutomation')}</span><Badge tone={value.network_automation.path === 'direct' ? 'success' : value.network_automation.path === 'proxy' ? 'info' : 'warning'}>{networkPathLabel(value.network_automation.path, t)}</Badge></div>
+        <div className="flex flex-wrap items-center gap-2"><Route size={16} className="text-emerald-600" /><span className="font-medium">{t('networkAutomation')}</span><Badge tone={value.network_automation.path === 'direct' ? 'success' : value.network_automation.path === 'proxy' ? 'info' : 'warning'}>{networkPathLabel(value.network_automation, t)}</Badge></div>
         <div className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-4"><RuntimeInfo label={t('currentNetwork')} value={value.network_automation.network_name || t('unknownNetwork')} /><RuntimeInfo label={t('gateway')} value={value.network_automation.gateway || '-'} mono /><RuntimeInfo label={t('gatewayMac')} value={value.network_automation.gateway_mac || '-'} mono /><RuntimeInfo label={t('privateAccessInterface')} value={value.network_automation.interface || '-'} mono /></div>
       </div> : null}
       <PrivateAccessRuntimePanel status={value?.private_access} />
@@ -96,9 +97,11 @@ export function RuntimeControlPanel() {
   </>
 }
 
-function networkPathLabel(path: string, t: ReturnType<typeof useI18n>['t']) {
+function networkPathLabel(status: NonNullable<ManagedRuntimeStatus['network_automation']>, t: ReturnType<typeof useI18n>['t']) {
+  const path = networkAutomationDisplayPath(status)
   if (path === 'direct') return t('publicDirect')
   if (path === 'proxy') return t('publicProxy')
+  if (path === 'pending') return t('pendingApply')
   if (path === 'inactive') return t('privateAccessInactive')
   return t('privateAccessUnknown')
 }

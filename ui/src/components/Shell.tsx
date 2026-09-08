@@ -14,6 +14,7 @@ import { Badge, Button } from './ui'
 import { Tag } from '@acme/components'
 import { modeLabel } from './PrivateAccessRuntimePanel'
 import { privateAccessMode, privateAccessTone } from '../lib/privateAccess'
+import { networkAutomationDisplayPath } from '../lib/networkAutomation'
 
 const SIDEBAR_COLLAPSED_KEY = 'sempre.sidebar.collapsed'
 
@@ -98,8 +99,8 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   const statusDetail = chrome?.statusDetail ?? (system.data?.active ? `${system.data.active.core} ${system.data.active.version}` : t('noCore'))
   const statusTone = chrome?.statusTone ?? (runtime === 'running' ? 'success' : runtime === 'idle' ? 'warning' : 'neutral')
   const privateMode = chrome ? null : privateAccessMode(system.data?.private_access)
-  const networkPath = chrome ? null : system.data?.network_automation?.enabled ? system.data.network_automation.path : null
-  const networkPathLabel = networkPath === 'direct' ? t('publicDirect') : networkPath === 'proxy' ? t('publicProxy') : networkPath === 'inactive' ? t('privateAccessInactive') : networkPath ? t('privateAccessUnknown') : ''
+  const networkPath = chrome ? null : networkAutomationDisplayPath(system.data?.network_automation)
+  const networkPathLabel = networkPath === 'direct' ? t('publicDirect') : networkPath === 'proxy' ? t('publicProxy') : networkPath === 'pending' ? t('pendingApply') : networkPath === 'inactive' ? t('privateAccessInactive') : networkPath ? t('privateAccessUnknown') : ''
   const collapsedStatusDetail = chrome?.statusDetail ?? `${runtime}${networkPath ? ` · ${networkPathLabel}` : ''}${privateMode ? ` · ${modeLabel(privateMode, t)}` : ''}`
   const sidebarAction = desktopCollapsed ? t('expandSidebar') : t('collapseSidebar')
   const shellStyle = {

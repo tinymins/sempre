@@ -7,7 +7,7 @@ import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import { useRestartTask } from '../lib/useRestartTask'
 import type { ManagedRuntimeStatus } from '../lib/types'
-import { RestartChangeSummary, type RuntimePendingChange } from './RestartChangeSummary'
+import { pendingChangeCount, RestartChangeSummary, type RuntimePendingChange } from './RestartChangeSummary'
 import { RuntimeRestartModal } from './RuntimeRestartModal'
 import { ConfirmDialog } from './ui'
 
@@ -30,16 +30,22 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
   const restarting = submitting || task?.state === 'running'
   const restartDisabled = restarting || !runtimeStatus.data?.actions?.restart.allowed || ['starting', 'stopping', 'restarting'].includes(runtimeStatus.data?.runtime_state || '')
   const needsRestart = Boolean(runtimeStatus.data?.pending)
+  const pendingCount = pendingChangeCount(runtimeStatus.data?.pending_changes ?? [])
+  const showPendingCount = needsRestart && pendingCount > 0 && !restarting && !showLabel && !panel
   const label = restarting ? (locale === 'zh-CN' ? '正在重启核心 · 查看日志' : 'Restarting core · view log') : t(panel ? 'restartCore' : 'restartNow')
+  const title = showPendingCount
+    ? locale === 'zh-CN' ? `有 ${pendingCount} 项改动待应用，点击重启核心` : `${pendingCount} changes pending. Click to restart the core.`
+    : label
   const visibleTask = mutation.error && task && task.started_at < submittedAt ? null : task
 
   return <>
     <span className="relative inline-flex items-center gap-1">
-      <Button variant={showLabel || panel ? 'default' : 'text'} className={showLabel ? 'h-9' : '!size-9 !p-0'} title={label} aria-label={label} disabled={!restarting && restartDisabled} onClick={() => restarting ? setTaskOpen(true) : setConfirmOpen(true)}>
+      <Button variant={showLabel || panel ? 'default' : 'text'} className={showLabel ? 'h-9' : showPendingCount ? '!h-9 !w-auto !px-2.5 text-amber-700 dark:text-amber-300' : '!size-9 !p-0'} title={title} aria-label={label} disabled={!restarting && restartDisabled} onClick={() => restarting ? setTaskOpen(true) : setConfirmOpen(true)}>
+        {showPendingCount ? <span className="whitespace-nowrap text-xs">{locale === 'zh-CN' ? '待应用' : 'Pending'} {pendingCount}</span> : null}
         {restarting ? <LoaderCircle size={18} className="animate-spin" /> : <RotateCw size={18} />}
         {showLabel ? label : null}
       </Button>
-      {needsRestart && !restarting ? <span data-restart-required aria-hidden="true" className="pointer-events-none absolute left-6 top-1.5 size-2 rounded-full bg-red-500 ring-2 ring-[var(--background)]" /> : null}
+      {needsRestart && !restarting && !showPendingCount ? <span data-restart-required aria-hidden="true" className="pointer-events-none absolute left-6 top-1.5 size-2 rounded-full bg-red-500 ring-2 ring-[var(--background)]" /> : null}
       {task ? <Button variant="text" className="!size-8 !p-0" title={locale === 'zh-CN' ? '查看重启任务' : 'View restart task'} aria-label={locale === 'zh-CN' ? '查看重启任务' : 'View restart task'} onClick={() => { mutation.reset(); setTaskOpen(true) }}><ScrollText size={16} /></Button> : null}
     </span>
     <ConfirmDialog open={confirmOpen} title={t('coreRestartConfirmTitle')}

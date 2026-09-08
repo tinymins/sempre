@@ -94,6 +94,18 @@ describe('Shell sidebar', () => {
     expect((await screen.findAllByText('Core stopped')).length).toBeGreaterThanOrEqual(2)
   })
 
+  it('shows pending instead of unknown after recognizing a staged network', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      const staged = { ...systemStatus, pending: true, network_automation: { ...systemStatus.network_automation, path: 'unknown', gateway_mac: 'aa:bb:cc:dd:ee:ff' } }
+      return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : staged)
+    }))
+    renderShell()
+
+    expect((await screen.findAllByText('Pending')).length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
+  })
+
   it('groups primary controls and keeps analysis tools collapsed by default', () => {
     renderShell()
     const navigation = screen.getByRole('navigation')
@@ -153,7 +165,7 @@ describe('Shell sidebar', () => {
     expect(localStorage.getItem('sempre.sidebar.collapsed')).toBe('true')
   })
 
-  it('places restart before language and marks pending changes with a red dot', async () => {
+  it('places restart before language and shows the pending change count', async () => {
     let accepted = false
     const pendingStatus = {
       ...runtimeStatus,
@@ -176,9 +188,10 @@ describe('Shell sidebar', () => {
 
     const restart = await screen.findByRole('button', { name: 'Restart core' })
     const language = screen.getByTitle('Language')
-    expect(restart).toHaveAttribute('title', 'Restart core')
     expect(restart.parentElement?.nextElementSibling).toBe(language)
-    await waitFor(() => expect(restart.parentElement?.querySelector('[data-restart-required]')).toHaveClass('bg-red-500'))
+    await waitFor(() => expect(restart).toHaveTextContent('Pending 4'))
+    expect(restart).toHaveAttribute('title', '4 changes pending. Click to restart the core.')
+    expect(restart.parentElement?.querySelector('[data-restart-required]')).not.toBeInTheDocument()
 
     fireEvent.click(restart)
     const dialog = screen.getByRole('dialog', { name: 'Restart the core?' })

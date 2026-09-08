@@ -7,7 +7,7 @@ import { NetworkAutomation } from './NetworkAutomation'
 
 describe('Network automation page', () => {
   let savedSettings: Record<string, unknown> | undefined
-  let networkAutomation: { enabled: boolean; active: boolean; path: string }
+  let networkAutomation: { enabled: boolean; active: boolean; path: string; gateway_mac?: string }
 
   beforeEach(() => {
     savedSettings = undefined
@@ -52,12 +52,21 @@ describe('Network automation page', () => {
     [true, 'inactive', '核心未运行'],
     [true, 'direct', '公网直连'],
     [true, 'proxy', '公网代理'],
+    [true, 'unknown', '无法判定'],
   ])('labels network automation with enabled=%s and path=%s', async (enabled, path, label) => {
     networkAutomation = { enabled, active: path !== 'inactive', path }
     renderPage()
 
     expect(await screen.findByText(label)).toBeInTheDocument()
     if (!enabled) expect(screen.queryByText('核心未运行')).not.toBeInTheDocument()
+  })
+
+  it('shows a recognized staged network as pending', async () => {
+    networkAutomation = { enabled: true, active: true, path: 'unknown', gateway_mac: 'aa:bb:cc:dd:ee:ff' }
+    renderPage()
+
+    expect(await screen.findByText('待应用')).toBeInTheDocument()
+    expect(screen.queryByText('无法判定')).not.toBeInTheDocument()
   })
 })
 
