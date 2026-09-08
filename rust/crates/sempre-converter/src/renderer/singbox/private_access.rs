@@ -80,7 +80,7 @@ pub(super) fn resolve(
                     let direct_tag = format!("{dns_tag}-home-direct");
                     resolved.dns_servers.push(json!({
                         "type": "udp", "tag": direct_tag, "server": server,
-                        "server_port": integer(dns.get("serverPort"), 53), "detour": "direct"
+                        "server_port": integer(dns.get("serverPort"), 53)
                     }));
                     let mut direct_rule = json!({ "action": "route", "server": direct_tag });
                     add_matchers(&mut direct_rule, dns);

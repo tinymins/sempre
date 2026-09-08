@@ -185,7 +185,7 @@ fn assert_home_auto_rules(document: &Value) {
         .iter()
         .find(|server| server["tag"] == "private-dns-home-direct")
         .expect("direct private DNS server");
-    assert_eq!(direct_server["detour"], "direct");
+    assert!(direct_server.get("detour").is_none());
     let dns_rules = document["dns"]["rules"].as_array().expect("DNS rules");
     let dns_index = |tag| {
         dns_rules
