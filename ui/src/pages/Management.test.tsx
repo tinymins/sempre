@@ -54,11 +54,11 @@ describe('Management page', () => {
     }))
   })
 
-  it('keeps automatic network switching out of management mode', async () => {
+  it('keeps automatic network switching out of the service console', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
 
-    fireEvent.click(screen.getByRole('button', { name: '模式' }))
+    fireEvent.click(screen.getByRole('button', { name: '控制台' }))
     expect(await screen.findByText('仅管理本机流量与 DNS，不加载网关配置。')).toBeInTheDocument()
     expect(screen.queryByText('自动网络切换')).not.toBeInTheDocument()
   })
@@ -73,7 +73,7 @@ describe('Management page', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
 
-    fireEvent.click(screen.getByRole('button', { name: '模式' }))
+    fireEvent.click(screen.getByRole('button', { name: '控制台' }))
     expect(await screen.findByText('仅管理本机流量与 DNS，不加载网关配置。')).not.toHaveClass('border')
     expect(screen.queryByText('网关模式仅在 Linux 系统服务上可用。')).not.toBeInTheDocument()
 
@@ -89,11 +89,13 @@ describe('Management page', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
 
-    const tabNames = ['核心', '模式', '备份与更新', '控制台']
+    const tabNames = ['核心', '备份与更新', '控制台']
     expect(screen.getAllByRole('button').filter((button) => tabNames.includes(button.textContent || '')).map((button) => button.textContent)).toEqual(tabNames)
 
     fireEvent.click(screen.getByRole('button', { name: '控制台' }))
     expect(await screen.findByText('Web')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '模式' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['服务角色', 'Web', 'Sempre 系统服务'])
     expect(screen.getByText('Sempre 系统服务')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重启服务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '停止服务' })).toBeInTheDocument()

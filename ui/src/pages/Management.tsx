@@ -12,18 +12,18 @@ import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 import { CorePanel } from '../features/core/CorePanel'
 import { ServiceActionsPanel, ServicePanel } from '../features/service/ServicePanel'
 
-type Tab = 'core' | 'network' | 'maintenance' | 'console'
+type Tab = 'core' | 'maintenance' | 'console'
 
 export function Management() {
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('core')
   const tabs: Array<{ value: Tab; label: string; icon: typeof Package }> = [
-    { value: 'core', label: t('coreTab'), icon: Package }, { value: 'network', label: t('mode'), icon: Router }, { value: 'maintenance', label: t('backupAndUpdateTab'), icon: Archive }, { value: 'console', label: t('consoleTab'), icon: MonitorCog },
+    { value: 'core', label: t('coreTab'), icon: Package }, { value: 'maintenance', label: t('backupAndUpdateTab'), icon: Archive }, { value: 'console', label: t('consoleTab'), icon: MonitorCog },
   ]
-  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : tab === 'network' ? <NetworkModePanel /> : tab === 'maintenance' ? <BackupAndUpdatePanel /> : <ConsolePanel />}</div>
+  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : tab === 'maintenance' ? <BackupAndUpdatePanel /> : <ConsolePanel />}</div>
 }
 
-function NetworkModePanel() {
+function ServiceRolePanel() {
   const { locale } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
@@ -43,9 +43,9 @@ function NetworkModePanel() {
   const gatewayAvailable = network.data?.gateway_available ?? false
   const gatewayLabel = zh ? '网关模式' : 'Gateway mode'
   const gatewayReason = zh ? '仅 Linux 系统服务可用' : 'Linux system service only'
-  return <Section title={zh ? '运行模式' : 'Operating mode'} icon={<Router size={18} />}>
+  return <Section title={zh ? '服务角色' : 'Service role'} icon={<Router size={18} />}>
     <div className="grid gap-3 md:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] md:items-end">
-      <Field label={zh ? '当前模式' : 'Current mode'}><Select className="w-full" popupMatchSelectWidth value={mode} loading={network.isLoading || update.isPending} options={[{ value: 'local', label: zh ? '本机模式' : 'Local mode' }, { value: 'gateway', label: gatewayAvailable ? gatewayLabel : <span className="flex w-full min-w-0 items-center gap-3"><span className="shrink-0">{gatewayLabel}</span><span className="ml-auto truncate text-xs font-normal text-[var(--text-muted)]">{gatewayReason}</span></span>, disabled: !gatewayAvailable }]} onChange={(value) => update.mutate(value)} /></Field>
+      <Field label={zh ? '当前角色' : 'Current role'}><Select className="w-full" popupMatchSelectWidth value={mode} loading={network.isLoading || update.isPending} options={[{ value: 'local', label: zh ? '本机模式' : 'Local mode' }, { value: 'gateway', label: gatewayAvailable ? gatewayLabel : <span className="flex w-full min-w-0 items-center gap-3"><span className="shrink-0">{gatewayLabel}</span><span className="ml-auto truncate text-xs font-normal text-[var(--text-muted)]">{gatewayReason}</span></span>, disabled: !gatewayAvailable }]} onChange={(value) => update.mutate(value)} /></Field>
       <p className="self-end py-1.5 text-sm leading-5 text-[var(--muted)]">{mode === 'gateway' ? (zh ? '默认代理内网设备；本机代理可在网关页单独开启。' : 'LAN clients are proxied by default; host proxying is optional on the Gateway page.') : (zh ? '仅管理本机流量与 DNS，不加载网关配置。' : 'Manages only this host traffic and DNS. Gateway configuration is not loaded.')}</p>
     </div>
     {update.isError ? <p className="mt-3 text-sm text-red-600">{update.error instanceof Error ? update.error.message : String(update.error)}</p> : null}
@@ -65,9 +65,12 @@ function ConsolePanel() {
     mutationFn: (body: Record<string, unknown>) => api<{ local_url: string; reauthenticate?: boolean }>(session!, '/web', { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: (result) => { setNotice(t('operationDone')); setListen(null); queryClient.invalidateQueries({ queryKey: ['web'] }); if (result.reauthenticate) setSession(null); else if (result.local_url && result.local_url !== session?.baseURL) window.location.assign(result.local_url) }, onError: (error) => setNotice(error.message),
   })
-  return <div className="grid gap-5 xl:grid-cols-2">
+  return <div className="space-y-5">
+    <ServiceRolePanel />
+    <div className="grid gap-5 xl:grid-cols-2">
     <Section title="Web" icon={<ServerCog size={18} />} notice={notice}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div></div></Section>
     <ServiceActionsPanel />
+    </div>
   </div>
 }
 
