@@ -70,7 +70,7 @@ fn manifest_rejects_prerelease_versions() {
 }
 
 #[test]
-fn update_status_joins_stable_release_history_in_semver_order() {
+fn update_status_joins_stable_release_history_in_descending_semver_order() {
     let current = parse_version(VERSION).expect("current version");
     let middle = format!("{}.0.0", current.major + 1);
     let latest = format!("{}.0.0", current.major + 2);
@@ -100,10 +100,10 @@ fn update_status_joins_stable_release_history_in_semver_order() {
             .iter()
             .map(|release| release.version.as_str())
             .collect::<Vec<_>>(),
-        vec![middle.as_str(), latest.as_str()]
+        vec![latest.as_str(), middle.as_str()]
     );
     assert_eq!(
         result.release_notes,
-        format!("## v{middle}\n\nMiddle notes.\n\n## v{latest}\n\nLatest notes.")
+        format!("## v{latest}\n\nLatest notes.\n\n## v{middle}\n\nMiddle notes.")
     );
 }

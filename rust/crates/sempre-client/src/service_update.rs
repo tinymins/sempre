@@ -286,7 +286,7 @@ fn status(manifest: &Manifest) -> Result<Status, String> {
             },
         ));
     }
-    history.sort_by(|(left, _), (right, _)| left.cmp(right));
+    history.sort_by(|(left, _), (right, _)| right.cmp(left));
     let release_history = history
         .into_iter()
         .map(|(_, release)| release)

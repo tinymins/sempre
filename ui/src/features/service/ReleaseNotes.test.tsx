@@ -37,14 +37,14 @@ describe('ReleaseNotes', () => {
     expect(screen.queryByText('新增', { exact: false })).not.toBeInTheDocument()
   })
 
-  it('renders multiple releases in ascending API order', () => {
+  it('renders multiple releases in descending API order', () => {
     render(<ReleaseNotes releases={[
-      { version: '2.0.8', published_at: '', notes: '## 简体中文\n\n- 第一版\n\n## English\n\n- First release' },
       { version: '2.0.9', published_at: '', notes: '## 简体中文\n\n- 第二版\n\n## English\n\n- Second release' },
+      { version: '2.0.8', published_at: '', notes: '## 简体中文\n\n- 第一版\n\n## English\n\n- First release' },
     ]} locale="zh-CN" />)
 
-    expect(screen.getAllByRole('heading').map((heading) => heading.textContent)).toEqual(['v2.0.8', 'v2.0.9'])
-    expect(screen.getByText('第一版').compareDocumentPosition(screen.getByText('第二版')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getAllByRole('heading').map((heading) => heading.textContent)).toEqual(['v2.0.9', 'v2.0.8'])
+    expect(screen.getByText('第二版').compareDocumentPosition(screen.getByText('第一版')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText('First release')).not.toBeInTheDocument()
   })
 
