@@ -128,3 +128,60 @@ async fn restart_http_response_does_not_wait_for_validation_or_allow_a_second_re
     );
     assert!(state.manager.restart_task_config(&task.id).is_some());
 }
+
+#[tokio::test]
+async fn update_receipt_survives_session_loss_but_only_authorizes_its_own_status() {
+    let root = tempfile::tempdir().unwrap();
+    let (state, _) = test_state(&root);
+    let task = state.service_updates.begin().unwrap();
+    let app = router(state.clone());
+    for (method, path, receipt, expected) in [
+        (
+            "GET",
+            "/api/v1/service/update/task",
+            task.id.as_str(),
+            StatusCode::OK,
+        ),
+        (
+            "GET",
+            "/api/v1/service/update/task",
+            "wrong-receipt",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "POST",
+            "/api/v1/service/update",
+            task.id.as_str(),
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "GET",
+            "/api/v1/system",
+            task.id.as_str(),
+            StatusCode::UNAUTHORIZED,
+        ),
+    ] {
+        let mut req = request(method, path, Body::empty(), "127.0.0.1:1");
+        req.headers_mut().insert(
+            "authorization",
+            HeaderValue::from_str(&format!("Bearer {receipt}")).unwrap(),
+        );
+        assert_eq!(app.clone().oneshot(req).await.unwrap().status(), expected);
+    }
+    state.service_updates.fail(&task.id, "installer failed");
+    state.service_updates.begin().unwrap();
+    let mut req = request(
+        "GET",
+        "/api/v1/service/update/task",
+        Body::empty(),
+        "127.0.0.1:1",
+    );
+    req.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {}", task.id)).unwrap(),
+    );
+    assert_eq!(
+        app.oneshot(req).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+}

@@ -1,7 +1,8 @@
 use std::sync::{Arc, RwLock};
 
-use axum::Router;
+use axum::{Router, body::Body, extract::Request, middleware, response::Response};
 use chrono::Utc;
+use futures_util::StreamExt;
 use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, validate_listen};
 use sempre_state::Layout;
 use tokio::{
@@ -174,12 +175,35 @@ fn serve(
     stop: oneshot::Receiver<()>,
 ) -> JoinHandle<Result<(), ClientError>> {
     tokio::spawn(async move {
+        let (closing, closed) = watch::channel(false);
+        let app = app.layer(middleware::from_fn(
+            move |request: Request, next: middleware::Next| {
+                let mut closed = closed.clone();
+                async move {
+                    let response = next.run(request).await;
+                    // Event streams must end before graceful shutdown can finish draining connections.
+                    if !response
+                        .headers()
+                        .get(axum::http::header::CONTENT_TYPE)
+                        .is_some_and(|value| value.as_bytes().starts_with(b"text/event-stream"))
+                    {
+                        return response;
+                    }
+                    let (parts, body) = response.into_parts();
+                    let stream = body.into_data_stream().take_until(async move {
+                        let _ = closed.wait_for(|value| *value).await;
+                    });
+                    Response::from_parts(parts, Body::from_stream(stream))
+                }
+            },
+        ));
         axum::serve(
             listener,
             app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
         .with_graceful_shutdown(async move {
             let _ = stop.await;
+            let _ = closing.send(true);
         })
         .await
         .map_err(ClientError::Serve)
@@ -198,6 +222,44 @@ fn server_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn shutdown_closes_an_open_event_stream_before_waiting_for_connections() {
+        use axum::response::{Sse, sse::Event};
+        use std::{convert::Infallible, time::Duration};
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new().route(
+            "/events",
+            axum::routing::get(|| async {
+                Sse::new(
+                    futures_util::stream::once(async {
+                        Ok::<_, Infallible>(Event::default().data("connected"))
+                    })
+                    .chain(futures_util::stream::pending()),
+                )
+            }),
+        );
+        let (stop, stopped) = oneshot::channel();
+        let server = serve(listener, app, stopped);
+        let mut response = reqwest::get(format!("http://{address}/events"))
+            .await
+            .unwrap();
+        assert!(response.chunk().await.unwrap().is_some());
+        stop.send(()).unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), response.chunk())
+                .await
+                .expect("stream must end on shutdown")
+                .unwrap()
+                .is_none()
+        );
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("listener must finish with an open browser")
+            .unwrap()
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn rebind_prepares_new_listener_and_updates_discovery_transactionally() {

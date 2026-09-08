@@ -276,7 +276,10 @@ async fn security(
         request.uri().path(),
         "/api/v1/health" | "/api/v1/auth/login"
     );
-    if !public && !authenticated(&state, request.headers(), remote) {
+    if !public
+        && !authenticated(&state, request.headers(), remote)
+        && !update_receipt_authenticated(&state, &request)
+    {
         return add_cors(
             api_error(
                 StatusCode::UNAUTHORIZED,
@@ -287,6 +290,23 @@ async fn security(
         );
     }
     add_cors(next.run(request).await, origin.as_ref())
+}
+
+fn update_receipt_authenticated(state: &AppState, request: &Request) -> bool {
+    // A task's random receipt survives daemon restart and grants only access to that task.
+    request.method() == Method::GET
+        && request.uri().path() == "/api/v1/service/update/task"
+        && request
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .is_some_and(|receipt| {
+                state
+                    .service_updates
+                    .snapshot()
+                    .is_some_and(|task| token_matches(receipt, &task.id))
+            })
 }
 
 fn authenticated(state: &AppState, headers: &HeaderMap, remote: SocketAddr) -> bool {

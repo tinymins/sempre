@@ -75,6 +75,7 @@ describe('Management page', () => {
 
   afterEach(() => {
     cleanup()
+    sessionStorage.clear()
     vi.unstubAllGlobals()
   })
 

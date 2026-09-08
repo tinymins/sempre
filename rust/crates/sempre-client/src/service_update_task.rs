@@ -223,8 +223,18 @@ impl ServiceUpdateTasks {
         let target_is_running = !task.target_version.is_empty()
             && normalized_version(&task.target_version) == self.current_version;
         let outcome = result.as_deref().map(str::trim);
-        if outcome == Some("succeeded") || (outcome.is_none() && target_is_running) {
+        if target_is_running && !outcome.is_some_and(|value| value.starts_with("failed:")) {
             finish(task, "succeeded", "completed", None);
+        } else if outcome == Some("succeeded") {
+            finish(
+                task,
+                "failed",
+                "failed",
+                Some(format!(
+                    "Sempre installer completed but the service is running {} instead of {}",
+                    self.current_version, task.target_version
+                )),
+            );
         } else if let Some(code) = outcome.and_then(|value| value.strip_prefix("failed:")) {
             finish(
                 task,
@@ -284,6 +294,21 @@ fn normalized_version(value: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installer_success_cannot_hide_an_old_running_version() {
+        let root = tempfile::tempdir().unwrap();
+        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
+        let task = tasks.begin().unwrap();
+        tasks
+            .set_release(&task.id, "2.0.11", "bundle.zip", 100)
+            .unwrap();
+        tasks.set_stage(&task.id, "installing").unwrap();
+        fs::write(tasks.result_path(), "succeeded\n").unwrap();
+        let completed = tasks.snapshot().unwrap();
+        assert_eq!(completed.state, "failed");
+        assert!(completed.error.unwrap().contains("2.0.0 instead of 2.0.11"));
+    }
 
     #[test]
     fn progress_is_persisted_and_restored() {

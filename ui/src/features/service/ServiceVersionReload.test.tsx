@@ -41,4 +41,20 @@ describe('service version reload', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenLastCalledWith(`${window.location.origin}/api/v1/health`, expect.objectContaining({ cache: 'no-store' }))
   })
+
+  it('keeps an active update visible when a different version returns', () => {
+    writeServiceUpdateMarker({ targetVersion: '2.0.11' })
+    expect(completeServiceUpdateOnVersionChange(new QueryClient(), '2.0.10')).toBe(true)
+  })
+
+  it('checks the connected instance and recognizes completion on the first poll after reload', async () => {
+    writeServiceUpdateMarker({ targetVersion: '2.0.11' })
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ version: '2.0.11' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const onChange = vi.fn()
+    renderHook(() => useServiceVersionChange(onChange, 'http://remote-sempre.test:33211'))
+    await act(async () => undefined)
+    expect(onChange).toHaveBeenCalledWith('2.0.11')
+    expect(fetchMock).toHaveBeenCalledWith('http://remote-sempre.test:33211/api/v1/health', expect.anything())
+  })
 })

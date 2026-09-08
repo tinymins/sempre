@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
+import { loadSession } from '../../lib/api'
 import { useSession } from '../../lib/session'
 import { clearServiceUpdateMarker, readServiceUpdateMarker, useServiceUpdateTask } from '../../lib/useServiceUpdateTask'
 import { ServiceUpdateModal } from './ServiceUpdateModal'
@@ -8,16 +9,19 @@ const Context = createContext<(ReturnType<typeof useServiceUpdateTask> & { openP
 export function ServiceUpdateFlow({ children }: { children: ReactNode }) {
   const update = useServiceUpdateTask()
   const { session, setSession } = useSession()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => Boolean(readServiceUpdateMarker()))
   const marker = readServiceUpdateMarker()
   const { task, query, mutation } = update
   const succeeded = task?.state === 'succeeded'
-  const holding = Boolean(marker && task && task.state !== 'failed')
+  const holding = Boolean(marker && task)
   const awaitingLogin = !session && holding
 
   function close() {
     setOpen(false)
-    if (task?.state === 'failed' || mutation.isError) clearServiceUpdateMarker()
+    if (task?.state === 'failed' || mutation.isError) {
+      clearServiceUpdateMarker()
+      if (!loadSession()) setSession(null)
+    }
   }
 
   function relogin() {
@@ -28,9 +32,9 @@ export function ServiceUpdateFlow({ children }: { children: ReactNode }) {
 
   return <Context.Provider value={{ ...update, openProgress: () => setOpen(true) }}>
     {awaitingLogin ? <div className="min-h-screen bg-[var(--background)]" /> : children}
-    <ServiceUpdateModal open={open || awaitingLogin || Boolean(holding && succeeded)} task={task} targetVersion={marker?.targetVersion || ''}
+    <ServiceUpdateModal open={open || awaitingLogin || Boolean(holding && (succeeded || task?.state === 'failed'))} task={task} targetVersion={marker?.targetVersion || ''}
       submitting={mutation.isPending} disconnected={Boolean(task?.state === 'running' && task.stage === 'installing' && (query.isError || !session))}
-      error={mutation.error?.message || (task?.state === 'failed' ? task.error : undefined)} allowClose={!awaitingLogin}
+      error={mutation.error?.message || (task?.state === 'failed' ? task.error : undefined)} allowClose={!awaitingLogin || task?.state === 'failed'}
       onClose={close} onRelogin={relogin} />
   </Context.Provider>
 }

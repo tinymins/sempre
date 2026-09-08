@@ -12,7 +12,7 @@ export function useRuntimeEvents(topics: string[], onEvent: (event: RuntimeEvent
     const controller = new AbortController()
     let retry: number | undefined
     const connect = () => {
-      streamEvents(session, selectedTopics, onEvent, controller.signal).catch(() => {
+      streamEvents(session, selectedTopics, onEvent, controller.signal).catch(() => {}).finally(() => {
         if (!controller.signal.aborted) retry = window.setTimeout(connect, 1500)
       })
     }
