@@ -114,6 +114,76 @@ async fn custom_node_api_creates_lists_updates_and_removes_nodes() {
 }
 
 #[tokio::test]
+async fn custom_node_api_persists_valid_order_and_rejects_invalid_permutations() {
+    let (root, app, token) = fixture();
+    let manager = Manager::new(Store::new(Layout::at(root.path()))).unwrap();
+    manager
+        .subscriptions()
+        .update(|catalog| {
+            catalog.custom_nodes = ["alpha", "bravo", "charlie"]
+                .into_iter()
+                .map(|id| sempre_converter::CustomNode {
+                    id: id.into(),
+                    name: id.into(),
+                    proxy: serde_json::json!({
+                        "name": id, "type": "socks5",
+                        "server": "127.0.0.1", "port": 1080
+                    }),
+                    created_at: None,
+                    updated_at: None,
+                })
+                .collect();
+            Ok(())
+        })
+        .unwrap();
+
+    let response = call(
+        app.clone(),
+        &token,
+        "PUT",
+        "/api/v1/custom-nodes/order",
+        Body::from(r#"{"node_ids":["charlie","alpha","bravo"]}"#),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(
+        body["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|node| node["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["charlie", "alpha", "bravo"]
+    );
+    assert_eq!(
+        manager
+            .custom_nodes()
+            .unwrap()
+            .iter()
+            .map(|node| node.id.as_str())
+            .collect::<Vec<_>>(),
+        ["charlie", "alpha", "bravo"]
+    );
+
+    let before = std::fs::read(&manager.store().layout().subscription_catalog).unwrap();
+    let response = call(
+        app,
+        &token,
+        "PUT",
+        "/api/v1/custom-nodes/order",
+        Body::from(r#"{"node_ids":["alpha","alpha","bravo"]}"#),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        std::fs::read(&manager.store().layout().subscription_catalog).unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
 async fn custom_node_api_saves_batch_links_in_one_request_without_new_storage_fields() {
     let (root, app, token) = fixture();
     let manager = Manager::new(Store::new(Layout::at(root.path()))).unwrap();

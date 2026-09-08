@@ -56,6 +56,10 @@ describe('CustomNodes', () => {
       const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
       requests.push({ path, method, body })
       if (method === 'GET') return response(path === '/custom-nodes' ? { nodes } : { profiles, configuration_context: { key: 'common' } })
+      if (path === '/custom-nodes/order') {
+        nodes = body.node_ids.map((id: string) => nodes.find((node) => node.id === id))
+        return response({ nodes })
+      }
       if (path.startsWith('/custom-nodes')) {
         if (failProfile) return response({ error: { code: 'SAVE_FAILED', message: 'Profile save failed' } }, 500)
         const { subscription_ids: selectedIDs, ...fields } = body
@@ -98,6 +102,33 @@ describe('CustomNodes', () => {
     fireEvent.click((await screen.findAllByRole('button', { name: 'Add node' }))[0])
     const reopened = await screen.findByRole('dialog', { name: 'Add node' })
     expect((within(reopened).getByRole('textbox', { name: 'Node JSON' }) as HTMLTextAreaElement).value).toContain('"type": "vless"')
+  })
+
+  it('persists drag ordering from the leftmost table handle', async () => {
+    nodes = [
+      { id: 'alpha', name: 'Alpha', proxy: exampleProxy },
+      { id: 'bravo', name: 'Bravo', proxy: exampleProxy },
+      { id: 'charlie', name: 'Charlie', proxy: exampleProxy },
+    ]
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      bottom: 40, height: 40, left: 0, right: 100, top: 0, width: 100, x: 0, y: 0, toJSON: () => ({}),
+    })
+    renderPage()
+    await screen.findByText('Alpha')
+    const firstRow = screen.getAllByRole('row')[1]
+    const handle = firstRow.querySelector('svg')
+    expect(handle).not.toBeNull()
+
+    fireEvent.pointerDown(handle!, { clientY: 10 })
+    fireEvent.pointerMove(document, { clientY: 90 })
+    fireEvent.pointerUp(document)
+
+    await waitFor(() => expect(requests.find((request) => request.path === '/custom-nodes/order')).toMatchObject({
+      method: 'PUT', body: { node_ids: ['bravo', 'charlie', 'alpha'] },
+    }))
+    await waitFor(() => expect(screen.getAllByRole('row').slice(1).map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Bravo'), expect.stringContaining('Charlie'), expect.stringContaining('Alpha'),
+    ]))
   })
 
   it('defaults new nodes to all editable profiles with one write request', async () => {

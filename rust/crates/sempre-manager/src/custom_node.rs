@@ -1,6 +1,7 @@
 use chrono::{SecondsFormat, Utc};
 use sempre_converter::{CustomNode, Proxy};
 use sempre_subscription::SubscriptionError;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::{
@@ -11,9 +12,41 @@ use crate::{
 
 impl<R: VersionRunner> Manager<R> {
     pub fn custom_nodes(&self) -> Result<Vec<CustomNode>, ManagerError> {
-        let mut nodes = self.subscriptions.read()?.custom_nodes;
-        nodes.sort_by(|left, right| left.name.cmp(&right.name));
-        Ok(nodes)
+        Ok(self.subscriptions.read()?.custom_nodes)
+    }
+
+    pub fn reorder_custom_nodes(
+        &self,
+        ordered_ids: &[String],
+    ) -> Result<Vec<CustomNode>, ManagerError> {
+        let _operation = self.store.acquire_operation()?;
+        let catalog = self.subscriptions.update(|catalog| {
+            let requested = ordered_ids.iter().collect::<HashSet<_>>();
+            let current = catalog
+                .custom_nodes
+                .iter()
+                .map(|node| &node.id)
+                .collect::<HashSet<_>>();
+            if ordered_ids.len() != catalog.custom_nodes.len()
+                || requested.len() != ordered_ids.len()
+                || requested != current
+            {
+                return Err(invalid(
+                    "custom node order must contain every node ID exactly once",
+                ));
+            }
+            let mut nodes = catalog
+                .custom_nodes
+                .drain(..)
+                .map(|node| (node.id.clone(), node))
+                .collect::<HashMap<_, _>>();
+            catalog.custom_nodes = ordered_ids
+                .iter()
+                .map(|id| nodes.remove(id).expect("validated custom node ID"))
+                .collect();
+            Ok(())
+        })?;
+        Ok(catalog.custom_nodes)
     }
 
     pub fn save_custom_node(&self, candidate: CustomNode) -> Result<CustomNode, ManagerError> {
@@ -220,6 +253,39 @@ mod tests {
         let mut invalid = candidate("invalid");
         invalid.proxy["port"] = json!(0);
         assert!(manager.save_custom_node(invalid).is_err());
+    }
+
+    #[test]
+    fn custom_node_order_is_persisted_and_requires_an_exact_permutation() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let manager = manager(&root);
+        let first = manager
+            .save_custom_node_with_subscriptions(candidate("first"), Some(&[]))
+            .unwrap();
+        let second = manager
+            .save_custom_node_with_subscriptions(candidate("second"), Some(&[]))
+            .unwrap();
+        let third = manager
+            .save_custom_node_with_subscriptions(candidate("third"), Some(&[]))
+            .unwrap();
+
+        let expected = [third.id.clone(), first.id.clone(), second.id.clone()];
+        let reordered = manager.reorder_custom_nodes(&expected).unwrap();
+        assert_eq!(
+            reordered
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            expected.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        assert_eq!(manager.custom_nodes().unwrap()[0].name, "third");
+
+        assert!(
+            manager
+                .reorder_custom_nodes(&[first.id.clone(), first.id, second.id])
+                .is_err()
+        );
+        assert_eq!(manager.custom_nodes().unwrap()[0].name, "third");
     }
 
     #[test]

@@ -16,6 +16,7 @@ use crate::api::AppState;
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/custom-nodes", get(list).post(create))
+        .route("/api/v1/custom-nodes/order", axum::routing::put(reorder))
         .route(
             "/api/v1/custom-nodes/{id}",
             axum::routing::put(update).delete(remove),
@@ -29,6 +30,11 @@ struct CustomNodeInput {
     proxy: Value,
     // Request-only inverse view of Profile.custom_node_ids; never stored on a node.
     subscription_ids: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct CustomNodeOrderInput {
+    node_ids: Vec<String>,
 }
 
 async fn list(State(state): State<Arc<AppState>>) -> Response {
@@ -48,6 +54,16 @@ async fn create(
         .save_custom_node_with_subscriptions(candidate("", input), subscriptions.as_deref())
     {
         Ok(node) => (StatusCode::CREATED, Json(node)).into_response(),
+        Err(error) => operation(error.to_string()),
+    }
+}
+
+async fn reorder(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<CustomNodeOrderInput>,
+) -> Response {
+    match state.manager.reorder_custom_nodes(&input.node_ids) {
+        Ok(nodes) => Json(json!({ "nodes": nodes })).into_response(),
         Err(error) => operation(error.to_string()),
     }
 }

@@ -9,7 +9,6 @@ import { useIsMobile } from '../hooks'
 import { useI18n } from '../lib/i18n'
 import { parseJSONC } from '../lib/jsonc'
 import { useSession } from '../lib/session'
-import { compareText } from '../lib/sort'
 import type { CustomNode, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, PageTitle } from '../components/ui'
 
@@ -44,6 +43,21 @@ export function CustomNodes() {
     onSuccess: () => { setNotice(t('operationDone')); void invalidate() },
     onError: (error) => setNotice(error.message),
   })
+  const reorder = useMutation({
+    mutationFn: (reordered: CustomNode[]) => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes/order', { method: 'PUT', body: JSON.stringify({ node_ids: reordered.map((node) => node.id) }) }),
+    onMutate: async (reordered) => {
+      await queryClient.cancelQueries({ queryKey: ['custom-nodes'] })
+      const previous = queryClient.getQueryData<{ nodes: CustomNode[] }>(['custom-nodes'])
+      queryClient.setQueryData(['custom-nodes'], { nodes: reordered })
+      return previous
+    },
+    onSuccess: (data) => { queryClient.setQueryData(['custom-nodes'], data); setNotice(t('operationDone')) },
+    onError: (error, _reordered, previous) => {
+      if (previous) queryClient.setQueryData(['custom-nodes'], previous)
+      setNotice(error.message)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['custom-nodes'] }),
+  })
   const openEditor = (target: CustomNode | 'new') => {
     setEditorTarget(target)
     setEditorGeneration((current) => current + 1)
@@ -53,10 +67,10 @@ export function CustomNodes() {
     if (!open) setEditorTarget(null)
   }
   const columns: Array<TableColumn<CustomNode>> = [
-    { title: t('profileName'), dataIndex: 'name', sorter: (left, right) => compareText(left.name, right.name), render: (value) => <span className="font-medium">{value}</span> },
-    { title: t('type'), key: 'type', sorter: (left, right) => compareText(left.proxy.type, right.proxy.type), render: (_value, node) => <Badge>{String(node.proxy.type || '')}</Badge> },
-    { title: t('host'), key: 'host', sorter: (left, right) => compareText(`${left.proxy.server || ''}:${left.proxy.port || ''}`, `${right.proxy.server || ''}:${right.proxy.port || ''}`), render: (_value, node) => <span className="font-mono text-xs">{String(node.proxy.server || '')}:{String(node.proxy.port || '')}</span> },
-    { title: 'ID', dataIndex: 'id', sorter: (left, right) => compareText(left.id, right.id), render: (value) => <span className="font-mono text-xs text-[var(--muted)]">{value}</span> },
+    { title: t('profileName'), dataIndex: 'name', render: (value) => <span className="font-medium">{value}</span> },
+    { title: t('type'), key: 'type', render: (_value, node) => <Badge>{String(node.proxy.type || '')}</Badge> },
+    { title: t('host'), key: 'host', render: (_value, node) => <span className="font-mono text-xs">{String(node.proxy.server || '')}:{String(node.proxy.port || '')}</span> },
+    { title: 'ID', dataIndex: 'id', render: (value) => <span className="font-mono text-xs text-[var(--muted)]">{value}</span> },
     { title: t('subscriptionSets'), key: 'subscriptions', render: (_value, node) => <span>{catalog.data?.profiles.filter((profile) => profile.custom_node_ids.includes(node.id)).map((profile) => profile.name || t('defaultSubscriptionSet')).join(', ') || '—'}</span> },
     { title: '', key: 'actions', width: 112, render: (_value, node) => <div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title={t('editNode')} disabled={!catalog.data || catalog.isError} onClick={() => openEditor(node)}><Pencil size={15} /></Button><Button size="icon" variant="ghost" title={t('remove')} onClick={() => remove.mutate(node.id)}><Trash2 size={15} /></Button></div> },
   ]
@@ -65,7 +79,7 @@ export function CustomNodes() {
     {catalog.error ? <p role="alert" className="text-sm text-red-600">{catalog.error.message}</p> : null}
     {notice ? <div className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     <Card className="overflow-hidden">
-      <Table<CustomNode> rowKey="id" loading={nodes.isLoading || catalog.isLoading} pagination={false} columns={columns} dataSource={nodes.data?.nodes || []} scroll={{ x: 800 }} locale={{ emptyText: <EmptyState title={t('noData')} detail={t('noDataDetail')} action={<Button disabled={!catalog.data || catalog.isError} onClick={() => openEditor('new')}><Plus size={16} />{t('addNode')}</Button>} /> }} />
+      <Table<CustomNode> rowKey="id" loading={nodes.isLoading || catalog.isLoading} pagination={false} columns={columns} dataSource={nodes.data?.nodes || []} onReorder={(reordered) => reorder.mutate(reordered)} sortDisabled={reorder.isPending} scroll={{ x: 840 }} locale={{ emptyText: <EmptyState title={t('noData')} detail={t('noDataDetail')} action={<Button disabled={!catalog.data || catalog.isError} onClick={() => openEditor('new')}><Plus size={16} />{t('addNode')}</Button>} /> }} />
     </Card>
     {editorTarget ? <NodeEditor key={editorGeneration} open={editorOpen} node={editorTarget === 'new' ? undefined : editorTarget} profiles={catalog.data?.profiles ?? []} onClose={() => setEditorOpen(false)} afterOpenChange={finishEditorClose} onSettled={invalidate} onSaved={() => { setEditorOpen(false); setNotice(t('operationDone')) }} /> : null}
   </div>
