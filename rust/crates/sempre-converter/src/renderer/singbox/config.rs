@@ -79,11 +79,11 @@ pub(super) fn route(
     } else {
         Vec::new()
     };
-    if !direct_modes.is_empty() {
-        rules.push(json!({
-            "clash_mode": direct_modes, "action": "route", "outbound": "direct"
-        }));
-    }
+    super::push_clash_mode_rules(
+        &mut rules,
+        &direct_modes,
+        &json!({ "action": "route", "outbound": "direct" }),
+    );
     rules.push(json!({ "ip_is_private": true, "outbound": "direct" }));
     append_rule_providers(
         profile

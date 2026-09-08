@@ -10,6 +10,14 @@ mod fields;
 mod private_access;
 use fields::consumed_keys;
 
+fn push_clash_mode_rules(rules: &mut Vec<Value>, modes: &[String], rule: &Value) {
+    for mode in modes {
+        let mut rule = rule.clone();
+        rule["clash_mode"] = json!(mode);
+        rules.push(rule);
+    }
+}
+
 pub(super) fn render(
     profile: &Profile,
     proxies: &[Proxy],

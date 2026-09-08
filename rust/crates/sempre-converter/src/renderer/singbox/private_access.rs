@@ -61,8 +61,7 @@ pub(super) fn resolve(
                 if !home_modes.is_empty() {
                     let mut direct = rule.clone();
                     direct["outbound"] = json!("direct");
-                    direct["clash_mode"] = json!(home_modes);
-                    resolved.route_rules.push(direct);
+                    super::push_clash_mode_rules(&mut resolved.route_rules, &home_modes, &direct);
                 }
                 resolved.route_rules.push(rule);
             }
@@ -85,8 +84,11 @@ pub(super) fn resolve(
                     }));
                     let mut direct_rule = json!({ "action": "route", "server": direct_tag });
                     add_matchers(&mut direct_rule, dns);
-                    direct_rule["clash_mode"] = json!(home_modes);
-                    resolved.dns_rules.push(direct_rule);
+                    super::push_clash_mode_rules(
+                        &mut resolved.dns_rules,
+                        &home_modes,
+                        &direct_rule,
+                    );
                 }
                 resolved.dns_servers.push(json!({
                     "type": "udp", "tag": dns_tag, "server": server,

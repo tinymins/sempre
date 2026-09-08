@@ -199,7 +199,18 @@ fn assert_home_auto_rules(document: &Value) {
     );
     assert_eq!(
         dns_rules[direct_dns]["clash_mode"],
-        json!(["Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143"])
+        json!("Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143")
+    );
+    assert_eq!(
+        dns_rules
+            .iter()
+            .filter_map(|rule| rule.get("clash_mode")?.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143",
+            "Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143",
+            "Sempre Network 450c5c7f-6ac8-4433-92a2-a4991dd06cc4",
+        ]
     );
 
     let route_rules = document["route"]["rules"].as_array().expect("route rules");
@@ -215,20 +226,28 @@ fn assert_home_auto_rules(document: &Value) {
     assert!(direct < route_index("private-wg"));
     assert_eq!(
         route_rules[direct]["clash_mode"],
-        json!(["Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143"])
+        json!("Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143")
     );
     let public_direct = route_rules
         .iter()
         .position(|rule| {
             rule["outbound"] == "direct"
-                && rule["clash_mode"]
-                    == json!([
-                        "Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143",
-                        "Sempre Network 450c5c7f-6ac8-4433-92a2-a4991dd06cc4"
-                    ])
+                && rule["clash_mode"] == "Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143"
+                && rule.get("ip_cidr").is_none()
         })
         .expect("public direct rule");
     assert!(route_index("private-wg") < public_direct);
+    assert_eq!(
+        route_rules
+            .iter()
+            .filter_map(|rule| rule.get("clash_mode")?.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143",
+            "Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143",
+            "Sempre Network 450c5c7f-6ac8-4433-92a2-a4991dd06cc4",
+        ]
+    );
 }
 
 #[test]

@@ -70,9 +70,11 @@ pub(super) fn render(
             );
         }
         if let Some(server) = network_local {
-            private_rules.push(json!({
-                "clash_mode": direct_modes, "action": "route", "server": server
-            }));
+            super::push_clash_mode_rules(
+                &mut private_rules,
+                &direct_modes,
+                &json!({ "action": "route", "server": server }),
+            );
         }
         private_rules.append(rules);
         *rules = private_rules;
