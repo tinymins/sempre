@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Cable, Cpu, Gauge, Network, Server } from 'lucide-react'
+import { Activity, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Cable, Cpu, Gauge, Network, Radar, Server } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/format'
@@ -12,6 +12,7 @@ import { Card, EmptyState, Badge, PageTitle } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 import { modeLabel } from '../components/PrivateAccessRuntimePanel'
+import { networkAutomationDisplayPath, type NetworkAutomationDisplayPath } from '../lib/networkAutomation'
 import { privateAccessMode } from '../lib/privateAccess'
 
 export function Overview() {
@@ -73,10 +74,17 @@ function SystemSummary({ system }: { system?: SystemStatus }) {
   const runtimeState = system?.runtime.state || ''
   const coreName = system?.active ? `${system.active.core} ${system.active.version}` : system?.selected ? `${system.selected.core}@${system.selected.ref}` : t('noCore')
   const privateMode = privateAccessMode(system?.private_access)
+  const networkPath = networkAutomationDisplayPath(system?.network_automation)
+  const summaryColumns = networkPath && privateMode
+    ? 'md:grid-cols-[repeat(5,minmax(0,1fr))]'
+    : networkPath || privateMode
+      ? 'md:grid-cols-[repeat(4,minmax(0,1fr))]'
+      : 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]'
   return <Card className="overflow-hidden">
-    <div className={`grid ${privateMode ? 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]' : 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]'} md:divide-x md:divide-[var(--border)]`}>
+    <div className={`grid ${summaryColumns} md:divide-x md:divide-[var(--border)]`}>
       <SummaryItem icon={Server} label={t('sempreService')} value={system ? `Sempre ${system.version}` : t('loading')} detail={system?.mode || '-'} status={system?.service === 'running' ? t('online') : system?.service || t('loading')} tone={system?.service === 'running' ? 'success' : 'warning'} />
       <SummaryItem icon={Cpu} label={t('managedCore')} value={coreName} detail={system?.active?.ref || system?.selected?.ref || '-'} status={runtimeState ? runtimeLabel(runtimeState, t) : t('loading')} tone={runtimeState === 'running' ? 'success' : runtimeState === 'failed' ? 'danger' : 'warning'} />
+      {networkPath ? <SummaryItem icon={Radar} label={t('networkAutomation')} value={system?.network_automation?.network_name || t('unknownNetwork')} detail={`${system?.network_automation?.interface || '-'} · ${system?.network_automation?.gateway || '-'}`} status={networkPathLabel(networkPath, t)} tone={networkPathTone(networkPath)} /> : null}
       {privateMode ? <SummaryItem icon={Network} label={t('privateAccessAuto')} value={modeLabel(privateMode, t)} detail={`${system?.private_access?.interface || '-'} · ${system?.private_access?.interface_addresses.join(', ') || '-'}`} status={modeLabel(privateMode, t)} tone={privateMode === 'direct' ? 'success' : 'warning'} /> : null}
       <Link className="flex items-center justify-center gap-2 border-t border-[var(--border)] px-5 py-4 text-sm font-medium text-emerald-700 hover:bg-[var(--surface-hover)] dark:text-emerald-400 md:border-t-0" to="/runtime-status">{t('navigationCoreStatus')}<ArrowRight size={16} /></Link>
     </div>
@@ -85,7 +93,7 @@ function SystemSummary({ system }: { system?: SystemStatus }) {
   </Card>
 }
 
-function SummaryItem({ icon: Icon, label, value, detail, status, tone }: { icon: typeof Server; label: string; value: string; detail: string; status: string; tone: 'success' | 'warning' | 'danger' }) {
+function SummaryItem({ icon: Icon, label, value, detail, status, tone }: { icon: typeof Server; label: string; value: string; detail: string; status: string; tone: 'success' | 'warning' | 'danger' | 'info' }) {
   return <div className="flex min-w-0 items-center gap-3 border-t border-[var(--border)] p-4 first:border-t-0 md:border-t-0 md:p-5"><span className="grid size-9 shrink-0 place-items-center rounded-md bg-emerald-500/10 text-emerald-600"><Icon size={18} /></span><div className="min-w-0 flex-1"><p className="text-xs text-[var(--muted)]">{label}</p><p className="mt-1 truncate text-sm font-semibold">{value}</p><p className="mt-0.5 truncate text-xs text-[var(--muted)]">{detail}</p></div><Badge tone={tone}>{status}</Badge></div>
 }
 
@@ -95,6 +103,20 @@ function Metric({ icon: Icon, label, value, tone }: { icon: typeof Activity; lab
 }
 
 type Translate = ReturnType<typeof useI18n>['t']
+
+function networkPathLabel(path: NetworkAutomationDisplayPath, t: Translate) {
+  if (path === 'direct') return t('publicDirect')
+  if (path === 'proxy') return t('publicProxy')
+  if (path === 'pending') return t('pendingApply')
+  if (path === 'inactive') return t('privateAccessInactive')
+  return t('privateAccessUnknown')
+}
+
+function networkPathTone(path: NetworkAutomationDisplayPath): 'success' | 'warning' | 'info' {
+  if (path === 'direct') return 'success'
+  if (path === 'proxy') return 'info'
+  return 'warning'
+}
 
 function runtimeLabel(state: string, t: Translate) {
   return ({ running: t('running'), stopped: t('stopped'), idle: t('idle'), starting: t('starting'), stopping: t('stopping'), restarting: t('restarting'), failed: t('failed') } as Record<string, string>)[state] || state
