@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{DnsSettings, ManagerError};
 
-const CONFIG_BUILD_SCHEMA: u32 = 9;
+const CONFIG_BUILD_SCHEMA: u32 = 10;
 
 pub(crate) fn config_build(
     profile: &Profile,
@@ -39,21 +39,21 @@ fn private_access_policy(profile: &Profile, target: &Target) -> Result<Value, Ma
         .into_iter()
         .flatten()
         .filter_map(|connector| {
-            let home = connector.get("homeNetwork")?;
-            (connector.get("type").and_then(Value::as_str) == Some("wireguard")
-                && connector.get("enabled").and_then(Value::as_bool) != Some(false)
-                && home.get("enabled").and_then(Value::as_bool) == Some(true))
-            .then(|| {
-                json!({
-                    "enabled": true,
-                    "type": "wireguard",
-                    "tag": connector.get("tag").cloned().unwrap_or(Value::Null),
-                    "homeNetwork": {
-                        "enabled": true,
-                        "networkIds": home.get("networkIds").cloned().unwrap_or(Value::Null),
-                    },
-                })
-            })
+            if connector.get("type").and_then(Value::as_str) != Some("wireguard")
+                || connector.get("enabled").and_then(Value::as_bool) == Some(false)
+            {
+                return None;
+            }
+            let home = connector.get("homeNetwork");
+            Some(json!({
+                "enabled": true,
+                "type": "wireguard",
+                "tag": connector.get("tag").cloned().unwrap_or(Value::Null),
+                "homeNetwork": {
+                    "enabled": home.and_then(|value| value.get("enabled")).and_then(Value::as_bool) == Some(true),
+                    "networkIds": home.and_then(|value| value.get("networkIds")).cloned().unwrap_or_else(|| json!([])),
+                },
+            }))
         })
         .collect::<Vec<_>>();
     Ok(json!({
@@ -132,6 +132,11 @@ mod tests {
                         "networkIds": ["d286d2f8-33c5-4f1e-b871-d22a9ba91143"],
                         "note": "must-not-appear"
                     }
+                }, {
+                    "enabled": true,
+                    "type": "wireguard",
+                    "tag": "remote-wg",
+                    "endpoint": { "privateKey": "also-must-not-appear" }
                 }]
             }),
             ..Profile::default()
@@ -143,6 +148,8 @@ mod tests {
         let build = config_build(&profile, &target, &manager.dns_settings()).expect("build");
         let encoded = serde_json::to_string(&build.private_access_policy).expect("metadata");
         assert!(encoded.contains("d286d2f8-33c5-4f1e-b871-d22a9ba91143"));
+        assert!(encoded.contains("remote-wg"));
         assert!(!encoded.contains("must-not-appear"));
+        assert!(!encoded.contains("also-must-not-appear"));
     }
 }

@@ -84,6 +84,34 @@ describe('Shell sidebar', () => {
     expect((await screen.findAllByText('Public direct')).length).toBeGreaterThanOrEqual(2)
   })
 
+  it('summarizes mixed private access and lists connectors in the status tooltip', async () => {
+    const mixedStatus = {
+      ...systemStatus,
+      private_access: {
+        ...systemStatus.private_access,
+        connectors: [
+          systemStatus.private_access.connectors[0],
+          { tag: 'remote-wg', mode: 'wireguard', home_networks: [] },
+        ],
+      },
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : mixedStatus)
+    }))
+    renderShell()
+
+    const triggers = await screen.findAllByLabelText('Private access: Mixed')
+    expect(triggers).toHaveLength(2)
+    fireEvent.focus(triggers[1])
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(within(tooltip).getByText('home-wg')).toBeInTheDocument()
+    expect(within(tooltip).getByText('remote-wg')).toBeInTheDocument()
+    expect(within(tooltip).getByText('家')).toBeInTheDocument()
+    expect(within(tooltip).getByText('WG')).toBeInTheDocument()
+  })
+
   it('shows that automatic switching is waiting when the core is stopped', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname

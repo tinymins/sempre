@@ -150,12 +150,10 @@ fn configured_connectors(config: &Value) -> Vec<(String, Vec<String>)> {
             {
                 return None;
             }
-            let home = connector.get("homeNetwork")?;
-            if home.get("enabled").and_then(Value::as_bool) != Some(true) {
-                return None;
-            }
-            let home_network_ids = home
-                .get("networkIds")
+            let home_network_ids = connector
+                .get("homeNetwork")
+                .filter(|home| home.get("enabled").and_then(Value::as_bool) == Some(true))
+                .and_then(|home| home.get("networkIds"))
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
@@ -164,15 +162,13 @@ fn configured_connectors(config: &Value) -> Vec<(String, Vec<String>)> {
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
-            (!home_network_ids.is_empty()).then(|| {
-                let tag = connector
-                    .get("tag")
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map_or_else(|| format!("private-access-{}", index + 1), str::to_owned);
-                (tag, home_network_ids)
-            })
+            let tag = connector
+                .get("tag")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map_or_else(|| format!("private-access-{}", index + 1), str::to_owned);
+            Some((tag, home_network_ids))
         })
         .collect()
 }
@@ -195,6 +191,8 @@ mod tests {
                 "connectors": [{
                     "type": "wireguard", "tag": "home-wg",
                     "homeNetwork": { "enabled": true, "networkIds": ["d286d2f8-33c5-4f1e-b871-d22a9ba91143"] }
+                }, {
+                    "type": "wireguard", "tag": "remote-wg"
                 }]
             }),
         }
@@ -221,7 +219,9 @@ mod tests {
                 disable_proxy: true,
             }],
         );
+        assert_eq!(status.connectors.len(), 2);
         assert_eq!(status.connectors[0].mode, "direct");
+        assert_eq!(status.connectors[1].mode, "wireguard");
         assert_eq!(
             status.connectors[0].matched_network.as_deref(),
             Some("Home")
