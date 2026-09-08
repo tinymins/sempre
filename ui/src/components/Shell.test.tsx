@@ -109,7 +109,7 @@ describe('Shell sidebar', () => {
     expect(analysis).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(analysis)
     expect(analysis).toHaveAttribute('aria-expanded', 'true')
-    expect(within(navigation).getAllByRole('link').slice(-7).map((link) => link.getAttribute('aria-label'))).toEqual(['Core Status', 'Network Test', 'Connections', 'Traffic', 'Effective Rules', 'Logs', 'Management'])
+    expect(within(navigation).getAllByRole('link').slice(-8).map((link) => link.getAttribute('aria-label'))).toEqual(['Core Status', 'Network Test', 'Node Test', 'Connections', 'Traffic', 'Effective Rules', 'Logs', 'Management'])
   })
 
   it('shows the gateway entry only in gateway mode', async () => {

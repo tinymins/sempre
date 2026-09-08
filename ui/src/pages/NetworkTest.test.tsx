@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
 import { SessionProvider } from '../lib/session'
 import { NetworkTest } from './NetworkTest'
+import { NodeTest } from './NodeTest'
 
 const report = {
   checked_at: '2026-08-07T00:00:00Z',
@@ -78,7 +79,6 @@ describe('NetworkTest', () => {
     let resolveLatency: ((value: Response) => void) | undefined
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/network/test')) return Response.json(report)
       if (url.endsWith('/runtime/nodes')) return Response.json([{ name: 'Tokyo 01', type: 'Shadowsocks' }])
       if (url.endsWith('/runtime/proxies/delay')) {
         return new Promise<Response>((resolve) => { resolveLatency = resolve })
@@ -95,9 +95,9 @@ describe('NetworkTest', () => {
       throw new Error(`unexpected request ${url}`)
     })
     vi.stubGlobal('fetch', fetch)
-    renderNetworkTest()
+    renderNodeTest()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Node test' }))
+    expect(screen.getByRole('heading', { name: 'Node Test' })).toBeInTheDocument()
     expect(await screen.findByText('Tokyo 01')).toBeInTheDocument()
     const latencyButton = screen.getByRole('button', { name: 'Test latency' })
     fireEvent.click(latencyButton)
@@ -116,6 +116,18 @@ describe('NetworkTest', () => {
 function sseResponse(events: Array<[string, object]>) {
   const body = events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
   return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+function renderNodeTest() {
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <I18nProvider>
+        <SessionProvider>
+          <NodeTest />
+        </SessionProvider>
+      </I18nProvider>
+    </QueryClientProvider>,
+  )
 }
 
 function renderNetworkTest() {
