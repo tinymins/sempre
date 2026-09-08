@@ -129,6 +129,7 @@ describe('CustomNodes', () => {
     await waitFor(() => expect(screen.getAllByRole('row').slice(1).map((row) => row.textContent)).toEqual([
       expect.stringContaining('Bravo'), expect.stringContaining('Charlie'), expect.stringContaining('Alpha'),
     ]))
+    expect(screen.queryByText('Operation completed')).not.toBeInTheDocument()
   })
 
   it('defaults new nodes to all editable profiles with one write request', async () => {

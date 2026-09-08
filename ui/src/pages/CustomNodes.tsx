@@ -51,7 +51,7 @@ export function CustomNodes() {
       queryClient.setQueryData(['custom-nodes'], { nodes: reordered })
       return previous
     },
-    onSuccess: (data) => { queryClient.setQueryData(['custom-nodes'], data); setNotice(t('operationDone')) },
+    onSuccess: (data) => queryClient.setQueryData(['custom-nodes'], data),
     onError: (error, _reordered, previous) => {
       if (previous) queryClient.setQueryData(['custom-nodes'], previous)
       setNotice(error.message)
