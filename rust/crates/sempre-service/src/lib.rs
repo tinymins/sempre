@@ -81,7 +81,7 @@ pub enum ServiceError {
     },
     #[error("run {program}: {source}")]
     Start { program: String, source: io::Error },
-    #[error("{program} timed out after 30 seconds")]
+    #[error("{program} timed out")]
     Timeout { program: String },
     #[error("{program} failed with {status}: {output}")]
     Command {

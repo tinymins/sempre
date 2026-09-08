@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, fs::OpenOptions, io::Write as _};
 
 use tokio::sync::watch;
 
@@ -12,11 +12,19 @@ fn run_daemon(receiver: watch::Receiver<bool>) -> Result<(), Box<dyn Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    runtime
-        .block_on(daemon::run_with_layout(
-            sempre_state::Layout::for_mode(sempre_state::Mode::System)?,
-            None,
-            Some(receiver),
-        ))
-        .map_err(Into::into)
+    let layout = sempre_state::Layout::for_mode(sempre_state::Mode::System)?;
+    let result = runtime.block_on(daemon::run_with_layout(
+        layout.clone(),
+        None,
+        Some(receiver),
+    ));
+    if let Err(error) = &result
+        && let Ok(mut log) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&layout.manager_log)
+    {
+        let _ = writeln!(log, "daemon failed: {error}");
+    }
+    result.map_err(Into::into)
 }

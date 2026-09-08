@@ -80,16 +80,20 @@ pub fn validate_ledger(
     let expected: Vec<_> = registry
         .iter()
         .filter(|migration| migration.version <= schema)
-        .map(applied_migration)
         .collect();
     if ledger.len() != expected.len() {
         return Err(MigrationError::InvalidLedger { schema });
     }
-    for (actual, expected) in ledger.iter().zip(expected) {
+    for (actual, migration) in ledger.iter().zip(expected) {
+        let expected = applied_migration(migration);
         if actual.version != expected.version || actual.id != expected.id {
             return Err(MigrationError::InvalidLedger { schema });
         }
-        if actual.checksum != expected.checksum {
+        // Older Windows builds hashed CRLF checkout bytes. Accept that exact legacy
+        // representation as well as canonical LF, without accepting content changes.
+        if actual.checksum != expected.checksum
+            && actual.checksum != checksum(&normalized_source(migration).replace('\n', "\r\n"))
+        {
             return Err(MigrationError::ChecksumDrift {
                 id: actual.id.clone(),
             });
@@ -146,6 +150,14 @@ fn applied_migration(migration: &JsonMigration) -> AppliedMigration {
     AppliedMigration {
         version: migration.version,
         id: migration.id.into(),
-        checksum: format!("{:x}", Sha256::digest(migration.source.as_bytes())),
+        checksum: checksum(&normalized_source(migration)),
     }
+}
+
+fn normalized_source(migration: &JsonMigration) -> String {
+    migration.source.replace("\r\n", "\n")
+}
+
+fn checksum(source: &str) -> String {
+    format!("{:x}", Sha256::digest(source.as_bytes()))
 }

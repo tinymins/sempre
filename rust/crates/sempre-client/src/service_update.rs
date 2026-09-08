@@ -4,7 +4,6 @@ use reqwest::{Client, StatusCode};
 use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions, Sha256Digest};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use tempfile::TempDir;
 use tokio::process::Command;
 use url::Url;
 
@@ -123,7 +122,7 @@ async fn run_task(
     let executable = root.join(executable_name());
     validate_version(&executable, &manifest.version).await?;
     tasks.set_stage(task_id, "installing")?;
-    schedule(temporary, &executable, tasks.result_path())?;
+    crate::service_update_schedule::schedule(temporary, &executable, tasks.result_path())?;
     Ok(())
 }
 
@@ -379,103 +378,6 @@ fn executable_name() -> &'static str {
     } else {
         "sempre"
     }
-}
-
-fn schedule(temporary: TempDir, executable: &Path, result: &Path) -> Result<(), String> {
-    let root = temporary.keep();
-    let scheduled = platform_schedule(executable, &root, result);
-    if scheduled.is_err() {
-        let _ = std::fs::remove_dir_all(&root);
-    }
-    scheduled
-}
-
-#[cfg(target_os = "linux")]
-fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
-    let unit = format!("sempre-update-{}", uuid::Uuid::new_v4());
-    let script = "sleep 1; \"$1\" --portable install --yes; code=$?; tmp=\"$3.tmp\"; if [ \"$code\" -eq 0 ]; then printf 'succeeded\\n' >\"$tmp\"; else printf 'failed:%s\\n' \"$code\" >\"$tmp\"; fi; mv -f -- \"$tmp\" \"$3\"; rm -rf -- \"$2\"; exit $code";
-    let status = std::process::Command::new("systemd-run")
-        .args(["--quiet", "--collect", "--no-block", "--unit", &unit])
-        .arg("/bin/sh")
-        .args(["-c", script, "sempre-update"])
-        .arg(executable)
-        .arg(root)
-        .arg(result)
-        .status()
-        .map_err(|error| format!("schedule systemd update: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("schedule systemd update: {status}"))
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
-    let label = format!("io.sempre.update.{}", uuid::Uuid::new_v4());
-    let script = "sleep 1; \"$1\" --portable install --yes; code=$?; tmp=\"$3.tmp\"; if [ \"$code\" -eq 0 ]; then printf 'succeeded\\n' >\"$tmp\"; else printf 'failed:%s\\n' \"$code\" >\"$tmp\"; fi; mv -f -- \"$tmp\" \"$3\"; rm -rf -- \"$2\"; exit $code";
-    let status = std::process::Command::new("launchctl")
-        .args([
-            "submit",
-            "-l",
-            &label,
-            "--",
-            "/bin/sh",
-            "-c",
-            script,
-            "sempre-update",
-        ])
-        .arg(executable)
-        .arg(root)
-        .arg(result)
-        .status()
-        .map_err(|error| format!("schedule launchd update: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("schedule launchd update: {status}"))
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
-    let executable = executable
-        .to_str()
-        .ok_or_else(|| "update executable path is not Unicode".to_string())?;
-    let root = root
-        .to_str()
-        .ok_or_else(|| "update directory path is not Unicode".to_string())?;
-    let result = result
-        .to_str()
-        .ok_or_else(|| "update result path is not Unicode".to_string())?;
-    let script = format!(
-        "$ErrorActionPreference='Stop'; Start-Sleep -Seconds 1; $code=1; try {{ $p=Start-Process -FilePath {} -ArgumentList '--portable install --yes' -PassThru -Wait; $code=$p.ExitCode }} catch {{ $code=1 }}; $result={}; $temporary=\"$result.tmp\"; if ($code -eq 0) {{ $value='succeeded' }} else {{ $value=\"failed:$code\" }}; [IO.File]::WriteAllText($temporary,$value,[Text.UTF8Encoding]::new($false)); Move-Item -LiteralPath $temporary -Destination $result -Force; Remove-Item -LiteralPath {} -Recurse -Force -ErrorAction SilentlyContinue; exit $code",
-        powershell_literal(executable),
-        powershell_literal(result),
-        powershell_literal(root),
-    );
-    std::process::Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-WindowStyle",
-            "Hidden",
-            "-Command",
-            &script,
-        ])
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("schedule Windows update: {error}"))
-}
-
-#[cfg(target_os = "windows")]
-fn powershell_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn platform_schedule(_: &Path, _: &Path, _: &Path) -> Result<(), String> {
-    Err("Sempre updates are unavailable on this operating system".into())
 }
 
 #[cfg(test)]

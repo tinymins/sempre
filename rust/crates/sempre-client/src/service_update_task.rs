@@ -1,5 +1,6 @@
 use std::{
     fs, io,
+    io::{Read as _, Seek as _},
     path::{Path, PathBuf},
     sync::Mutex,
     time::{Duration, Instant},
@@ -69,6 +70,9 @@ impl ServiceUpdateTasks {
             return Err("a Sempre update is already in progress".into());
         }
         remove_if_exists(&self.result_path)?;
+        for extension in ["stdout.log", "stderr.log"] {
+            remove_if_exists(&self.result_path.with_extension(extension))?;
+        }
         let now = Utc::now();
         let task = ServiceUpdateTask {
             id: uuid::Uuid::new_v4().to_string(),
@@ -182,7 +186,6 @@ impl ServiceUpdateTasks {
         let _ = self.update(id, true, |state, now| {
             let task = state.task.as_mut().expect("matching task");
             task.state = "failed".into();
-            task.stage = "failed".into();
             task.error = Some(error.into());
             task.updated_at = now;
             task.finished_at = Some(now);
@@ -240,7 +243,7 @@ impl ServiceUpdateTasks {
                 task,
                 "failed",
                 "failed",
-                Some(format!("Sempre installer exited with code {code}")),
+                Some(installer_failure(&self.result_path, code)),
             );
         } else {
             return;
@@ -280,7 +283,9 @@ fn remove_if_exists(path: &Path) -> Result<(), String> {
 fn finish(task: &mut ServiceUpdateTask, outcome: &str, phase: &str, error: Option<String>) {
     let now = Utc::now();
     task.state = outcome.into();
-    task.stage = phase.into();
+    if outcome == "succeeded" {
+        task.stage = phase.into();
+    }
     task.error = error;
     task.updated_at = now;
     task.finished_at = Some(now);
@@ -289,6 +294,22 @@ fn finish(task: &mut ServiceUpdateTask, outcome: &str, phase: &str, error: Optio
 
 fn normalized_version(value: &str) -> &str {
     value.strip_prefix('v').unwrap_or(value)
+}
+
+fn installer_failure(result: &Path, code: &str) -> String {
+    let message = format!("Sempre installer exited with code {code}");
+    let detail = (|| -> io::Result<String> {
+        let mut file = fs::File::open(result.with_extension("stderr.log"))?;
+        let start = file.metadata()?.len().saturating_sub(8192);
+        file.seek(io::SeekFrom::Start(start))?;
+        let mut bytes = Vec::new();
+        file.take(8192).read_to_end(&mut bytes)?;
+        Ok(String::from_utf8_lossy(&bytes).trim().to_owned())
+    })();
+    match detail {
+        Ok(detail) if !detail.is_empty() => format!("{message}: {detail}"),
+        _ => message,
+    }
 }
 
 #[cfg(test)]
@@ -360,6 +381,36 @@ mod tests {
             .expect("completed task");
         assert_eq!(completed.state, "succeeded");
         assert_eq!(completed.stage, "completed");
+    }
+
+    #[test]
+    fn installer_failure_preserves_its_stage_and_error_output() {
+        let root = tempfile::tempdir().unwrap();
+        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
+        let task = tasks.begin().unwrap();
+        tasks.set_stage(&task.id, "installing").unwrap();
+        fs::write(
+            tasks.result_path().with_extension("stderr.log"),
+            "ERROR: migration checksum differs\n",
+        )
+        .unwrap();
+        fs::write(tasks.result_path(), "failed:1").unwrap();
+        let failed = tasks.snapshot().unwrap();
+        assert_eq!(failed.stage, "installing");
+        assert!(failed.error.unwrap().contains("migration checksum differs"));
+        let next = tasks.begin().unwrap();
+        assert_eq!(next.stage, "checking");
+        assert!(!tasks.result_path().with_extension("stderr.log").exists());
+    }
+
+    #[test]
+    fn download_failure_keeps_download_as_the_failed_step() {
+        let root = tempfile::tempdir().unwrap();
+        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
+        let task = tasks.begin().unwrap();
+        tasks.set_stage(&task.id, "downloading").unwrap();
+        tasks.fail(&task.id, "connection failed");
+        assert_eq!(tasks.snapshot().unwrap().stage, "downloading");
     }
 
     #[test]
