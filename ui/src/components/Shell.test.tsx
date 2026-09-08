@@ -84,6 +84,33 @@ describe('Shell sidebar', () => {
     expect((await screen.findAllByText('Public direct')).length).toBeGreaterThanOrEqual(2)
   })
 
+  it('explains the public direct path in the status tooltip', async () => {
+    renderShell()
+
+    const triggers = await screen.findAllByLabelText('Public traffic: Public direct')
+    expect(triggers).toHaveLength(2)
+    fireEvent.focus(triggers[1])
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(within(tooltip).getByText('Public traffic bypasses the proxy on this network. Private access is still handled separately for each connector.')).toBeInTheDocument()
+    expect(within(tooltip).getByText('Home')).toBeInTheDocument()
+  })
+
+  it('explains the public proxy path in the status tooltip', async () => {
+    const proxyStatus = { ...systemStatus, network_automation: { ...systemStatus.network_automation, path: 'proxy' } }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : proxyStatus)
+    }))
+    renderShell()
+
+    const triggers = await screen.findAllByLabelText('Public traffic: Public proxy')
+    fireEvent.focus(triggers[1])
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(within(tooltip).getByText('Public traffic follows the proxy rules on this network. Private access is still handled separately for each connector.')).toBeInTheDocument()
+  })
+
   it('summarizes mixed private access and lists connectors in the status tooltip', async () => {
     const mixedStatus = {
       ...systemStatus,
@@ -106,6 +133,7 @@ describe('Shell sidebar', () => {
     fireEvent.focus(triggers[1])
 
     const tooltip = await screen.findByRole('tooltip')
+    expect(within(tooltip).getByText('Some private networks are reached directly on the current network; the others still use WireGuard.')).toBeInTheDocument()
     expect(within(tooltip).getByText('home-wg')).toBeInTheDocument()
     expect(within(tooltip).getByText('remote-wg')).toBeInTheDocument()
     expect(within(tooltip).getByText('家')).toBeInTheDocument()

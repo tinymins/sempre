@@ -9,9 +9,12 @@ export function PrivateAccessStatusTag({ status }: { status?: PrivateAccessStatu
   const summary = privateAccessMode(status)
   if (!status || !summary) return null
   const label = modeLabel(summary, t)
+  const detail = summary === 'direct' ? t('privateAccessDirectDetail') : summary === 'wireguard' ? t('privateAccessWireGuardDetail') : summary === 'mixed' ? t('privateAccessMixedDetail') : summary === 'inactive' ? t('privateAccessInactiveDetail') : t('privateAccessUnknownDetail')
 
   return <Tooltip placement="bottom-start" title={<div className="min-w-52 space-y-2 py-1">
     <p className="font-semibold">{t('privateAccess')}</p>
+    <p className="max-w-72 leading-5 text-[var(--muted)]">{detail}</p>
+    <div className="border-t border-[var(--border)]" />
     {status.connectors.map((connector) => <div key={connector.tag} className="flex items-center justify-between gap-3">
       <span className="min-w-0 truncate font-mono">{connector.tag}</span>
       <span className="flex shrink-0 items-center gap-1 text-[var(--muted)]">

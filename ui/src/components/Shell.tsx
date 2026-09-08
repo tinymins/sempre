@@ -11,11 +11,11 @@ import { cn } from '../lib/cn'
 import { AcmeContentBoundary } from './AcmeContentBoundary'
 import { RuntimeRestartButton } from './RuntimeRestartButton'
 import { Badge, Button } from './ui'
-import { Tag } from '@acme/components'
 import { modeLabel } from './PrivateAccessRuntimePanel'
 import { privateAccessMode } from '../lib/privateAccess'
 import { networkAutomationDisplayPath } from '../lib/networkAutomation'
 import { PrivateAccessStatusTag } from './PrivateAccessStatusTag'
+import { NetworkAutomationStatusTag } from './NetworkAutomationStatusTag'
 
 const SIDEBAR_COLLAPSED_KEY = 'sempre.sidebar.collapsed'
 
@@ -137,7 +137,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           })}
         </nav>
         <div className="border-t border-[var(--border)] p-3">
-          <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><span className="flex items-center gap-1"><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge>{networkPath ? <Tag color={networkPath === 'direct' ? 'green' : networkPath === 'proxy' ? 'blue' : 'orange'}>{networkPathLabel}</Tag> : null}<PrivateAccessStatusTag status={chrome ? undefined : system.data?.private_access} /></span></div>
+          <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><span className="flex items-center gap-1"><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge>{networkPath ? <NetworkAutomationStatusTag status={system.data?.network_automation} path={networkPath} label={networkPathLabel} /> : null}<PrivateAccessStatusTag status={chrome ? undefined : system.data?.private_access} /></span></div>
           {desktopCollapsed ? <div className="hidden place-items-center lg:grid" aria-label={`${statusLabel}: ${collapsedStatusDetail}`} title={`${statusLabel}: ${collapsedStatusDetail}`}><span className={cn('size-2.5 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /></div> : null}
         </div>
       </aside>
@@ -147,7 +147,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           <Button className="mr-2 hidden lg:inline-flex" size="icon" variant="ghost" title={sidebarAction} aria-label={sidebarAction} aria-controls="primary-navigation" aria-expanded={!desktopCollapsed} onClick={() => setDesktopCollapsed((collapsed) => !collapsed)}>
             {desktopCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </Button>
-          <div className="flex items-center gap-2 text-sm"><span className={cn('size-2 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /><span className="hidden text-[var(--muted)] sm:inline">{statusDetail}</span>{networkPath ? <Tag color={networkPath === 'direct' ? 'green' : networkPath === 'proxy' ? 'blue' : 'orange'}>{networkPathLabel}</Tag> : null}<PrivateAccessStatusTag status={chrome ? undefined : system.data?.private_access} /></div>
+          <div className="flex items-center gap-2 text-sm"><span className={cn('size-2 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /><span className="hidden text-[var(--muted)] sm:inline">{statusDetail}</span>{networkPath ? <NetworkAutomationStatusTag status={system.data?.network_automation} path={networkPath} label={networkPathLabel} /> : null}<PrivateAccessStatusTag status={chrome ? undefined : system.data?.private_access} /></div>
           <div className="ml-auto flex items-center gap-1">
             {!chrome ? <RuntimeRestartButton /> : null}
             <Button size="icon" variant="ghost" title={t('language')} onClick={() => setLocale(locale === 'zh-CN' ? 'en' : 'zh-CN')}><Languages size={18} /></Button>
