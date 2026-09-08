@@ -17,6 +17,7 @@ describe('Management page', () => {
   let cancelledTask = ''
   let upgradeRequested = false
   let serviceUpdateTask: Record<string, unknown> | null
+  let networkAutomation: { enabled: boolean; active: boolean; path: string }
 
   beforeEach(() => {
     savedSettings = undefined
@@ -25,6 +26,7 @@ describe('Management page', () => {
     cancelledTask = ''
     upgradeRequested = false
     serviceUpdateTask = null
+    networkAutomation = { enabled: false, active: false, path: 'inactive' }
     localStorage.setItem('sempre.locale', 'zh-CN')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -52,7 +54,7 @@ describe('Management page', () => {
         }
         return Response.json(update)
       }
-      if (path.endsWith('/system')) return Response.json({ version: '2.0.8', mode: 'system', service: 'running', network_automation: { enabled: false, active: false, path: 'inactive' } })
+      if (path.endsWith('/system')) return Response.json({ version: '2.0.8', mode: 'system', service: 'running', network_automation: networkAutomation })
       return Response.json({}, { status: 404 })
     }))
   })
@@ -77,6 +79,21 @@ describe('Management page', () => {
     cleanup()
     sessionStorage.clear()
     vi.unstubAllGlobals()
+  })
+
+  it.each([
+    [false, 'inactive', '自动切换未开启'],
+    [true, 'inactive', '核心未运行'],
+    [true, 'direct', '公网直连'],
+    [true, 'proxy', '公网代理'],
+  ])('labels network automation with enabled=%s and path=%s', async (enabled, path, label) => {
+    networkAutomation = { enabled, active: path !== 'inactive', path }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    fireEvent.click(screen.getByRole('button', { name: '模式' }))
+    expect(await screen.findByText(label)).toBeInTheDocument()
+    if (!enabled) expect(screen.queryByText('核心未运行')).not.toBeInTheDocument()
   })
 
   it('keeps an unavailable gateway reason inside the disabled option', async () => {

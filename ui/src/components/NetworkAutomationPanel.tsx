@@ -61,9 +61,9 @@ export function NetworkAutomationPanel() {
       <Switch checked={settings?.automatic_switching ?? false} loading={update.isPending} onChange={(checked) => save({ automatic_switching: checked })} />
     </div>
 
-    <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2.5 text-xs">
-        <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{zh ? '当前网络' : 'Current network'}</span><Tag color={status?.path === 'direct' ? 'green' : status?.path === 'proxy' ? 'blue' : 'orange'}>{pathLabel(status?.path, zh)}</Tag>{status?.network_name ? <span>{status.network_name}</span> : null}</div>
+    <div className="mt-5 grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <div className="min-w-0 text-xs">
+        <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{zh ? '当前网络' : 'Current network'}</span><Tag color={status?.enabled === false ? 'default' : status?.path === 'direct' ? 'green' : status?.path === 'proxy' ? 'blue' : 'orange'}>{pathLabel(status, zh)}</Tag>{status?.network_name ? <span>{status.network_name}</span> : null}</div>
         <p className="mt-1 break-all font-mono text-[var(--muted)]">{current?.name || '-'} · {current?.gateway || '-'} · {current?.gateway_mac || (zh ? '未获取到网关 MAC' : 'Gateway MAC unavailable')}</p>
       </div>
       <Button variant="primary" icon={<Plus size={16} />} loading={update.isPending} disabled={!current?.gateway_mac} onClick={addCurrent}>{zh ? '将当前网络加入' : 'Add current network'}</Button>
@@ -82,7 +82,9 @@ export function NetworkAutomationPanel() {
   </Card>
 }
 
-function pathLabel(path: string | undefined, zh: boolean) {
+function pathLabel(status: SystemStatus['network_automation'], zh: boolean) {
+  if (status?.enabled === false) return zh ? '自动切换未开启' : 'Automatic switching disabled'
+  const path = status?.path
   if (path === 'direct') return zh ? '公网直连' : 'Public direct'
   if (path === 'proxy') return zh ? '公网代理' : 'Public proxy'
   if (path === 'inactive') return zh ? '核心未运行' : 'Core stopped'
