@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, KeyRound, MonitorCog, Package, RefreshCw, Router, ServerCog, Trash2, Upload } from 'lucide-react'
+import { Archive, Download, KeyRound, MonitorCog, Package, RefreshCw, Router, ServerCog, Trash2, Upload } from 'lucide-react'
 import { Select } from '@acme/components'
 import { api, downloadBundle, uploadUI } from '../lib/api'
 import { compactHash } from '../lib/format'
@@ -10,17 +10,17 @@ import type { NetworkSettings, NetworkSettingsResponse, UIMetadata } from '../li
 import { Badge, Button, Card, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 import { CorePanel } from '../features/core/CorePanel'
-import { ServicePanel } from '../features/service/ServicePanel'
+import { ServiceActionsPanel, ServicePanel } from '../features/service/ServicePanel'
 
-type Tab = 'core' | 'network' | 'console' | 'service'
+type Tab = 'core' | 'network' | 'maintenance' | 'console'
 
 export function Management() {
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('core')
   const tabs: Array<{ value: Tab; label: string; icon: typeof Package }> = [
-    { value: 'core', label: t('coreTab'), icon: Package }, { value: 'network', label: t('mode'), icon: Router }, { value: 'console', label: t('consoleTab'), icon: MonitorCog }, { value: 'service', label: t('serviceTab'), icon: ServerCog },
+    { value: 'core', label: t('coreTab'), icon: Package }, { value: 'network', label: t('mode'), icon: Router }, { value: 'maintenance', label: t('backupAndUpdateTab'), icon: Archive }, { value: 'console', label: t('consoleTab'), icon: MonitorCog },
   ]
-  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : tab === 'network' ? <NetworkModePanel /> : tab === 'console' ? <WebUIPanel /> : <ServicePanel />}</div>
+  return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : tab === 'network' ? <NetworkModePanel /> : tab === 'maintenance' ? <BackupAndUpdatePanel /> : <ConsolePanel />}</div>
 }
 
 function NetworkModePanel() {
@@ -52,21 +52,32 @@ function NetworkModePanel() {
   </Section>
 }
 
-function WebUIPanel() {
+function ConsolePanel() {
   const { t } = useI18n()
   const { session, setSession } = useSession()
   const queryClient = useQueryClient()
   const [listenDraft, setListen] = useState<string | null>(null)
   const [password, setPassword] = useState('')
-  const [source, setSource] = useState('')
   const [notice, setNotice] = useState('')
   const web = useQuery({ queryKey: ['web'], queryFn: () => api<{ listen: string; local_url: string; password_set: boolean; password_warning: boolean }>(session!, '/web') })
-  const ui = useQuery({ queryKey: ['ui'], queryFn: () => api<{ installed: boolean; metadata?: UIMetadata }>(session!, '/ui') })
   const listen = listenDraft ?? web.data?.listen ?? '127.0.0.1:33211'
   const webMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => api<{ local_url: string; reauthenticate?: boolean }>(session!, '/web', { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: (result) => { setNotice(t('operationDone')); setListen(null); queryClient.invalidateQueries({ queryKey: ['web'] }); if (result.reauthenticate) setSession(null); else if (result.local_url && result.local_url !== session?.baseURL) window.location.assign(result.local_url) }, onError: (error) => setNotice(error.message),
   })
+  return <div className="grid gap-5 xl:grid-cols-2">
+    <Section title="Web" icon={<ServerCog size={18} />} notice={notice}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div></div></Section>
+    <ServiceActionsPanel />
+  </div>
+}
+
+function BackupAndUpdatePanel() {
+  const { t } = useI18n()
+  const { session } = useSession()
+  const queryClient = useQueryClient()
+  const [source, setSource] = useState('')
+  const [notice, setNotice] = useState('')
+  const ui = useQuery({ queryKey: ['ui'], queryFn: () => api<{ installed: boolean; metadata?: UIMetadata }>(session!, '/ui') })
   const uiMutation = useMutation({
     mutationFn: ({ operation, body }: { operation: 'install' | 'update' | 'remove'; body?: unknown }) => api(session!, '/ui' + (operation === 'remove' ? '' : `/${operation}`), { method: operation === 'remove' ? 'DELETE' : 'POST', body: body ? JSON.stringify(body) : undefined }),
     onSuccess: () => { setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) }, onError: (error) => setNotice(error.message),
@@ -80,9 +91,13 @@ function WebUIPanel() {
     if (!file) return
     try { await uploadUI(session!, file); setNotice(t('operationDone')); await ui.refetch() } catch (error) { setNotice(error instanceof Error ? error.message : String(error)) }
   }
-  return <div className="grid gap-5 xl:grid-cols-2">
-    <Section title="Web" icon={<ServerCog size={18} />} notice={notice}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div><div className="border-t border-[var(--border)] pt-5"><Button disabled={bundleMutation.isPending} onClick={() => bundleMutation.mutate()}>{bundleMutation.isPending ? <Spinner /> : <Download size={16} />}{t('exportBundle')}</Button><p className="mt-2 text-xs leading-5 text-[var(--muted)]">{t('exportBundleDetail')}</p></div></div></Section>
-    <Section title="UI" icon={<Package size={18} />}><div className="mb-5 rounded-lg bg-[var(--surface-hover)] p-4"><p className="text-sm font-semibold">{ui.data?.metadata?.manifest.name || t('noData')}</p><p className="mt-1 break-all text-xs text-[var(--muted)]">{ui.data?.metadata ? `${ui.data.metadata.manifest.version} · ${ui.data.metadata.source_type} · ${compactHash(ui.data.metadata.sha256)}` : t('noDataDetail')}</p></div><div className="grid gap-4"><Button variant="primary" onClick={() => uiMutation.mutate({ operation: 'install', body: { source: 'official' } })}><Download size={16} />{t('officialUI')}</Button><Field label={t('customURL')}><div className="flex gap-2"><Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="https://example.com/sempre-ui.zip" /><Button disabled={!source} onClick={() => uiMutation.mutate({ operation: 'install', body: { source } })}>{t('install')}</Button></div></Field><label className="flex h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"><Upload size={17} />{t('uploadZIP')}<input className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => void upload(event.target.files?.[0])} /></label><div className="flex gap-2"><Button disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'update' })}><RefreshCw size={16} />{t('update')}</Button><Button variant="danger" disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'remove' })}><Trash2 size={16} />{t('remove')}</Button></div></div></Section>
+  return <div className="space-y-5">
+    {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
+    <ServicePanel />
+    <div className="grid gap-5 xl:grid-cols-2">
+      <Section title={t('deploymentBackup')} icon={<Archive size={18} />}><Button disabled={bundleMutation.isPending} onClick={() => bundleMutation.mutate()}>{bundleMutation.isPending ? <Spinner /> : <Download size={16} />}{t('exportBundle')}</Button><p className="mt-2 text-xs leading-5 text-[var(--muted)]">{t('exportBundleDetail')}</p></Section>
+      <Section title="UI" icon={<Package size={18} />}><div className="mb-5 rounded-lg bg-[var(--surface-hover)] p-4"><p className="text-sm font-semibold">{ui.data?.metadata?.manifest.name || t('noData')}</p><p className="mt-1 break-all text-xs text-[var(--muted)]">{ui.data?.metadata ? `${ui.data.metadata.manifest.version} · ${ui.data.metadata.source_type} · ${compactHash(ui.data.metadata.sha256)}` : t('noDataDetail')}</p></div><div className="grid gap-4"><Button variant="primary" onClick={() => uiMutation.mutate({ operation: 'install', body: { source: 'official' } })}><Download size={16} />{t('officialUI')}</Button><Field label={t('customURL')}><div className="flex gap-2"><Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="https://example.com/sempre-ui.zip" /><Button disabled={!source} onClick={() => uiMutation.mutate({ operation: 'install', body: { source } })}>{t('install')}</Button></div></Field><label className="flex h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"><Upload size={17} />{t('uploadZIP')}<input className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => void upload(event.target.files?.[0])} /></label><div className="flex gap-2"><Button disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'update' })}><RefreshCw size={16} />{t('update')}</Button><Button variant="danger" disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'remove' })}><Trash2 size={16} />{t('remove')}</Button></div></div></Section>
+    </div>
   </div>
 }
 

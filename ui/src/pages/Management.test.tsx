@@ -85,16 +85,35 @@ describe('Management page', () => {
     expect(within(gateway as HTMLElement).getByText('仅 Linux 系统服务可用')).toHaveClass('text-xs', 'text-[var(--text-muted)]')
   })
 
-  it('separates the console from service updates and starts a verified upgrade', async () => {
+  it('separates console actions from backup and update tools', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
 
-    expect(screen.queryByRole('button', { name: 'Web 与 UI' })).not.toBeInTheDocument()
+    const tabNames = ['核心', '模式', '备份与更新', '控制台']
+    expect(screen.getAllByRole('button').filter((button) => tabNames.includes(button.textContent || '')).map((button) => button.textContent)).toEqual(tabNames)
+
     fireEvent.click(screen.getByRole('button', { name: '控制台' }))
     expect(await screen.findByText('Web')).toBeInTheDocument()
-    expect(screen.queryByText('Sempre 系统服务')).not.toBeInTheDocument()
+    expect(screen.getByText('Sempre 系统服务')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重启服务' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '停止服务' })).toBeInTheDocument()
+    expect(screen.queryByText('UI')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '导出部署包' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sempre 服务' }))
+    fireEvent.click(screen.getByRole('button', { name: '备份与更新' }))
+    expect(await screen.findByText('2.0.8')).toBeInTheDocument()
+    expect(screen.getByText('UI')).toBeInTheDocument()
+    expect(screen.getByText('上传 ZIP')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '更新' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '导出部署包' })).toBeInTheDocument()
+    expect(screen.queryByText('Sempre 系统服务')).not.toBeInTheDocument()
+  })
+
+  it('starts a verified upgrade from backup and update', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    fireEvent.click(screen.getByRole('button', { name: '备份与更新' }))
     expect(await screen.findByText('2.0.8')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
     expect(await screen.findByText('2.1.0')).toBeInTheDocument()

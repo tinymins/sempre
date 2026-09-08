@@ -12,26 +12,16 @@ import { ReleaseNotes } from './ReleaseNotes'
 export function ServicePanel() {
   const { locale, t } = useI18n()
   const { session } = useSession()
-  const [notice, setNotice] = useState('')
-  const [serviceConfirm, setServiceConfirm] = useState<'restart' | 'stop' | null>(null)
-  const [serviceConfirmOpen, setServiceConfirmOpen] = useState(false)
   const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system') })
   const update = useQuery({ queryKey: ['service', 'update'], queryFn: () => api<ServiceUpdateStatus>(session!, '/service/update'), enabled: false, retry: false })
   const { task: updateTask, mutation: upgrade, openProgress } = useServiceUpdateFlow()
-  const serviceMutation = useMutation({
-    mutationFn: (action: string) => api(session!, '/service/action', { method: 'POST', body: JSON.stringify({ action }) }),
-    onSuccess: () => { setNotice(t('operationAccepted')); setServiceConfirmOpen(false) },
-    onError: (error) => setNotice(error.message),
-  })
   const serviceAvailable = system.data?.mode === 'system' && system.data.service !== 'not installed'
   const currentVersion = update.data?.current_version ?? system.data?.version ?? '-'
   const updating = upgrade.isPending || updateTask?.state === 'running'
   const releaseHistory = (update.data?.release_history?.length ? update.data.release_history : update.data ? [{ version: update.data.latest_version, published_at: update.data.published_at, notes: update.data.release_notes }] : [])
     .map((release) => ({ ...release, notes: release.notes || t('noReleaseNotes') }))
 
-  return <div className="space-y-5">
-    {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
-    <Card className="p-4 md:p-5">
+  return <Card className="p-4 md:p-5">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ServerCog size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('serviceUpdateTitle')}</h2></div><Button disabled={!updating && update.isFetching} onClick={() => updating ? openProgress() : void update.refetch()}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : update.isFetching ? <Spinner /> : <RefreshCw size={16} />}{updating ? t('serviceUpdateViewProgress') : t('checkForUpdates')}</Button></div>
       <div className="grid gap-3 rounded-lg bg-[var(--surface-hover)] p-4 sm:grid-cols-2">
         <Version label={t('currentVersion')} value={currentVersion} />
@@ -42,7 +32,25 @@ export function ServicePanel() {
         <div className="flex flex-wrap items-center gap-3"><Badge tone={update.data.update_available ? 'warning' : 'success'}>{update.data.update_available ? t('updateAvailable') : t('upToDate')}</Badge>{update.data.published_at ? <span className="text-xs text-[var(--muted)]">{new Date(update.data.published_at).toLocaleString()}</span> : null}</div>
         {update.data.update_available ? <><div><h3 className="mb-2 text-sm font-semibold">{t('releaseNotes')}</h3><ReleaseNotes releases={releaseHistory.length ? releaseHistory : [{ version: update.data.latest_version, published_at: update.data.published_at, notes: t('noReleaseNotes') }]} locale={locale} /></div><Button variant="primary" disabled={!serviceAvailable} onClick={() => { openProgress(); if (!updating) upgrade.mutate(update.data.latest_version) }}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />}{updating ? t('serviceUpdateViewProgress') : t('upgradeNow')}</Button>{!serviceAvailable ? <p className="text-xs text-[var(--muted)]">{t('systemServiceUpdateOnly')}</p> : null}</> : <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={17} />{t('upToDateDetail')}</div>}
       </div> : null}
-    </Card>
+  </Card>
+}
+
+export function ServiceActionsPanel() {
+  const { t } = useI18n()
+  const { session } = useSession()
+  const [notice, setNotice] = useState('')
+  const [serviceConfirm, setServiceConfirm] = useState<'restart' | 'stop' | null>(null)
+  const [serviceConfirmOpen, setServiceConfirmOpen] = useState(false)
+  const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system') })
+  const serviceMutation = useMutation({
+    mutationFn: (action: string) => api(session!, '/service/action', { method: 'POST', body: JSON.stringify({ action }) }),
+    onSuccess: () => { setNotice(t('operationAccepted')); setServiceConfirmOpen(false) },
+    onError: (error) => setNotice(error.message),
+  })
+  const serviceAvailable = system.data?.mode === 'system' && system.data.service !== 'not installed'
+
+  return <div className="min-w-0 space-y-5">
+    {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     <Card className="p-4 md:p-5">
       <div className="mb-5 flex items-center gap-2"><ShieldAlert size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('systemServiceActions')}</h2></div>
       <div className="flex flex-wrap items-center justify-between gap-4"><div><Badge tone="danger">{t('dangerZone')}</Badge><p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">{t('serviceRestartWarning')}</p></div><div className="flex gap-2"><Button disabled={!serviceAvailable || serviceMutation.isPending} onClick={() => { setServiceConfirm('restart'); setServiceConfirmOpen(true) }}><RefreshCw size={16} />{t('restart')}</Button><Button variant="danger" disabled={!serviceAvailable || serviceMutation.isPending} onClick={() => { setServiceConfirm('stop'); setServiceConfirmOpen(true) }}><Power size={16} />{t('stop')}</Button></div></div>
