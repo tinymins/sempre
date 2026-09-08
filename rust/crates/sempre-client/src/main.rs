@@ -15,6 +15,8 @@ mod gateway_api;
 mod listener;
 mod local_api;
 mod network_api;
+mod node_diagnostic;
+mod node_test_api;
 mod portable_cli;
 mod runtime_api;
 mod runtime_args;

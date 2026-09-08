@@ -28,6 +28,7 @@ semver.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }
 sempre-bundle = { path = "../sempre-bundle" }
 sempre-control = { path = "../sempre-control" }
+sempre-core = { path = "../sempre-core" }
 sempre-converter = { path = "../sempre-converter" }
 sempre-core-control = { path = "../sempre-core-control" }
 sempre-gateway = { path = "../sempre-gateway" }
@@ -40,6 +41,7 @@ sempre-tunnel = { path = "../sempre-tunnel" }
 sempre-ui = { path = "../sempre-ui" }
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 sha2.workspace = true
 sysinfo.workspace = true
 tempfile.workspace = true

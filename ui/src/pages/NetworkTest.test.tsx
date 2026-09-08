@@ -73,7 +73,50 @@ describe('NetworkTest', () => {
     expect(screen.getByText('Google')).toBeInTheDocument()
     expect(await screen.findAllByText('network test failed')).toHaveLength(4)
   })
+
+  it('tests node latency and renders structured traffic diagnostics', async () => {
+    let resolveLatency: ((value: Response) => void) | undefined
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/network/test')) return Response.json(report)
+      if (url.endsWith('/runtime/nodes')) return Response.json([{ name: 'Tokyo 01', type: 'Shadowsocks' }])
+      if (url.endsWith('/runtime/proxies/delay')) {
+        return new Promise<Response>((resolve) => { resolveLatency = resolve })
+      }
+      if (url.endsWith('/runtime/nodes/debug')) {
+        return sseResponse([
+          ['step', { id: 'prepare', label: '启动隔离 Core', state: 'succeeded', duration_ms: 31, data: { node: 'Tokyo 01' } }],
+          ['step', { id: 'probe', label: '节点探活', state: 'succeeded', duration_ms: 82, data: { url: 'https://cp.cloudflare.com/generate_204', status: 204, bytes: 0 } }],
+          ['step', { id: 'dns-baidu', label: 'DNS', state: 'succeeded', duration_ms: 44, data: { domain: 'www.baidu.com', resolver: 'dns.google', status: 0, answers: ['110.242.68.66'] } }],
+          ['step', { id: 'http-baidu', label: 'HTTP', state: 'succeeded', duration_ms: 96, data: { url: 'https://www.baidu.com/', status: 200, bytes: 1536 } }],
+          ['done', { node: 'Tokyo 01', duration_ms: 300 }],
+        ])
+      }
+      throw new Error(`unexpected request ${url}`)
+    })
+    vi.stubGlobal('fetch', fetch)
+    renderNetworkTest()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Node test' }))
+    expect(await screen.findByText('Tokyo 01')).toBeInTheDocument()
+    const latencyButton = screen.getByRole('button', { name: 'Test latency' })
+    fireEvent.click(latencyButton)
+    expect(latencyButton).toBeDisabled()
+    resolveLatency?.(Response.json({ delay: 86 }))
+    expect(await screen.findByText('86 ms')).toHaveClass('!text-emerald-600')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Debug Tokyo 01' }))
+    expect(await screen.findByText('Node diagnostics · Tokyo 01')).toBeInTheDocument()
+    expect(await screen.findByText('110.242.68.66')).toBeInTheDocument()
+    expect(screen.getByText(/HTTP 200 · 1.5 KiB/)).toBeInTheDocument()
+    expect(screen.getByText('Completed')).toBeInTheDocument()
+  })
 })
+
+function sseResponse(events: Array<[string, object]>) {
+  const body = events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
+  return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
+}
 
 function renderNetworkTest() {
   return render(

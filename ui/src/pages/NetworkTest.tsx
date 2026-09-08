@@ -1,12 +1,13 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, CheckCircle2, Clock3, Globe2, RefreshCw, XCircle } from 'lucide-react'
-import { Button, Card, Empty, Table, Tag, type TableColumn } from '@acme/components'
+import { Button, Card, Empty, Table, Tabs, Tag, type TableColumn } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import { compareNumber, compareText } from '../lib/sort'
 import type { IpMetadata, NetworkTestReport, NetworkTestResult } from '../lib/types'
+import { NodeTestPanel } from '../features/network/NodeTestPanel'
 
 interface DnsAnswer {
   address: string
@@ -28,6 +29,21 @@ const defaultResults: NetworkTestRow[] = [
 ]
 
 export function NetworkTest() {
+  const { locale, t } = useI18n()
+  return <div className="space-y-5">
+    <div><h1 className="text-xl font-semibold">{t('networkTest')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('networkTestDetail')}</p></div>
+    <Tabs
+      defaultActiveKey="network"
+      destroyInactiveTabPane
+      items={[
+        { key: 'network', label: locale === 'zh-CN' ? '网络测试' : 'Network test', children: <GeneralNetworkTest /> },
+        { key: 'nodes', label: locale === 'zh-CN' ? '节点测试' : 'Node test', children: <NodeTestPanel /> },
+      ]}
+    />
+  </div>
+}
+
+function GeneralNetworkTest() {
   const { t } = useI18n()
   const { session } = useSession()
   const report = useQuery({
@@ -95,9 +111,8 @@ export function NetworkTest() {
     },
   ], [report.data, report.error, report.isError, report.isFetching, t])
 
-  return <div className="space-y-5">
-    <div className="flex min-h-10 items-start justify-between gap-4">
-      <div><h1 className="text-xl font-semibold">{t('networkTest')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('networkTestDetail')}</p></div>
+  return <div className="mt-5 space-y-5">
+    <div className="flex min-h-8 justify-end">
       <Button variant="primary" icon={<RefreshCw size={16} />} disabled={report.isFetching} onClick={() => report.refetch()}>{t('refresh')}</Button>
     </div>
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
