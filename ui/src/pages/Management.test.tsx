@@ -95,7 +95,7 @@ describe('Management page', () => {
     fireEvent.click(screen.getByRole('button', { name: '控制台' }))
     expect(await screen.findByText('Web')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '模式' })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['服务角色', 'Web', 'Sempre 系统服务'])
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['Web', '服务角色', 'Sempre 系统服务'])
     expect(screen.getByText('Sempre 系统服务')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重启服务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '停止服务' })).toBeInTheDocument()
@@ -104,7 +104,7 @@ describe('Management page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '备份与更新' }))
     expect(await screen.findByText('2.0.8')).toBeInTheDocument()
-    expect(screen.getByText('UI')).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['部署备份', 'Sempre 更新', 'UI 更新'])
     expect(screen.getByText('上传 ZIP')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '更新' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '导出部署包' })).toBeInTheDocument()

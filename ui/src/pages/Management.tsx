@@ -66,16 +66,14 @@ function ConsolePanel() {
     onSuccess: (result) => { setNotice(t('operationDone')); setListen(null); queryClient.invalidateQueries({ queryKey: ['web'] }); if (result.reauthenticate) setSession(null); else if (result.local_url && result.local_url !== session?.baseURL) window.location.assign(result.local_url) }, onError: (error) => setNotice(error.message),
   })
   return <div className="space-y-5">
-    <ServiceRolePanel />
-    <div className="grid gap-5 xl:grid-cols-2">
     <Section title="Web" icon={<ServerCog size={18} />} notice={notice}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div></div></Section>
+    <ServiceRolePanel />
     <ServiceActionsPanel />
-    </div>
   </div>
 }
 
 function BackupAndUpdatePanel() {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
   const [source, setSource] = useState('')
@@ -96,11 +94,9 @@ function BackupAndUpdatePanel() {
   }
   return <div className="space-y-5">
     {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
+    <Section title={t('deploymentBackup')} icon={<Archive size={18} />}><Button disabled={bundleMutation.isPending} onClick={() => bundleMutation.mutate()}>{bundleMutation.isPending ? <Spinner /> : <Download size={16} />}{t('exportBundle')}</Button><p className="mt-2 text-xs leading-5 text-[var(--muted)]">{t('exportBundleDetail')}</p></Section>
     <ServicePanel />
-    <div className="grid gap-5 xl:grid-cols-2">
-      <Section title={t('deploymentBackup')} icon={<Archive size={18} />}><Button disabled={bundleMutation.isPending} onClick={() => bundleMutation.mutate()}>{bundleMutation.isPending ? <Spinner /> : <Download size={16} />}{t('exportBundle')}</Button><p className="mt-2 text-xs leading-5 text-[var(--muted)]">{t('exportBundleDetail')}</p></Section>
-      <Section title="UI" icon={<Package size={18} />}><div className="mb-5 rounded-lg bg-[var(--surface-hover)] p-4"><p className="text-sm font-semibold">{ui.data?.metadata?.manifest.name || t('noData')}</p><p className="mt-1 break-all text-xs text-[var(--muted)]">{ui.data?.metadata ? `${ui.data.metadata.manifest.version} · ${ui.data.metadata.source_type} · ${compactHash(ui.data.metadata.sha256)}` : t('noDataDetail')}</p></div><div className="grid gap-4"><Button variant="primary" onClick={() => uiMutation.mutate({ operation: 'install', body: { source: 'official' } })}><Download size={16} />{t('officialUI')}</Button><Field label={t('customURL')}><div className="flex gap-2"><Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="https://example.com/sempre-ui.zip" /><Button disabled={!source} onClick={() => uiMutation.mutate({ operation: 'install', body: { source } })}>{t('install')}</Button></div></Field><label className="flex h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"><Upload size={17} />{t('uploadZIP')}<input className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => void upload(event.target.files?.[0])} /></label><div className="flex gap-2"><Button disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'update' })}><RefreshCw size={16} />{t('update')}</Button><Button variant="danger" disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'remove' })}><Trash2 size={16} />{t('remove')}</Button></div></div></Section>
-    </div>
+    <Section title={locale === 'zh-CN' ? 'UI 更新' : 'UI update'} icon={<Package size={18} />}><div className="mb-5 rounded-lg bg-[var(--surface-hover)] p-4"><p className="text-sm font-semibold">{ui.data?.metadata?.manifest.name || t('noData')}</p><p className="mt-1 break-all text-xs text-[var(--muted)]">{ui.data?.metadata ? `${ui.data.metadata.manifest.version} · ${ui.data.metadata.source_type} · ${compactHash(ui.data.metadata.sha256)}` : t('noDataDetail')}</p></div><div className="grid gap-4"><Button variant="primary" onClick={() => uiMutation.mutate({ operation: 'install', body: { source: 'official' } })}><Download size={16} />{t('officialUI')}</Button><Field label={t('customURL')}><div className="flex gap-2"><Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="https://example.com/sempre-ui.zip" /><Button disabled={!source} onClick={() => uiMutation.mutate({ operation: 'install', body: { source } })}>{t('install')}</Button></div></Field><label className="flex h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"><Upload size={17} />{t('uploadZIP')}<input className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => void upload(event.target.files?.[0])} /></label><div className="flex gap-2"><Button disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'update' })}><RefreshCw size={16} />{t('update')}</Button><Button variant="danger" disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'remove' })}><Trash2 size={16} />{t('remove')}</Button></div></div></Section>
   </div>
 }
 
