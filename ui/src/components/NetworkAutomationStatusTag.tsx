@@ -13,10 +13,10 @@ export function NetworkAutomationStatusTag({ status, path, label }: { status?: N
 
   return <Tooltip placement="bottom-start" title={<div className="min-w-64 space-y-2 py-1">
     <p className="font-semibold">{t('publicTraffic')} · {label}</p>
-    <p className="leading-5 text-[var(--muted)]">{detail}</p>
-    <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] pt-2">
+    <div className="flex items-center justify-between gap-3">
       <span className="text-[var(--muted)]">{t('currentNetwork')}</span>
       <span className="font-medium">{status?.network_name || t('unknownNetwork')}</span>
     </div>
+    <p className="border-t border-[var(--border)] pt-2 leading-5 text-[var(--muted)]">{detail}</p>
   </div>}>{tag}</Tooltip>
 }

@@ -92,8 +92,9 @@ describe('Shell sidebar', () => {
     fireEvent.focus(triggers[1])
 
     const tooltip = await screen.findByRole('tooltip')
-    expect(within(tooltip).getByText('Public traffic bypasses the proxy on this network. Private access is still handled separately for each connector.')).toBeInTheDocument()
+    expect(within(tooltip).getByText('The current network matches the public-direct rule. Public traffic bypasses the proxy route; private routes are unaffected.')).toBeInTheDocument()
     expect(within(tooltip).getByText('Home')).toBeInTheDocument()
+    expect(tooltip.textContent?.indexOf('Home')).toBeLessThan(tooltip.textContent?.indexOf('The current network matches'))
   })
 
   it('explains the public proxy path in the status tooltip', async () => {
@@ -108,7 +109,7 @@ describe('Shell sidebar', () => {
     fireEvent.focus(triggers[1])
 
     const tooltip = await screen.findByRole('tooltip')
-    expect(within(tooltip).getByText('Public traffic follows the proxy rules on this network. Private access is still handled separately for each connector.')).toBeInTheDocument()
+    expect(within(tooltip).getByText('The current network does not match a public-direct rule. Public traffic remains on the proxy route; private routes are unaffected.')).toBeInTheDocument()
   })
 
   it('summarizes mixed private access and lists connectors in the status tooltip', async () => {
@@ -133,11 +134,12 @@ describe('Shell sidebar', () => {
     fireEvent.focus(triggers[1])
 
     const tooltip = await screen.findByRole('tooltip')
-    expect(within(tooltip).getByText('Some private networks are reached directly on the current network; the others still use WireGuard.')).toBeInTheDocument()
+    expect(within(tooltip).getByText('Each connector evaluates its home-network rule independently. Matching connectors use local direct routes; unmatched connectors remain on WireGuard tunnels.')).toBeInTheDocument()
     expect(within(tooltip).getByText('home-wg')).toBeInTheDocument()
     expect(within(tooltip).getByText('remote-wg')).toBeInTheDocument()
     expect(within(tooltip).getByText('家')).toBeInTheDocument()
     expect(within(tooltip).getByText('WG')).toBeInTheDocument()
+    expect(tooltip.textContent?.indexOf('remote-wg')).toBeLessThan(tooltip.textContent?.indexOf('Each connector evaluates'))
   })
 
   it('shows that automatic switching is waiting when the core is stopped', async () => {
