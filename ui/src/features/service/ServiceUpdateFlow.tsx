@@ -9,12 +9,12 @@ const Context = createContext<(ReturnType<typeof useServiceUpdateTask> & { openP
 export function ServiceUpdateFlow({ children }: { children: ReactNode }) {
   const update = useServiceUpdateTask()
   const { session, setSession } = useSession()
-  const [open, setOpen] = useState(() => Boolean(readServiceUpdateMarker()))
+  const [open, setOpen] = useState(false)
   const marker = readServiceUpdateMarker()
-  const { task, query, mutation } = update
+  const { query, mutation } = update
+  const task = mutation.isPending ? null : update.task
   const succeeded = task?.state === 'succeeded'
   const holding = Boolean(marker && task)
-  const awaitingLogin = !session && holding
 
   function close() {
     setOpen(false)
@@ -31,10 +31,10 @@ export function ServiceUpdateFlow({ children }: { children: ReactNode }) {
   }
 
   return <Context.Provider value={{ ...update, openProgress: () => setOpen(true) }}>
-    {awaitingLogin ? <div className="min-h-screen bg-[var(--background)]" /> : children}
-    <ServiceUpdateModal open={open || awaitingLogin || Boolean(holding && (succeeded || task?.state === 'failed'))} task={task} targetVersion={marker?.targetVersion || ''}
+    {children}
+    <ServiceUpdateModal open={open || Boolean(holding && (succeeded || task?.state === 'failed'))} task={task} targetVersion={marker?.targetVersion || ''}
       submitting={mutation.isPending} disconnected={Boolean(task?.state === 'running' && task.stage === 'installing' && (query.isError || !session))}
-      error={mutation.error?.message || (task?.state === 'failed' ? task.error : undefined)} allowClose={!awaitingLogin || task?.state === 'failed'}
+      error={mutation.error?.message || (task?.state === 'failed' ? task.error : undefined)}
       onClose={close} onRelogin={relogin} />
   </Context.Provider>
 }

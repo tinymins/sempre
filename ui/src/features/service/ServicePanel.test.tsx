@@ -1,13 +1,15 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../../lib/i18n'
 import { SessionProvider } from '../../lib/session'
 import { ServiceUpdateFlow } from './ServiceUpdateFlow'
+import { clearServiceUpdateMarker } from '../../lib/serviceUpdateState'
 import { ServicePanel } from './ServicePanel'
 
 afterEach(() => {
   cleanup()
+  clearServiceUpdateMarker()
   sessionStorage.clear()
   localStorage.clear()
   vi.unstubAllGlobals()
@@ -18,6 +20,8 @@ it.each(['2.0.12', '2.0.13'])('allows an available %s upgrade after a historical
   sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
   let task = { id: 'previous', state: 'succeeded', stage: 'completed', current_version: '2.0.0', target_version: '2.0.12', started_at: new Date().toISOString() }
   let starts = 0
+  let accept!: () => void
+  const accepted = new Promise<void>((resolve) => { accept = resolve })
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input)).pathname
     if (path.endsWith('/system')) return Response.json({ version: '2.0.0', mode: 'system', service: 'running' })
@@ -25,6 +29,7 @@ it.each(['2.0.12', '2.0.13'])('allows an available %s upgrade after a historical
     if (path.endsWith('/service/update')) {
       if (init?.method === 'POST') {
         starts += 1
+        await accepted
         task = { ...task, id: 'next', state: 'running', stage: 'downloading', target_version: latest }
         return Response.json({ task }, { status: 202 })
       }
@@ -40,6 +45,9 @@ it.each(['2.0.12', '2.0.13'])('allows an available %s upgrade after a historical
   expect(upgrade).toBeEnabled()
   fireEvent.click(upgrade)
   await waitFor(() => expect(starts).toBe(1))
+  expect(screen.queryByRole('heading', { name: /Sempre update complete/ })).not.toBeInTheDocument()
+  expect(screen.getByText('Creating update task')).toBeInTheDocument()
+  await act(async () => { accept() })
   expect(await screen.findByRole('heading', { name: /Updating Sempre/ })).toBeInTheDocument()
   fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!)
   fireEvent.click(screen.getAllByRole('button', { name: 'Updating · view progress' })[0])

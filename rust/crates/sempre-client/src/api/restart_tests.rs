@@ -130,7 +130,7 @@ async fn restart_http_response_does_not_wait_for_validation_or_allow_a_second_re
 }
 
 #[tokio::test]
-async fn update_receipt_survives_session_loss_but_only_authorizes_its_own_status() {
+async fn update_task_ids_do_not_authorize_api_requests() {
     let root = tempfile::tempdir().unwrap();
     let (state, _) = test_state(&root);
     let task = state.service_updates.begin().unwrap();
@@ -140,7 +140,7 @@ async fn update_receipt_survives_session_loss_but_only_authorizes_its_own_status
             "GET",
             "/api/v1/service/update/task",
             task.id.as_str(),
-            StatusCode::OK,
+            StatusCode::UNAUTHORIZED,
         ),
         (
             "GET",

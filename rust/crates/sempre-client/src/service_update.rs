@@ -122,7 +122,7 @@ async fn run_task(
     let executable = root.join(executable_name());
     validate_version(&executable, &manifest.version).await?;
     tasks.set_stage(task_id, "installing")?;
-    crate::service_update_schedule::schedule(temporary, &executable, tasks.result_path())?;
+    crate::service_update_schedule::schedule(temporary, &executable, tasks.installer_log_path())?;
     Ok(())
 }
 

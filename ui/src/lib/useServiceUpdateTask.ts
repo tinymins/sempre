@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { useSession } from './session'
 import type { ServiceUpdateTask } from './types'
-import { clearServiceUpdateMarker, readServiceUpdateMarker, writeServiceUpdateMarker } from './serviceUpdateStorage'
+import { clearServiceUpdateMarker, readServiceUpdateMarker, writeServiceUpdateMarker } from './serviceUpdateState'
 
 export const serviceUpdateTaskKey = ['service', 'update-task']
-export { clearServiceUpdateMarker, readServiceUpdateMarker, writeServiceUpdateMarker, serviceUpdateSessionKey } from './serviceUpdateStorage'
+export { clearServiceUpdateMarker, readServiceUpdateMarker, writeServiceUpdateMarker } from './serviceUpdateState'
 
 export function useServiceUpdateTask() {
   const { session } = useSession()
@@ -15,13 +15,11 @@ export function useServiceUpdateTask() {
     queryKey: serviceUpdateTaskKey,
     queryFn: async ({ signal }) => {
       const current = readServiceUpdateMarker()
-      const credentials = current?.baseURL && current.task ? { baseURL: current.baseURL, token: current.task.id, expiresAt: '' } : session!
-      const result = await api<{ task: ServiceUpdateTask | null }>(credentials, '/service/update/task', { signal })
+      const result = await api<{ task: ServiceUpdateTask | null }>(session!, '/service/update/task', { signal })
       if (current && result.task) writeServiceUpdateMarker({ ...current, task: result.task })
-      return result
+      return current?.task && !result.task ? { task: current.task } : result
     },
-    initialData: marker?.task ? { task: marker.task } : undefined,
-    enabled: (query) => Boolean(session || (marker?.baseURL && marker.task)) && !(marker && ['succeeded', 'failed'].includes(query.state.data?.task?.state || '')),
+    enabled: (query) => Boolean(session) && !(marker && ['succeeded', 'failed'].includes(query.state.data?.task?.state || '')),
     retry: false,
     refetchInterval: (query) => query.state.data?.task?.state === 'running' ? 500 : 3000,
     refetchIntervalInBackground: true,

@@ -2,9 +2,9 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-pub(crate) fn schedule(temporary: TempDir, executable: &Path, result: &Path) -> Result<(), String> {
+pub(crate) fn schedule(temporary: TempDir, executable: &Path, log: &Path) -> Result<(), String> {
     let root = temporary.keep();
-    let scheduled = platform_schedule(executable, &root, result);
+    let scheduled = platform_schedule(executable, &root, log);
     if scheduled.is_err() {
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -12,16 +12,16 @@ pub(crate) fn schedule(temporary: TempDir, executable: &Path, result: &Path) -> 
 }
 
 #[cfg(target_os = "linux")]
-fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
+fn platform_schedule(executable: &Path, root: &Path, log: &Path) -> Result<(), String> {
     let unit = format!("sempre-update-{}", uuid::Uuid::new_v4());
-    let script = "sleep 1; \"$1\" --portable install --yes >\"$3.stdout.log\" 2>\"$3.stderr.log\"; code=$?; tmp=\"$3.tmp\"; if [ \"$code\" -eq 0 ]; then printf 'succeeded\\n' >\"$tmp\"; else printf 'failed:%s\\n' \"$code\" >\"$tmp\"; fi; mv -f -- \"$tmp\" \"$3\"; rm -rf -- \"$2\"; exit $code";
+    let script = "sleep 1; \"$1\" --portable install --yes >\"$3.stdout.log\" 2>\"$3.stderr.log\"; code=$?; if [ \"$code\" -ne 0 ]; then printf '\\nSempre installer exited with code %s\\n' \"$code\" >>\"$3.stderr.log\"; fi; rm -rf -- \"$2\"; exit $code";
     let status = std::process::Command::new("systemd-run")
         .args(["--quiet", "--collect", "--no-block", "--unit", &unit])
         .arg("/bin/sh")
         .args(["-c", script, "sempre-update"])
         .arg(executable)
         .arg(root)
-        .arg(result)
+        .arg(log)
         .status()
         .map_err(|error| format!("schedule systemd update: {error}"))?;
     if status.success() {
@@ -32,9 +32,9 @@ fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<()
 }
 
 #[cfg(target_os = "macos")]
-fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
+fn platform_schedule(executable: &Path, root: &Path, log: &Path) -> Result<(), String> {
     let label = format!("io.sempre.update.{}", uuid::Uuid::new_v4());
-    let script = "sleep 1; \"$1\" --portable install --yes >\"$3.stdout.log\" 2>\"$3.stderr.log\"; code=$?; tmp=\"$3.tmp\"; if [ \"$code\" -eq 0 ]; then printf 'succeeded\\n' >\"$tmp\"; else printf 'failed:%s\\n' \"$code\" >\"$tmp\"; fi; mv -f -- \"$tmp\" \"$3\"; rm -rf -- \"$2\"; exit $code";
+    let script = "sleep 1; \"$1\" --portable install --yes >\"$3.stdout.log\" 2>\"$3.stderr.log\"; code=$?; if [ \"$code\" -ne 0 ]; then printf '\\nSempre installer exited with code %s\\n' \"$code\" >>\"$3.stderr.log\"; fi; rm -rf -- \"$2\"; exit $code";
     let status = std::process::Command::new("launchctl")
         .args([
             "submit",
@@ -48,7 +48,7 @@ fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<()
         ])
         .arg(executable)
         .arg(root)
-        .arg(result)
+        .arg(log)
         .status()
         .map_err(|error| format!("schedule launchd update: {error}"))?;
     if status.success() {
@@ -59,19 +59,19 @@ fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<()
 }
 
 #[cfg(target_os = "windows")]
-fn platform_schedule(executable: &Path, root: &Path, result: &Path) -> Result<(), String> {
+fn platform_schedule(executable: &Path, root: &Path, log: &Path) -> Result<(), String> {
     let executable = executable
         .to_str()
         .ok_or_else(|| "update executable path is not Unicode".to_string())?;
     let root = root
         .to_str()
         .ok_or_else(|| "update directory path is not Unicode".to_string())?;
-    let result = result
+    let log = log
         .to_str()
-        .ok_or_else(|| "update result path is not Unicode".to_string())?;
+        .ok_or_else(|| "update log path is not Unicode".to_string())?;
     let script = format!(
-        "$ErrorActionPreference='Stop'; Start-Sleep -Seconds 1; $result={}; $code=1; try {{ $p=Start-Process -FilePath {} -ArgumentList '--portable install --yes' -PassThru -RedirectStandardOutput ($result+'.stdout.log') -RedirectStandardError ($result+'.stderr.log'); $handle=$p.Handle; $p.WaitForExit(); $p.Refresh(); $code=$p.ExitCode }} catch {{ [IO.File]::WriteAllText(($result+'.stderr.log'), $_.ToString()); $code=1 }}; $temporary=\"$result.tmp\"; if ($code -eq 0) {{ $value='succeeded' }} else {{ $value=\"failed:$code\" }}; [IO.File]::WriteAllText($temporary,$value,[Text.UTF8Encoding]::new($false)); Move-Item -LiteralPath $temporary -Destination $result -Force; Remove-Item -LiteralPath {} -Recurse -Force -ErrorAction SilentlyContinue; exit $code",
-        powershell_literal(result),
+        "$ErrorActionPreference='Stop'; Start-Sleep -Seconds 1; $log={}; $code=1; try {{ $p=Start-Process -FilePath {} -ArgumentList '--portable install --yes' -PassThru -RedirectStandardOutput ($log+'.stdout.log') -RedirectStandardError ($log+'.stderr.log'); $handle=$p.Handle; $p.WaitForExit(); $p.Refresh(); $code=$p.ExitCode }} catch {{ [IO.File]::WriteAllText(($log+'.stderr.log'), $_.ToString()); $code=1 }}; if ($code -ne 0) {{ [IO.File]::AppendAllText(($log+'.stderr.log'), \"`nSempre installer exited with code $code`n\") }}; Remove-Item -LiteralPath {} -Recurse -Force -ErrorAction SilentlyContinue; exit $code",
+        powershell_literal(log),
         powershell_literal(executable),
         powershell_literal(root),
     );
@@ -112,19 +112,19 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let staging = root.path().join("staging");
         fs::create_dir(&staging).unwrap();
-        let result = root.path().join("result");
+        let log = root.path().join("log");
         // The Rust test harness rejects installer arguments and exits with an error.
-        platform_schedule(&std::env::current_exe().unwrap(), &staging, &result).unwrap();
+        platform_schedule(&std::env::current_exe().unwrap(), &staging, &log).unwrap();
         let deadline = Instant::now() + Duration::from_secs(15);
-        while !result.exists() || staging.exists() {
+        while staging.exists() {
             assert!(Instant::now() < deadline, "update wrapper did not finish");
             thread::sleep(Duration::from_millis(50));
         }
-        assert!(fs::read_to_string(&result).unwrap().starts_with("failed:"));
+        assert!(!log.exists());
         assert!(
-            !fs::read_to_string(result.with_extension("stderr.log"))
+            fs::read_to_string(log.with_extension("stderr.log"))
                 .unwrap()
-                .is_empty()
+                .contains("Sempre installer exited with code")
         );
     }
 }

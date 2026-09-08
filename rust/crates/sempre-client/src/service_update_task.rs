@@ -1,17 +1,14 @@
 use std::{
     fs, io,
-    io::{Read as _, Seek as _},
     path::{Path, PathBuf},
     sync::Mutex,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-const PERSIST_INTERVAL: Duration = Duration::from_millis(500);
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct ServiceUpdateTask {
     pub(crate) id: String,
     pub(crate) state: String,
@@ -32,35 +29,28 @@ pub(crate) struct ServiceUpdateTask {
 struct TaskState {
     task: Option<ServiceUpdateTask>,
     download_started: Option<Instant>,
-    last_persisted: Instant,
 }
 
 pub(crate) struct ServiceUpdateTasks {
-    task_path: PathBuf,
-    result_path: PathBuf,
+    installer_log_path: PathBuf,
     current_version: String,
     state: Mutex<TaskState>,
 }
 
 impl ServiceUpdateTasks {
     pub(crate) fn new(home: &Path, current_version: &str) -> Self {
-        let task_path = home.join("service-update-task.json");
-        let result_path = home.join("service-update-result");
-        let task = read_task(&task_path);
+        let installer_log_path = home.join("service-update");
         Self {
-            task_path,
-            result_path,
+            installer_log_path,
             current_version: normalized_version(current_version).into(),
             state: Mutex::new(TaskState {
-                task,
+                task: None,
                 download_started: None,
-                last_persisted: Instant::now(),
             }),
         }
     }
 
     pub(crate) fn begin(&self) -> Result<ServiceUpdateTask, String> {
-        self.reconcile_result();
         let mut state = self.state.lock().unwrap();
         if state
             .task
@@ -69,9 +59,8 @@ impl ServiceUpdateTasks {
         {
             return Err("a Sempre update is already in progress".into());
         }
-        remove_if_exists(&self.result_path)?;
         for extension in ["stdout.log", "stderr.log"] {
-            remove_if_exists(&self.result_path.with_extension(extension))?;
+            remove_if_exists(&self.installer_log_path.with_extension(extension))?;
         }
         let now = Utc::now();
         let task = ServiceUpdateTask {
@@ -90,15 +79,12 @@ impl ServiceUpdateTasks {
             finished_at: None,
             error: None,
         };
-        self.persist(&task)?;
         state.task = Some(task.clone());
         state.download_started = None;
-        state.last_persisted = Instant::now();
         Ok(task)
     }
 
     pub(crate) fn snapshot(&self) -> Option<ServiceUpdateTask> {
-        self.reconcile_result();
         self.state.lock().unwrap().task.clone()
     }
 
@@ -109,7 +95,7 @@ impl ServiceUpdateTasks {
         artifact: &str,
         total: u64,
     ) -> Result<(), String> {
-        self.update(id, true, |state, now| {
+        self.update(id, |state, now| {
             let task = state.task.as_mut().expect("matching task");
             task.target_version = normalized_version(version).into();
             task.artifact = Some(artifact.into());
@@ -120,7 +106,7 @@ impl ServiceUpdateTasks {
     }
 
     pub(crate) fn set_stage(&self, id: &str, stage: &str) -> Result<(), String> {
-        self.update(id, true, |state, now| {
+        self.update(id, |state, now| {
             let task = state.task.as_mut().expect("matching task");
             task.stage = stage.into();
             task.updated_at = now;
@@ -128,26 +114,12 @@ impl ServiceUpdateTasks {
     }
 
     pub(crate) fn download_progress(&self, id: &str, downloaded: u64, total: u64) {
-        let (task, persist) = {
-            let mut state = self.state.lock().unwrap();
-            if state
-                .task
-                .as_ref()
-                .is_none_or(|task| task.id != id || task.state != "running")
-            {
-                return;
-            }
-            let first_sample = state.download_started.is_none();
-            if first_sample {
-                state.download_started = Some(Instant::now());
-            }
-            let elapsed_millis = state
-                .download_started
-                .expect("download start")
-                .elapsed()
-                .as_millis();
-            let elapsed_millis = u64::try_from(elapsed_millis).unwrap_or(u64::MAX).max(1);
-            let speed = downloaded.saturating_mul(1000) / elapsed_millis;
+        let _ = self.update(id, |state, now| {
+            let started = state.download_started.get_or_insert_with(Instant::now);
+            let millis = u64::try_from(started.elapsed().as_millis())
+                .unwrap_or(u64::MAX)
+                .max(1);
+            let speed = downloaded.saturating_mul(1000) / millis;
             let task = state.task.as_mut().expect("matching task");
             task.stage = "downloading".into();
             task.downloaded_bytes = downloaded;
@@ -155,23 +127,12 @@ impl ServiceUpdateTasks {
             task.bytes_per_second = speed;
             task.eta_seconds =
                 (speed > 0 && total > downloaded).then(|| (total - downloaded).div_ceil(speed));
-            task.updated_at = Utc::now();
-            let task = task.clone();
-            let persist = first_sample
-                || state.last_persisted.elapsed() >= PERSIST_INTERVAL
-                || downloaded == total;
-            if persist {
-                state.last_persisted = Instant::now();
-            }
-            (task, persist)
-        };
-        if persist {
-            let _ = self.persist(&task);
-        }
+            task.updated_at = now;
+        });
     }
 
     pub(crate) fn restart_download(&self, id: &str) -> Result<(), String> {
-        self.update(id, true, |state, now| {
+        self.update(id, |state, now| {
             state.download_started = None;
             let task = state.task.as_mut().expect("matching task");
             task.stage = "downloading".into();
@@ -183,7 +144,7 @@ impl ServiceUpdateTasks {
     }
 
     pub(crate) fn fail(&self, id: &str, error: &str) {
-        let _ = self.update(id, true, |state, now| {
+        let _ = self.update(id, |state, now| {
             let task = state.task.as_mut().expect("matching task");
             task.state = "failed".into();
             task.error = Some(error.into());
@@ -193,123 +154,38 @@ impl ServiceUpdateTasks {
         });
     }
 
-    pub(crate) fn result_path(&self) -> &Path {
-        &self.result_path
+    pub(crate) fn installer_log_path(&self) -> &Path {
+        &self.installer_log_path
     }
 
     fn update(
         &self,
         id: &str,
-        persist: bool,
         change: impl FnOnce(&mut TaskState, DateTime<Utc>),
     ) -> Result<(), String> {
-        let task = {
-            let mut state = self.state.lock().unwrap();
-            if state.task.as_ref().is_none_or(|task| task.id != id) {
-                return Err("Sempre update task is no longer available".into());
-            }
-            change(&mut state, Utc::now());
-            state.task.as_ref().expect("matching task").clone()
-        };
-        if persist {
-            self.persist(&task)?;
+        let mut state = self.state.lock().unwrap();
+        if state
+            .task
+            .as_ref()
+            .is_none_or(|task| task.id != id || task.state != "running")
+        {
+            return Err("Sempre update task is no longer available".into());
         }
+        change(&mut state, Utc::now());
         Ok(())
     }
-
-    fn reconcile_result(&self) {
-        let result = fs::read_to_string(&self.result_path).ok();
-        let mut state = self.state.lock().unwrap();
-        let Some(task) = state.task.as_mut().filter(|task| task.state == "running") else {
-            return;
-        };
-        let target_is_running = !task.target_version.is_empty()
-            && normalized_version(&task.target_version) == self.current_version;
-        let outcome = result.as_deref().map(str::trim);
-        if target_is_running && !outcome.is_some_and(|value| value.starts_with("failed:")) {
-            finish(task, "succeeded", "completed", None);
-        } else if outcome == Some("succeeded") {
-            finish(
-                task,
-                "failed",
-                "failed",
-                Some(format!(
-                    "Sempre installer completed but the service is running {} instead of {}",
-                    self.current_version, task.target_version
-                )),
-            );
-        } else if let Some(code) = outcome.and_then(|value| value.strip_prefix("failed:")) {
-            finish(
-                task,
-                "failed",
-                "failed",
-                Some(installer_failure(&self.result_path, code)),
-            );
-        } else {
-            return;
-        }
-        let snapshot = task.clone();
-        drop(state);
-        let _ = self.persist(&snapshot);
-        let _ = fs::remove_file(&self.result_path);
-    }
-
-    fn persist(&self, task: &ServiceUpdateTask) -> Result<(), String> {
-        let parent = self
-            .task_path
-            .parent()
-            .ok_or_else(|| "Sempre update task path has no parent".to_string())?;
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("create Sempre update state directory: {error}"))?;
-        let data = serde_json::to_vec_pretty(task)
-            .map_err(|error| format!("encode Sempre update task: {error}"))?;
-        sempre_state::write_atomic(&self.task_path, &data, 0o600)
-            .map_err(|error| format!("write Sempre update task: {error}"))
-    }
-}
-
-fn read_task(path: &Path) -> Option<ServiceUpdateTask> {
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
 }
 
 fn remove_if_exists(path: &Path) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("clear previous Sempre update result: {error}")),
+        Err(error) => Err(format!("clear previous Sempre installer log: {error}")),
     }
-}
-
-fn finish(task: &mut ServiceUpdateTask, outcome: &str, phase: &str, error: Option<String>) {
-    let now = Utc::now();
-    task.state = outcome.into();
-    if outcome == "succeeded" {
-        task.stage = phase.into();
-    }
-    task.error = error;
-    task.updated_at = now;
-    task.finished_at = Some(now);
-    task.eta_seconds = None;
 }
 
 fn normalized_version(value: &str) -> &str {
     value.strip_prefix('v').unwrap_or(value)
-}
-
-fn installer_failure(result: &Path, code: &str) -> String {
-    let message = format!("Sempre installer exited with code {code}");
-    let detail = (|| -> io::Result<String> {
-        let mut file = fs::File::open(result.with_extension("stderr.log"))?;
-        let start = file.metadata()?.len().saturating_sub(8192);
-        file.seek(io::SeekFrom::Start(start))?;
-        let mut bytes = Vec::new();
-        file.take(8192).read_to_end(&mut bytes)?;
-        Ok(String::from_utf8_lossy(&bytes).trim().to_owned())
-    })();
-    match detail {
-        Ok(detail) if !detail.is_empty() => format!("{message}: {detail}"),
-        _ => message,
-    }
 }
 
 #[cfg(test)]
@@ -317,117 +193,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn installer_success_cannot_hide_an_old_running_version() {
+    fn progress_lives_only_in_the_current_process() {
         let root = tempfile::tempdir().unwrap();
         let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
         let task = tasks.begin().unwrap();
         tasks
-            .set_release(&task.id, "2.0.11", "bundle.zip", 100)
+            .set_release(&task.id, "2.0.12", "bundle.zip", 100)
             .unwrap();
-        tasks.set_stage(&task.id, "installing").unwrap();
-        fs::write(tasks.result_path(), "succeeded\n").unwrap();
-        let completed = tasks.snapshot().unwrap();
-        assert_eq!(completed.state, "failed");
-        assert!(completed.error.unwrap().contains("2.0.0 instead of 2.0.11"));
-    }
-
-    #[test]
-    fn progress_is_persisted_and_restored() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        let task = tasks.begin().expect("task");
-        tasks
-            .set_release(&task.id, "2.0.10", "bundle.zip", 100)
-            .expect("release");
         tasks.download_progress(&task.id, 50, 100);
-
-        let restored = ServiceUpdateTasks::new(root.path(), "2.0.0")
-            .snapshot()
-            .expect("restored task");
-        assert_eq!(restored.stage, "downloading");
-        assert_eq!((restored.downloaded_bytes, restored.total_bytes), (50, 100));
+        let progress = tasks.snapshot().unwrap();
+        assert_eq!(progress.stage, "downloading");
+        assert_eq!((progress.downloaded_bytes, progress.total_bytes), (50, 100));
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+        assert!(
+            ServiceUpdateTasks::new(root.path(), "2.0.12")
+                .snapshot()
+                .is_none()
+        );
+        assert!(tasks.begin().is_err());
     }
 
     #[test]
-    fn proxy_retry_resets_visible_download_measurements() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        let task = tasks.begin().expect("task");
-        tasks
-            .set_release(&task.id, "2.0.10", "bundle.zip", 100)
-            .expect("release");
-        tasks.download_progress(&task.id, 50, 100);
-        tasks.restart_download(&task.id).expect("retry");
-
-        let retried = tasks.snapshot().expect("retried task");
-        assert_eq!(retried.stage, "downloading");
-        assert_eq!(retried.downloaded_bytes, 0);
-        assert_eq!(retried.bytes_per_second, 0);
-        assert_eq!(retried.eta_seconds, None);
-    }
-
-    #[test]
-    fn running_target_version_reconciles_as_success() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        let task = tasks.begin().expect("task");
-        tasks
-            .set_release(&task.id, "2.0.10", "bundle.zip", 100)
-            .expect("release");
-        tasks.set_stage(&task.id, "installing").expect("stage");
-
-        let completed = ServiceUpdateTasks::new(root.path(), "2.0.10")
-            .snapshot()
-            .expect("completed task");
-        assert_eq!(completed.state, "succeeded");
-        assert_eq!(completed.stage, "completed");
-    }
-
-    #[test]
-    fn installer_failure_preserves_its_stage_and_error_output() {
+    fn legacy_task_files_are_never_restored() {
         let root = tempfile::tempdir().unwrap();
-        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        let task = tasks.begin().unwrap();
-        tasks.set_stage(&task.id, "installing").unwrap();
         fs::write(
-            tasks.result_path().with_extension("stderr.log"),
-            "ERROR: migration checksum differs\n",
+            root.path().join("service-update-task.json"),
+            r#"{"state":"succeeded"}"#,
         )
         .unwrap();
-        fs::write(tasks.result_path(), "failed:1").unwrap();
-        let failed = tasks.snapshot().unwrap();
-        assert_eq!(failed.stage, "installing");
-        assert!(failed.error.unwrap().contains("migration checksum differs"));
-        let next = tasks.begin().unwrap();
-        assert_eq!(next.stage, "checking");
-        assert!(!tasks.result_path().with_extension("stderr.log").exists());
+        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
+        assert!(tasks.snapshot().is_none());
+        assert!(tasks.begin().is_ok());
     }
 
     #[test]
-    fn download_failure_keeps_download_as_the_failed_step() {
+    fn failed_tasks_keep_their_stage_and_allow_another_attempt() {
         let root = tempfile::tempdir().unwrap();
         let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
         let task = tasks.begin().unwrap();
         tasks.set_stage(&task.id, "downloading").unwrap();
         tasks.fail(&task.id, "connection failed");
-        assert_eq!(tasks.snapshot().unwrap().stage, "downloading");
+        let failed = tasks.snapshot().unwrap();
+        assert_eq!(failed.state, "failed");
+        assert_eq!(failed.stage, "downloading");
+        assert_eq!(failed.error.as_deref(), Some("connection failed"));
+        let next = tasks.begin().unwrap();
+        tasks.download_progress(&task.id, 50, 100);
+        assert_eq!(tasks.snapshot().unwrap().id, next.id);
+        assert_eq!(tasks.snapshot().unwrap().stage, "checking");
     }
 
     #[test]
-    fn installer_failure_is_reported_after_restart() {
-        let root = tempfile::tempdir().expect("temporary directory");
+    fn proxy_retry_resets_visible_download_measurements() {
+        let root = tempfile::tempdir().unwrap();
         let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        let task = tasks.begin().expect("task");
-        tasks
-            .set_release(&task.id, "2.0.10", "bundle.zip", 100)
-            .expect("release");
-        fs::write(tasks.result_path(), "failed:9\n").expect("result");
-
-        let failed = tasks.snapshot().expect("failed task");
-        assert_eq!(failed.state, "failed");
-        assert_eq!(
-            failed.error.as_deref(),
-            Some("Sempre installer exited with code 9")
-        );
+        let task = tasks.begin().unwrap();
+        tasks.download_progress(&task.id, 50, 100);
+        tasks.restart_download(&task.id).unwrap();
+        let retried = tasks.snapshot().unwrap();
+        assert_eq!(retried.downloaded_bytes, 0);
+        assert_eq!(retried.bytes_per_second, 0);
+        assert_eq!(retried.eta_seconds, None);
     }
 }

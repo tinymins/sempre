@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { completeServiceUpdateOnVersionChange, useServiceVersionChange } from './ServiceVersionReload'
-import { serviceUpdateTaskKey, writeServiceUpdateMarker } from '../../lib/useServiceUpdateTask'
+import { clearServiceUpdateMarker, serviceUpdateTaskKey, writeServiceUpdateMarker } from '../../lib/useServiceUpdateTask'
 
 describe('service version reload', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -10,7 +10,7 @@ describe('service version reload', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
-    sessionStorage.clear()
+    clearServiceUpdateMarker(); sessionStorage.clear()
   })
 
   it('completes an active update before the console reloads', () => {
@@ -47,14 +47,42 @@ describe('service version reload', () => {
     expect(completeServiceUpdateOnVersionChange(new QueryClient(), '2.0.10')).toBe(true)
   })
 
-  it('checks the connected instance and recognizes completion on the first poll after reload', async () => {
+  it('checks the connected instance and recognizes the active update target', async () => {
     writeServiceUpdateMarker({ targetVersion: '2.0.11' })
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ version: '2.0.11' }))
     vi.stubGlobal('fetch', fetchMock)
     const onChange = vi.fn()
     renderHook(() => useServiceVersionChange(onChange, 'http://remote-sempre.test:33211'))
     await act(async () => undefined)
-    expect(onChange).toHaveBeenCalledWith('2.0.11')
+    expect(onChange).toHaveBeenCalledWith('2.0.11', undefined)
     expect(fetchMock).toHaveBeenCalledWith('http://remote-sempre.test:33211/api/v1/health', expect.anything())
   })
+  it('waits for both target service and UI versions before completing', async () => {
+    writeServiceUpdateMarker({ targetVersion: '2.0.12' })
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(Response.json({ version: '2.0.12', ui: { id: 'old', version: '2.0.0' } }))
+      .mockResolvedValueOnce(Response.json({ version: '2.0.12', ui: null }))
+      .mockResolvedValueOnce(Response.json({ version: '2.0.12', ui: { id: 'new', version: '2.0.12' } })))
+    const onChange = vi.fn()
+    renderHook(() => useServiceVersionChange(onChange))
+    await act(async () => undefined)
+    expect(onChange).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(onChange).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(onChange).toHaveBeenCalledWith('2.0.12', { id: 'new', version: '2.0.12' })
+  })
+
+  it('detects a changed UI identity without a service version change', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(Response.json({ version: '2.0.12', ui: { id: 'first', version: '2.0.12' } }))
+      .mockResolvedValueOnce(Response.json({ version: '2.0.12', ui: { id: 'second', version: '2.0.12' } })))
+    const onChange = vi.fn()
+    renderHook(() => useServiceVersionChange(onChange))
+    await act(async () => undefined)
+    expect(onChange).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(onChange).toHaveBeenCalledWith('2.0.12', { id: 'second', version: '2.0.12' })
+  })
+
 })

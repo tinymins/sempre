@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { loadSession, saveSession, subscribeToSessionInvalidation } from './api'
-import { readServiceUpdateMarker } from './serviceUpdateStorage'
+import { readServiceUpdateMarker } from './serviceUpdateState'
 import type { Session } from './types'
 
 const Context = createContext<{ session: Session | null; setSession: (session: Session | null) => void } | null>(null)
