@@ -5,21 +5,19 @@ import { api } from '../../lib/api'
 import { useI18n } from '../../lib/i18n'
 import { useSession } from '../../lib/session'
 import type { ServiceUpdateStatus, SystemStatus } from '../../lib/types'
-import { clearServiceUpdateMarker, useServiceUpdateTask } from '../../lib/useServiceUpdateTask'
+import { useServiceUpdateFlow } from './ServiceUpdateFlow'
 import { Badge, Button, Card, ConfirmDialog, Spinner } from '../../components/ui'
 import { ReleaseNotes } from './ReleaseNotes'
-import { ServiceUpdateModal } from './ServiceUpdateModal'
 
 export function ServicePanel() {
   const { locale, t } = useI18n()
   const { session } = useSession()
   const [notice, setNotice] = useState('')
-  const [updateOpen, setUpdateOpen] = useState(false)
   const [serviceConfirm, setServiceConfirm] = useState<'restart' | 'stop' | null>(null)
   const [serviceConfirmOpen, setServiceConfirmOpen] = useState(false)
   const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system') })
   const update = useQuery({ queryKey: ['service', 'update'], queryFn: () => api<ServiceUpdateStatus>(session!, '/service/update'), enabled: false, retry: false })
-  const { task: updateTask, query: updateTaskQuery, mutation: upgrade } = useServiceUpdateTask()
+  const { task: updateTask, mutation: upgrade, openProgress } = useServiceUpdateFlow()
   const serviceMutation = useMutation({
     mutationFn: (action: string) => api(session!, '/service/action', { method: 'POST', body: JSON.stringify({ action }) }),
     onSuccess: () => { setNotice(t('operationAccepted')); setServiceConfirmOpen(false) },
@@ -34,7 +32,7 @@ export function ServicePanel() {
   return <div className="space-y-5">
     {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     <Card className="p-4 md:p-5">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ServerCog size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('serviceUpdateTitle')}</h2></div><Button disabled={!updating && update.isFetching} onClick={() => updating ? setUpdateOpen(true) : void update.refetch()}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : update.isFetching ? <Spinner /> : <RefreshCw size={16} />}{updating ? t('serviceUpdateViewProgress') : t('checkForUpdates')}</Button></div>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ServerCog size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('serviceUpdateTitle')}</h2></div><Button disabled={!updating && update.isFetching} onClick={() => updating ? openProgress() : void update.refetch()}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : update.isFetching ? <Spinner /> : <RefreshCw size={16} />}{updating ? t('serviceUpdateViewProgress') : t('checkForUpdates')}</Button></div>
       <div className="grid gap-3 rounded-lg bg-[var(--surface-hover)] p-4 sm:grid-cols-2">
         <Version label={t('currentVersion')} value={currentVersion} />
         <Version label={t('latestVersion')} value={update.data?.latest_version ?? t('notChecked')} />
@@ -42,7 +40,7 @@ export function ServicePanel() {
       {update.isError ? <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{update.error.message}</p> : null}
       {update.data ? <div className="mt-4 space-y-4">
         <div className="flex flex-wrap items-center gap-3"><Badge tone={update.data.update_available ? 'warning' : 'success'}>{update.data.update_available ? t('updateAvailable') : t('upToDate')}</Badge>{update.data.published_at ? <span className="text-xs text-[var(--muted)]">{new Date(update.data.published_at).toLocaleString()}</span> : null}</div>
-        {update.data.update_available ? <><div><h3 className="mb-2 text-sm font-semibold">{t('releaseNotes')}</h3><ReleaseNotes releases={releaseHistory.length ? releaseHistory : [{ version: update.data.latest_version, published_at: update.data.published_at, notes: t('noReleaseNotes') }]} locale={locale} /></div><Button variant="primary" disabled={!serviceAvailable || updateTask?.state === 'succeeded'} onClick={() => { setUpdateOpen(true); if (!updating) upgrade.mutate(update.data.latest_version) }}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />}{updating ? t('serviceUpdateViewProgress') : t('upgradeNow')}</Button>{!serviceAvailable ? <p className="text-xs text-[var(--muted)]">{t('systemServiceUpdateOnly')}</p> : null}</> : <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={17} />{t('upToDateDetail')}</div>}
+        {update.data.update_available ? <><div><h3 className="mb-2 text-sm font-semibold">{t('releaseNotes')}</h3><ReleaseNotes releases={releaseHistory.length ? releaseHistory : [{ version: update.data.latest_version, published_at: update.data.published_at, notes: t('noReleaseNotes') }]} locale={locale} /></div><Button variant="primary" disabled={!serviceAvailable || updateTask?.state === 'succeeded'} onClick={() => { openProgress(); if (!updating) upgrade.mutate(update.data.latest_version) }}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />}{updating ? t('serviceUpdateViewProgress') : t('upgradeNow')}</Button>{!serviceAvailable ? <p className="text-xs text-[var(--muted)]">{t('systemServiceUpdateOnly')}</p> : null}</> : <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={17} />{t('upToDateDetail')}</div>}
       </div> : null}
     </Card>
     <Card className="p-4 md:p-5">
@@ -50,15 +48,6 @@ export function ServicePanel() {
       <div className="flex flex-wrap items-center justify-between gap-4"><div><Badge tone="danger">{t('dangerZone')}</Badge><p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">{t('serviceRestartWarning')}</p></div><div className="flex gap-2"><Button disabled={!serviceAvailable || serviceMutation.isPending} onClick={() => { setServiceConfirm('restart'); setServiceConfirmOpen(true) }}><RefreshCw size={16} />{t('restart')}</Button><Button variant="danger" disabled={!serviceAvailable || serviceMutation.isPending} onClick={() => { setServiceConfirm('stop'); setServiceConfirmOpen(true) }}><Power size={16} />{t('stop')}</Button></div></div>
     </Card>
     {serviceConfirm ? <ConfirmDialog open={serviceConfirmOpen} title={serviceConfirm === 'stop' ? t('serviceStopTitle') : t('restart')} detail={serviceConfirm === 'stop' ? t('serviceStopWarning') : t('serviceRestartWarning')} acknowledgement={serviceConfirm === 'stop' ? t('serviceStopAcknowledgement') : undefined} confirmLabel={serviceConfirm === 'stop' ? t('stop') : t('restart')} cancelLabel={t('cancel')} pending={serviceMutation.isPending} onCancel={() => setServiceConfirmOpen(false)} onConfirm={() => serviceMutation.mutate(serviceConfirm)} afterOpenChange={(open) => { if (!open) setServiceConfirm(null) }} /> : null}
-    <ServiceUpdateModal open={updateOpen} task={updateTask} targetVersion={update.data?.latest_version || ''} submitting={upgrade.isPending} disconnected={Boolean(updating && updateTask?.stage === 'installing' && updateTaskQuery.isError)} error={upgrade.error?.message || (updateTask?.state === 'failed' ? updateTask.error : undefined)} onClose={() => {
-      setUpdateOpen(false)
-      if (updateTask?.state === 'succeeded') {
-        clearServiceUpdateMarker()
-        window.location.reload()
-      } else if (updateTask?.state === 'failed' || upgrade.isError) {
-        clearServiceUpdateMarker()
-      }
-    }} />
   </div>
 }
 

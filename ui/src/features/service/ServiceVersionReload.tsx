@@ -60,6 +60,7 @@ function normalizeVersion(version: string) {
 export function completeServiceUpdateOnVersionChange(client: QueryClient, version: string) {
   const marker = readServiceUpdateMarker()
   if (!marker || normalizeVersion(marker.targetVersion) !== normalizeVersion(version)) return false
+  void client.cancelQueries({ queryKey: serviceUpdateTaskKey })
   client.setQueryData<{ task: ServiceUpdateTask | null }>(serviceUpdateTaskKey, (current) => {
     if (!current?.task) return current
     const now = new Date().toISOString()

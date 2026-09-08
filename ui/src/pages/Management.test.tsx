@@ -3,7 +3,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
 import { SessionProvider } from '../lib/session'
-import { Management } from './Management'
+import { Management as ManagementPage } from './Management'
+import { ServiceUpdateFlow } from '../features/service/ServiceUpdateFlow'
+
+function Management() {
+  return <ServiceUpdateFlow><ManagementPage /></ServiceUpdateFlow>
+}
 
 describe('Management page', () => {
   let savedSettings: Record<string, unknown> | undefined

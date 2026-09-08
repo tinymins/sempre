@@ -15,8 +15,8 @@ export function useServiceUpdateTask() {
   const client = useQueryClient()
   const query = useQuery({
     queryKey: serviceUpdateTaskKey,
-    queryFn: () => api<{ task: ServiceUpdateTask | null }>(session!, '/service/update/task'),
-    enabled: Boolean(session),
+    queryFn: ({ signal }) => api<{ task: ServiceUpdateTask | null }>(session!, '/service/update/task', { signal }),
+    enabled: (query) => Boolean(session) && !(readServiceUpdateMarker() && query.state.data?.task?.state === 'succeeded'),
     retry: false,
     refetchInterval: (query) => query.state.data?.task?.state === 'running' ? 500 : 3000,
     refetchIntervalInBackground: true,

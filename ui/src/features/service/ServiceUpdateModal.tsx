@@ -6,14 +6,16 @@ import type { ServiceUpdateTask } from '../../lib/types'
 
 const stages = ['prepare', 'download', 'verify', 'install', 'complete'] as const
 
-export function ServiceUpdateModal({ open, task, targetVersion, submitting, disconnected, error, onClose }: {
+export function ServiceUpdateModal({ open, task, targetVersion, submitting, disconnected, error, allowClose = true, onClose, onRelogin }: {
   open: boolean
   task?: ServiceUpdateTask | null
   targetVersion: string
   submitting: boolean
   disconnected: boolean
   error?: string
+  allowClose?: boolean
   onClose: () => void
+  onRelogin: () => void
 }) {
   const { locale } = useI18n()
   const zh = locale === 'zh-CN'
@@ -34,9 +36,9 @@ export function ServiceUpdateModal({ open, task, targetVersion, submitting, disc
     return () => window.clearInterval(timer)
   }, [open, running])
 
-  return <Modal open={open} centered width="min(760px, calc(100vw - 32px))" maskClosable={false} onCancel={onClose}
+  return <Modal open={open} centered width="min(760px, calc(100vw - 32px))" maskClosable={false} closable={!succeeded && allowClose} keyboard={!succeeded && allowClose} onCancel={onClose}
     title={<span className="flex items-center gap-2.5">{succeeded ? <CheckCircle2 size={20} className="text-emerald-500" /> : failed ? <CircleAlert size={20} className="text-red-500" /> : <LoaderCircle aria-label="loading" size={20} className="animate-spin text-cyan-500" />}<span>{title}</span><span className="font-mono text-sm tabular-nums text-[var(--muted)]">({elapsed})</span></span>}
-    footer={<div className="flex w-full items-center justify-between gap-4"><span className="text-xs text-[var(--muted)]">{running ? (zh ? '任务在后台执行，关闭窗口不会中止更新。' : 'The update continues in the background if this window is closed.') : succeeded ? (zh ? '关闭后将重新加载控制台。' : 'The console will reload when this window closes.') : (zh ? '当前安装保持原状，可以关闭后重试。' : 'The current installation is unchanged. Close this window to retry.')}</span><Button onClick={onClose}>{succeeded ? (zh ? '完成并刷新' : 'Finish and reload') : (zh ? '关闭' : 'Close')}</Button></div>}>
+    footer={<div className="flex w-full items-center justify-between gap-4"><span className="text-xs text-[var(--muted)]">{succeeded ? (zh ? '更新已完成，请重新登录以使用新版本。' : 'The update is complete. Sign in again to use the new version.') : running ? (allowClose ? (zh ? '任务在后台执行，关闭窗口不会中止更新。' : 'The update continues in the background if this window is closed.') : (zh ? '正在等待更新完成，请稍候。' : 'Waiting for the update to finish.')) : (zh ? '当前安装保持原状，可以关闭后重试。' : 'The current installation is unchanged. Close this window to retry.')}</span>{succeeded ? <Button variant="primary" onClick={onRelogin}>{zh ? '重新登录' : 'Sign in again'}</Button> : allowClose ? <Button onClick={onClose}>{zh ? '关闭' : 'Close'}</Button> : null}</div>}>
     <div className="space-y-5">
       <div className="rounded-lg bg-[var(--surface-hover)] px-4 py-3">
         <div className="flex items-center justify-between gap-4"><Version label={zh ? '当前版本' : 'Current'} value={task?.current_version || '—'} /><span className="text-[var(--muted)]">→</span><Version align="right" label={zh ? '目标版本' : 'Target'} value={task?.target_version || targetVersion || (zh ? '查询中' : 'Checking')} /></div>
