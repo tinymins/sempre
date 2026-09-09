@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
@@ -121,6 +121,49 @@ describe('Connections', () => {
     expect(connectionHosts()).toEqual(['newest.example', 'first.example'])
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
+
+  it('shows sortable speeds and retains closed rows until retention is unchecked', async () => {
+    const first = connection('first.example', 1024, 512, '2026-09-01T01:00:00Z', '10.0.0.1', 'Chrome')
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connections: [first] })))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderConnections(client)
+    await screen.findByText('first.example')
+    expect(screen.getByRole('checkbox', { name: 'Keep closed connections' })).not.toBeChecked()
+    expect(screen.getAllByText('—')).toHaveLength(2)
+    const sampledAt = client.getQueryState(['runtime', 'connections'])!.dataUpdatedAt
+    await act(async () => { client.setQueryData(['runtime', 'connections'], { connections: [{ ...first, download: 5120, upload: 2560 }] }, { updatedAt: sampledAt + 4000 }) })
+    expect(await screen.findByText('1.0 KiB/s')).toBeInTheDocument()
+    expect(screen.getByText('512 B/s')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Download speed' }))
+    expect(screen.getByRole('columnheader', { name: 'Download speed' })).toHaveAttribute('aria-sort', 'descending')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Keep closed connections' }))
+    expect(screen.getByText('1.0 KiB/s')).toBeInTheDocument()
+    await act(async () => { client.setQueryData(['runtime', 'connections'], { connections: [] }, { updatedAt: sampledAt + 6000 }) })
+    expect(await screen.findByText('Closed')).toBeInTheDocument()
+    expect(screen.getByText('5.0 KiB')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Close all' })).toBeDisabled()
+    expect(screen.queryByText('1.0 KiB/s')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Keep closed connections' }))
+    expect(screen.queryByText('first.example')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Keep closed connections' }))
+    expect(screen.queryByText('first.example')).not.toBeInTheDocument()
+  })
+
+  it('keeps the last successful rows on a refresh error and removes closed rows by default', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ connections: [connection('first.example', 0, 0, '')] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderConnections(client)
+    await screen.findByText('first.example')
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+    await act(async () => { await client.refetchQueries({ queryKey: ['runtime', 'connections'] }) })
+    expect(screen.getByText('first.example')).toBeInTheDocument()
+    expect(screen.queryByText('Closed')).not.toBeInTheDocument()
+    fetchMock.mockResolvedValueOnce(Response.json({ connections: [] }))
+    await act(async () => { await client.refetchQueries({ queryKey: ['runtime', 'connections'] }) })
+    expect(await screen.findByText('No data')).toBeInTheDocument()
+  })
 })
 
 function connection(host: string, download: number, upload: number, start: string, source_ip?: string, process?: string) {
@@ -131,9 +174,9 @@ function connectionHosts() {
   return screen.getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell')[0].textContent).map((value) => value?.replace('443 · tcp', '') || '')
 }
 
-function renderConnections() {
+function renderConnections(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider client={client}>
       <I18nProvider>
         <SessionProvider>
           <Connections />

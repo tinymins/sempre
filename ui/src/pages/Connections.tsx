@@ -1,23 +1,25 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button as AcmeButton, Select } from '@acme/components'
+import { Button as AcmeButton, Checkbox, Select } from '@acme/components'
 import { ArrowDown, ArrowUp, ArrowUpDown, Ban, RefreshCw, Search, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { formatBytes, formatDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import { compareText } from '../lib/sort'
+import { useConnectionRows, type ConnectionRowData } from '../lib/useConnectionRows'
 import type { Connection, ConnectionSnapshot } from '../lib/types'
 import { Badge, Button, EmptyState, Input, PageTitle, Spinner } from '../components/ui'
 
-type SortKey = 'host' | 'source' | 'process' | 'chain' | 'download' | 'upload' | 'start'
+type SortKey = 'host' | 'source' | 'process' | 'chain' | 'download' | 'upload' | 'downloadSpeed' | 'uploadSpeed' | 'start'
 type SortDirection = 'asc' | 'desc'
 
 export function Connections() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [keepClosed, setKeepClosed] = useState(false)
   const [sources, setSources] = useState<string[]>([])
   const [processes, setProcesses] = useState<string[]>([])
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'start', direction: 'desc' })
@@ -26,7 +28,7 @@ export function Connections() {
     mutationFn: (id: string) => api(session!, '/runtime/connections/close', { method: 'POST', body: JSON.stringify({ id }) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runtime', 'connections'] }),
   })
-  const connectionItems = useMemo(() => Array.isArray(connections.data?.connections) ? connections.data.connections : [], [connections.data])
+  const connectionItems = useConnectionRows(connections.data, connections.dataUpdatedAt, keepClosed)
   const sourceOptions = useMemo(() => connectionFilterOptions(connectionItems.map((item) => item.metadata.source_ip || ''), sources), [connectionItems, sources])
   const processOptions = useMemo(() => connectionFilterOptions(connectionItems.map((item) => item.metadata.process || ''), processes), [connectionItems, processes])
   const rows = useMemo(() => {
@@ -49,14 +51,15 @@ export function Connections() {
 
   return <div className="space-y-5">
     <PageTitle title={t('connections')} detail={`${connectionItems.length} · ↓ ${formatBytes(connections.data?.download_total)} · ↑ ${formatBytes(connections.data?.upload_total)}`}>
-      <div className="flex gap-2"><Button size="icon" title={t('refresh')} onClick={() => connections.refetch()}><RefreshCw size={17} /></Button><Button variant="danger" disabled={!rows.length || close.isPending} onClick={() => close.mutate('')}><Ban size={16} />{t('closeAll')}</Button></div>
+      <div className="flex gap-2"><Button size="icon" title={t('refresh')} onClick={() => connections.refetch()}><RefreshCw size={17} /></Button><Button variant="danger" disabled={!connectionItems.some((item) => !item.closed) || close.isPending} onClick={() => close.mutate('')}><Ban size={16} />{t('closeAll')}</Button></div>
     </PageTitle>
     <div className="grid items-start gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
       <div className="relative min-w-0"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div>
       <Select mode="multiple" showSearch allowClear popupMatchSelectWidth className="!h-auto min-h-9 min-w-0 py-1" placeholder={t('source')} value={sources} options={sourceOptions} onChange={setSources} />
       <Select mode="multiple" showSearch allowClear popupMatchSelectWidth className="!h-auto min-h-9 min-w-0 py-1" placeholder={t('process')} value={processes} options={processOptions} onChange={setProcesses} />
     </div>
-    {connections.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : rows.length ? <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"><div className="max-h-[calc(100vh-230px)] overflow-auto"><table className="w-full min-w-[1100px] border-collapse text-left text-sm"><thead className="sticky top-0 z-10 bg-[var(--surface)] text-xs text-[var(--muted)]"><tr><SortableHeader label={t('host')} sortKey="host" sort={sort} onSort={toggleSort} /><SortableHeader label={t('source')} sortKey="source" sort={sort} onSort={toggleSort} /><SortableHeader label={t('process')} sortKey="process" sort={sort} onSort={toggleSort} /><SortableHeader label={t('chain')} sortKey="chain" sort={sort} onSort={toggleSort} /><SortableHeader label={t('download')} sortKey="download" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('upload')} sortKey="upload" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('uptime')} sortKey="start" sort={sort} onSort={toggleSort} /><th className="w-14" /></tr></thead><tbody>{rows.map((item) => <ConnectionRow key={item.id} item={item} close={() => close.mutate(item.id)} busy={close.isPending} />)}</tbody></table></div></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
+    <Checkbox checked={keepClosed} onChange={(event) => setKeepClosed(event.target.checked)}>{locale === 'zh-CN' ? '保留已关闭连接' : 'Keep closed connections'}</Checkbox>
+    {connections.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : rows.length ? <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"><div className="max-h-[calc(100vh-230px)] overflow-auto"><table className="w-full min-w-[1300px] border-collapse text-left text-sm"><thead className="sticky top-0 z-10 bg-[var(--surface)] text-xs text-[var(--muted)]"><tr><SortableHeader label={t('host')} sortKey="host" sort={sort} onSort={toggleSort} /><SortableHeader label={t('source')} sortKey="source" sort={sort} onSort={toggleSort} /><SortableHeader label={t('process')} sortKey="process" sort={sort} onSort={toggleSort} /><SortableHeader label={t('chain')} sortKey="chain" sort={sort} onSort={toggleSort} /><SortableHeader label={t('download')} sortKey="download" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('upload')} sortKey="upload" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={locale === 'zh-CN' ? '下载速度' : 'Download speed'} sortKey="downloadSpeed" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={locale === 'zh-CN' ? '上传速度' : 'Upload speed'} sortKey="uploadSpeed" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('uptime')} sortKey="start" sort={sort} onSort={toggleSort} /><th className="w-14" /></tr></thead><tbody>{rows.map((item) => <ConnectionRow key={item.id} item={item} close={() => close.mutate(item.id)} busy={close.isPending} />)}</tbody></table></div></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
   </div>
 }
 
@@ -64,10 +67,10 @@ function connectionFilterOptions(values: string[], selected: string[]) {
   return [...new Set([...values, ...selected])].sort(compareText).map((value) => ({ value, label: value || '-' }))
 }
 
-function ConnectionRow({ item, close, busy }: { item: Connection; close: () => void; busy: boolean }) {
-  const { t } = useI18n()
+function ConnectionRow({ item, close, busy }: { item: ConnectionRowData; close: () => void; busy: boolean }) {
+  const { t, locale } = useI18n()
   const target = item.metadata.host || item.metadata.destination_ip || '-'
-  return <tr className="border-t border-[var(--border)] hover:bg-[var(--surface-hover)]"><td className="max-w-72 px-3 py-3"><p className="truncate font-medium" title={target}>{target}</p><p className="mt-1 text-xs text-[var(--muted)]">{item.metadata.destination_port} · {item.metadata.network}</p></td><td className="px-3 py-3"><p>{item.metadata.source_ip || '-'}</p><p className="mt-1 text-xs text-[var(--muted)]">{item.metadata.inbound_user || item.metadata.source_port || '-'}</p></td><td className="max-w-48 px-3 py-3"><p className="truncate" title={item.metadata.process_path}>{item.metadata.process || '-'}</p><p className="mt-1 truncate text-xs text-[var(--muted)]">{item.rule || '-'}</p></td><td className="max-w-64 px-3 py-3"><div className="flex flex-wrap gap-1">{item.chains?.map((chain) => <Badge key={chain} tone="info">{chain}</Badge>)}</div></td><td className="px-3 py-3 text-right tabular-nums">{formatBytes(item.download)}</td><td className="px-3 py-3 text-right tabular-nums">{formatBytes(item.upload)}</td><td className="whitespace-nowrap px-3 py-3 tabular-nums">{formatDate(item.start)}</td><td className="px-2 py-2"><Button size="icon" variant="ghost" title={t('close')} disabled={busy} onClick={close}>{busy ? <Spinner /> : <X size={16} />}</Button></td></tr>
+  return <tr className="border-t border-[var(--border)] hover:bg-[var(--surface-hover)]"><td className="max-w-72 px-3 py-3"><p className="truncate font-medium" title={target}>{target}</p><p className="mt-1 text-xs text-[var(--muted)]">{item.metadata.destination_port} · {item.metadata.network}</p></td><td className="px-3 py-3"><p>{item.metadata.source_ip || '-'}</p><p className="mt-1 text-xs text-[var(--muted)]">{item.metadata.inbound_user || item.metadata.source_port || '-'}</p></td><td className="max-w-48 px-3 py-3"><p className="truncate" title={item.metadata.process_path}>{item.metadata.process || '-'}</p><p className="mt-1 truncate text-xs text-[var(--muted)]">{item.rule || '-'}</p></td><td className="max-w-64 px-3 py-3"><div className="flex flex-wrap gap-1">{item.chains?.map((chain) => <Badge key={chain} tone="info">{chain}</Badge>)}</div></td><td className="px-3 py-3 text-right tabular-nums">{formatBytes(item.download)}</td><td className="px-3 py-3 text-right tabular-nums">{formatBytes(item.upload)}</td>{item.closed ? <td colSpan={2} className="px-3 py-3 text-right"><Badge>{locale === 'zh-CN' ? '已关闭' : 'Closed'}</Badge></td> : <><td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{item.downloadSpeed === null ? '—' : formatBytes(item.downloadSpeed, '/s')}</td><td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{item.uploadSpeed === null ? '—' : formatBytes(item.uploadSpeed, '/s')}</td></>}<td className="whitespace-nowrap px-3 py-3 tabular-nums">{formatDate(item.start)}</td><td className="px-2 py-2"><Button size="icon" variant="ghost" title={t('close')} disabled={busy || item.closed} onClick={close}>{busy && !item.closed ? <Spinner /> : <X size={16} />}</Button></td></tr>
 }
 
 function SortableHeader({ label, sortKey, sort, onSort, align = 'left' }: { label: string; sortKey: SortKey; sort: { key: SortKey; direction: SortDirection }; onSort: (key: SortKey) => void; align?: 'left' | 'right' }) {
@@ -81,7 +84,8 @@ function connectionStart(item: Connection) {
   return Number.isNaN(value) ? 0 : value
 }
 
-function connectionSortValue(item: Connection, key: SortKey) {
+function connectionSortValue(item: ConnectionRowData, key: SortKey) {
+  if (key === 'downloadSpeed' || key === 'uploadSpeed') return item[key] ?? -1
   if (key === 'download' || key === 'upload') return item[key]
   if (key === 'start') return connectionStart(item)
   if (key === 'host') return item.metadata.host || item.metadata.destination_ip || ''
