@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button as AcmeButton } from '@acme/components'
+import { Button as AcmeButton, Select } from '@acme/components'
 import { ArrowDown, ArrowUp, ArrowUpDown, Ban, RefreshCw, Search, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { formatBytes, formatDate } from '../lib/format'
@@ -18,16 +18,22 @@ export function Connections() {
   const { session } = useSession()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'download', direction: 'desc' })
+  const [sources, setSources] = useState<string[]>([])
+  const [processes, setProcesses] = useState<string[]>([])
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'start', direction: 'desc' })
   const connections = useQuery({ queryKey: ['runtime', 'connections'], queryFn: () => api<ConnectionSnapshot>(session!, '/runtime/connections'), refetchInterval: 2000, retry: false })
   const close = useMutation({
     mutationFn: (id: string) => api(session!, '/runtime/connections/close', { method: 'POST', body: JSON.stringify({ id }) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runtime', 'connections'] }),
   })
   const connectionItems = useMemo(() => Array.isArray(connections.data?.connections) ? connections.data.connections : [], [connections.data])
+  const sourceOptions = useMemo(() => connectionFilterOptions(connectionItems.map((item) => item.metadata.source_ip || ''), sources), [connectionItems, sources])
+  const processOptions = useMemo(() => connectionFilterOptions(connectionItems.map((item) => item.metadata.process || ''), processes), [connectionItems, processes])
   const rows = useMemo(() => {
     const query = search.toLowerCase()
-    return [...connectionItems].filter((item) => connectionText(item).includes(query)).sort((left, right) => {
+    return connectionItems.filter((item) => connectionText(item).includes(query)
+      && (!sources.length || sources.includes(item.metadata.source_ip || ''))
+      && (!processes.length || processes.includes(item.metadata.process || ''))).sort((left, right) => {
       const leftValue = connectionSortValue(left, sort.key)
       const rightValue = connectionSortValue(right, sort.key)
       const difference = typeof leftValue === 'number' && typeof rightValue === 'number'
@@ -35,7 +41,7 @@ export function Connections() {
         : compareText(leftValue, rightValue)
       return sort.direction === 'asc' ? difference : -difference
     })
-  }, [connectionItems, search, sort])
+  }, [connectionItems, search, sources, processes, sort])
   const toggleSort = (key: SortKey) => setSort((current) => ({
     key,
     direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc',
@@ -45,9 +51,17 @@ export function Connections() {
     <PageTitle title={t('connections')} detail={`${connectionItems.length} · ↓ ${formatBytes(connections.data?.download_total)} · ↑ ${formatBytes(connections.data?.upload_total)}`}>
       <div className="flex gap-2"><Button size="icon" title={t('refresh')} onClick={() => connections.refetch()}><RefreshCw size={17} /></Button><Button variant="danger" disabled={!rows.length || close.isPending} onClick={() => close.mutate('')}><Ban size={16} />{t('closeAll')}</Button></div>
     </PageTitle>
-    <div className="relative min-w-64"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div>
+    <div className="grid items-start gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="relative min-w-0"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div>
+      <Select mode="multiple" showSearch allowClear popupMatchSelectWidth className="!h-auto min-h-9 min-w-0 py-1" placeholder={t('source')} value={sources} options={sourceOptions} onChange={setSources} />
+      <Select mode="multiple" showSearch allowClear popupMatchSelectWidth className="!h-auto min-h-9 min-w-0 py-1" placeholder={t('process')} value={processes} options={processOptions} onChange={setProcesses} />
+    </div>
     {connections.isLoading ? <div className="grid min-h-52 place-items-center"><Spinner /></div> : rows.length ? <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"><div className="max-h-[calc(100vh-230px)] overflow-auto"><table className="w-full min-w-[1100px] border-collapse text-left text-sm"><thead className="sticky top-0 z-10 bg-[var(--surface)] text-xs text-[var(--muted)]"><tr><SortableHeader label={t('host')} sortKey="host" sort={sort} onSort={toggleSort} /><SortableHeader label={t('source')} sortKey="source" sort={sort} onSort={toggleSort} /><SortableHeader label={t('process')} sortKey="process" sort={sort} onSort={toggleSort} /><SortableHeader label={t('chain')} sortKey="chain" sort={sort} onSort={toggleSort} /><SortableHeader label={t('download')} sortKey="download" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('upload')} sortKey="upload" sort={sort} onSort={toggleSort} align="right" /><SortableHeader label={t('uptime')} sortKey="start" sort={sort} onSort={toggleSort} /><th className="w-14" /></tr></thead><tbody>{rows.map((item) => <ConnectionRow key={item.id} item={item} close={() => close.mutate(item.id)} busy={close.isPending} />)}</tbody></table></div></div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />}
   </div>
+}
+
+function connectionFilterOptions(values: string[], selected: string[]) {
+  return [...new Set([...values, ...selected])].sort(compareText).map((value) => ({ value, label: value || '-' }))
 }
 
 function ConnectionRow({ item, close, busy }: { item: Connection; close: () => void; busy: boolean }) {

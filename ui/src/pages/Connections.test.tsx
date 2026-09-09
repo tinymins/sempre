@@ -26,7 +26,7 @@ describe('Connections', () => {
     expect(await screen.findByText('No data')).toBeInTheDocument()
   })
 
-  it('sorts connections from sortable table headers without a dropdown', async () => {
+  it('defaults to newest connections first and keeps sortable table headers', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({
       download_total: 300,
       upload_total: 400,
@@ -38,7 +38,13 @@ describe('Connections', () => {
     renderConnections()
 
     expect(await screen.findByText('newer.example')).toBeInTheDocument()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(connectionHosts()).toEqual(['newer.example', 'older.example'])
+    expect(screen.getByRole('columnheader', { name: 'Started' })).toHaveAttribute('aria-sort', 'descending')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Started' }))
+    expect(connectionHosts()).toEqual(['older.example', 'newer.example'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
     expect(connectionHosts()).toEqual(['older.example', 'newer.example'])
 
     fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
@@ -58,10 +64,67 @@ describe('Connections', () => {
     expect(connectionHosts()).toEqual(['newer.example', 'older.example'])
     expect(screen.getByRole('columnheader', { name: 'Host' })).toHaveAttribute('aria-sort', 'ascending')
   })
+
+  it('combines multi-select source and process filters with search and clearing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connections: [
+      connection('chrome-a.example', 0, 0, '', '10.0.0.1', 'Chrome'),
+      connection('curl-a.example', 0, 0, '', '10.0.0.1', 'curl'),
+      connection('chrome-b.example', 0, 0, '', '10.0.0.2', 'Chrome'),
+      connection('firefox-b.example', 0, 0, '', '10.0.0.2', 'Firefox'),
+      connection('unknown.example', 0, 0, ''),
+    ] })))
+    renderConnections()
+    await screen.findByText('chrome-a.example')
+
+    fireEvent.click(screen.getAllByRole('combobox')[0])
+    fireEvent.click(within(await screen.findByRole('listbox')).getByText('10.0.0.1', { exact: true }))
+    expect(connectionHosts()).toEqual(['chrome-a.example', 'curl-a.example'])
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('10.0.0.2', { exact: true }))
+    expect(connectionHosts()).toHaveLength(4)
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+
+    fireEvent.click(screen.getAllByRole('combobox')[1])
+    fireEvent.click(within(await screen.findByRole('listbox')).getByText('Chrome', { exact: true }))
+    expect(connectionHosts()).toEqual(['chrome-a.example', 'chrome-b.example'])
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('curl', { exact: true }))
+    expect(connectionHosts()).toEqual(['chrome-a.example', 'curl-a.example', 'chrome-b.example'])
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+
+    fireEvent.change(screen.getByPlaceholderText('Search'), { target: { value: 'CHROME-B' } })
+    expect(connectionHosts()).toEqual(['chrome-b.example'])
+    fireEvent.change(screen.getByPlaceholderText('Search'), { target: { value: '' } })
+    for (const select of screen.getAllByRole('combobox')) {
+      fireEvent.click(within(select).getAllByRole('button').at(-1)!)
+    }
+    expect(connectionHosts()).toHaveLength(5)
+
+    fireEvent.click(screen.getAllByRole('combobox')[1])
+    fireEvent.click(within(await screen.findByRole('listbox')).getByText('-', { exact: true }))
+    expect(connectionHosts()).toEqual(['unknown.example'])
+  })
+
+  it('automatically refreshes while retaining filters and sorting new connections', async () => {
+    const first = connection('first.example', 0, 0, '2026-09-01T01:00:00Z', '10.0.0.1', 'Chrome')
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ connections: [first] }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderConnections()
+    await screen.findByText('first.example')
+    fireEvent.click(screen.getAllByRole('combobox')[1])
+    fireEvent.click(within(await screen.findByRole('listbox')).getByText('Chrome', { exact: true }))
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+    fetchMock.mockImplementation(async () => Response.json({ connections: [
+      first,
+      connection('newest.example', 0, 0, '2026-09-01T03:00:00Z', '10.0.0.1', 'Chrome'),
+      connection('hidden.example', 0, 0, '2026-09-01T04:00:00Z', '10.0.0.1', 'curl'),
+    ] }))
+    await screen.findByText('newest.example', {}, { timeout: 3500 })
+    expect(connectionHosts()).toEqual(['newest.example', 'first.example'])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })
 
-function connection(host: string, download: number, upload: number, start: string) {
-  return { id: host, metadata: { host, destination_port: '443', network: 'tcp' }, chains: [], download, upload, start }
+function connection(host: string, download: number, upload: number, start: string, source_ip?: string, process?: string) {
+  return { id: host, metadata: { host, destination_port: '443', network: 'tcp', source_ip, process }, chains: [], download, upload, start }
 }
 
 function connectionHosts() {
