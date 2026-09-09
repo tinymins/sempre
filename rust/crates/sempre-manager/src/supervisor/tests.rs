@@ -128,7 +128,7 @@ async fn async_restart_tracks_real_process_output_until_healthy() {
     let running = manager.clone();
     let supervisor = tokio::spawn(async move {
         running
-            .run_supervisor_with_grace(receiver, Duration::from_millis(100))
+            .run_supervisor_with_grace(receiver, Duration::from_secs(1))
             .await
     });
     wait_for_state(&manager, sempre_state::RuntimeState::Running).await;
