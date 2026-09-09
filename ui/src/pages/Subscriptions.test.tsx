@@ -86,6 +86,7 @@ function renderPage() {
 
 describe('Subscriptions subscription sets', () => {
   beforeEach(() => {
+    localStorage.removeItem('sempre.ui-mode:http://sempre.test')
     localStorage.setItem('sempre.locale', 'en')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     profiles = [profile('primary', 'Primary')]
@@ -155,6 +156,38 @@ describe('Subscriptions subscription sets', () => {
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+  })
+
+  it('uses the first profile and only edits subscription URLs in simple mode', async () => {
+    profiles = [
+      { ...profile('primary', 'Primary'), sources: [
+        { id: 'url-1', type: 'url', enabled: true, url: 'https://old.example/sub', prefix: 'work-', user_agent: 'Sempre test' },
+        { id: 'raw-1', type: 'raw', enabled: true, content: 'proxies: []' },
+      ] },
+      profile('secondary', 'Secondary'),
+    ]
+    activeProfileID = 'secondary'
+    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    renderPage()
+
+    const first = await screen.findByRole('textbox', { name: 'Subscription URL 1' })
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({ method: 'POST', url: 'http://sempre.test/api/v1/subscriptions/primary/activate' })))
+
+    fireEvent.change(first, { target: { value: 'https://new.example/sub' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add subscription URL' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Subscription URL 2' }), { target: { value: 'https://backup.example/sub' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      const request = requests.find((item) => item.method === 'PUT' && item.url.endsWith('/subscriptions/primary'))
+      const saved = request?.body as SubscriptionProfile
+      expect(saved.sources).toEqual([
+        expect.objectContaining({ id: 'url-1', url: 'https://new.example/sub', prefix: 'work-', user_agent: 'Sempre test' }),
+        expect.objectContaining({ id: 'raw-1', type: 'raw', content: 'proxies: []' }),
+        expect.objectContaining({ type: 'url', url: 'https://backup.example/sub' }),
+      ])
+    })
   })
 
   it('creates, renames, activates, and deletes subscription sets through dialogs and the tab menu', async () => {

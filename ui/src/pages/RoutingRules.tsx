@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LockKeyhole, Pencil, Plus, Save, Settings2, Trash2 } from 'lucide-react'
 import { Alert, AutoComplete, Button, Card, Input, Modal, Select, Switch, Tag } from '@acme/components'
@@ -8,6 +8,8 @@ import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import type { ProxyNode } from '../lib/types'
+import { SimpleRoutingRules, type SimpleRoutingSave } from '../features/dns/SimpleRoutingRules'
+import { useLocalUIMode } from '../lib/uiMode'
 
 const BUILTIN_ID = 'builtin-domains-min'
 
@@ -19,6 +21,7 @@ type DomainDialogState = {
 export function RoutingRules() {
   const { locale } = useI18n()
   const { session } = useSession()
+  const { mode: uiMode } = useLocalUIMode()
   const queryClient = useQueryClient()
   const zh = locale === 'zh-CN'
   const [draft, setDraft] = useState<DnsSettings | null>(null)
@@ -26,6 +29,8 @@ export function RoutingRules() {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [settingsDraft, setSettingsDraft] = useState({ name: '', mode: 'direct' as DnsRoutingRuleSet['mode'] })
   const [domainDialog, setDomainDialog] = useState<DomainDialogState | null>(null)
+  const [pendingSelections, setPendingSelections] = useState<Record<string, string>>({})
+  const selectingPending = useRef(new Set<string>())
 
   const settings = useQuery({
     queryKey: ['dns', 'settings'],
@@ -51,6 +56,21 @@ export function RoutingRules() {
     mutationFn: ({ group, proxy }: { group: string; proxy: string }) => api(session!, '/runtime/proxies/select', { method: 'POST', body: JSON.stringify({ group, proxy }) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runtime', 'proxies'] }),
   })
+
+  useEffect(() => {
+    Object.entries(pendingSelections).forEach(([group, proxy]) => {
+      if (!proxies.data?.some((item) => item.name === group) || selectingPending.current.has(group)) return
+      selectingPending.current.add(group)
+      void selectProxy.mutateAsync({ group, proxy }).then(() => {
+        setPendingSelections((current) => {
+          if (current[group] !== proxy) return current
+          const next = { ...current }
+          delete next[group]
+          return next
+        })
+      }).catch(() => undefined).finally(() => selectingPending.current.delete(group))
+    })
+  }, [pendingSelections, proxies.data, selectProxy])
 
   const current = draft ?? settings.data?.settings
   const active = current?.rule_sets.find((item) => item.id === selectedId)
@@ -109,7 +129,19 @@ export function RoutingRules() {
     updateSet(active.id, (ruleSet) => ({ ...ruleSet, domains: ruleSet.domains.filter((item) => item.id !== id) }))
   }
 
+  const saveSimple = async (value: SimpleRoutingSave) => {
+    await save.mutateAsync(value.settings)
+    const remaining: Record<string, string> = {}
+    for (const [group, proxy] of Object.entries(value.selections)) {
+      if (proxies.data?.some((item) => item.name === group)) await selectProxy.mutateAsync({ group, proxy })
+      else remaining[group] = proxy
+    }
+    setPendingSelections(remaining)
+  }
+
   if (!current) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载分流规则…' : 'Loading routing rules…'}</div>
+  if (uiMode === 'simple' && proxies.isLoading) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载分流节点…' : 'Loading routing nodes…'}</div>
+  if (uiMode === 'simple') return <SimpleRoutingRules key={`${current.schema}:${current.revision}`} settings={current} proxyGroups={proxies.data ?? []} saving={save.isPending || selectProxy.isPending} saved={save.isSuccess} pendingSelection={Object.keys(pendingSelections).length > 0} error={(save.error || selectProxy.error) as Error | null} onSave={saveSimple} />
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
       <div><h1 className="text-xl font-semibold">{zh ? '分流规则' : 'Routing rules'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '前置 DNS 决定解析路径；同一规则集同时注入 sing-box 路由。' : 'Frontend DNS selects the resolver path while the same rule set is injected into sing-box routing.'}</p></div>

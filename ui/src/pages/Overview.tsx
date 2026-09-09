@@ -7,6 +7,7 @@ import { formatBytes } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useRuntimeEvents } from '../lib/useRuntimeEvents'
 import { useSession } from '../lib/session'
+import { useLocalUIMode } from '../lib/uiMode'
 import type { Overview as OverviewData, RuntimeEvent, SystemStatus } from '../lib/types'
 import { Card, EmptyState, Badge, PageTitle } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
@@ -18,6 +19,7 @@ import { privateAccessMode } from '../lib/privateAccess'
 export function Overview() {
   const { t } = useI18n()
   const { session } = useSession()
+  const { mode: uiMode } = useLocalUIMode()
   const [points, setPoints] = useState<ChartPoint[]>([])
   const [rates, setRates] = useState({ download: 0, upload: 0, memory: 0, connections: 0 })
   const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system'), refetchInterval: 5000 })
@@ -45,7 +47,7 @@ export function Overview() {
   return (
     <div className="space-y-6">
       <PageTitle title={t('overview')} />
-      <SystemSummary system={system.data} />
+      <SystemSummary system={system.data} simple={uiMode === 'simple'} />
       {system.data && (!system.data.selected || !system.data.active) ? <AutoConfigureCard /> : null}
       {system.data && system.data.runtime.state !== 'running' ? (
         <EmptyState title={system.data.active ? t('coreNotRunning') : t('noCore')} detail={system.data.active ? t('coreNotRunningDetail') : t('noCoreDetail')} />
@@ -69,12 +71,12 @@ export function Overview() {
   )
 }
 
-function SystemSummary({ system }: { system?: SystemStatus }) {
+function SystemSummary({ system, simple }: { system?: SystemStatus; simple: boolean }) {
   const { t } = useI18n()
   const runtimeState = system?.runtime.state || ''
   const coreName = system?.active ? `${system.active.core} ${system.active.version}` : system?.selected ? `${system.selected.core}@${system.selected.ref}` : t('noCore')
-  const privateMode = privateAccessMode(system?.private_access)
-  const networkPath = networkAutomationDisplayPath(system?.network_automation)
+  const privateMode = simple ? null : privateAccessMode(system?.private_access)
+  const networkPath = simple ? null : networkAutomationDisplayPath(system?.network_automation)
   const summaryColumns = networkPath && privateMode
     ? 'md:grid-cols-[repeat(5,minmax(0,1fr))]'
     : networkPath || privateMode

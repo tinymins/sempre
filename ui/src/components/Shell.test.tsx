@@ -182,6 +182,18 @@ describe('Shell sidebar', () => {
     expect(within(navigation).getAllByRole('link').slice(-8).map((link) => link.getAttribute('aria-label'))).toEqual(['Core Status', 'Network Test', 'Node Test', 'Connections', 'Traffic', 'Effective Rules', 'Logs', 'Management'])
   })
 
+  it('hides advanced network navigation and status in simple mode', async () => {
+    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    renderShell()
+    await screen.findByText('0.2.0')
+
+    const navigation = screen.getByRole('navigation')
+    const labels = within(navigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
+    expect(labels).toEqual(['Overview', 'Proxies', 'Routing Rules', 'Subscription Config', 'Custom Nodes', 'Management'])
+    expect(screen.queryByLabelText(/Public traffic:/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Private access:/)).not.toBeInTheDocument()
+  })
+
   it('shows the gateway entry only in gateway mode', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname

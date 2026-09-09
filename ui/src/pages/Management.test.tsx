@@ -18,6 +18,7 @@ describe('Management page', () => {
   let serviceUpdateTask: Record<string, unknown> | null
 
   beforeEach(() => {
+    localStorage.removeItem('sempre.ui-mode:http://sempre.test')
     coreTask = null
     coresResponse = { supported: [], installed: [], selected: null }
     cancelledTask = ''
@@ -59,7 +60,7 @@ describe('Management page', () => {
     render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
 
     fireEvent.click(screen.getByRole('button', { name: '控制台' }))
-    expect(await screen.findByText('仅管理本机流量与 DNS，不加载网关配置。')).toBeInTheDocument()
+    expect(await screen.findByText('显示本机模式的完整配置。')).toBeInTheDocument()
     expect(screen.queryByText('自动网络切换')).not.toBeInTheDocument()
   })
 
@@ -74,7 +75,7 @@ describe('Management page', () => {
     render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
 
     fireEvent.click(screen.getByRole('button', { name: '控制台' }))
-    expect(await screen.findByText('仅管理本机流量与 DNS，不加载网关配置。')).not.toHaveClass('border')
+    expect(await screen.findByText('显示本机模式的完整配置。')).not.toHaveClass('border')
     expect(screen.queryByText('网关模式仅在 Linux 系统服务上可用。')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('combobox'))
@@ -83,6 +84,21 @@ describe('Management page', () => {
 
     expect(gateway).toHaveClass('cursor-not-allowed')
     expect(within(gateway as HTMLElement).getByText('仅 Linux 系统服务可用')).toHaveClass('text-xs', 'text-[var(--text-muted)]')
+  })
+
+  it('switches between simple and advanced local presentation modes', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    fireEvent.click(screen.getByRole('button', { name: '控制台' }))
+    await screen.findByText('显示本机模式的完整配置。')
+    const selector = await screen.findByRole('combobox')
+    fireEvent.click(selector)
+    const listbox = await screen.findByRole('listbox')
+    fireEvent.click(within(listbox).getByText('本机模式（简易）'))
+
+    expect(localStorage.getItem('sempre.ui-mode:http://sempre.test')).toBe('simple')
+    expect(screen.getByText('仅显示订阅 URL、常用分流和节点选择。')).toBeInTheDocument()
   })
 
   it('separates console actions from backup and update tools', async () => {
@@ -95,7 +111,7 @@ describe('Management page', () => {
     fireEvent.click(screen.getByRole('button', { name: '控制台' }))
     expect(await screen.findByText('Web')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '模式' })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['Web', '服务角色', 'Sempre 系统服务'])
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['Web', '运行模式', 'Sempre 系统服务'])
     expect(screen.getByText('Sempre 系统服务')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重启服务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '停止服务' })).toBeInTheDocument()

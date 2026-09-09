@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
 import { SessionProvider } from '../lib/session'
 import { RoutingRules } from './RoutingRules'
+import { composeSimpleRouting } from '../features/dns/SimpleRoutingRules'
+import type { DnsSettings } from '../features/dns/types'
 
 const settings = {
   schema: 3,
@@ -33,6 +35,7 @@ function response(body: unknown) {
 
 describe('RoutingRules', () => {
   beforeEach(() => {
+    localStorage.removeItem('sempre.ui-mode:http://sempre.test')
     localStorage.setItem('sempre.locale', 'en')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -87,6 +90,39 @@ describe('RoutingRules', () => {
         ],
       })])
     })
+  })
+
+  it('flattens rule sets and groups domains by the selected node in simple mode', async () => {
+    const proxySettings: DnsSettings = { ...settings, rule_sets: [
+      settings.rule_sets[0] as DnsSettings['rule_sets'][number],
+      { id: 'streaming', name: 'Streaming', mode: 'proxy', domains: [{ id: 'domain-2', domain: 'video.example', include_subdomains: true }] },
+    ] }
+    const groups = [{ name: 'DNS · Streaming', type: 'Selector', all: ['HK-01', 'JP-01'], now: 'HK-01' }]
+    const result = composeSimpleRouting(proxySettings, [
+      { ...proxySettings.rule_sets[0].domains[0], ruleSetID: 'direct-sites', target: 'node:HK-01' },
+      { ...proxySettings.rule_sets[1].domains[0], ruleSetID: 'streaming', target: 'node:HK-01' },
+    ], groups)
+
+    expect(result.settings.reject_https).toBe(true)
+    expect(result.settings.rule_sets).toEqual([expect.objectContaining({
+      id: 'streaming',
+      name: 'Streaming',
+      mode: 'proxy',
+      domains: [expect.objectContaining({ domain: 'old.example' }), expect.objectContaining({ domain: 'video.example' })],
+    })])
+    expect(result.selections).toEqual({ 'DNS · Streaming': 'HK-01' })
+
+    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/dns/settings')) return response({ settings: proxySettings, status: { domestic_domain_count: 77072 } })
+      if (url.endsWith('/api/v1/runtime/proxies')) return response(groups)
+      return response({})
+    }))
+    renderPage()
+    expect(await screen.findByRole('textbox', { name: 'Domain 1' })).toHaveValue('old.example')
+    expect(screen.getByRole('textbox', { name: 'Domain 2' })).toHaveValue('video.example')
+    expect(screen.queryByRole('button', { name: 'Rule set settings' })).not.toBeInTheDocument()
   })
 
   it('switches a recognized proxy rule-set group from the autocomplete', async () => {

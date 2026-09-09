@@ -14,6 +14,7 @@ import { Badge, Button } from './ui'
 import { modeLabel } from './PrivateAccessRuntimePanel'
 import { privateAccessMode } from '../lib/privateAccess'
 import { networkAutomationDisplayPath } from '../lib/networkAutomation'
+import { useLocalUIMode } from '../lib/uiMode'
 import { PrivateAccessStatusTag } from './PrivateAccessStatusTag'
 import { NetworkAutomationStatusTag } from './NetworkAutomationStatusTag'
 
@@ -44,6 +45,7 @@ export interface ShellChrome {
 export function Shell({ children, navigation, chrome }: { children: ReactNode; navigation?: ShellNavigationItem[]; chrome?: ShellChrome }) {
   const { t, locale, setLocale } = useI18n()
   const { session, setSession } = useSession()
+  const { mode: uiMode } = useLocalUIMode()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [passwordWarningDismissed, setPasswordWarningDismissed] = useState(false)
@@ -94,13 +96,17 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
     ] },
     { key: 'system', label: t('navigationSystem'), items: [{ path: '/management', label: t('management'), icon: Settings }] },
   ]
+  const simple = !chrome && !navigation && uiMode === 'simple'
+  const hiddenInSimpleMode = new Set(['/network-automation', '/dns', '/tunnels'])
   const sections: ShellNavigationSection[] = navigation ? [{ key: 'custom', items: navigation }] : defaultNavigation
+    .map((section) => ({ ...section, items: simple ? section.items.filter((item) => !hiddenInSimpleMode.has(item.path)) : section.items }))
+    .filter((section) => section.items.length > 0)
   const runtime = system.data?.runtime.state || 'stopped'
   const statusLabel = chrome?.statusLabel ?? t('core')
   const statusDetail = chrome?.statusDetail ?? (system.data?.active ? `${system.data.active.core} ${system.data.active.version}` : t('noCore'))
   const statusTone = chrome?.statusTone ?? (runtime === 'running' ? 'success' : runtime === 'idle' ? 'warning' : 'neutral')
-  const privateMode = chrome ? null : privateAccessMode(system.data?.private_access)
-  const networkPath = chrome ? null : networkAutomationDisplayPath(system.data?.network_automation)
+  const privateMode = chrome || simple ? null : privateAccessMode(system.data?.private_access)
+  const networkPath = chrome || simple ? null : networkAutomationDisplayPath(system.data?.network_automation)
   const networkPathLabel = networkPath === 'direct' ? t('publicDirect') : networkPath === 'proxy' ? t('publicProxy') : networkPath === 'pending' ? t('pendingApply') : networkPath === 'inactive' ? t('privateAccessInactive') : networkPath ? t('privateAccessUnknown') : ''
   const collapsedStatusDetail = chrome?.statusDetail ?? `${runtime}${networkPath ? ` · ${networkPathLabel}` : ''}${privateMode ? ` · ${modeLabel(privateMode, t)}` : ''}`
   const sidebarAction = desktopCollapsed ? t('expandSidebar') : t('collapseSidebar')
@@ -137,7 +143,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           })}
         </nav>
         <div className="border-t border-[var(--border)] p-3">
-          <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><span className="flex items-center gap-1"><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge>{networkPath ? <NetworkAutomationStatusTag status={system.data?.network_automation} path={networkPath} label={networkPathLabel} /> : null}<PrivateAccessStatusTag status={chrome ? undefined : system.data?.private_access} /></span></div>
+          <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><span className="flex items-center gap-1"><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge>{networkPath ? <NetworkAutomationStatusTag status={system.data?.network_automation} path={networkPath} label={networkPathLabel} /> : null}<PrivateAccessStatusTag status={chrome || simple ? undefined : system.data?.private_access} /></span></div>
           {desktopCollapsed ? <div className="hidden place-items-center lg:grid" aria-label={`${statusLabel}: ${collapsedStatusDetail}`} title={`${statusLabel}: ${collapsedStatusDetail}`}><span className={cn('size-2.5 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /></div> : null}
         </div>
       </aside>
@@ -147,7 +153,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           <Button className="mr-2 hidden lg:inline-flex" size="icon" variant="ghost" title={sidebarAction} aria-label={sidebarAction} aria-controls="primary-navigation" aria-expanded={!desktopCollapsed} onClick={() => setDesktopCollapsed((collapsed) => !collapsed)}>
             {desktopCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </Button>
-          <div className="flex items-center gap-2 text-sm"><span className={cn('size-2 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /><span className="hidden text-[var(--muted)] sm:inline">{statusDetail}</span>{networkPath ? <NetworkAutomationStatusTag status={system.data?.network_automation} path={networkPath} label={networkPathLabel} /> : null}<PrivateAccessStatusTag status={chrome ? undefined : system.data?.private_access} /></div>
+          <div className="flex items-center gap-2 text-sm"><span className={cn('size-2 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /><span className="hidden text-[var(--muted)] sm:inline">{statusDetail}</span>{networkPath ? <NetworkAutomationStatusTag status={system.data?.network_automation} path={networkPath} label={networkPathLabel} /> : null}<PrivateAccessStatusTag status={chrome || simple ? undefined : system.data?.private_access} /></div>
           <div className="ml-auto flex items-center gap-1">
             {!chrome ? <RuntimeRestartButton /> : null}
             <Button size="icon" variant="ghost" title={t('language')} onClick={() => setLocale(locale === 'zh-CN' ? 'en' : 'zh-CN')}><Languages size={18} /></Button>

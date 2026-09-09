@@ -6,6 +6,7 @@ import { api, downloadBundle, uploadUI } from '../lib/api'
 import { compactHash } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
+import { useLocalUIMode } from '../lib/uiMode'
 import type { NetworkSettings, NetworkSettingsResponse, UIMetadata } from '../lib/types'
 import { Badge, Button, Card, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
@@ -27,6 +28,7 @@ function ServiceRolePanel() {
   const { locale } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
+  const { mode: uiMode, setMode: setUIMode } = useLocalUIMode()
   const zh = locale === 'zh-CN'
   const network = useQuery({ queryKey: ['network', 'settings'], queryFn: () => api<NetworkSettingsResponse>(session!, '/network/settings') })
   const update = useMutation({
@@ -40,13 +42,23 @@ function ServiceRolePanel() {
     },
   })
   const mode = network.data?.settings.mode ?? 'local'
+  const selectedMode = mode === 'gateway' ? 'gateway' : `local-${uiMode}`
   const gatewayAvailable = network.data?.gateway_available ?? false
   const gatewayLabel = zh ? '网关模式' : 'Gateway mode'
   const gatewayReason = zh ? '仅 Linux 系统服务可用' : 'Linux system service only'
-  return <Section title={zh ? '服务角色' : 'Service role'} icon={<Router size={18} />}>
+  const changeMode = (value: string) => {
+    if (value === 'gateway') {
+      setUIMode('advanced')
+      update.mutate('gateway')
+      return
+    }
+    setUIMode(value === 'local-simple' ? 'simple' : 'advanced')
+    if (mode !== 'local') update.mutate('local')
+  }
+  return <Section title={zh ? '运行模式' : 'Run mode'} icon={<Router size={18} />}>
     <div className="grid gap-3 md:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] md:items-end">
-      <Field label={zh ? '当前角色' : 'Current role'}><Select className="w-full" popupMatchSelectWidth value={mode} loading={network.isLoading || update.isPending} options={[{ value: 'local', label: zh ? '本机模式' : 'Local mode' }, { value: 'gateway', label: gatewayAvailable ? gatewayLabel : <span className="flex w-full min-w-0 items-center gap-3"><span className="shrink-0">{gatewayLabel}</span><span className="ml-auto truncate text-xs font-normal text-[var(--text-muted)]">{gatewayReason}</span></span>, disabled: !gatewayAvailable }]} onChange={(value) => update.mutate(value)} /></Field>
-      <p className="self-end py-1.5 text-sm leading-5 text-[var(--muted)]">{mode === 'gateway' ? (zh ? '默认代理内网设备；本机代理可在网关页单独开启。' : 'LAN clients are proxied by default; host proxying is optional on the Gateway page.') : (zh ? '仅管理本机流量与 DNS，不加载网关配置。' : 'Manages only this host traffic and DNS. Gateway configuration is not loaded.')}</p>
+      <Field label={zh ? '当前模式' : 'Current mode'}><Select className="w-full" popupMatchSelectWidth value={selectedMode} loading={network.isLoading || update.isPending} options={[{ value: 'local-simple', label: zh ? '本机模式（简易）' : 'Local mode (simple)' }, { value: 'local-advanced', label: zh ? '本机模式（专业）' : 'Local mode (advanced)' }, { value: 'gateway', label: gatewayAvailable ? gatewayLabel : <span className="flex w-full min-w-0 items-center gap-3"><span className="shrink-0">{gatewayLabel}</span><span className="ml-auto truncate text-xs font-normal text-[var(--text-muted)]">{gatewayReason}</span></span>, disabled: !gatewayAvailable }]} onChange={(value) => changeMode(String(value))} /></Field>
+      <p className="self-end py-1.5 text-sm leading-5 text-[var(--muted)]">{mode === 'gateway' ? (zh ? '默认代理内网设备；本机代理可在网关页单独开启。' : 'LAN clients are proxied by default; host proxying is optional on the Gateway page.') : uiMode === 'simple' ? (zh ? '仅显示订阅 URL、常用分流和节点选择。' : 'Shows subscription URLs, common routing, and node selection.') : (zh ? '显示本机模式的完整配置。' : 'Shows all local-mode settings.')}</p>
     </div>
     {update.isError ? <p className="mt-3 text-sm text-red-600">{update.error instanceof Error ? update.error.message : String(update.error)}</p> : null}
   </Section>
