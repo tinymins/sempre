@@ -191,6 +191,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 
         match wait_startup(self, shutdown, &mut process, plan, startup_grace).await {
             ProcessEvent::Healthy(Ok(())) => {
+                process.synchronize_output().await;
                 if let Err(error) = self.mark_runtime_healthy(plan) {
                     let _ = process.terminate(STOP_GRACE).await;
                     if let Err(cleanup) = self.cleanup_after_core_failure().await {

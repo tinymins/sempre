@@ -26,6 +26,7 @@ async fn output_observer_preserves_split_utf8_lines_and_final_unterminated_outpu
                 .push((stream.to_owned(), line.to_owned()));
         })),
         "stdout",
+        None,
     ));
     let bytes = "中文\nlast line".as_bytes();
     input.write_all(&bytes[..2]).await.unwrap();
@@ -43,6 +44,39 @@ async fn output_observer_preserves_split_utf8_lines_and_final_unterminated_outpu
 }
 
 #[tokio::test]
+async fn output_synchronization_drains_ready_observer_lines() {
+    let root = tempfile::tempdir().unwrap();
+    let (mut input, output) = tokio::io::duplex(64);
+    let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = lines.clone();
+    let (synchronizer, synchronization) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(log::copy_rolling(
+        output,
+        root.path().join("stdout"),
+        8,
+        2,
+        Some(std::sync::Arc::new(move |stream, line| {
+            observed
+                .lock()
+                .unwrap()
+                .push((stream.to_owned(), line.to_owned()));
+        })),
+        "stdout",
+        Some(synchronization),
+    ));
+    input.write_all(b"ready\n").await.unwrap();
+    let (ready, synchronized) = tokio::sync::oneshot::channel();
+    synchronizer.send(ready).unwrap();
+    synchronized.await.unwrap();
+    assert_eq!(
+        *lines.lock().unwrap(),
+        vec![("stdout".into(), "ready".into())]
+    );
+    input.shutdown().await.unwrap();
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn rolling_output_keeps_bounded_backups() {
     let root = tempfile::tempdir().expect("temporary directory");
     let path = root.path().join("core.log");
@@ -54,6 +88,7 @@ async fn rolling_output_keeps_bounded_backups() {
         2,
         None,
         "stdout",
+        None,
     ));
     input.write_all(b"12345678").await.expect("first write");
     input.write_all(b"abcdefgh").await.expect("second write");

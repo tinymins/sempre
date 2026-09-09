@@ -13,6 +13,7 @@ use sempre_core::CommandSpec;
 use thiserror::Error;
 use tokio::{
     process::{Child, Command},
+    sync::{mpsc, oneshot},
     task::JoinHandle,
     time::timeout,
 };
@@ -41,7 +42,12 @@ pub enum SupervisorError {
 pub struct ManagedProcess {
     child: Child,
     pid: u32,
-    output: Vec<JoinHandle<io::Result<()>>>,
+    output: Vec<OutputTask>,
+}
+
+struct OutputTask {
+    handle: JoinHandle<io::Result<()>>,
+    synchronizer: mpsc::UnboundedSender<oneshot::Sender<()>>,
 }
 
 impl ManagedProcess {
@@ -74,24 +80,15 @@ impl ManagedProcess {
         let pid = child.id().ok_or(SupervisorError::MissingPid)?;
         let mut output = Vec::with_capacity(2);
         if let Some(stdout) = child.stdout.take() {
-            output.push(tokio::spawn(log::copy_rolling(
+            output.push(output_task(
                 stdout,
                 stdout_path.into(),
-                LOG_LIMIT,
-                LOG_BACKUPS,
                 observer.clone(),
                 "stdout",
-            )));
+            ));
         }
         if let Some(stderr) = child.stderr.take() {
-            output.push(tokio::spawn(log::copy_rolling(
-                stderr,
-                stderr_path.into(),
-                LOG_LIMIT,
-                LOG_BACKUPS,
-                observer,
-                "stderr",
-            )));
+            output.push(output_task(stderr, stderr_path.into(), observer, "stderr"));
         }
         Ok(Self { child, pid, output })
     }
@@ -120,6 +117,18 @@ impl ManagedProcess {
 
     pub const fn pid(&self) -> u32 {
         self.pid
+    }
+
+    pub async fn synchronize_output(&self) {
+        for task in &self.output {
+            if task.handle.is_finished() {
+                continue;
+            }
+            let (ready, synchronized) = oneshot::channel();
+            if task.synchronizer.send(ready).is_ok() {
+                let _ = synchronized.await;
+            }
+        }
     }
 
     pub async fn wait(&mut self) -> Result<ExitStatus, SupervisorError> {
@@ -172,11 +181,34 @@ impl ManagedProcess {
 
     async fn finish_output(&mut self) -> Result<(), SupervisorError> {
         for task in self.output.drain(..) {
-            task.await
+            task.handle
+                .await
                 .map_err(SupervisorError::OutputTask)?
                 .map_err(SupervisorError::Output)?;
         }
         Ok(())
+    }
+}
+
+fn output_task(
+    reader: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    path: PathBuf,
+    observer: Option<OutputObserver>,
+    stream: &'static str,
+) -> OutputTask {
+    let (synchronizer, synchronization) = mpsc::unbounded_channel();
+    let handle = tokio::spawn(log::copy_rolling(
+        reader,
+        path,
+        LOG_LIMIT,
+        LOG_BACKUPS,
+        observer,
+        stream,
+        Some(synchronization),
+    ));
+    OutputTask {
+        handle,
+        synchronizer,
     }
 }
 

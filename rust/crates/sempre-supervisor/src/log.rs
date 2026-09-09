@@ -6,6 +6,7 @@ use std::{
 };
 
 use tokio::io::{AsyncRead, AsyncReadExt as _};
+use tokio::sync::{mpsc, oneshot};
 
 pub async fn copy_rolling(
     mut reader: impl AsyncRead + Unpin,
@@ -14,12 +15,28 @@ pub async fn copy_rolling(
     backups: usize,
     observer: Option<crate::OutputObserver>,
     stream: &'static str,
+    mut synchronization: Option<mpsc::UnboundedReceiver<oneshot::Sender<()>>>,
 ) -> io::Result<()> {
     let mut writer = RollingWriter::open(&path, limit, backups)?;
     let mut buffer = vec![0_u8; 16 << 10];
     let mut pending = Vec::new();
     loop {
-        let count = reader.read(&mut buffer).await?;
+        let count = loop {
+            let Some(receiver) = synchronization.as_mut() else {
+                break reader.read(&mut buffer).await?;
+            };
+            tokio::select! {
+                biased;
+                result = reader.read(&mut buffer) => break result?,
+                signal = receiver.recv() => {
+                    if let Some(signal) = signal {
+                        let _ = signal.send(());
+                    } else {
+                        synchronization = None;
+                    }
+                }
+            }
+        };
         if count == 0 {
             if let Some(observer) = &observer
                 && !pending.is_empty()
