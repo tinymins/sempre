@@ -76,7 +76,7 @@ function ConnectionRow({ item, close, busy }: { item: ConnectionRowData; close: 
 function SortableHeader({ label, sortKey, sort, onSort, align = 'left' }: { label: string; sortKey: SortKey; sort: { key: SortKey; direction: SortDirection }; onSort: (key: SortKey) => void; align?: 'left' | 'right' }) {
   const active = sort.key === sortKey
   const Icon = active ? (sort.direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
-  return <th className="px-3 py-3 font-medium" aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}><AcmeButton variant="unstyled" className={`!h-auto w-full !border-0 !p-0 hover:text-[var(--text-primary)] ${align === 'right' ? 'justify-end' : 'justify-start'}`} onClick={() => onSort(sortKey)}>{label}<Icon aria-hidden size={13} /></AcmeButton></th>
+  return <th className="px-3 py-3 font-medium" aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}><AcmeButton variant="unstyled" className={`w-full hover:text-[var(--text-primary)] ${align === 'right' ? 'justify-end' : 'justify-start'}`} onClick={() => onSort(sortKey)}>{label}<Icon aria-hidden size={13} /></AcmeButton></th>
 }
 
 function connectionStart(item: Connection) {

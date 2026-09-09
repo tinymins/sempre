@@ -67,6 +67,7 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const isDisabled = disabled || loading;
+  const isUnstyled = variant === "unstyled";
 
   const shapeClass =
     shape === "circle"
@@ -81,10 +82,11 @@ export function Button({
       type={htmlType ?? nativeType ?? "button"}
       disabled={isDisabled}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 border font-medium transition-all duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] select-none cursor-pointer",
+        "inline-flex items-center justify-center gap-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] select-none cursor-pointer",
+        !isUnstyled && "border font-medium transition-all duration-150",
         variantClasses[variant],
-        variant !== "link" && sizeClasses[size],
-        shapeClass,
+        !isUnstyled && variant !== "link" && sizeClasses[size],
+        !isUnstyled && shapeClass,
         block && "w-full",
         isDisabled && "opacity-50 !cursor-not-allowed",
         danger &&

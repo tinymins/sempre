@@ -209,7 +209,9 @@ describe('Subscriptions subscription sets', () => {
     localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: /Private Access.*Not configured/ }))
+    const privateAccessButton = await screen.findByRole('button', { name: /Private Access.*Not configured/ })
+    expect(privateAccessButton).not.toHaveClass('border')
+    fireEvent.click(privateAccessButton)
     const dialog = await screen.findByRole('dialog', { name: 'Private Access' })
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Enable private access routing' }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add connector' }))
