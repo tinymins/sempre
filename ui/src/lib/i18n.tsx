@@ -14,6 +14,7 @@ const zh = {
   live: '实时', paused: '已暂停', pause: '暂停', resume: '继续', clear: '清空', export: '导出', level: '级别', message: '消息',
   runtimeTab: '运行状态', coreTab: '核心', subscriptionTab: '订阅', configTab: '配置', consoleTab: '控制台', backupAndUpdateTab: '备份与更新', deploymentBackup: '部署备份',
   install: '安装', remove: '移除', use: '使用', currentUse: '当前使用', reference: '核心引用', repository: '仓库', official: '官方', custom: '自定义', channel: '通道', installedVersions: '已安装版本', downloadTasks: '下载任务', downloadProgress: '下载进度', cancelDownload: '取消下载', cancelDownloadTitle: '取消核心下载？', cancelDownloadDetail: '下载将立即终止，临时文件和任务列表项会被清除。', clearDownload: '清除任务', downloadQueued: '等待中', downloadResolving: '查询版本', downloading: '下载中', downloadInstalling: '校验并安装', downloadCompleted: '已完成',
+  coreReferenceHint: '格式：核心名:GitHub 所有者/仓库名@stable 或具体版本。换源时替换所有者/仓库名，例如 sing-box:tinymins/sing-box@1.13.15-ddns.1。',
   subscriptionURL: '订阅地址', schedule: '更新周期', save: '保存', updateNow: '更新订阅', lastResult: '最近结果',
   commonSettings: '常用设置', jsonEditor: '完整 JSON', validate: '校验', validated: '配置校验通过', logLevel: '日志级别', routeFinal: '默认出站', dnsFinal: '默认 DNS', autoInterface: '自动检测网卡',
   listenAddress: '监听地址', passwordSet: '密码已设置', setPassword: '设置密码', clearPassword: '清空密码', uiSource: 'UI 来源', officialUI: '安装官方 UI', customURL: 'HTTPS ZIP 地址', uploadZIP: '上传 ZIP', exportBundle: '导出部署包', exportBundleDetail: '导出的包包含订阅、节点、核心和当前 UI，但不包含管理员密码。',
@@ -33,6 +34,7 @@ const zh = {
 
 type Key = keyof typeof zh
 const en: Record<Key, string> = {
+  coreReferenceHint: 'Format: core:GitHub-owner/repository@stable or a specific version. Replace owner/repository to use another source, e.g. sing-box:tinymins/sing-box@1.13.15-ddns.1.',
   overview: 'Overview', customNodes: 'Custom Nodes', subscriptions: 'Subscriptions', tunnels: 'Tunnels', proxies: 'Proxies', connections: 'Connections', rules: 'Rules', routingRules: 'Routing Rules', runtimeRules: 'Runtime Rules', dns: 'DNS', traffic: 'Traffic', logs: 'Logs', networkTest: 'Network Test', nodeTest: 'Node Test', gateway: 'Gateway', management: 'Management',
   navigationStrategy: 'Strategy', navigationConfiguration: 'Configuration', navigationNetwork: 'Network capabilities', navigationAnalysis: 'Analysis & diagnostics', navigationSystem: 'System', navigationSubscriptions: 'Subscription Config', navigationEffectiveRules: 'Effective Rules', navigationCoreStatus: 'Core Status',
   signIn: 'Sign in', address: 'Sempre address', password: 'Administrator password', connect: 'Connect', connecting: 'Connecting',

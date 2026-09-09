@@ -36,6 +36,7 @@ describe('Management page', () => {
         return Response.json({ task: coreTask })
       }
       if (path.endsWith('/cores')) return Response.json(coresResponse)
+      if (path.endsWith('/cores/install') || path.endsWith('/cores/update')) return Response.json({ task: null })
       if (path.endsWith('/network/settings')) {
         const settings = { schema: 2, revision: 1, mode: 'local', gateway_capture_host: false, automatic_switching: false, known_networks: [] }
         return Response.json({ settings, current: { supported: true, name: 'en0', addresses: ['10.8.28.19/24'], gateway: '10.8.28.1', gateway_mac: 'aa:bb:cc:dd:ee:ff' }, platform: 'windows', gateway_available: false })
@@ -145,6 +146,33 @@ describe('Management page', () => {
     expect(within(dialog).getByText('5.0 MiB/s')).toBeInTheDocument()
     expect(within(dialog).getByText('约 10 秒')).toBeInTheDocument()
     expect(within(dialog).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+  })
+
+  it.each([['安装', 'install'], ['更新', 'update']])('submits complete core references for %s', async (label, operation) => {
+    coresResponse = { supported: ['sing-box', 'mihomo', 'xray', 'v2ray', 'clash-rs', 'dae'], installed: [], selected: null }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    const input = screen.getByRole('combobox', { name: '核心引用' })
+    expect(input).toHaveValue('sing-box:SagerNet/sing-box@stable')
+    expect(input).toHaveAttribute('placeholder', 'sing-box:SagerNet/sing-box@stable')
+    await waitFor(() => expect(document.querySelectorAll('#supported-core-references option')).toHaveLength(6))
+    expect(Array.from(document.querySelectorAll('#supported-core-references option'), (option) => option.getAttribute('value'))).toEqual([
+      'sing-box:SagerNet/sing-box@stable', 'mihomo:MetaCubeX/mihomo@stable', 'xray:XTLS/Xray-core@stable',
+      'v2ray:v2fly/v2ray-core@stable', 'clash-rs:Watfaq/clash-rs@stable', 'dae:daeuniverse/dae@stable',
+    ])
+    fireEvent.click(screen.getByRole('button', { name: label }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(`http://sempre.test/api/v1/cores/${operation}`, expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ reference: 'sing-box:SagerNet/sing-box@stable' }),
+    })))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: label })).toBeEnabled())
+    fireEvent.change(input, { target: { value: 'sing-box:tinymins/sing-box@1.13.15-ddns.1' } })
+    fireEvent.click(screen.getByRole('button', { name: label }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(`http://sempre.test/api/v1/cores/${operation}`, expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ reference: 'sing-box:tinymins/sing-box@1.13.15-ddns.1' }),
+    })))
+    expect(input).toHaveAccessibleDescription(/换源时替换所有者\/仓库名/)
   })
 
   it('shows the selected core as a disabled current-use action', async () => {

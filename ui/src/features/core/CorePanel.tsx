@@ -12,12 +12,20 @@ import { Badge, Button, Card, ConfirmDialog, Field, Input } from '../../componen
 
 type ChangeResult = { NeedsRestart?: boolean; changes?: ChangeResult[] }
 const taskKey = ['cores', 'download-task']
+const referenceExamples: Record<string, string> = {
+  'sing-box': 'sing-box:SagerNet/sing-box@stable',
+  mihomo: 'mihomo:MetaCubeX/mihomo@stable',
+  xray: 'xray:XTLS/Xray-core@stable',
+  v2ray: 'v2ray:v2fly/v2ray-core@stable',
+  'clash-rs': 'clash-rs:Watfaq/clash-rs@stable',
+  dae: 'dae:daeuniverse/dae@stable',
+}
 
 export function CorePanel() {
   const { t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
-  const [reference, setReference] = useState('sing-box@stable')
+  const [reference, setReference] = useState(referenceExamples['sing-box'])
   const [notice, setNotice] = useState('')
   const [cancelTask, setCancelTask] = useState<CoreDownloadTask | null>(null)
   const cores = useQuery({ queryKey: ['cores'], queryFn: () => api<CoresResponse>(session!, '/cores') })
@@ -70,7 +78,12 @@ export function CorePanel() {
   return <Card className="min-w-0 p-4 md:p-5">
     <div className="mb-5 flex items-center gap-2"><span className="text-emerald-600"><Package size={18} /></span><h2 className="text-sm font-semibold">{t('core')}</h2></div>
     {displayedNotice ? <div className="mb-4 border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{displayedNotice}</div> : null}
-    <div className="grid gap-4 border-b border-[var(--border)] pb-6 md:grid-cols-[minmax(0,1fr)_auto_auto]"><Field label={t('reference')}><><Input list="supported-core-references" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="mihomo@stable" /><datalist id="supported-core-references">{cores.data?.supported.map((core) => <option key={core} value={`${core}@stable`} />)}</datalist></></Field><Button className="self-end" variant="primary" disabled={busy} onClick={() => download.mutate('install')}><Download size={16} />{t('install')}</Button><Button className="self-end" disabled={busy} onClick={() => download.mutate('update')}><RefreshCw size={16} />{t('update')}</Button></div>
+    <div className="grid gap-4 border-b border-[var(--border)] pb-6 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+      <Field label={t('reference')}><><Input list="supported-core-references" aria-describedby="core-reference-hint" value={reference} onChange={(event) => setReference(event.target.value)} placeholder={referenceExamples['sing-box']} /><datalist id="supported-core-references">{cores.data?.supported.filter((core) => referenceExamples[core]).map((core) => <option key={core} value={referenceExamples[core]} />)}</datalist></></Field>
+      <Button className="self-end" variant="primary" disabled={busy} onClick={() => download.mutate('install')}><Download size={16} />{t('install')}</Button>
+      <Button className="self-end" disabled={busy} onClick={() => download.mutate('update')}><RefreshCw size={16} />{t('update')}</Button>
+      <p id="core-reference-hint" className="break-words text-xs text-[var(--muted)] md:col-span-3">{t('coreReferenceHint')}</p>
+    </div>
     {task ? <><h3 className="mt-6 text-sm font-semibold">{t('downloadTasks')}</h3><Table<CoreDownloadTask> className="mt-3" rowKey="id" pagination={false} columns={taskColumns} dataSource={[task]} scroll={{ x: 760 }} /></> : null}
     <h3 className="mt-6 text-sm font-semibold">{t('installedVersions')}</h3>
     <Table<CoreInstallation> className="mt-3" rowKey="reference" loading={cores.isLoading} pagination={false} columns={installedColumns} dataSource={cores.data?.installed || []} scroll={{ x: 820 }} />
