@@ -190,6 +190,14 @@ describe('Subscriptions subscription sets', () => {
     })
   })
 
+  it('renders an empty URL row when randomUUID is unavailable on HTTP', async () => {
+    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    vi.stubGlobal('crypto', {})
+    renderPage()
+
+    expect(await screen.findByRole('textbox', { name: 'Subscription URL 1' })).toHaveValue('')
+  })
+
   it('creates, renames, activates, and deletes subscription sets through dialogs and the tab menu', async () => {
     renderPage()
     expect(await screen.findByRole('tab', { name: 'Primary' })).toHaveAttribute('aria-selected', 'true')

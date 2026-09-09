@@ -6,7 +6,11 @@ import { useI18n } from '../../lib/i18n'
 import type { SubscriptionProfile, SubscriptionSource } from '../../lib/types'
 
 function emptySource(): SubscriptionSource {
-  return { id: crypto.randomUUID(), type: 'url', enabled: true, url: '', fetch_mode: 'auto' }
+  return { id: newID('source'), type: 'url', enabled: true, url: '', fetch_mode: 'auto' }
+}
+
+function newID(prefix: string) {
+  return crypto.randomUUID?.() ?? `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
 function validURL(value: string) {
