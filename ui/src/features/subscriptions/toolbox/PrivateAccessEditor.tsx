@@ -110,7 +110,7 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
           }`}
         >
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Tooltip
                 title={
                   connector.enabled
@@ -132,7 +132,7 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
                 onChange={(event) =>
                   updateConnector(index, { tag: event.target.value })
                 }
-                className="flex-1 min-w-0"
+                className="min-w-48 flex-1"
               />
               <Select
                 size="small"
@@ -141,7 +141,7 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
                 onChange={(nextType) =>
                   updateConnector(index, { type: nextType as ConnectorType })
                 }
-                className="w-[150px] shrink-0"
+                className="w-full shrink-0 sm:w-[150px]"
               />
               <Tooltip title={t("proxy.form.privateWgImportTooltip")}>
                 <span className="inline-flex shrink-0">

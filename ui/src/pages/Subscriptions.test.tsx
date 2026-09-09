@@ -33,6 +33,7 @@ let activeProfileID: string
 let requests: RecordedRequest[]
 let catalogRefreshResponse: Promise<Response> | undefined
 let catalogReads: number
+let configurationFeatures: string[]
 
 function profile(id: string, name: string): SubscriptionProfile {
   return {
@@ -67,7 +68,7 @@ function catalog(): SubscriptionCatalogResponse {
     targets: [],
     defaults: { groups: [], rule_providers: [], filters: [], rules: [], dns: {} },
     editor_defaults: { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' },
-		configuration_context: { key: 'common', platform: 'linux', capabilities: { features: [], enum_values: {}, protocols: [] } },
+		configuration_context: { key: 'common', platform: 'linux', capabilities: { features: configurationFeatures, enum_values: {}, protocols: [] } },
   }
 }
 
@@ -94,6 +95,7 @@ describe('Subscriptions subscription sets', () => {
     requests = []
 	catalogRefreshResponse = undefined
 	catalogReads = 0
+    configurationFeatures = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
       const method = init.method || 'GET'
@@ -101,6 +103,9 @@ describe('Subscriptions subscription sets', () => {
       requests.push({ url, method, body })
 
       if (url.endsWith('/api/v1/custom-nodes')) return jsonResponse({ nodes: [] })
+      if (url.endsWith('/api/v1/runtime/status')) return jsonResponse({})
+      if (url.endsWith('/api/v1/network/settings')) return jsonResponse({ settings: { automatic_switching: false, known_networks: [] }, current: {} })
+      if (url.endsWith('/api/v1/tunnels')) return jsonResponse({ forwards: [] })
       if (url.endsWith('/api/v1/subscriptions') && method === 'GET') {
 		catalogReads += 1
 		if (catalogReads > 1 && catalogRefreshResponse) return await catalogRefreshResponse
@@ -196,6 +201,28 @@ describe('Subscriptions subscription sets', () => {
     renderPage()
 
     expect(await screen.findByRole('textbox', { name: 'Subscription URL 1' })).toHaveValue('')
+  })
+
+  it('edits private access in a responsive dialog and saves it with the first profile', async () => {
+    configurationFeatures = ['private_access']
+    profiles = [{ ...profile('primary', 'Primary'), sources: [{ id: 'url-1', type: 'url', enabled: true, url: 'https://old.example/sub' }] }]
+    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Private Access.*Not configured/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Private Access' })
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Enable private access routing' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add connector' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    expect(await screen.findByRole('button', { name: /Private Access.*Enabled.*1 connector/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      const request = requests.find((item) => item.method === 'PUT' && item.url.endsWith('/subscriptions/primary'))
+      const saved = request?.body as SubscriptionProfile
+      expect(JSON.parse(saved.editor.private_access_config)).toMatchObject({ enabled: true, connectors: [{ type: 'wireguard' }] })
+    })
   })
 
   it('creates, renames, activates, and deletes subscription sets through dialogs and the tab menu', async () => {

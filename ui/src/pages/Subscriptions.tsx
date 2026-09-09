@@ -210,7 +210,7 @@ export function Subscriptions() {
     return <div className="space-y-5">
       <PageTitle title={t('navigationSubscriptions')} detail={locale === 'zh-CN' ? '添加一个或多个订阅 URL，系统会自动使用第一组配置。' : 'Add one or more subscription URLs. The first profile is used automatically.'} />
       {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`whitespace-pre-line border-l-2 px-3 py-2 text-sm break-words ${notice.tone === 'error' ? 'border-red-500 bg-red-500/8 text-red-700 dark:text-red-300' : 'border-emerald-500 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}
-      {currentProfile ? <SimpleSubscriptionEditor key={`${currentProfile.id}:${currentProfile.revision}`} profile={currentProfile} saving={save.isPending} onSave={async (candidate) => { await save.mutateAsync({ candidate, contextKey: catalog.data?.configuration_context.key ?? 'common' }) }} /> : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
+      {currentProfile ? <SimpleSubscriptionEditor key={`${currentProfile.id}:${currentProfile.revision}`} profile={currentProfile} saving={save.isPending} supportsPrivateAccess={catalog.data?.configuration_context.capabilities.features.includes('private_access') ?? false} onSave={async (candidate) => { await save.mutateAsync({ candidate, contextKey: catalog.data?.configuration_context.key ?? 'common' }) }} /> : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
     </div>
   }
 

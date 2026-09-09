@@ -4,6 +4,7 @@ import { Plus, Save, Trash2 } from 'lucide-react'
 import { Button, Card, Input, Spinner } from '../../components/ui'
 import { useI18n } from '../../lib/i18n'
 import type { SubscriptionProfile, SubscriptionSource } from '../../lib/types'
+import { SimplePrivateAccessDialog } from './SimplePrivateAccessDialog'
 
 function emptySource(): SubscriptionSource {
   return { id: newID('source'), type: 'url', enabled: true, url: '', fetch_mode: 'auto' }
@@ -22,13 +23,14 @@ function validURL(value: string) {
   }
 }
 
-export function SimpleSubscriptionEditor({ profile, saving, onSave }: { profile: SubscriptionProfile; saving: boolean; onSave: (profile: SubscriptionProfile) => Promise<void> }) {
+export function SimpleSubscriptionEditor({ profile, saving, supportsPrivateAccess, onSave }: { profile: SubscriptionProfile; saving: boolean; supportsPrivateAccess: boolean; onSave: (profile: SubscriptionProfile) => Promise<void> }) {
   const { locale } = useI18n()
   const zh = locale === 'zh-CN'
   const initial = useMemo(() => profile.sources.filter((source) => source.type === 'url'), [profile])
   const [sources, setSources] = useState<SubscriptionSource[]>(initial.length ? initial : [emptySource()])
+  const [privateAccessConfig, setPrivateAccessConfig] = useState(profile.editor.private_access_config)
   const [error, setError] = useState('')
-  const dirty = JSON.stringify(sources) !== JSON.stringify(initial)
+  const dirty = JSON.stringify(sources) !== JSON.stringify(initial) || privateAccessConfig !== profile.editor.private_access_config
 
   if (profile.mode === 'remote') {
     return <Alert type="info" showIcon message={zh ? '这个订阅由远程服务管理，请切换到本机模式（专业）查看详情。' : 'This subscription is managed remotely. Switch to Local mode (advanced) for details.'} />
@@ -53,7 +55,11 @@ export function SimpleSubscriptionEditor({ profile, saving, onSave }: { profile:
       if (!retained.has(source.id)) ordered.push(source)
     })
     setError('')
-    await onSave({ ...profile, sources: ordered })
+    await onSave({
+      ...profile,
+      sources: ordered,
+      editor: { ...profile.editor, private_access_config: privateAccessConfig },
+    })
   }
 
   return <Card className="p-4 md:p-5">
@@ -69,5 +75,6 @@ export function SimpleSubscriptionEditor({ profile, saving, onSave }: { profile:
       <Button variant="primary" disabled={!dirty || saving} onClick={() => void save()}>{saving ? <Spinner /> : <Save size={16} />}{zh ? '保存' : 'Save'}</Button>
     </div>
     {error ? <p role="alert" className="mt-3 text-sm text-red-600">{error}</p> : null}
+    {supportsPrivateAccess ? <SimplePrivateAccessDialog profileId={profile.id} value={privateAccessConfig} onChange={setPrivateAccessConfig} /> : null}
   </Card>
 }
