@@ -2,6 +2,7 @@ import {
   Button,
   Checkbox,
   DeleteOutlined,
+  ImportOutlined,
   Input,
   InputNumber,
   PlusOutlined,
@@ -17,6 +18,7 @@ import { api } from "@/lib/api";
 import { useOptionalSession } from "@/lib/session";
 import type { ManagedRuntimeStatus, Session, TunnelStatus } from "@/lib/types";
 import { PrivateAccessHomeNetwork } from "./PrivateAccessHomeNetwork";
+import { WireGuardImportModal } from "./WireGuardImportModal";
 import {
   CONNECTOR_TYPES,
   type ConnectorType,
@@ -40,6 +42,7 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
   const sessionContext = useOptionalSession();
   const session = sessionContext?.session;
   const [state, setState] = useState(() => parseConfig(value));
+  const [importIndex, setImportIndex] = useState<number | null>(null);
   const runtime = useRuntimeStatus(session);
   const lastEmittedValueRef = useRef<string | undefined>(undefined);
   const connectorTypeOptions = useMemo(
@@ -140,6 +143,18 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
                 }
                 className="w-[150px] shrink-0"
               />
+              <Tooltip title={t("proxy.form.privateWgImportTooltip")}>
+                <span className="inline-flex shrink-0">
+                  <Button
+                    variant="text"
+                    size="small"
+                    disabled={connector.type !== "wireguard"}
+                    aria-label={t("proxy.form.privateWgImportTooltip")}
+                    icon={<ImportOutlined />}
+                    onClick={() => setImportIndex(index)}
+                  />
+                </span>
+              </Tooltip>
               <Button
                 variant="text"
                 size="small"
@@ -421,6 +436,15 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
       >
         {t("proxy.form.addPrivateConnector")}
       </Button>
+      <WireGuardImportModal
+        open={importIndex !== null}
+        onCancel={() => setImportIndex(null)}
+        onImport={(patch) => {
+          if (importIndex === null) return;
+          updateConnector(importIndex, patch);
+          setImportIndex(null);
+        }}
+      />
     </div>
   );
 };
