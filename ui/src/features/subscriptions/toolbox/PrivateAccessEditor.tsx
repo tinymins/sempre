@@ -35,9 +35,10 @@ interface Props {
   value?: string;
   onChange?: (value: string) => void;
   profileId: string;
+  variant?: "default" | "simple";
 }
 
-const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
+const PrivateAccessEditor = ({ value, onChange, profileId, variant = "default" }: Props) => {
   const { t } = useTranslation();
   const sessionContext = useOptionalSession();
   const session = sessionContext?.session;
@@ -91,7 +92,7 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-[#151515]">
+      <div className={variant === "simple" ? "flex items-center gap-2 px-1 py-1" : "flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-[#151515]"}>
         <Checkbox
           checked={state.enabled}
           onChange={(event) => emit(event.target.checked, state.connectors)}
@@ -103,11 +104,11 @@ const PrivateAccessEditor = ({ value, onChange, profileId }: Props) => {
       {state.connectors.map((connector, index) => (
         <div
           key={`private-connector-${index}`}
-          className={`rounded-lg border p-3 transition-colors ${
-            connector.enabled
+          className={variant === "simple"
+            ? `rounded-xl p-4 transition-colors ${connector.enabled ? "bg-black/[0.025] dark:bg-white/[0.035]" : "bg-black/[0.02] opacity-60 dark:bg-white/[0.02]"}`
+            : `rounded-lg border p-3 transition-colors ${connector.enabled
               ? "border-gray-200 bg-white dark:border-gray-600 dark:bg-[#1a1a1a]"
-              : "border-dashed border-gray-300 bg-gray-50 opacity-60 dark:border-gray-700 dark:bg-[#111]"
-          }`}
+              : "border-dashed border-gray-300 bg-gray-50 opacity-60 dark:border-gray-700 dark:bg-[#111]"}`}
         >
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">

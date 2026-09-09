@@ -213,6 +213,8 @@ describe('Subscriptions subscription sets', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Private Access' })
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Enable private access routing' }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add connector' }))
+    expect(dialog.querySelector('.border-gray-600')).not.toBeInTheDocument()
+    expect(dialog.querySelector('.bg-white')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
 
     expect(await screen.findByRole('button', { name: /Private Access.*Enabled.*1 connector/ })).toBeInTheDocument()

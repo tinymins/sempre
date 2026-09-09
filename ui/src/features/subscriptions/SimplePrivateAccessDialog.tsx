@@ -46,16 +46,14 @@ export function SimplePrivateAccessDialog({ profileId, value, onChange }: { prof
       title={zh ? '内网访问' : 'Private Access'}
       okText={zh ? '完成' : 'Done'}
       cancelText={zh ? '取消' : 'Cancel'}
-      width="min(1080px, calc(100vw - 32px))"
-      style={{ height: 'min(85dvh, 900px)' }}
-      bodyStyle={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
+      size="large"
       onOk={() => {
         onChange(draft)
         setOpen(false)
       }}
       onCancel={() => setOpen(false)}
     >
-      <PrivateAccessEditor profileId={profileId} value={draft} onChange={setDraft} />
+      <PrivateAccessEditor profileId={profileId} value={draft} onChange={setDraft} variant="simple" />
     </Modal>
   </>
 }
