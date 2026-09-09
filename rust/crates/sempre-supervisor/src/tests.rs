@@ -49,7 +49,7 @@ async fn output_synchronization_drains_ready_observer_lines() {
     let (mut input, output) = tokio::io::duplex(64);
     let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let observed = lines.clone();
-    let (synchronizer, synchronization) = tokio::sync::mpsc::unbounded_channel();
+    let (sync_requests, request_receiver) = tokio::sync::mpsc::unbounded_channel();
     let task = tokio::spawn(log::copy_rolling(
         output,
         root.path().join("stdout"),
@@ -62,12 +62,12 @@ async fn output_synchronization_drains_ready_observer_lines() {
                 .push((stream.to_owned(), line.to_owned()));
         })),
         "stdout",
-        Some(synchronization),
+        Some(request_receiver),
     ));
     input.write_all(b"ready\n").await.unwrap();
-    let (ready, synchronized) = tokio::sync::oneshot::channel();
-    synchronizer.send(ready).unwrap();
-    synchronized.await.unwrap();
+    let (acknowledge, acknowledged) = tokio::sync::oneshot::channel();
+    sync_requests.send(acknowledge).unwrap();
+    acknowledged.await.unwrap();
     assert_eq!(
         *lines.lock().unwrap(),
         vec![("stdout".into(), "ready".into())]
