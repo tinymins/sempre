@@ -21,6 +21,7 @@ const settings = {
     enabled: true,
     running: true,
     core_dns_healthy: true,
+    port_53: { listening: true },
     mode: 'fake-ip',
     core_upstream: '127.0.0.1:1053',
     original_upstreams: ['10.23.0.1'],
@@ -74,9 +75,33 @@ describe('DNS page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '设置与状态' }))
     expect(screen.getByText('fake-ip')).toBeInTheDocument()
+    expect(screen.getByText('DNS 53 端口')).toBeInTheDocument()
+    expect(screen.getByText('已接管')).toBeInTheDocument()
     expect(screen.getByText('启用前置 DNS')).toBeInTheDocument()
     expect(screen.queryByText('远程 DNS')).not.toBeInTheDocument()
     expect(screen.queryByText('FakeIP')).not.toBeInTheDocument()
+  })
+
+  it('shows why the optional port 53 listener was not captured', async () => {
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      if (path.endsWith('/dns/settings')) return Response.json({
+        ...settings,
+        status: {
+          ...settings.status,
+          port_53: { listening: false, error: 'listen DNS UDP 127.0.0.1:53: Address already in use' },
+        },
+      })
+      if (path.endsWith('/dns/queries')) return Response.json({ queries: [] })
+      return Response.json({}, { status: 404 })
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></QueryClientProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: '设置与状态' }))
+    expect(screen.getByText('未接管')).toBeInTheDocument()
+    expect(screen.getByText('DNS 53 端口未接管')).toBeInTheDocument()
+    expect(screen.getByText('listen DNS UDP 127.0.0.1:53: Address already in use')).toBeInTheDocument()
   })
 
   it('keeps comma entry editable and saves protocol upstreams with a warning', async () => {

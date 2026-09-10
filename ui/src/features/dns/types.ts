@@ -37,6 +37,10 @@ export interface DnsFrontendStatus {
   enabled: boolean
   running: boolean
   core_dns_healthy: boolean
+  port_53?: {
+    listening: boolean
+    error?: string
+  }
   mode: string
   core_upstream: string
   original_upstreams: string[]

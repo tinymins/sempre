@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use crate::{
-    Manager, ManagerError, NetworkAutomationStatus, RuntimePendingChange, ValidationRunner,
-    VersionRunner, config::configuration_target, dns_runtime::DnsFrontendStatus,
+    DnsFrontendStatus, Manager, ManagerError, NetworkAutomationStatus, RuntimePendingChange,
+    ValidationRunner, VersionRunner, config::configuration_target,
     private_access_status::PrivateAccessStatus,
 };
 

@@ -11,10 +11,9 @@ use sempre_core::CoreRef;
 use sempre_dns::{DnsConfig, DnsRuntimePolicy, DnsService, managed_probe_names, probe_dns};
 use sempre_state::{Deployment, Document};
 use sempre_transparent::Plan as TransparentPlan;
-use serde::{Deserialize, Serialize};
 use tokio::{sync::Mutex, time::sleep};
 
-use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
+use crate::{DnsFrontendStatus, Manager, ManagerError, ValidationRunner, VersionRunner};
 
 const PROBE_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -24,22 +23,6 @@ pub(crate) struct DnsFrontendRuntime {
     policy: Arc<dyn DnsRuntimePolicy>,
     resources: Option<PathBuf>,
     capture_error: crate::dns_capture::CaptureError,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct DnsFrontendStatus {
-    pub enabled: bool,
-    pub running: bool,
-    pub core_dns_healthy: bool,
-    pub mode: String,
-    pub core_upstream: String,
-    pub original_upstreams: Vec<String>,
-    pub direct_upstreams: Vec<String>,
-    pub domestic_domain_source: String,
-    pub domestic_domain_sha256: String,
-    pub domestic_domain_count: usize,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub last_error: String,
 }
 
 struct RunningFrontend {
@@ -159,10 +142,17 @@ impl DnsFrontendRuntime {
     }
 
     fn configure(&self, plan: &DnsFrontendPlan, core_dns_healthy: bool) {
+        let port_53 = self
+            .status
+            .read()
+            .expect("DNS frontend status")
+            .port_53
+            .clone();
         *self.status.write().expect("DNS frontend status") = DnsFrontendStatus {
             enabled: true,
             running: true,
             core_dns_healthy,
+            port_53,
             mode: if plan.fakeip_enabled {
                 "fake-ip"
             } else {
@@ -208,8 +198,9 @@ impl DnsFrontendRuntime {
             .await?;
             return Ok(());
         }
-        let service =
-            DnsService::start_with_policy(plan.config.clone(), Arc::clone(&self.policy)).await?;
+        let (service, port_53) =
+            crate::dns_listener::start_dns_service(plan.config.clone(), Arc::clone(&self.policy))
+                .await?;
         let capture = match crate::dns_capture::Capture::start(
             self.resources.as_deref(),
             plan.config.listen_port,
@@ -229,6 +220,7 @@ impl DnsFrontendRuntime {
             capture,
         });
         self.configure(plan, false);
+        self.status.write().expect("DNS frontend status").port_53 = port_53;
         Ok(())
     }
 

@@ -38,15 +38,37 @@ impl DnsServer {
         config: DnsConfig,
         policy: Arc<dyn DnsRuntimePolicy>,
     ) -> Result<Self, DnsError> {
+        Self::start_with_policy_and_optional_loopback_port(config, policy, None)
+            .await
+            .map(|(server, _)| server)
+    }
+
+    pub(crate) async fn start_with_policy_and_optional_loopback_port(
+        config: DnsConfig,
+        policy: Arc<dyn DnsRuntimePolicy>,
+        optional_port: Option<u16>,
+    ) -> Result<(Self, Option<String>), DnsError> {
         let resolver = Resolver::new(config, policy)?;
         let initial = resolver.config();
-        let mut udp = Vec::new();
-        let mut tcp = Vec::new();
-        for host in &initial.listen_hosts {
-            let address = format!("{host}:{}", initial.listen_port);
-            udp.push(crate::socket::bind_udp(&address, initial.outbound_mark).await?);
-            tcp.push(crate::socket::bind_tcp(&address, initial.outbound_mark).await?);
-        }
+        let (mut udp, mut tcp) = bind_listeners(
+            &initial.listen_hosts,
+            initial.listen_port,
+            initial.outbound_mark,
+        )
+        .await?;
+        let optional_error =
+            if let Some(port) = optional_port.filter(|port| *port != initial.listen_port) {
+                match bind_listeners(&["127.0.0.1".into()], port, initial.outbound_mark).await {
+                    Ok((optional_udp, optional_tcp)) => {
+                        udp.extend(optional_udp);
+                        tcp.extend(optional_tcp);
+                        None
+                    }
+                    Err(error) => Some(error.to_string()),
+                }
+            } else {
+                None
+            };
         let (shutdown, _) = watch::channel(false);
         let mut tasks = Vec::with_capacity(udp.len() + tcp.len());
         for socket in udp {
@@ -63,11 +85,14 @@ impl DnsServer {
                 shutdown.subscribe(),
             )));
         }
-        Ok(Self {
-            shutdown,
-            tasks,
-            resolver,
-        })
+        Ok((
+            Self {
+                shutdown,
+                tasks,
+                resolver,
+            },
+            optional_error,
+        ))
     }
 
     pub(crate) fn update(&self, config: DnsConfig) -> Result<(), DnsError> {
@@ -80,6 +105,21 @@ impl DnsServer {
             let _ = task.await;
         }
     }
+}
+
+async fn bind_listeners(
+    hosts: &[String],
+    port: u16,
+    outbound_mark: Option<u32>,
+) -> Result<(Vec<UdpSocket>, Vec<TcpListener>), DnsError> {
+    let mut udp = Vec::new();
+    let mut tcp = Vec::new();
+    for host in hosts {
+        let address = format!("{host}:{port}");
+        udp.push(crate::socket::bind_udp(&address, outbound_mark).await?);
+        tcp.push(crate::socket::bind_tcp(&address, outbound_mark).await?);
+    }
+    Ok((udp, tcp))
 }
 
 pub async fn debug_query(

@@ -10,6 +10,7 @@ mod custom_node;
 mod direct;
 mod dns_capture;
 mod dns_frontend;
+mod dns_listener;
 mod dns_routing;
 mod dns_runtime;
 mod dns_settings;
@@ -54,8 +55,8 @@ pub use auto_config::{
 pub use config::{CurrentConfig, MAX_CONFIG_SIZE};
 pub use context::{ConfigurationContext, ConfigurationTarget, RunningCore};
 pub use core_download_task::CoreDownloadTask;
+pub use dns_listener::{DnsFrontendStatus, DnsPort53Status};
 pub use dns_routing::{DnsRoutingDomain, DnsRoutingRuleSet};
-pub use dns_runtime::DnsFrontendStatus;
 pub use dns_settings::DnsSettings;
 pub use error::ManagerError;
 pub use install::InstallResult;
