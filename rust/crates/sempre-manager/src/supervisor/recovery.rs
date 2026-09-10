@@ -2,7 +2,7 @@ use std::{fs, path::Path, time::Duration};
 
 use chrono::Utc;
 use sempre_state::{DesiredState, RuntimeState};
-use sysinfo::{Pid, ProcessesToUpdate, System};
+use sysinfo::{Pid, ProcessStatus, ProcessesToUpdate, System};
 use tokio::time::{Instant, sleep};
 
 use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
@@ -75,7 +75,10 @@ async fn wait_for_exit(system: &mut System, pid: u32) -> Result<(), ManagerError
     let deadline = Instant::now() + EXIT_TIMEOUT;
     loop {
         system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
-        if system.process(pid).is_none() {
+        if system
+            .process(pid)
+            .is_none_or(|process| process.status() == ProcessStatus::Zombie)
+        {
             return Ok(());
         }
         if Instant::now() >= deadline {
