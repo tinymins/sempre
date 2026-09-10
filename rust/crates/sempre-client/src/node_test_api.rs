@@ -206,7 +206,6 @@ async fn run_debug(state: Arc<AppState>, node: String, sender: mpsc::Sender<Debu
 
     if let Some(url) = core.private_probe_url().map(str::to_owned) {
         run_http_step(&sender, &core, "private-probe", "私网连通", &url).await;
-        run_ip_steps(&sender, &core).await;
         core.stop().await;
         let _ = sender
             .send(DebugEvent {
@@ -236,7 +235,15 @@ async fn run_standard_steps(sender: &mpsc::Sender<DebugEvent>, core: &Diagnostic
         "https://cp.cloudflare.com/generate_204",
     )
     .await;
-    run_ip_steps(sender, core).await;
+    run_ip_step(
+        sender,
+        core,
+        "domestic-ip",
+        "国内出口 IP",
+        DOMESTIC_IP_PROBE,
+    )
+    .await;
+    run_ip_step(sender, core, "foreign-ip", "国外出口 IP", FOREIGN_IP_PROBE).await;
     run_dns_step(
         sender,
         core,
@@ -269,18 +276,6 @@ async fn run_standard_steps(sender: &mpsc::Sender<DebugEvent>, core: &Diagnostic
         "https://www.google.com/generate_204",
     )
     .await;
-}
-
-async fn run_ip_steps(sender: &mpsc::Sender<DebugEvent>, core: &DiagnosticCore) {
-    run_ip_step(
-        sender,
-        core,
-        "domestic-ip",
-        "国内出口 IP",
-        DOMESTIC_IP_PROBE,
-    )
-    .await;
-    run_ip_step(sender, core, "foreign-ip", "国外出口 IP", FOREIGN_IP_PROBE).await;
 }
 
 async fn run_ip_step(

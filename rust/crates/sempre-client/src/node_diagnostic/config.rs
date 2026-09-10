@@ -52,9 +52,6 @@ fn sing_box_config(
         .as_object_mut()
         .ok_or_else(|| "sing-box configuration must be an object".to_string())?;
     let private_probe_url = selected_endpoint_probe_url(root, node)?;
-    if private_probe_url.is_some() {
-        enable_wireguard_internet_probe(root, node)?;
-    }
     let default_domain_resolver = root
         .get("route")
         .and_then(Value::as_object)
@@ -134,35 +131,6 @@ fn retain_endpoint_and_dns(root: &mut Map<String, Value>, retained: Option<&str>
                 .is_none_or(|detour| !removed.iter().any(|tag| tag == detour))
         });
     }
-}
-
-fn enable_wireguard_internet_probe(
-    root: &mut Map<String, Value>,
-    node: &str,
-) -> Result<(), String> {
-    let endpoint = root
-        .get_mut("endpoints")
-        .and_then(Value::as_array_mut)
-        .and_then(|endpoints| {
-            endpoints
-                .iter_mut()
-                .find(|endpoint| endpoint.get("tag").and_then(Value::as_str) == Some(node))
-        })
-        .ok_or_else(|| format!("WireGuard endpoint {node:?} is unavailable"))?;
-    let endpoint = endpoint
-        .as_object_mut()
-        .ok_or_else(|| format!("WireGuard endpoint {node:?} is invalid"))?;
-    endpoint.insert("system".into(), Value::Bool(false));
-    let peer = endpoint
-        .get_mut("peers")
-        .and_then(Value::as_array_mut)
-        .and_then(|peers| peers.first_mut())
-        .ok_or_else(|| format!("WireGuard endpoint {node:?} has no peer"))?;
-    let peer = peer
-        .as_object_mut()
-        .ok_or_else(|| format!("WireGuard endpoint {node:?} has an invalid peer"))?;
-    peer.insert("allowed_ips".into(), json!(["0.0.0.0/0", "::/0"]));
-    Ok(())
 }
 
 fn wireguard_probe_url(endpoint: &Value) -> Option<String> {
@@ -284,7 +252,7 @@ mod tests {
             "inbounds": [{"type":"tun"}],
             "outbounds": [{"type":"direct","tag":"direct"}],
             "endpoints": [
-                {"type":"wireguard","tag":"home-wg","system":true,"peers":[{"allowed_ips":["10.8.28.0/24"]}]},
+                {"type":"wireguard","tag":"home-wg","peers":[{"allowed_ips":["10.8.28.0/24"]}]},
                 {"type":"wireguard","tag":"other-wg","peers":[{"allowed_ips":["10.9.0.0/24"]}]}
             ],
             "route": {
@@ -303,11 +271,6 @@ mod tests {
         assert_eq!(private_probe_url.as_deref(), Some("http://10.8.28.1/"));
         assert_eq!(output["endpoints"].as_array().unwrap().len(), 1);
         assert_eq!(output["endpoints"][0]["tag"], "home-wg");
-        assert_eq!(output["endpoints"][0]["system"], false);
-        assert_eq!(
-            output["endpoints"][0]["peers"][0]["allowed_ips"],
-            json!(["0.0.0.0/0", "::/0"])
-        );
         assert_eq!(output["dns"]["servers"].as_array().unwrap().len(), 2);
         assert_eq!(output["dns"]["servers"][1]["tag"], "home-wg-dns");
         assert_eq!(
