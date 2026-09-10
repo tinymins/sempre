@@ -1,6 +1,8 @@
 mod log;
 mod platform;
 
+pub use platform::terminate_tree;
+
 use std::{
     io,
     path::{Path, PathBuf},

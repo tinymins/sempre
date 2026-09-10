@@ -1,3 +1,4 @@
+mod recovery;
 mod state;
 mod wait;
 
@@ -53,6 +54,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         mut shutdown: watch::Receiver<bool>,
         startup_grace: Duration,
     ) -> Result<(), ManagerError> {
+        recovery::recover_stale_process(self).await?;
         self.transparent.recover_stale_system_dns().await?;
         let mut backoff = Duration::from_secs(1);
         loop {

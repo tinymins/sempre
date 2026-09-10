@@ -4,7 +4,9 @@ use std::{fs, future::Future, net::TcpListener, path::Path, pin::Pin, sync::Arc,
 
 use chrono::Utc;
 use sempre_core::Adapter;
-use sempre_state::{ConfigBuild, Deployment, Installation, Layout, Selection, Store};
+use sempre_state::{
+    ConfigBuild, Deployment, DesiredState, Installation, Layout, RuntimeState, Selection, Store,
+};
 
 use super::*;
 
@@ -195,6 +197,48 @@ async fn async_restart_tracks_real_process_output_until_healthy() {
             .message
             .ends_with(&format!("PID {}", original_pid.unwrap()))
     );
+}
+
+#[tokio::test]
+async fn supervisor_startup_terminates_a_recorded_owned_process() {
+    let (_root, manager) = fixture("#!/bin/sh\nexit 0\n");
+    let binary = manager
+        .store
+        .layout()
+        .core_binary("sing-box", None, "1.13.2");
+    fs::copy("/bin/sleep", &binary).expect("install test process");
+    let spec = CommandSpec {
+        program: binary,
+        arguments: vec!["60".into()],
+        ..CommandSpec::default()
+    };
+    let mut process = ManagedProcess::spawn(
+        &spec,
+        manager.store.layout().core_stdout_log.clone(),
+        manager.store.layout().core_stderr_log.clone(),
+    )
+    .expect("spawn stale core");
+    manager
+        .store
+        .update(|document| {
+            document.desired_state = DesiredState::Running;
+            document.runtime.state = RuntimeState::Running;
+            document.runtime.pid = Some(process.pid());
+            Ok(())
+        })
+        .expect("record stale core");
+
+    recovery::recover_stale_process(&manager)
+        .await
+        .expect("recover stale core");
+
+    tokio::time::timeout(Duration::from_secs(2), process.wait())
+        .await
+        .expect("stale core did not exit")
+        .expect("wait for stale core");
+    let runtime = manager.state().expect("state").runtime;
+    assert_eq!(runtime.state, RuntimeState::Restarting);
+    assert_eq!(runtime.pid, None);
 }
 
 #[tokio::test]
