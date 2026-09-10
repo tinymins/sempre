@@ -57,12 +57,17 @@ pub struct PublicIpProbe {
     pub name: &'static str,
     pub region: &'static str,
     pub url: &'static str,
+    fallback_urls: &'static [&'static str],
     parser: fn(&[u8]) -> Result<String, String>,
 }
 
 impl PublicIpProbe {
     pub fn parse_response(self, data: &[u8]) -> Result<String, String> {
         (self.parser)(data)
+    }
+
+    pub fn urls(self) -> impl Iterator<Item = &'static str> {
+        std::iter::once(self.url).chain(self.fallback_urls.iter().copied())
     }
 }
 
@@ -71,6 +76,7 @@ pub const DOMESTIC_IP_PROBE: PublicIpProbe = PublicIpProbe {
     name: "Domestic IP",
     region: "domestic",
     url: "https://ip.3322.net",
+    fallback_urls: &["https://myip.ipip.net"],
     parser: parse_text_ip,
 };
 
@@ -79,6 +85,7 @@ pub const FOREIGN_IP_PROBE: PublicIpProbe = PublicIpProbe {
     name: "Foreign IP",
     region: "foreign",
     url: "https://api64.ipify.org?format=json",
+    fallback_urls: &[],
     parser: parse_json_ip,
 };
 
@@ -224,6 +231,20 @@ mod tests {
             "2001:db8::1"
         );
         assert!(DOMESTIC_IP_PROBE.parse_response(b"unavailable").is_err());
+    }
+
+    #[test]
+    fn domestic_probe_keeps_the_host_source_then_uses_a_compatible_fallback() {
+        assert_eq!(
+            DOMESTIC_IP_PROBE.urls().collect::<Vec<_>>(),
+            ["https://ip.3322.net", "https://myip.ipip.net"]
+        );
+        assert_eq!(
+            DOMESTIC_IP_PROBE
+                .parse_response("当前 IP：183.131.177.101  来自于：中国 浙江 湖州  电信".as_bytes())
+                .expect("fallback text IP"),
+            "183.131.177.101"
+        );
     }
 
     #[test]

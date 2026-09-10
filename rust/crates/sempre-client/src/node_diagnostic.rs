@@ -188,9 +188,24 @@ impl DiagnosticCore {
     }
 
     pub(crate) async fn public_ip(&self, probe: PublicIpProbe) -> Result<PublicIpResult, String> {
+        let mut failures = Vec::new();
+        for url in probe.urls() {
+            match self.public_ip_at(probe, url).await {
+                Ok(result) => return Ok(result),
+                Err(error) => failures.push(format!("{url}: {error}")),
+            }
+        }
+        Err(failures.join("; "))
+    }
+
+    async fn public_ip_at(
+        &self,
+        probe: PublicIpProbe,
+        url: &'static str,
+    ) -> Result<PublicIpResult, String> {
         let response = self
             .client
-            .get(probe.url)
+            .get(url)
             .send()
             .await
             .map_err(|error| error.to_string())?;
@@ -218,7 +233,7 @@ impl DiagnosticCore {
             Err(error) => (None, Some(error)),
         };
         Ok(PublicIpResult {
-            url: probe.url,
+            url,
             status: status.as_u16(),
             ip,
             metadata,
