@@ -80,7 +80,7 @@ describe('NetworkTest', () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/runtime/nodes')) return Response.json([{ name: 'Tokyo 01', type: 'Shadowsocks' }])
-      if (url.endsWith('/runtime/proxies/delay')) {
+      if (url.endsWith('/runtime/nodes/delay')) {
         return new Promise<Response>((resolve) => { resolveLatency = resolve })
       }
       if (url.endsWith('/runtime/nodes/debug')) {

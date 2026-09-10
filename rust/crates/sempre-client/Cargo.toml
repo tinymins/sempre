@@ -23,6 +23,7 @@ axum.workspace = true
 chrono.workspace = true
 clap.workspace = true
 futures-util.workspace = true
+ipnet.workspace = true
 reqwest.workspace = true
 semver.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }

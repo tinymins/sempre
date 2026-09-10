@@ -33,7 +33,7 @@ export function NodeTestPanel() {
   const testLatency = async (name: string) => {
     setLatencies((current) => ({ ...current, [name]: { loading: true } }))
     try {
-      const result = await api<{ delay: number }>(session!, '/runtime/proxies/delay', {
+      const result = await api<{ delay: number }>(session!, '/runtime/nodes/delay', {
         method: 'POST',
         body: JSON.stringify({ name }),
       })
@@ -69,7 +69,7 @@ export function NodeTestPanel() {
       render: (_value, record) => {
         const latency = latencies[record.name] || {}
         return <div className="flex items-center justify-end gap-2">
-          <LatencyButton state={latency} onClick={() => testLatency(record.name)} locale={locale} />
+          <LatencyButton state={latency} onClick={() => testLatency(record.name)} locale={locale} privateAccess={record.type.toLowerCase() === 'wireguard'} />
           <Button
             size="small"
             shape="circle"
@@ -108,7 +108,7 @@ export function NodeTestPanel() {
   </div>
 }
 
-function LatencyButton({ state, locale, onClick }: { state: LatencyState; locale: 'zh-CN' | 'en'; onClick: () => void }) {
+function LatencyButton({ state, locale, privateAccess, onClick }: { state: LatencyState; locale: 'zh-CN' | 'en'; privateAccess: boolean; onClick: () => void }) {
   if (state.error) {
     return <Button
       size="small"
@@ -126,14 +126,17 @@ function LatencyButton({ state, locale, onClick }: { state: LatencyState; locale
       : state.value < 500
         ? '!border-amber-500/50 !text-amber-700 dark:!text-amber-400'
         : '!border-red-500/40 !text-red-600 dark:!text-red-400'
+  const title = privateAccess
+    ? (locale === 'zh-CN' ? '私网连通延迟' : 'Private reachability latency')
+    : (locale === 'zh-CN' ? '延迟测试' : 'Test latency')
   return <Button
     size="small"
     shape={state.value === undefined ? 'circle' : 'default'}
     className={tone}
     loading={state.loading}
     icon={<Gauge />}
-    aria-label={locale === 'zh-CN' ? '延迟测试' : 'Test latency'}
-    title={locale === 'zh-CN' ? '延迟测试' : 'Test latency'}
+    aria-label={title}
+    title={title}
     onClick={onClick}
   >{state.value === undefined ? null : `${state.value} ms`}</Button>
 }

@@ -19,6 +19,7 @@ use crate::{
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/runtime/nodes", get(nodes))
+        .route("/api/v1/runtime/nodes/delay", post(delay_node))
         .route("/api/v1/runtime/nodes/debug", post(debug_node))
 }
 
@@ -31,6 +32,11 @@ struct Node {
 
 #[derive(Deserialize)]
 struct DebugInput {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct DelayInput {
     name: String,
 }
 
@@ -48,6 +54,58 @@ async fn nodes(State(state): State<Arc<AppState>>) -> Response {
         Ok(proxies) => Json(leaf_nodes(proxies)).into_response(),
         Err(error) => crate::runtime_control_api::runtime_error(&error),
     }
+}
+
+async fn delay_node(State(state): State<Arc<AppState>>, Json(input): Json<DelayInput>) -> Response {
+    let client = match crate::runtime_control_api::client(&state) {
+        Ok(client) => client,
+        Err(error) => return crate::runtime_control_api::runtime_error(&error),
+    };
+    let proxies = match client.proxies().await {
+        Ok(proxies) => proxies,
+        Err(error) => return crate::runtime_control_api::runtime_error(&error),
+    };
+    let Some(node) = leaf_nodes(proxies)
+        .into_iter()
+        .find(|node| node.name == input.name)
+    else {
+        return api_error(
+            StatusCode::NOT_FOUND,
+            "NODE_NOT_FOUND",
+            "proxy node not found",
+        );
+    };
+    if node.node_type.eq_ignore_ascii_case("wireguard") {
+        return wireguard_delay(&state, &node.name).await;
+    }
+    match client
+        .proxy_delay(&node.name, "https://www.gstatic.com/generate_204", 5000)
+        .await
+    {
+        Ok(delay) => Json(json!({"delay":delay})).into_response(),
+        Err(error) => crate::runtime_control_api::runtime_error(&error),
+    }
+}
+
+async fn wireguard_delay(state: &AppState, node: &str) -> Response {
+    let core = match DiagnosticCore::start(&state.manager, node).await {
+        Ok(core) => core,
+        Err(error) => return node_test_error(error),
+    };
+    let Some(target) = core.private_probe_url().map(str::to_owned) else {
+        core.stop().await;
+        return node_test_error("WireGuard private probe target is unavailable".into());
+    };
+    let result = core.latency(&target).await;
+    core.stop().await;
+    match result {
+        Ok(delay) => Json(json!({"delay":delay,"target":target})).into_response(),
+        Err(error) => node_test_error(error),
+    }
+}
+
+fn node_test_error(message: String) -> Response {
+    api_error(StatusCode::BAD_GATEWAY, "NODE_TEST_FAILED", message)
 }
 
 async fn debug_node(State(state): State<Arc<AppState>>, Json(input): Json<DebugInput>) -> Response {
@@ -145,6 +203,18 @@ async fn run_debug(state: Arc<AppState>, node: String, sender: mpsc::Sender<Debu
         return;
     }
 
+    if let Some(url) = core.private_probe_url().map(str::to_owned) {
+        run_http_step(&sender, &core, "private-probe", "私网连通", &url).await;
+        core.stop().await;
+        let _ = sender
+            .send(DebugEvent {
+                event: "done",
+                payload: json!({"node":node,"duration_ms":millis(total)}),
+            })
+            .await;
+        return;
+    }
+
     run_http_step(
         &sender,
         &core,
@@ -197,9 +267,9 @@ async fn run_debug(state: Arc<AppState>, node: String, sender: mpsc::Sender<Debu
 async fn run_http_step(
     sender: &mpsc::Sender<DebugEvent>,
     core: &DiagnosticCore,
-    id: &'static str,
-    label: &'static str,
-    url: &'static str,
+    id: &str,
+    label: &str,
+    url: &str,
 ) {
     if !send_running(sender, id, label).await {
         return;
@@ -217,9 +287,9 @@ async fn run_http_step(
 async fn run_dns_step(
     sender: &mpsc::Sender<DebugEvent>,
     core: &DiagnosticCore,
-    id: &'static str,
-    label: &'static str,
-    domain: &'static str,
+    id: &str,
+    label: &str,
+    domain: &str,
 ) {
     if !send_running(sender, id, label).await {
         return;
@@ -234,11 +304,7 @@ async fn run_dns_step(
     }
 }
 
-async fn send_running(
-    sender: &mpsc::Sender<DebugEvent>,
-    id: &'static str,
-    label: &'static str,
-) -> bool {
+async fn send_running(sender: &mpsc::Sender<DebugEvent>, id: &str, label: &str) -> bool {
     sender
         .send(DebugEvent {
             event: "step",
@@ -250,8 +316,8 @@ async fn send_running(
 
 async fn send_succeeded(
     sender: &mpsc::Sender<DebugEvent>,
-    id: &'static str,
-    label: &'static str,
+    id: &str,
+    label: &str,
     started: Instant,
     data: Value,
 ) -> bool {
@@ -266,8 +332,8 @@ async fn send_succeeded(
 
 async fn send_failed(
     sender: &mpsc::Sender<DebugEvent>,
-    id: &'static str,
-    label: &'static str,
+    id: &str,
+    label: &str,
     started: Instant,
     error: &str,
 ) {

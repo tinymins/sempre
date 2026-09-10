@@ -23,8 +23,6 @@ interface DebugStep {
   error?: string
 }
 
-const stepIds = ['prepare', 'probe', 'dns-baidu', 'dns-google', 'http-baidu', 'http-google']
-
 export function NodeDebugModal({ node, open, onClose }: { node?: string; open: boolean; onClose: () => void }) {
   const { locale, t } = useI18n()
   const { session } = useSession()
@@ -63,11 +61,11 @@ export function NodeDebugModal({ node, open, onClose }: { node?: string; open: b
   }
 
   const labels = stepLabels(locale)
-  const visibleSteps = stepIds.map((id) => steps.find((step) => step.id === id) || {
-    id,
-    label: labels[id],
+  const visibleSteps = steps.length ? steps : [{
+    id: 'prepare',
+    label: labels.prepare,
     state: 'waiting' as const,
-  })
+  }]
 
   return <Modal
     open={open}
@@ -137,8 +135,8 @@ function StepResult({ step, locale }: { step: DebugStep; locale: 'zh-CN' | 'en' 
 
 function stepLabels(locale: 'zh-CN' | 'en'): Record<string, string> {
   return locale === 'zh-CN'
-    ? { prepare: '启动隔离 Core', probe: '节点探活', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
-    : { prepare: 'Start isolated Core', probe: 'Node liveness', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
+    ? { prepare: '启动隔离 Core', probe: '节点探活', 'private-probe': '私网连通', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
+    : { prepare: 'Start isolated Core', probe: 'Node liveness', 'private-probe': 'Private reachability', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
 }
 
 function formatBytes(bytes: number) {

@@ -2384,6 +2384,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures-util",
+ "ipnet",
  "nix",
  "reqwest",
  "sempre-artifact",

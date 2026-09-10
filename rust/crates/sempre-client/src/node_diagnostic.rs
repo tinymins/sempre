@@ -11,10 +11,14 @@ use reqwest::{Client, Proxy, redirect::Policy};
 use sempre_manager::Manager;
 use sempre_state::RuntimeState;
 use serde::Serialize;
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use tempfile::TempDir;
-use tokio::{net::TcpStream, process::Child, time::sleep};
+use tokio::{io::AsyncReadExt, net::TcpStream, process::Child, time::sleep};
 use uuid::Uuid;
+
+mod config;
+
+use config::build_config;
 
 const START_TIMEOUT: Duration = Duration::from_secs(8);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
@@ -24,6 +28,7 @@ pub(crate) struct DiagnosticCore {
     child: Child,
     directory: TempDir,
     client: Client,
+    private_probe_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -81,7 +86,7 @@ impl DiagnosticCore {
         )?;
         let extension = if core == "sing-box" { "json" } else { "yaml" };
         let diagnostic_config = directory.path().join(format!("config.{extension}"));
-        fs::write(&diagnostic_config, config)
+        fs::write(&diagnostic_config, config.text)
             .map_err(|error| format!("write diagnostic configuration: {error}"))?;
 
         let adapter = sempre_core::built_in_registry()
@@ -98,7 +103,7 @@ impl DiagnosticCore {
             .envs(&spec.environment)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
         if let Some(working_directory) = spec.working_directory {
             command.current_dir(working_directory);
@@ -123,7 +128,22 @@ impl DiagnosticCore {
             child,
             directory,
             client,
+            private_probe_url: config.private_probe_url,
         })
+    }
+
+    pub(crate) fn private_probe_url(&self) -> Option<&str> {
+        self.private_probe_url.as_deref()
+    }
+
+    pub(crate) async fn latency(&self, url: &str) -> Result<u64, String> {
+        let started = Instant::now();
+        self.client
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX))
     }
 
     pub(crate) async fn http_get(&self, url: &str) -> Result<HttpResult, String> {
@@ -222,7 +242,7 @@ async fn wait_until_ready(child: &mut Child, port: u16) -> Result<(), String> {
             .try_wait()
             .map_err(|error| format!("inspect diagnostic core: {error}"))?
         {
-            return Err(format!("diagnostic core exited with {status}"));
+            return Err(child_exit_error(child, status.to_string()).await);
         }
         if TcpStream::connect(address).await.is_ok() {
             return Ok(());
@@ -230,130 +250,42 @@ async fn wait_until_ready(child: &mut Child, port: u16) -> Result<(), String> {
         sleep(Duration::from_millis(100)).await;
     }
     let _ = child.kill().await;
-    Err("diagnostic core did not open its HTTP proxy in time".into())
+    let _ = child.wait().await;
+    let stderr = child_stderr(child).await;
+    Err(with_stderr(
+        "diagnostic core did not open its HTTP proxy in time".into(),
+        &stderr,
+    ))
 }
 
-fn build_config(
-    core: &str,
-    source: &Path,
-    node: &str,
-    port: u16,
-    username: &str,
-    password: &str,
-) -> Result<String, String> {
-    let text = fs::read_to_string(source)
-        .map_err(|error| format!("read runtime configuration: {error}"))?;
-    if core == "sing-box" {
-        let value: Value = serde_json::from_str(&text)
-            .map_err(|error| format!("parse sing-box configuration: {error}"))?;
-        let value = sing_box_config(value, node, port, username, password)?;
-        serde_json::to_string_pretty(&value)
-            .map_err(|error| format!("serialize diagnostic configuration: {error}"))
-    } else {
-        let value: Value = serde_yaml::from_str(&text)
-            .map_err(|error| format!("parse Clash configuration: {error}"))?;
-        let value = clash_config(value, node, port, username, password)?;
-        serde_yaml::to_string(&value)
-            .map_err(|error| format!("serialize diagnostic configuration: {error}"))
-    }
+async fn child_exit_error(child: &mut Child, status: String) -> String {
+    let stderr = child_stderr(child).await;
+    with_stderr(format!("diagnostic core exited with {status}"), &stderr)
 }
 
-fn sing_box_config(
-    mut value: Value,
-    node: &str,
-    port: u16,
-    username: &str,
-    password: &str,
-) -> Result<Value, String> {
-    let root = value
-        .as_object_mut()
-        .ok_or_else(|| "sing-box configuration must be an object".to_string())?;
-    ensure_outbound(root, node)?;
-    root.insert(
-        "inbounds".into(),
-        json!([{"type":"http","tag":"sempre-node-test-in","listen":"127.0.0.1","listen_port":port,"users":[{"username":username,"password":password}]}]),
-    );
-    let mut route = Map::new();
-    route.insert("auto_detect_interface".into(), Value::Bool(true));
-    route.insert("final".into(), Value::String(node.into()));
-    root.insert("route".into(), Value::Object(route));
-    root.remove("experimental");
-    root.remove("endpoints");
-    if let Some(dns) = root.get_mut("dns").and_then(Value::as_object_mut) {
-        dns.remove("rules");
-    }
-    Ok(value)
+async fn child_stderr(child: &mut Child) -> String {
+    let Some(mut stderr) = child.stderr.take() else {
+        return String::new();
+    };
+    let mut output = String::new();
+    let _ = stderr.read_to_string(&mut output).await;
+    output
 }
 
-fn ensure_outbound(root: &Map<String, Value>, node: &str) -> Result<(), String> {
-    let exists = root
-        .get("outbounds")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .any(|outbound| outbound.get("tag").and_then(Value::as_str) == Some(node));
-    if exists {
-        Ok(())
-    } else {
-        Err(format!(
-            "node {node:?} is not present in the runtime configuration"
-        ))
+fn with_stderr(message: String, stderr: &str) -> String {
+    let detail = stderr.trim();
+    if detail.is_empty() {
+        return message;
     }
-}
-
-fn clash_config(
-    mut value: Value,
-    node: &str,
-    port: u16,
-    username: &str,
-    password: &str,
-) -> Result<Value, String> {
-    let root = value
-        .as_object_mut()
-        .ok_or_else(|| "Clash configuration must be an object".to_string())?;
-    for key in [
-        "socks-port",
-        "mixed-port",
-        "redir-port",
-        "tproxy-port",
-        "tun",
-        "listeners",
-        "tunnels",
-        "external-controller",
-        "external-controller-tls",
-        "external-controller-unix",
-        "external-controller-pipe",
-        "external-ui",
-        "external-ui-name",
-        "external-ui-url",
-        "secret",
-        "rule-providers",
-        "ebpf",
-    ] {
-        root.remove(key);
-    }
-    root.insert("port".into(), json!(port));
-    root.insert("bind-address".into(), json!("127.0.0.1"));
-    root.insert("allow-lan".into(), Value::Bool(false));
-    root.insert(
-        "authentication".into(),
-        json!([format!("{username}:{password}")]),
-    );
-    root.insert("mode".into(), json!("rule"));
-    if let Some(dns) = root.get_mut("dns").and_then(Value::as_object_mut) {
-        dns.remove("listen");
-    }
-    let groups = root
-        .entry("proxy-groups")
-        .or_insert_with(|| Value::Array(Vec::new()))
-        .as_array_mut()
-        .ok_or_else(|| "Clash proxy-groups must be an array".to_string())?;
-    groups.insert(
-        0,
-        json!({"name":"__sempre_node_test__","type":"select","proxies":[node]}),
-    );
-    root.insert("rules".into(), json!(["MATCH,__sempre_node_test__"]));
-    Ok(value)
+    let detail = detail
+        .chars()
+        .rev()
+        .take(4000)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    format!("{message}: {detail}")
 }
 
 #[cfg(windows)]
@@ -363,41 +295,3 @@ fn hide_window(command: &mut tokio::process::Command) {
 
 #[cfg(not(windows))]
 fn hide_window(_command: &mut tokio::process::Command) {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn isolates_sing_box_to_selected_node() {
-        let input = json!({
-            "inbounds": [{"type":"tun"}],
-            "outbounds": [{"type":"shadowsocks","tag":"node-a"}],
-            "route": {"rule_set":[{"tag":"remote"}]},
-            "experimental": {"clash_api":{"external_controller":"127.0.0.1:9090"}},
-            "dns": {"servers":[{"type":"local","tag":"local"}],"rules":[{"rule_set":"remote"}]}
-        });
-        let output = sing_box_config(input, "node-a", 19080, "user", "pass").unwrap();
-        assert_eq!(output["inbounds"][0]["listen_port"], 19080);
-        assert_eq!(output["route"]["final"], "node-a");
-        assert!(output.get("experimental").is_none());
-        assert!(output["dns"].get("rules").is_none());
-    }
-
-    #[test]
-    fn isolates_clash_to_selected_node() {
-        let input = json!({
-            "mixed-port": 7890,
-            "external-controller": "127.0.0.1:9090",
-            "tun": {"enable":true},
-            "proxies": [{"name":"node,a","type":"ss"}],
-            "proxy-groups": []
-        });
-        let output = clash_config(input, "node,a", 19080, "user", "pass").unwrap();
-        assert_eq!(output["port"], 19080);
-        assert!(output.get("mixed-port").is_none());
-        assert!(output.get("tun").is_none());
-        assert_eq!(output["proxy-groups"][0]["proxies"][0], "node,a");
-        assert_eq!(output["rules"][0], "MATCH,__sempre_node_test__");
-    }
-}
