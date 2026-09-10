@@ -40,7 +40,6 @@ Linux-only capabilities are removed on other platforms.
 | `dns.split` | CN DNS rules routed to local server | `nameserver-policy` with `geosite:cn` | Both |
 | `dns.prefer_ipv4` | `dns.strategy=prefer_ipv4` | Not consumed | sing-box only |
 | `dns.reject_https` | DNS rule rejecting query type `HTTPS` | DNS URL `disable-qtype-65` | Both |
-| `dns.native` | selected complete native `dns` object | selected complete native `dns` map | Both, current target only |
 | `routing.rules` | `route.rules` | `rules` | Both |
 | `routing.rule_providers` | downloaded inline `route.rule_set` | `rule-providers` | Both |
 | `routing.selector` | `selector` outbound | `select` proxy group | Both |
@@ -55,7 +54,6 @@ Linux-only capabilities are removed on other platforms.
 | `management.traffic` | Clash WebSocket traffic endpoint | Clash WebSocket traffic endpoint | Both |
 | `management.external_api` | Sempre-authenticated reverse proxy to private Clash API | Sempre-authenticated reverse proxy to private controller | Both |
 | `private_access` | managed endpoint/outbound and route/DNS rules | Not implemented | sing-box 1.12+ only |
-| `native_override` | `core_overrides.sing-box` deep merge | `core_overrides.mihomo` deep merge | Selected core only |
 
 The native field names above are checked against the official
 [sing-box DNS](https://sing-box.sagernet.org/configuration/dns/),
@@ -65,9 +63,7 @@ The native field names above are checked against the official
 [Mihomo TUN](https://wiki.metacubex.one/en/config/inbound/tun/),
 [Mihomo rule-provider](https://wiki.metacubex.one/en/config/rule-providers/),
 and [Mihomo controller](https://wiki.metacubex.one/en/config/general/)
-documentation. Native overrides cannot write fields owned by the structured
-transparent or management settings; compilation rejects those conflicts rather
-than allowing the runtime to silently replace them.
+documentation.
 
 The control contract carries an explicit protocol. Today both registered cores
 use `clash-rest`; Xray and V2Ray would use `grpc`. The Sempre UI can normalize
@@ -81,13 +77,11 @@ claiming that a gRPC core natively implements Clash API.
 | Main TProxy listener | `transparent_proxy.tproxy.listen_port` | DNS |
 | Transparent DNS listener | `transparent_proxy.tproxy.dns_listen_port` | DNS upstreams |
 | Local/bootstrap/remote resolvers | `dns.shared` | Runtime listener settings |
-| External controller, secret, UI, CORS | `management_api` | DNS or native core override |
-| Native top-level document | `core_overrides.<core-id>` | One hardcoded field per core |
+| External controller, secret, UI, CORS | `management_api` | DNS |
 
-Catalog schema 5 migrates the old DNS listener/API keys and typed sing-box
-override into these owners. Deprecated keys are removed on the next write.
-Unknown `core_overrides` keys are retained but ignored until an adapter with
-that exact Core ID is registered.
+Catalog persistence retains only current profile fields. Compiler-derived DNS,
+routing, private-access, and device overlays are rebuilt from the editor and
+are never stored as a second configuration source.
 
 ## Protocol Compatibility
 

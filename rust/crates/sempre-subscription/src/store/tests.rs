@@ -61,3 +61,94 @@ fn content_addressed_blobs_verify_integrity() {
         Err(SubscriptionError::SnapshotIntegrity { .. })
     ));
 }
+
+#[test]
+fn persisted_catalog_discards_editor_outputs_and_device_overlays() {
+    let (_root, store) = store();
+    store.initialize().expect("initialize catalog");
+    let mut raw: serde_json::Value = serde_json::from_slice(
+        &fs::read(&store.layout.subscription_catalog).expect("read catalog file"),
+    )
+    .expect("catalog JSON");
+    let profile = raw["profiles"][0].as_object_mut().expect("profile object");
+    profile.insert(
+        "manual_servers".into(),
+        serde_json::json!([{ "name": "ghost" }]),
+    );
+    profile.insert("groups".into(), serde_json::json!([{ "name": "ghost" }]));
+    profile.insert("rules".into(), serde_json::json!(["MATCH,ghost"]));
+    profile.insert("rule_providers".into(), serde_json::json!([]));
+    profile.insert("filters".into(), serde_json::json!(["ghost"]));
+    profile.insert(
+        "dns".into(),
+        serde_json::json!({ "shared": { "remoteDns": "ghost" } }),
+    );
+    profile.insert(
+        "private_access".into(),
+        serde_json::json!({ "connectors": [{ "tag": "ghost" }] }),
+    );
+    profile["editor"]["private_access_config"] = serde_json::json!(
+        r#"{"enabled":true,"connectors":[{"type":"wireguard","tag":"visible","routes":{"ipCidrs":["10.19.93.0/24"]}}]}"#
+    );
+    profile.insert(
+        "network_policy".into(),
+        serde_json::json!({ "enabled": true }),
+    );
+    profile.insert("unknown_profile_field".into(), serde_json::json!(true));
+    profile["transparent_proxy"]["capture_host"] = serde_json::json!(true);
+    profile["transparent_proxy"]["lan_interfaces"] = serde_json::json!(["ghost0"]);
+    fs::write(
+        &store.layout.subscription_catalog,
+        serde_json::to_vec_pretty(&raw).expect("encode seeded catalog"),
+    )
+    .expect("seed legacy catalog");
+
+    let catalog = store.read().expect("read normalized catalog");
+    let profile = &catalog.profiles[0];
+    assert!(profile.manual_servers.is_empty());
+    assert!(profile.groups.is_empty());
+    assert!(profile.rules.is_empty());
+    assert!(profile.filters.is_empty());
+    assert!(profile.dns.is_null());
+    assert!(profile.private_access.is_null());
+    assert!(profile.network_policy.is_null());
+    assert!(!profile.extra.contains_key("unknown_profile_field"));
+    assert!(!profile.transparent_proxy.capture_host);
+    assert!(profile.transparent_proxy.lan_interfaces.is_empty());
+    let effective = sempre_converter::profile_from_editor(profile).expect("effective profile");
+    assert_eq!(effective.private_access["connectors"][0]["tag"], "visible");
+    assert_eq!(
+        effective.private_access["connectors"][0]["routes"]["ipCidrs"],
+        serde_json::json!(["10.19.93.0/24"])
+    );
+
+    store
+        .update(|catalog| {
+            catalog.profiles[0].revision += 1;
+            Ok(())
+        })
+        .expect("rewrite normalized catalog");
+    let saved: serde_json::Value = serde_json::from_slice(
+        &fs::read(&store.layout.subscription_catalog).expect("read rewritten catalog"),
+    )
+    .expect("rewritten catalog JSON");
+    let saved = saved["profiles"][0].as_object().expect("saved profile");
+    for key in [
+        "manual_servers",
+        "groups",
+        "rules",
+        "rule_providers",
+        "filters",
+        "dns",
+        "private_access",
+        "network_policy",
+        "unknown_profile_field",
+    ] {
+        assert!(!saved.contains_key(key), "{key} should not be persisted");
+    }
+    let transparent = saved["transparent_proxy"]
+        .as_object()
+        .expect("transparent proxy");
+    assert!(!transparent.contains_key("capture_host"));
+    assert!(!transparent.contains_key("lan_interfaces"));
+}

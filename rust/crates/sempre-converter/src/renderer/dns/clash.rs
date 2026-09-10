@@ -2,18 +2,17 @@ use serde_json::{Value, json};
 
 use crate::{Profile, Target};
 
-use super::{SharedDns, native_override};
+use super::SharedDns;
 
 pub(super) fn render(
-    profile: &Profile,
+    _profile: &Profile,
     target: &Target,
     final_group: &str,
     shared: &SharedDns,
 ) -> Option<Value> {
     match target.core.as_str() {
-        "mihomo" | "clash-rs" => native_override(&profile.dns, &target.core)
-            .or_else(|| Some(managed(target.core.as_str(), final_group, shared))),
-        _ => legacy_override(&profile.dns, target.format == "clash-meta"),
+        "mihomo" | "clash-rs" => Some(managed(target.core.as_str(), final_group, shared)),
+        _ => None,
     }
 }
 
@@ -72,13 +71,4 @@ fn managed(core: &str, final_group: &str, shared: &SharedDns) -> Value {
         result["fake-ip-ttl"] = json!(shared.fakeip_ttl);
     }
     result
-}
-
-fn legacy_override(config: &Value, meta: bool) -> Option<Value> {
-    let key = if meta { "clashMeta" } else { "clash" };
-    config
-        .pointer(&format!("/overrides/{key}"))
-        .or_else(|| meta.then(|| config.pointer("/overrides/clash")).flatten())
-        .or_else(|| config.get(key))
-        .cloned()
 }

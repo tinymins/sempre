@@ -40,6 +40,7 @@ impl SubscriptionStore {
             let mut catalog = self.read_unlocked()?;
             change(&mut catalog)?;
             catalog.updated_at = Utc::now();
+            clear_derived_configuration(&mut catalog);
             validate::catalog(&catalog)?;
             self.write_unlocked(&catalog)?;
             Ok(catalog)
@@ -123,17 +124,27 @@ impl SubscriptionStore {
 
     fn read_unlocked(&self) -> Result<Catalog, SubscriptionError> {
         let data = fs::read(&self.layout.subscription_catalog).map_err(SubscriptionError::Read)?;
-        let catalog = serde_json::from_slice(&data).map_err(SubscriptionError::Decode)?;
+        let mut catalog: Catalog =
+            serde_json::from_slice(&data).map_err(SubscriptionError::Decode)?;
+        clear_derived_configuration(&mut catalog);
         validate::catalog(&catalog)?;
         Ok(catalog)
     }
 
     fn write_unlocked(&self, catalog: &Catalog) -> Result<(), SubscriptionError> {
-        validate::catalog(catalog)?;
-        let mut data = serde_json::to_vec_pretty(catalog).map_err(SubscriptionError::Encode)?;
+        let mut catalog = catalog.clone();
+        clear_derived_configuration(&mut catalog);
+        validate::catalog(&catalog)?;
+        let mut data = serde_json::to_vec_pretty(&catalog).map_err(SubscriptionError::Encode)?;
         data.push(b'\n');
         sempre_state::write_atomic(&self.layout.subscription_catalog, &data, 0o600)
             .map_err(SubscriptionError::Write)
+    }
+}
+
+fn clear_derived_configuration(catalog: &mut Catalog) {
+    for profile in &mut catalog.profiles {
+        profile.clear_derived_configuration();
     }
 }
 

@@ -102,19 +102,12 @@ Binding to `0.0.0.0` exposes control over proxy selection and connection data.
 Use a strong Secret and enforce host firewall restrictions. The external
 listener is disabled by default.
 
-## Advanced Overrides
+## Configuration Ownership
 
-The profile stores advanced documents in the open
-`core_overrides.<core-id>` map. The editor displays only the selected target's
-document and preserves every other key, including unknown future core IDs.
-Known overrides are deep-merged into that core's generated configuration and
-survive saves, refreshes, scheduled updates, recompilation, restarts, and
-reboots.
-
-In managed Linux modes, fields owned by the runtime plan cannot also be set in
-the native override. Structured management API fields likewise cannot be
-duplicated in a core override. Select `disabled` when a fully custom inbound
-topology is required.
+The profile stores only fields represented by the control UI and its structured
+editors. The converter derives core-native DNS, routing, inbound, and outbound
+documents from those fields for the selected target. Select `disabled` when a
+managed transparent inbound is not required.
 
 ## Diagnostics And Recovery
 

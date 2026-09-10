@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sempre_converter::{CustomNode, Profile};
+use sempre_converter::{CustomNode, Profile, profile_from_editor};
 use sempre_core::{AutoConfigRequirements, CoreRef, features};
 use sempre_state::Document;
 use serde::Serialize;
@@ -49,13 +49,17 @@ impl<R: VersionRunner> Manager<R> {
             .active_profile_id
             .as_deref()
             .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id));
-        let requirements = active_profile.map_or_else(AutoConfigRequirements::default, |profile| {
-            profile_requirements(
-                profile,
-                &catalog.custom_nodes,
-                self.dns_settings.read().enabled,
-            )
-        });
+        let effective_profile = active_profile.map(profile_from_editor).transpose()?;
+        let requirements =
+            effective_profile
+                .as_ref()
+                .map_or_else(AutoConfigRequirements::default, |profile| {
+                    profile_requirements(
+                        profile,
+                        &catalog.custom_nodes,
+                        self.dns_settings.read().enabled,
+                    )
+                });
         let registered = self
             .registry
             .auto_config_candidates(&self.target, &requirements)?;
@@ -82,7 +86,10 @@ impl<R: VersionRunner> Manager<R> {
                 },
             });
         }
-        match active_profile.filter(|profile| profile_has_inputs(profile)) {
+        match effective_profile
+            .as_ref()
+            .filter(|profile| profile_has_inputs(profile))
+        {
             Some(profile) => checks.push(AutoConfigCheck {
                 id: "active-profile".into(),
                 status: "pass".into(),
@@ -183,7 +190,7 @@ fn profile_has_inputs(profile: &Profile) -> bool {
         .get("mode")
         .and_then(serde_json::Value::as_str)
         == Some("remote")
-        || (!profile.editor.servers.trim().is_empty() && profile.editor.servers.trim() != "[]")
+        || !profile.manual_servers.is_empty()
         || !profile.custom_node_ids.is_empty()
         || profile.sources.iter().any(|source| source.enabled)
 }
@@ -256,8 +263,7 @@ fn profile_requirements(
         requirements.require_feature(features::DNS_TUN_CAPTURE);
     }
 
-    let editor_servers = editor_servers(profile);
-    for value in profile.manual_servers.iter().chain(editor_servers.iter()) {
+    for value in &profile.manual_servers {
         if let Some(protocol) = value.get("type").and_then(serde_json::Value::as_str) {
             requirements.require_protocol(normalize_protocol(protocol));
         }
@@ -271,10 +277,6 @@ fn profile_requirements(
         }
     }
     requirements
-}
-
-fn editor_servers(profile: &Profile) -> Vec<serde_json::Value> {
-    serde_json::from_str(&profile.editor.servers).unwrap_or_default()
 }
 
 fn normalize_protocol(protocol: &str) -> &str {
@@ -318,11 +320,11 @@ mod tests {
 
     #[test]
     fn system_dns_takeover_requires_tun_capture() {
-        let profile: Profile = serde_json::from_value(json!({
-            "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
-        }))
-        .expect("profile");
-        let requirements = profile_requirements(&profile, &[], false);
+        let mut profile = Profile::default();
+        profile.editor.dns_config =
+            json!({ "shared": { "systemDnsTakeoverEnabled": true } }).to_string();
+        let effective = profile_from_editor(&profile).expect("editor DNS");
+        let requirements = profile_requirements(&effective, &[], false);
         assert!(
             requirements
                 .required_features
@@ -373,14 +375,15 @@ mod tests {
             .update(|catalog| {
                 let profile = &mut catalog.profiles[0];
                 profile.editor.servers = "[{}]".into();
-                profile.private_access = json!({
+                profile.editor.private_access_config = json!({
                     "enabled": true,
                     "connectors": [{
                         "type": "wireguard",
                         "endpoint": { "private_key": "test", "peers": [] },
                         "dns": [{ "server": "10.8.28.1", "domainSuffixes": ["example.test"] }]
                     }]
-                });
+                })
+                .to_string();
                 Ok(())
             })
             .expect("seed profile");
@@ -438,7 +441,8 @@ mod tests {
         ])
         .to_string();
 
-        let requirements = profile_requirements(&profile, &[], false);
+        let effective = profile_from_editor(&profile).expect("editor servers");
+        let requirements = profile_requirements(&effective, &[], false);
         assert_eq!(
             requirements.required_features,
             [

@@ -54,17 +54,8 @@ export const DnsSharedConfigSchema = z.object({
 
 export type DnsSharedConfig = z.infer<typeof DnsSharedConfigSchema>;
 
-/**
- * DNS 配置存储结构
- * - shared: 表单设置，自动生成各格式的 DNS 段
- * - overrides: 原生 DNS 配置，直接透传到输出（优先于 shared 生成的内容）
- *   各 key 可存放对应格式的原生 dns 配置 JSON，
- *   singboxV12 未设置时 fallback 到 singbox，clashMeta 未设置时 fallback 到 clash
- */
 export const DnsConfigSchema = z.object({
   shared: DnsSharedConfigSchema.optional(),
-	modes: z.record(z.string(), z.enum(["managed", "native"])).optional(),
-	overrides: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
 });
 
 export type DnsConfig = z.infer<typeof DnsConfigSchema>;

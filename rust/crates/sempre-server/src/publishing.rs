@@ -98,6 +98,7 @@ async fn prepare_compile(
     let revision: i64 = row.try_get("revision").map_err(ApiError::internal)?;
     let document: Value = row.try_get("document").map_err(ApiError::internal)?;
     let mut profile: Profile = serde_json::from_value(document).map_err(ApiError::internal)?;
+    profile.clear_derived_configuration();
     let had_remote_sources = profile
         .sources
         .iter()
@@ -115,9 +116,11 @@ async fn prepare_compile(
     }
     let custom_nodes =
         custom_nodes::load_selected(state, owner_id, &profile.custom_node_ids).await?;
+    let effective_profile = sempre_converter::profile_from_editor(&profile)
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
     if had_remote_sources
         && loaded.snapshots.is_empty()
-        && profile.manual_servers.is_empty()
+        && effective_profile.manual_servers.is_empty()
         && custom_nodes.is_empty()
     {
         return Err(ApiError::unavailable(

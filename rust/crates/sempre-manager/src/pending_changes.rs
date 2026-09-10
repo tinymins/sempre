@@ -152,16 +152,8 @@ fn source_and_node_fields(current: &Profile, candidate: &Profile) -> Vec<Pending
     push_changed(
         &mut fields,
         PendingConfigField::Nodes,
-        &json!([
-            current.custom_node_ids,
-            current.manual_servers,
-            current.editor.servers
-        ]),
-        &json!([
-            candidate.custom_node_ids,
-            candidate.manual_servers,
-            candidate.editor.servers
-        ]),
+        &json!([current.custom_node_ids, current.editor.servers]),
+        &json!([candidate.custom_node_ids, candidate.editor.servers]),
     );
     fields
 }
@@ -171,13 +163,8 @@ fn routing_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigFi
     push_changed(
         &mut fields,
         PendingConfigField::Groups,
+        &json!([current.editor.group, current.extra.get("use_system_groups")]),
         &json!([
-            current.groups,
-            current.editor.group,
-            current.extra.get("use_system_groups")
-        ]),
-        &json!([
-            candidate.groups,
             candidate.editor.group,
             candidate.extra.get("use_system_groups")
         ]),
@@ -186,32 +173,34 @@ fn routing_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigFi
         &mut fields,
         PendingConfigField::Rules,
         &json!([
-            current.rules,
+            current.editor.custom_config,
+            current.extra.get("use_system_custom_config")
+        ]),
+        &json!([
+            candidate.editor.custom_config,
+            candidate.extra.get("use_system_custom_config")
+        ]),
+    );
+    push_changed(
+        &mut fields,
+        PendingConfigField::RuleProviders,
+        &json!([
             current.editor.rule_list,
             current.extra.get("use_system_rules")
         ]),
         &json!([
-            candidate.rules,
             candidate.editor.rule_list,
             candidate.extra.get("use_system_rules")
         ]),
     );
     push_changed(
         &mut fields,
-        PendingConfigField::RuleProviders,
-        &json!(current.rule_providers),
-        &json!(candidate.rule_providers),
-    );
-    push_changed(
-        &mut fields,
         PendingConfigField::Filters,
         &json!([
-            current.filters,
             current.editor.filter,
             current.extra.get("use_system_filters")
         ]),
         &json!([
-            candidate.filters,
             candidate.editor.filter,
             candidate.extra.get("use_system_filters")
         ]),
@@ -225,12 +214,10 @@ fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigFi
         &mut fields,
         PendingConfigField::Dns,
         &json!([
-            current.dns,
             current.editor.dns_config,
             current.extra.get("use_system_dns")
         ]),
         &json!([
-            candidate.dns,
             candidate.editor.dns_config,
             candidate.extra.get("use_system_dns")
         ]),
@@ -238,11 +225,8 @@ fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigFi
     push_changed(
         &mut fields,
         PendingConfigField::PrivateAccess,
-        &json!([current.private_access, current.editor.private_access_config]),
-        &json!([
-            candidate.private_access,
-            candidate.editor.private_access_config
-        ]),
+        &json!(current.editor.private_access_config),
+        &json!(candidate.editor.private_access_config),
     );
     push_changed(
         &mut fields,
@@ -265,18 +249,8 @@ fn runtime_fields(current: &Profile, candidate: &Profile) -> Vec<PendingConfigFi
     push_changed(
         &mut fields,
         PendingConfigField::Advanced,
-        &json!([
-            current.log_level,
-            current.core_overrides,
-            current.editor.custom_config,
-            current.extra.get("use_system_custom_config"),
-        ]),
-        &json!([
-            candidate.log_level,
-            candidate.core_overrides,
-            candidate.editor.custom_config,
-            candidate.extra.get("use_system_custom_config"),
-        ]),
+        &json!(current.log_level),
+        &json!(candidate.log_level),
     );
     fields
 }

@@ -47,24 +47,22 @@ pub struct Profile {
     pub sources: Vec<Source>,
     #[serde(default)]
     pub custom_node_ids: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub manual_servers: Vec<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<ProxyGroup>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rule_providers: Vec<RuleProvider>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub filters: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Value::is_null")]
     pub dns: Value,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Value::is_null")]
     pub private_access: Value,
     #[serde(default, skip_serializing_if = "Value::is_null")]
     pub network_policy: Value,
-    #[serde(default)]
-    pub core_overrides: HashMap<String, Value>,
     #[serde(default)]
     pub local_proxy: LocalProxy,
     #[serde(default)]
@@ -77,6 +75,45 @@ pub struct Profile {
 
 fn default_log_level() -> String {
     "info".into()
+}
+
+impl Profile {
+    pub fn clear_editor_outputs(&mut self) {
+        self.manual_servers.clear();
+        self.groups.clear();
+        self.rules.clear();
+        self.rule_providers.clear();
+        self.filters.clear();
+        self.dns = Value::Null;
+        self.private_access = Value::Null;
+    }
+
+    pub fn clear_derived_configuration(&mut self) {
+        self.clear_editor_outputs();
+        self.network_policy = Value::Null;
+        self.transparent_proxy.capture_host = false;
+        self.transparent_proxy.lan_interfaces.clear();
+        self.extra.retain(|key, _| {
+            matches!(
+                key.as_str(),
+                "mode"
+                    | "remote"
+                    | "remark"
+                    | "use_system_groups"
+                    | "use_system_rules"
+                    | "use_system_filters"
+                    | "use_system_dns"
+                    | "use_system_custom_config"
+                    | "last_check"
+                    | "last_change"
+                    | "last_result"
+                    | "last_config_hash"
+                    | "last_runtime_validated"
+                    | "last_compiler_target"
+                    | "last_compiler_warnings"
+            )
+        });
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,9 +273,9 @@ const fn default_http_port() -> u16 {
 pub struct TransparentProxy {
     #[serde(default)]
     pub mode: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub capture_host: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lan_interfaces: Vec<String>,
     #[serde(default)]
     pub route_exclusions: Vec<String>,

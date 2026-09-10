@@ -280,7 +280,7 @@ fn migrate_legacy(value: Value) -> Result<DnsSettings, ManagerError> {
 }
 
 fn effective_dns(profile: &Profile) -> Value {
-    serde_json::from_str(&profile.editor.dns_config).unwrap_or_else(|_| profile.dns.clone())
+    sempre_converter::profile_from_editor(profile).map_or(Value::Null, |profile| profile.dns)
 }
 
 fn boolean(value: &Value, key: &str, fallback: bool) -> bool {

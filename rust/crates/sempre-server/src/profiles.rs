@@ -111,6 +111,7 @@ async fn create(
     document.id = id.to_string();
     document.revision = 1;
     document.name.clone_from(&name);
+    document.clear_derived_configuration();
     let value = serde_json::to_value(document).map_err(ApiError::internal)?;
     let mut transaction = state.pool.begin().await?;
     let row = sqlx::query("INSERT INTO profiles (id, owner_id, name, document) VALUES ($1, $2, $3, $4) RETURNING id, owner_id, revision, name, document, updated_at, 'owner' AS role").bind(id).bind(user.id).bind(&name).bind(&value).fetch_one(&mut *transaction).await?;
@@ -147,6 +148,7 @@ async fn update(
     document.revision = u64::try_from(expected + 1)
         .map_err(|_| ApiError::bad_request("profile revision is invalid"))?;
     document.name.clone_from(&name);
+    document.clear_derived_configuration();
     let value = serde_json::to_value(document).map_err(ApiError::internal)?;
     let mut transaction = state.pool.begin().await?;
     let row = sqlx::query("UPDATE profiles SET revision = revision + 1, name = $1, document = $2, updated_at = NOW() WHERE id = $3 AND revision = $4 RETURNING id, owner_id, revision, name, document, updated_at, CASE WHEN owner_id = $5 THEN 'owner' ELSE 'editor' END AS role").bind(&name).bind(&value).bind(id).bind(expected).bind(user.id).fetch_optional(&mut *transaction).await?;
@@ -349,12 +351,15 @@ async fn access_exists(
 }
 
 fn profile_output(row: &sqlx::postgres::PgRow) -> Result<ProfileOutput, ApiError> {
+    let value: serde_json::Value = row.try_get("document").map_err(ApiError::internal)?;
+    let mut document: Profile = serde_json::from_value(value).map_err(ApiError::internal)?;
+    document.clear_derived_configuration();
     Ok(ProfileOutput {
         id: row.try_get("id").map_err(ApiError::internal)?,
         owner_id: row.try_get("owner_id").map_err(ApiError::internal)?,
         revision: row.try_get("revision").map_err(ApiError::internal)?,
         name: row.try_get("name").map_err(ApiError::internal)?,
-        document: row.try_get("document").map_err(ApiError::internal)?,
+        document: serde_json::to_value(document).map_err(ApiError::internal)?,
         role: row.try_get("role").map_err(ApiError::internal)?,
         updated_at: row.try_get("updated_at").map_err(ApiError::internal)?,
     })

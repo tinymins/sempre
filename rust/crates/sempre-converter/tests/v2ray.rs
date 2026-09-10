@@ -158,21 +158,3 @@ fn routing_maps_rules_to_balancers_and_reports_providers() {
         rule["inboundTag"] == json!(["remote-dns"]) && rule["balancerTag"] == "foreign"
     }));
 }
-
-#[test]
-fn safe_core_overrides_merge_and_managed_boundaries_are_rejected() {
-    let profile = json!({
-        "manual_servers": [{
-            "name": "edge", "type": "socks5", "server": "edge.example.com", "port": 1080
-        }],
-        "core_overrides": { "xray": { "log": { "access": "/tmp/access.log" } } }
-    });
-    let config = document(&request("xray", profile.clone()));
-    assert_eq!(config["log"]["access"], "/tmp/access.log");
-    assert_eq!(config["log"]["loglevel"], "info");
-
-    let mut blocked = profile;
-    blocked["core_overrides"]["xray"] = json!({ "inbounds": [] });
-    let error = compile(&request("xray", blocked)).expect_err("managed inbounds");
-    assert!(error.to_string().contains("authenticated local proxy"));
-}

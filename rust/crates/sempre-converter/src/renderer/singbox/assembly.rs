@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{CompileError, FieldDiff, Profile, Proxy, ProxyGroup, SourceSnapshot, Target};
 
-use super::{config, convert_proxy, fields::deep_merge, private_access};
+use super::{config, convert_proxy, private_access};
 
 pub(super) fn render(
     profile: &Profile,
@@ -98,9 +98,6 @@ pub(super) fn render(
     });
     if !private.endpoints.is_empty() {
         output["endpoints"] = json!(private.endpoints);
-    }
-    if let Some(override_value) = profile.core_overrides.get("sing-box") {
-        deep_merge(&mut output, override_value);
     }
     super::super::dns::apply_sing_box_platform_policy(profile, target, &mut output, &mut warnings);
     config::normalize_for_version(&mut output, target);

@@ -33,7 +33,8 @@ fn setup(root: &std::path::Path, core: &std::path::Path) -> Result<(), Box<dyn s
     subscriptions.initialize()?;
     subscriptions.update(|catalog| {
         catalog.profiles[0].transparent_proxy.mode = "disabled".into();
-        catalog.profiles[0].dns["shared"]["systemDnsTakeoverEnabled"] = false.into();
+        catalog.profiles[0].editor.dns_config =
+            r#"{"shared":{"systemDnsTakeoverEnabled":false}}"#.into();
         Ok(())
     })?;
 
@@ -104,11 +105,9 @@ mod tests {
             .read()
             .expect("subscriptions");
         assert_eq!(catalog.profiles[0].transparent_proxy.mode, "disabled");
-        assert!(
-            catalog.profiles[0]
-                .dns
-                .pointer("/shared/systemDnsTakeoverEnabled")
-                .is_some_and(|value| value.as_bool() == Some(false))
+        assert_eq!(
+            catalog.profiles[0].editor.dns_config,
+            r#"{"shared":{"systemDnsTakeoverEnabled":false}}"#
         );
     }
 }

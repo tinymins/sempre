@@ -64,7 +64,7 @@ describe('DnsConfigEditor', () => {
     }, null, 2))
   })
 
-  it('edits managed GEO sources and drops legacy native DNS overrides', () => {
+  it('edits managed GEO sources and drops fields without controls', () => {
     localStorage.setItem('sempre.locale', 'en')
     const onChange = vi.fn()
 
@@ -72,7 +72,9 @@ describe('DnsConfigEditor', () => {
       <I18nProvider>
         <DnsConfigEditor
           features={['dns.local_upstream', 'dns.local_transport', 'dns.geo_sources']}
-          value={JSON.stringify({ modes: { sing_box_v12: 'native' }, overrides: { sing_box_v12: { final: 'remote' } } })}
+          value={JSON.stringify({
+            shared: { managedDnsFrontend: true, unknown: 'hidden' },
+          })}
           onChange={onChange}
         />
       </I18nProvider>,
@@ -84,7 +86,7 @@ describe('DnsConfigEditor', () => {
 
     const saved = JSON.parse(onChange.mock.calls.at(-1)?.[0] as string)
     expect(saved).toEqual({ shared: { cnDomainRuleSetUrl: 'https://rules.example/geosite-cn.srs' } })
-    expect(saved.modes).toBeUndefined()
-    expect(saved.overrides).toBeUndefined()
+    expect(saved.shared.managedDnsFrontend).toBeUndefined()
+    expect(saved.shared.unknown).toBeUndefined()
   })
 })

@@ -107,5 +107,7 @@ async fn load_profile(state: &AppState, id: Uuid) -> Result<Profile, ApiError> {
         .await?
         .ok_or_else(|| ApiError::not_found("profile"))?;
     let document: Value = row.try_get("document").map_err(ApiError::internal)?;
-    serde_json::from_value(document).map_err(ApiError::internal)
+    let mut profile: Profile = serde_json::from_value(document).map_err(ApiError::internal)?;
+    profile.clear_derived_configuration();
+    Ok(profile)
 }

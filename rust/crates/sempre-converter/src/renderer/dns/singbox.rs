@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{Profile, Proxy, Target};
 
-use super::{SharedDns, managed_frontend, native_override};
+use super::{SharedDns, managed_frontend};
 
 const FRONTEND_DNS_INBOUND: &str = "sempre-dns-core-in";
 
@@ -15,14 +15,6 @@ pub(super) fn render(
     shared: &SharedDns,
 ) -> Value {
     let modern = target.version != "11";
-    let key = if modern {
-        "sing_box_v12"
-    } else {
-        "sing_box_v11"
-    };
-    if let Some(value) = native_override(&profile.dns, key) {
-        return value;
-    }
     let frontend = managed_frontend(shared, target);
     let fakeip = shared.fakeip_enabled() && (target.platform != "macos" || frontend);
     let bootstrap_domains = proxies
@@ -270,7 +262,7 @@ pub(super) fn route_policy(profile: &Profile, target: &Target) -> (Vec<Value>, V
         routes.push(json!({ "rule_set": ["geosite-cn"], "outbound": "direct" }));
     }
     if shared.cn_ip_rule_set.enabled {
-        if target.version != "11" && native_override(&profile.dns, "sing_box_v12").is_none() {
+        if target.version != "11" {
             // FakeIP restores a domain, not the real addresses required by GeoIP.
             // Unknown domains must not inherit poisoned local DNS answers.
             routes.push(json!({ "action": "resolve", "server": "remote" }));

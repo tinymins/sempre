@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use sempre_converter::Profile;
 use sempre_tunnel::{BinaryStatus, Config, Status};
@@ -27,7 +30,7 @@ impl<R: VersionRunner> Manager<R> {
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub async fn update_tunnels(&self, config: Config) -> Result<(Status, bool), ManagerError> {
         let catalog = self.subscriptions.read()?;
-        let references = referenced_forwards(&catalog.profiles);
+        let references = referenced_forwards(&catalog.profiles)?;
         for (id, profiles) in &references {
             if config.forward(id).is_none() {
                 return Err(ManagerError::InvalidOperation(format!(
@@ -40,9 +43,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         if references.is_empty() {
             return Ok((self.tunnels.status()?, false));
         }
+        let referenced_profile_ids = catalog
+            .profiles
+            .iter()
+            .map(|profile| Ok((profile.id.clone(), profile_forward_refs(profile)?)))
+            .collect::<Result<Vec<_>, sempre_converter::CompileError>>()?
+            .into_iter()
+            .filter_map(|(id, references)| (!references.is_empty()).then_some(id))
+            .collect::<BTreeSet<_>>();
         let catalog = self.subscriptions.update(|stored| {
             for profile in &mut stored.profiles {
-                if !profile_forward_refs(profile).is_empty() {
+                if referenced_profile_ids.contains(&profile.id) {
                     profile.revision += 1;
                 }
             }
@@ -55,7 +66,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .profiles
                 .iter()
                 .find(|profile| profile.id == active_id)
-                .is_some_and(|profile| !profile_forward_refs(profile).is_empty())
+                .map(profile_forward_refs)
+                .transpose()?
+                .is_some_and(|references| !references.is_empty())
         {
             let (change, _) = self.recompile_subscription_profile(active_id).await?;
             if change.needs_restart {
@@ -75,10 +88,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 }
 
-fn referenced_forwards(profiles: &[Profile]) -> BTreeMap<String, Vec<String>> {
+fn referenced_forwards(
+    profiles: &[Profile],
+) -> Result<BTreeMap<String, Vec<String>>, sempre_converter::CompileError> {
     let mut references: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for profile in profiles {
-        for id in profile_forward_refs(profile) {
+        for id in profile_forward_refs(profile)? {
             references
                 .entry(id)
                 .or_default()
@@ -89,28 +104,24 @@ fn referenced_forwards(profiles: &[Profile]) -> BTreeMap<String, Vec<String>> {
                 });
         }
     }
-    references
+    Ok(references)
 }
 
-fn profile_forward_refs(profile: &Profile) -> Vec<String> {
-    profile
+fn profile_forward_refs(profile: &Profile) -> Result<Vec<String>, sempre_converter::CompileError> {
+    Ok(sempre_converter::profile_from_editor(profile)?
         .private_access
         .get("connectors")
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|connector| {
-            [
-                "transport_endpoint_ref",
-                "tunnel_forward_id",
-                "tunnelForwardId",
-            ]
-            .into_iter()
-            .find_map(|key| connector.get(key).and_then(serde_json::Value::as_str))
-            .filter(|id| !id.is_empty())
-            .map(str::to_owned)
+            connector
+                .get("transport_endpoint_ref")
+                .and_then(serde_json::Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -121,18 +132,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_all_supported_transport_reference_fields() {
-        let profile = Profile {
-            private_access: json!({ "connectors": [
-                { "transport_endpoint_ref": "primary" },
-                { "tunnel_forward_id": "legacy" },
-                { "tunnelForwardId": "camel" }
-            ]}),
-            ..Profile::default()
-        };
+    fn finds_editor_transport_references() {
+        let mut profile = Profile::default();
+        profile.editor.private_access_config = json!({ "connectors": [
+            { "type": "wireguard", "transport_endpoint_ref": "primary" }
+        ]})
+        .to_string();
         assert_eq!(
-            profile_forward_refs(&profile),
-            ["primary", "legacy", "camel"]
+            profile_forward_refs(&profile).expect("editor config"),
+            ["primary"]
         );
     }
 
@@ -144,9 +152,13 @@ mod tests {
             .subscriptions
             .update(|catalog| {
                 catalog.profiles[0].name = "Home".into();
-                catalog.profiles[0].private_access = json!({
-                    "connectors": [{ "transport_endpoint_ref": "home-wg" }]
-                });
+                catalog.profiles[0].editor.private_access_config = json!({
+                    "connectors": [{
+                        "type": "wireguard",
+                        "transport_endpoint_ref": "home-wg"
+                    }]
+                })
+                .to_string();
                 Ok(())
             })
             .expect("seed reference");

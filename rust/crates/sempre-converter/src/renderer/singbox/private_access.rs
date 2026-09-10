@@ -37,7 +37,7 @@ pub(super) fn resolve(
             .map_or_else(|| format!("private-access-{}", index + 1), str::to_owned);
         let kind = string(connector, "type").unwrap_or("outbound");
         let represented = match kind {
-            "wireguard" | "tailscale" => endpoint(connector, kind, &tag, desktop, &mut resolved),
+            "wireguard" => endpoint(connector, &tag, desktop, &mut resolved),
             kind if supported_outbound(kind) => {
                 outbound(connector, kind, &tag, desktop, &mut resolved)
             }
@@ -67,7 +67,7 @@ pub(super) fn resolve(
             }
         }
         if let Some(items) = connector.get("dns").and_then(Value::as_array) {
-            for (dns_index, value) in items.iter().enumerate() {
+            for (dns_index, value) in items.iter().take(1).enumerate() {
                 let Some(dns) = value.as_object() else {
                     continue;
                 };
@@ -118,17 +118,36 @@ fn home_network_modes(connector: &Map<String, Value>) -> Vec<String> {
 
 fn endpoint(
     connector: &Map<String, Value>,
-    kind: &str,
     tag: &str,
     desktop: bool,
     resolved: &mut Resolved,
 ) -> bool {
-    let Some(mut value) = connector.get("endpoint").cloned() else {
+    let Some(endpoint) = connector.get("endpoint").and_then(Value::as_object) else {
         return false;
     };
-    normalize_keys(&mut value);
-    value["type"] = json!(kind);
-    value["tag"] = json!(tag);
+    let peer = endpoint
+        .get("peers")
+        .and_then(Value::as_array)
+        .and_then(|peers| peers.first())
+        .and_then(Value::as_object);
+    let mut value = json!({
+        "type": "wireguard",
+        "tag": tag,
+        "address": clean_strings(endpoint.get("address")),
+        "private_key": string_alias(endpoint, "privateKey", "private_key").unwrap_or_default(),
+        "peers": peer.into_iter().map(|peer| json!({
+            "address": string(peer, "address").unwrap_or_default(),
+            "port": integer(peer.get("port"), 0),
+            "public_key": string_alias(peer, "publicKey", "public_key").unwrap_or_default(),
+            "pre_shared_key": string_alias(peer, "preSharedKey", "pre_shared_key").unwrap_or_default(),
+            "allowed_ips": clean_strings(peer.get("allowedIps").or_else(|| peer.get("allowed_ips"))),
+            "persistent_keepalive_interval": integer(
+                peer.get("persistentKeepaliveInterval")
+                    .or_else(|| peer.get("persistent_keepalive_interval")),
+                25,
+            ),
+        })).collect::<Vec<_>>()
+    });
     if let Some(domain) = first_endpoint_domain(&value) {
         push_unique(&mut resolved.direct_domains, domain);
         if value.get("domain_resolver").is_none() {
@@ -169,13 +188,7 @@ fn outbound(
 }
 
 fn add_matchers(target: &mut Value, source: &Map<String, Value>) {
-    for (from, to) in [
-        ("ipCidrs", "ip_cidr"),
-        ("domains", "domain"),
-        ("domainSuffixes", "domain_suffix"),
-        ("domainKeywords", "domain_keyword"),
-        ("domainRegexes", "domain_regex"),
-    ] {
+    for (from, to) in [("ipCidrs", "ip_cidr"), ("domainSuffixes", "domain_suffix")] {
         let values = clean_strings(source.get(from));
         if !values.is_empty() {
             target[to] = json!(values);
@@ -254,6 +267,14 @@ fn string<'a>(value: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
         .filter(|value| !value.is_empty())
 }
 
+fn string_alias<'a>(
+    value: &'a Map<String, Value>,
+    primary: &str,
+    alternate: &str,
+) -> Option<&'a str> {
+    string(value, primary).or_else(|| string(value, alternate))
+}
+
 fn integer(value: Option<&Value>, fallback: u64) -> u64 {
     value.and_then(Value::as_u64).unwrap_or(fallback)
 }
@@ -265,18 +286,6 @@ fn resolver(server: &str) -> Value {
 fn supported_outbound(value: &str) -> bool {
     matches!(
         value,
-        "outbound"
-            | "v2ray"
-            | "xray"
-            | "vmess"
-            | "vless"
-            | "trojan"
-            | "socks"
-            | "socks5"
-            | "http"
-            | "ssh"
-            | "hysteria2"
-            | "tuic"
-            | "anytls"
+        "vmess" | "vless" | "trojan" | "socks" | "http" | "ssh" | "hysteria2" | "tuic" | "anytls"
     )
 }

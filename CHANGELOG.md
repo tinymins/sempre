@@ -9,7 +9,7 @@ All notable changes to Sempre are documented in this file.
 - Resolve restored FakeIP and unresolved domain destinations through the configured remote DNS before domestic GeoIP matching, preventing poisoned local answers from becoming connection targets.
 - Match known domestic domains before remote resolution, preserving their direct routing and existing domestic DNS path while retaining explicit rule and provider priorities.
 - Isolate sing-box DNS caches by resolver so a prior local answer cannot satisfy a later remote lookup on older supported cores.
-- Rebuild cached core configurations with schema 5 so upgrades do not reuse earlier DNS routing output; preserve native DNS overrides and legacy core compatibility.
+- Rebuild cached core configurations with schema 5 so upgrades do not reuse earlier DNS routing output while preserving legacy core compatibility.
 
 ### Changed
 
@@ -17,7 +17,6 @@ All notable changes to Sempre are documented in this file.
 
 ### Upgrade notes
 
-- If you applied a temporary full `core_overrides["sing-box"].route.rules` override during recovery, compare it with your backup and remove only the temporary override when upgrading; it otherwise takes precedence over the generated routing fix. Preserve unrelated overrides and explicit DNS settings.
 - Unknown domains may still receive a foreign CDN address from remote DNS; known domestic domains bypass that lookup.
 
 ## [2.0.6] - 2026-09-02

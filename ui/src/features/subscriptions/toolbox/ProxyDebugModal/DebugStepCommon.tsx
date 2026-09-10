@@ -160,11 +160,7 @@ export const ConfigStepContent = ({
           label: (
             <div className="flex gap-2 items-center">
               <span>{t("proxy.debug.dnsConfig")}</span>
-              <Tag color="geekblue">
-                {Object.keys(data.dnsConfig.overrides).length > 0
-                  ? `shared + ${Object.keys(data.dnsConfig.overrides).join(", ")}`
-                  : "shared"}
-              </Tag>
+              <Tag color="geekblue">shared</Tag>
             </div>
           ),
           children: <SyntaxJsonViewer data={data.dnsConfig} />,

@@ -78,24 +78,12 @@ pub(super) fn clash(profile: &Profile, target: &Target, final_group: &str) -> Op
     )
 }
 
-pub(super) fn v2ray(profile: &Profile, proxies: &[Proxy], target: &Target) -> Value {
-    native_override(&profile.dns, &target.core)
-        .unwrap_or_else(|| v2ray::render(proxies, &SharedDns::resolve(&profile.dns)))
+pub(super) fn v2ray(profile: &Profile, proxies: &[Proxy], _target: &Target) -> Value {
+    v2ray::render(proxies, &SharedDns::resolve(&profile.dns))
 }
 
 pub(super) fn remote_address(profile: &Profile) -> String {
     SharedDns::resolve(&profile.dns).remote_dns
-}
-
-fn native_override(config: &Value, key: &str) -> Option<Value> {
-    if config
-        .pointer(&format!("/modes/{key}"))
-        .and_then(Value::as_str)
-        != Some("native")
-    {
-        return None;
-    }
-    config.pointer(&format!("/overrides/{key}")).cloned()
 }
 
 fn string(value: &Value, key: &str, fallback: &str) -> String {

@@ -512,13 +512,6 @@ export interface SubscriptionProfile {
   editor: SubscriptionEditorConfig
   sources: SubscriptionSource[]
   custom_node_ids: string[]
-  groups: ProxyGroup[]
-  rules: string[]
-  rule_providers: RuleProvider[]
-  filters: string[]
-  dns?: Record<string, unknown>
-  private_access?: Record<string, unknown>
-	core_overrides: Record<string, Record<string, unknown>>
 	local_proxy?: LocalProxyConfig
 	transparent_proxy?: TransparentProxyConfig
 	management_api?: ManagementAPIConfig

@@ -164,8 +164,7 @@ fn profile_config(result: &ProfileDebugResult) -> Value {
         "customConfig": result.effective.rules, "servers": result.effective.manual_servers,
         "privateAccessConfig": nonempty_object(&result.effective.private_access),
         "dnsConfig": {
-            "shared": nested_object(&result.effective.dns, "shared"),
-            "overrides": nested_object(&result.effective.dns, "overrides")
+            "shared": nested_object(&result.effective.dns, "shared")
         }
     })
 }

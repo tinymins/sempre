@@ -183,11 +183,7 @@ export const parseConfig = (value?: string) => {
           transportEndpointRef:
             typeof connector.transport_endpoint_ref === "string"
               ? connector.transport_endpoint_ref
-              : typeof connector.tunnel_forward_id === "string"
-                ? connector.tunnel_forward_id
-                : typeof connector.tunnelForwardId === "string"
-                  ? connector.tunnelForwardId
-                  : "",
+              : "",
           publicKey:
             typeof peer.public_key === "string"
               ? peer.public_key

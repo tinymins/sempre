@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Write as _;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD};
@@ -81,21 +80,13 @@ pub(super) fn render(
         .map(|(_, link)| format!("  {}", quote(link)))
         .collect::<Vec<_>>()
         .join("\n");
-    let mut content = format!(
+    let content = format!(
         "global {{\n  tproxy_port: 12345\n  tproxy_port_protect: true\n  log_level: {level}\n  auto_config_kernel_parameter: false\n  bootstrap_resolver: {}\n}}\nnode {{\n{nodes}\n}}\ndns {{\n  ipversion_prefer: 0\n  upstream {{\n    local: {}\n    remote: {}\n  }}\n  routing {{\n    request {{\n      qname(geosite:cn) -> local\n      fallback: remote\n    }}\n  }}\n}}\ngroup {{\n{group_blocks}\n}}\nrouting {{\n{}\n  fallback: {final_group}\n}}\n",
         quote("223.5.5.5:53"),
         quote("udp://223.5.5.5:53"),
         quote("tls://1.1.1.1:853"),
         routing.join("\n")
     );
-    if let Some(append) = profile
-        .core_overrides
-        .get("dae")
-        .and_then(|value| value["append"].as_str())
-        .filter(|value| !value.is_empty())
-    {
-        writeln!(content, "\n{append}").map_err(|error| CompileError::Render(error.to_string()))?;
-    }
     Ok((content, diffs, warnings))
 }
 

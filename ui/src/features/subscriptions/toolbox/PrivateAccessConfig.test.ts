@@ -9,14 +9,6 @@ describe('PrivateAccessConfig tunnel forwarding', () => {
     expect(JSON.parse(serialized).connectors[0]).toMatchObject({ type: 'wireguard', transport_endpoint_ref: 'hz-wg' })
     expect(parseConfig(serialized).connectors[0].transportEndpointRef).toBe('hz-wg')
   })
-
-  it('migrates the legacy tunnel reference on the next edit', () => {
-    const legacy = JSON.stringify({ enabled: true, connectors: [{ type: 'wireguard', tunnel_forward_id: 'hz-wg', endpoint: { peers: [{}] } }] })
-    const parsed = parseConfig(legacy)
-    const serialized = serializeConfig(parsed.enabled, parsed.connectors)
-    expect(parsed.connectors[0].transportEndpointRef).toBe('hz-wg')
-    expect(JSON.parse(serialized).connectors[0]).toMatchObject({ transport_endpoint_ref: 'hz-wg' })
-  })
 })
 
 describe('OpenWrt WireGuard import', () => {

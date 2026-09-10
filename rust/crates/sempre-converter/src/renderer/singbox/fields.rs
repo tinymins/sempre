@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use serde_json::Value;
-
 pub(super) fn consumed_keys(proxy_type: &str) -> HashSet<&'static str> {
     let common = ["udp", "tfo", "mptcp"];
     let transport = [
@@ -72,15 +70,4 @@ pub(super) fn consumed_keys(proxy_type: &str) -> HashSet<&'static str> {
         .chain(specific.iter().copied())
         .chain(shared_transport.then_some(transport).into_iter().flatten())
         .collect()
-}
-
-pub(super) fn deep_merge(target: &mut Value, source: &Value) {
-    match (target, source) {
-        (Value::Object(target), Value::Object(source)) => {
-            for (key, value) in source {
-                deep_merge(target.entry(key).or_insert(Value::Null), value);
-            }
-        }
-        (target, source) => *target = source.clone(),
-    }
 }

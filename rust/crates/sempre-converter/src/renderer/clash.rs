@@ -77,9 +77,6 @@ pub(super) fn render(
         apply_meta_options(&mut config);
     }
     apply_runtime(profile, target, final_group, &mut config);
-    if let Some(override_value) = profile.core_overrides.get(&target.core) {
-        deep_merge(&mut config, override_value);
-    }
     let content =
         serde_yaml::to_string(&config).map_err(|error| CompileError::Render(error.to_string()))?;
     let diffs = proxies
@@ -195,16 +192,5 @@ fn clash_log_level(level: &str) -> &str {
         "warn" => "warning",
         "error" | "info" | "debug" => level,
         _ => "info",
-    }
-}
-
-fn deep_merge(target: &mut Value, source: &Value) {
-    match (target, source) {
-        (Value::Object(target), Value::Object(source)) => {
-            for (key, value) in source {
-                deep_merge(target.entry(key).or_insert(Value::Null), value);
-            }
-        }
-        (target, source) => *target = source.clone(),
     }
 }

@@ -50,6 +50,7 @@ impl<R: VersionRunner> Manager<R> {
             }
             preserve_source_metadata(&current.sources, &mut candidate.sources);
             preserve_compilation_metadata(current, &mut candidate);
+            candidate.clear_derived_configuration();
             fields = profile_changed_fields(current, &candidate);
             append = has_pending_profile_revision(&document, current);
             candidate.id.clone_from(&current.id);

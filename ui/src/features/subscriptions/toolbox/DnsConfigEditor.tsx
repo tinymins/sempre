@@ -67,8 +67,9 @@ const serializeDnsConfig = (config: DnsConfig): string => {
   const result: DnsConfig = {};
   if (config.shared) {
     const diff: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(config.shared)) {
-      const defaultValue = CLIENT_DEFAULT_SHARED[key as keyof Required<DnsSharedConfig>];
+    for (const key of Object.keys(CLIENT_DEFAULT_SHARED) as Array<keyof DnsSharedConfig>) {
+      const value = config.shared[key];
+      const defaultValue = CLIENT_DEFAULT_SHARED[key];
       if (JSON.stringify(value) !== JSON.stringify(defaultValue)) diff[key] = value;
     }
     if (Object.keys(diff).length > 0) result.shared = diff as DnsSharedConfig;

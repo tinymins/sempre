@@ -162,12 +162,10 @@ fn v2ray_family(xray: bool, target: &Target) -> Capabilities {
         f::DNS_PREFER_IPV4,
         f::DNS_REMOTE_SERVER_NAME,
         f::DNS_SPLIT,
-        f::DNS_NATIVE,
         f::ROUTING_RULES,
         f::ROUTING_SELECTOR,
         f::ROUTING_URL_TEST,
         f::LOCAL_PROXY,
-        f::NATIVE_OVERRIDE,
     ]);
     if xray {
         features.extend(strings(&[f::TRANSPARENT_TUN, f::TRANSPARENT_TUN_ADDRESS]));
@@ -219,7 +217,6 @@ fn dae(target: &Target) -> Capabilities {
             f::ROUTING_SELECTOR,
             f::ROUTING_URL_TEST,
             f::TRANSPARENT_EBPF,
-            f::NATIVE_OVERRIDE,
         ])
     } else {
         vec![]
@@ -255,7 +252,6 @@ fn clash_features() -> Vec<String> {
         f::DNS_REMOTE_DETOUR,
         f::DNS_REJECT_HTTPS,
         f::DNS_SPLIT,
-        f::DNS_NATIVE,
         f::ROUTING_RULES,
         f::ROUTING_RULE_PROVIDERS,
         f::ROUTING_SELECTOR,
@@ -266,7 +262,6 @@ fn clash_features() -> Vec<String> {
         f::MANAGEMENT_DELAY,
         f::MANAGEMENT_TRAFFIC,
         f::MANAGEMENT_EXTERNAL_API,
-        f::NATIVE_OVERRIDE,
     ])
 }
 

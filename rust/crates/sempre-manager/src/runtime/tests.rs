@@ -275,8 +275,8 @@ fn status_describes_directly_recorded_profile_changes_without_exposing_values() 
             Ok(())
         })
         .expect("baseline deployment");
-    profile.editor.dns_config = r#"{"final":"local"}"#.into();
-    profile.transparent_proxy.capture_host = !profile.transparent_proxy.capture_host;
+    profile.editor.dns_config = r#"{"shared":{"remoteDns":"1.1.1.1"}}"#.into();
+    profile.transparent_proxy.mode = "disabled".into();
     profile.management_api.secret = "must-not-appear-in-runtime-status".into();
     manager
         .save_subscription_profile(&profile_id, profile.clone(), None)
@@ -361,11 +361,15 @@ async fn startup_never_fetches_uncached_user_rule_providers_under_the_operation_
             profile
                 .extra
                 .insert("use_system_rules".into(), serde_json::json!(false));
-            profile.rule_providers = vec![sempre_converter::RuleProvider {
-                tag: "arbitrary-user-rules".into(),
-                url: url.clone(),
-                ..Default::default()
-            }];
+            profile.editor.rule_list = serde_json::json!({
+                "proxy": [{
+                    "name": "arbitrary-user-rules",
+                    "url": url.clone(),
+                    "type": "",
+                    "format": ""
+                }]
+            })
+            .to_string();
             Ok(())
         })
         .unwrap();

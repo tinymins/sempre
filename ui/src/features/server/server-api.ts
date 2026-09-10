@@ -158,7 +158,7 @@ export function newServerProfile(name: string): SubscriptionProfile {
   return {
     id: crypto.randomUUID(), revision: 1, name, mode: 'local', log_level: 'info',
     editor: { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' },
-    sources: [], custom_node_ids: [], groups: [], rules: [], rule_providers: [], filters: [], core_overrides: {},
+    sources: [], custom_node_ids: [],
     local_proxy: { socks_port: 20580, http_port: 20581, username: 'sempre', password: secret },
     transparent_proxy: {
       mode: 'tun-router', capture_host: false, lan_interfaces: [], route_exclusions: [], interface_mode: 'all', interfaces: [],

@@ -32,11 +32,6 @@ const profile: SubscriptionProfile = {
   },
   sources: [{ id: 'source-1', type: 'url', enabled: true, url: 'https://example.com/subscription', fetch_mode: 'auto' }],
   custom_node_ids: [],
-  groups: [],
-  rules: [],
-  rule_providers: [],
-  filters: [],
-	core_overrides: {},
 	local_proxy: { socks_port: 1080, http_port: 1081, username: 'sempre', password: 'local-secret' },
 	management_api: { external_controller: '0.0.0.0:9090', secret: 'management-secret', allow_origins: [], allow_private_network: false },
   use_system_groups: true,
@@ -59,7 +54,7 @@ const singBoxContext: SubscriptionConfigurationContext = {
 			'dns.bootstrap_server_name', 'dns.fake_ip', 'dns.split', 'dns.native', 'dns.prefer_ipv4',
 			'dns.remote_server_name', 'dns.remote_detour', 'dns.reject_https', 'dns.system_takeover',
 			'routing.rules', 'routing.rule_providers', 'routing.selector', 'routing.url_test',
-			'native_override', 'private_access', 'inbound.local_proxy', 'transparent.tun', 'transparent.tun.address',
+			'private_access', 'inbound.local_proxy', 'transparent.tun', 'transparent.tun.address',
 			'transparent.tproxy', 'transparent.interface_policy', 'management.external_api',
 		],
 		enum_values: {}, protocols: [{ protocol: 'trojan', transports: ['tcp'], security: ['tls'] }],
@@ -355,16 +350,10 @@ describe('ProxySubscribeEditor', () => {
     expect(onSave.mock.calls[1][0]).toMatchObject({ remark: 'Newest' })
   })
 
-  it('does not expose JSON overrides and preserves legacy override data on save', async () => {
-		vi.useFakeTimers()
+  it('does not expose JSON overrides', () => {
 		localStorage.setItem('sempre.locale', 'en')
-		const { onSave } = renderEditor({ profile: { ...profile, core_overrides: { 'sing-box': { route: { final: 'proxy' } } } } })
+		renderEditor()
 		expect(screen.queryByRole('button', { name: 'Advanced Config' })).not.toBeInTheDocument()
-
-		fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'Updated' } })
-		await act(async () => vi.advanceTimersByTime(800))
-		expect(onSave).toHaveBeenCalledTimes(1)
-		expect(onSave.mock.calls[0][0]).toMatchObject({ core_overrides: { 'sing-box': { route: { final: 'proxy' } } } })
   })
 
   it('saves temporarily invalid Custom Rules for runtime validation later', async () => {
@@ -380,7 +369,6 @@ describe('ProxySubscribeEditor', () => {
 		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({
 		  editor: { custom_config: '{ temporarily invalid JSONC' },
-		  core_overrides: {},
 		})
 	  })
 
@@ -433,7 +421,7 @@ describe('ProxySubscribeEditor', () => {
 				key: 'dae', platform: 'linux',
 				target: { core: 'dae', version: '2.0.0', compiler_target: { core: 'dae', format: 'dae' }, key: 'dae' },
 				capabilities: {
-					features: ['logging.level', 'dns.local_upstream', 'dns.remote_upstream', 'routing.rules', 'routing.selector', 'transparent.ebpf', 'transparent.interface_policy', 'native_override'],
+					features: ['logging.level', 'dns.local_upstream', 'dns.remote_upstream', 'routing.rules', 'routing.selector', 'transparent.ebpf', 'transparent.interface_policy'],
 					enum_values: {}, protocols: [{ protocol: 'trojan', transports: ['tcp'], security: ['tls'] }],
 				},
 			},

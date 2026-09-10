@@ -198,6 +198,12 @@ pub fn prepare_profile(profile: &Profile, target: &Target) -> Result<Profile, Co
     Ok(defaults::effective_profile(editor::apply(profile)?, target))
 }
 
+pub fn profile_from_editor(profile: &Profile) -> Result<Profile, CompileError> {
+    let mut profile = profile.clone();
+    profile.clear_editor_outputs();
+    editor::apply(&profile)
+}
+
 fn normalized_target(input: &Target) -> Result<Target, CompileError> {
     let mut target = Target::parse(&input.format)?;
     target.standalone = input.standalone;

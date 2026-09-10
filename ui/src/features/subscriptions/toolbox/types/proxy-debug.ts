@@ -97,10 +97,7 @@ export const ProxyDebugConfigStepSchema = z.object({
     customConfig: z.array(z.unknown()),
     servers: z.array(z.unknown()),
     privateAccessConfig: z.record(z.string(), z.unknown()).nullable(),
-    dnsConfig: z.object({
-      shared: z.record(z.string(), z.unknown()),
-      overrides: z.record(z.string(), z.unknown()),
-    }),
+    dnsConfig: z.object({ shared: z.record(z.string(), z.unknown()) }),
   }),
 });
 

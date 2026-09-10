@@ -105,28 +105,6 @@ fn sing_box_v14_uses_explicit_dns_response_matching() {
 }
 
 #[test]
-fn sing_box_native_override_wins_and_macos_removes_fakeip() {
-    let mut input = request("sing-box-v13");
-    input.profile.dns = json!({
-        "modes": { "sing_box_v12": "native" },
-        "overrides": { "sing_box_v12": {
-            "servers": [{ "type": "fakeip", "tag": "fakeip" }, { "type": "local", "tag": "local" }],
-            "rules": [{ "server": "fakeip" }], "final": "local"
-        }}
-    });
-    let native = compile(&input).expect("native override");
-    let native: Value = serde_json::from_str(&native.content).expect("native JSON");
-    assert_eq!(native["dns"]["final"], "local");
-    assert_eq!(native["dns"]["servers"].as_array().map(Vec::len), Some(2));
-
-    input.target.format = "sing-box-v13-macos".into();
-    let macos = compile(&input).expect("macOS override");
-    let macos: Value = serde_json::from_str(&macos.content).expect("macOS JSON");
-    assert_eq!(macos["dns"]["servers"].as_array().map(Vec::len), Some(1));
-    assert_eq!(macos["dns"]["rules"].as_array().map(Vec::len), Some(0));
-}
-
-#[test]
 fn mihomo_and_clash_rs_compile_managed_dns() {
     let mut mihomo = request("clash-meta");
     mihomo.target.core = "mihomo".into();
@@ -150,7 +128,7 @@ fn mihomo_and_clash_rs_compile_managed_dns() {
 }
 
 #[test]
-fn v2ray_family_compiles_split_dns_and_native_override() {
+fn v2ray_family_compiles_managed_dns() {
     let output = compile(&request("xray")).expect("Xray DNS");
     let output: Value = serde_json::from_str(&output.content).expect("Xray JSON");
     assert_eq!(output["dns"]["queryStrategy"], "UseIPv4");
@@ -164,16 +142,6 @@ fn v2ray_family_compiles_split_dns_and_native_override() {
             value["inboundTag"] == json!(["remote-dns"]) && value["balancerTag"] == "foreign"
         })
     }));
-
-    let mut native = request("xray");
-    native.profile.dns = json!({
-        "modes": { "xray": "native" },
-        "overrides": { "xray": { "servers": ["1.1.1.1"], "queryStrategy": "UseIPv6" } }
-    });
-    let native = compile(&native).expect("native Xray DNS");
-    let native: Value = serde_json::from_str(&native.content).expect("native JSON");
-    assert_eq!(native["dns"]["queryStrategy"], "UseIPv6");
-    assert_eq!(native["dns"]["servers"], json!(["1.1.1.1"]));
 }
 
 fn takeover_request(format: &str) -> CompileRequest {
@@ -392,24 +360,4 @@ fn sing_box_domestic_switches_only_control_their_own_route_stage() {
             assert_eq!(rules.iter().any(|rule| rule["action"] == "resolve"), ips);
         }
     }
-}
-
-#[test]
-fn native_dns_owns_resolution_without_an_injected_remote_server_reference() {
-    let mut input = request("sing-box-v14");
-    let native = json!({
-        "servers": [{ "type": "local", "tag": "bootstrap" }], "final": "bootstrap"
-    });
-    input.profile.dns["modes"] = json!({ "sing_box_v12": "native" });
-    input.profile.dns["overrides"] = json!({ "sing_box_v12": native });
-    let output = compile(&input).expect("native DNS");
-    let output: Value = serde_json::from_str(&output.content).expect("JSON");
-    assert_eq!(output["dns"], native);
-    assert!(
-        output["route"]["rules"]
-            .as_array()
-            .expect("rules")
-            .iter()
-            .all(|rule| rule["action"] != "resolve")
-    );
 }
