@@ -69,11 +69,7 @@ fn sing_box_config(
     }
     root.insert("route".into(), Value::Object(route));
     root.remove("experimental");
-    if private_probe_url.is_some() {
-        retain_endpoint_and_dns(root, node);
-    } else {
-        root.remove("endpoints");
-    }
+    retain_endpoint_and_dns(root, private_probe_url.as_ref().map(|_| node));
     if let Some(dns) = root.get_mut("dns").and_then(Value::as_object_mut) {
         dns.remove("rules");
     }
@@ -105,18 +101,22 @@ fn selected_endpoint_probe_url(
         .ok_or_else(|| format!("WireGuard endpoint {node:?} has no usable AllowedIPs probe target"))
 }
 
-fn retain_endpoint_and_dns(root: &mut Map<String, Value>, node: &str) {
+fn retain_endpoint_and_dns(root: &mut Map<String, Value>, retained: Option<&str>) {
     let removed = root
         .get("endpoints")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|endpoint| endpoint.get("tag").and_then(Value::as_str))
-        .filter(|tag| *tag != node)
+        .filter(|tag| Some(*tag) != retained)
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if let Some(endpoints) = root.get_mut("endpoints").and_then(Value::as_array_mut) {
-        endpoints.retain(|endpoint| endpoint.get("tag").and_then(Value::as_str) == Some(node));
+    if let Some(node) = retained {
+        if let Some(endpoints) = root.get_mut("endpoints").and_then(Value::as_array_mut) {
+            endpoints.retain(|endpoint| endpoint.get("tag").and_then(Value::as_str) == Some(node));
+        }
+    } else {
+        root.remove("endpoints");
     }
     if let Some(servers) = root
         .get_mut("dns")
@@ -227,15 +227,21 @@ mod tests {
         let input = json!({
             "inbounds": [{"type":"tun"}],
             "outbounds": [{"type":"shadowsocks","tag":"node-a"}],
+            "endpoints": [{"type":"wireguard","tag":"home-wg","peers":[{"allowed_ips":["10.8.28.0/24"]}]}],
             "route": {"rule_set":[{"tag":"remote"}]},
             "experimental": {"clash_api":{"external_controller":"127.0.0.1:9090"}},
-            "dns": {"servers":[{"type":"local","tag":"local"}],"rules":[{"rule_set":"remote"}]}
+            "dns": {"servers":[
+                {"type":"local","tag":"local"},
+                {"type":"udp","tag":"home-wg-dns","detour":"home-wg"}
+            ],"rules":[{"rule_set":"remote"}]}
         });
         let (output, private_probe_url) =
             sing_box_config(input, "node-a", 19080, "user", "pass").unwrap();
         assert_eq!(output["inbounds"][0]["listen_port"], 19080);
         assert_eq!(output["route"]["final"], "node-a");
         assert!(output.get("experimental").is_none());
+        assert!(output.get("endpoints").is_none());
+        assert_eq!(output["dns"]["servers"].as_array().unwrap().len(), 1);
         assert!(output["dns"].get("rules").is_none());
         assert!(private_probe_url.is_none());
     }
