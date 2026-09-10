@@ -78,18 +78,25 @@ describe('Shell sidebar', () => {
     expect(await screen.findByLabelText('Core: running · Public direct · Direct')).toBeInTheDocument()
   })
 
-  it('shows the private access path beside the sing-box status', async () => {
+  it('keeps network tags in the sidebar runtime tooltip', async () => {
     renderShell()
-    expect((await screen.findAllByText('Direct')).length).toBeGreaterThanOrEqual(2)
-    expect((await screen.findAllByText('Public direct')).length).toBeGreaterThanOrEqual(2)
+    const sidebar = document.querySelector('aside')
+    expect(sidebar).not.toBeNull()
+    expect(within(sidebar!).queryByText('Direct')).not.toBeInTheDocument()
+    expect(within(sidebar!).queryByText('Public direct')).not.toBeInTheDocument()
+
+    fireEvent.focus(await within(sidebar!).findByLabelText('Core: running'))
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(within(tooltip).getByText('Direct')).toBeInTheDocument()
+    expect(within(tooltip).getByText('Public direct')).toBeInTheDocument()
   })
 
   it('explains the public direct path in the status tooltip', async () => {
     renderShell()
 
-    const triggers = await screen.findAllByLabelText('Public traffic: Public direct')
-    expect(triggers).toHaveLength(2)
-    fireEvent.focus(triggers[1])
+    const trigger = await screen.findByLabelText('Public traffic: Public direct')
+    fireEvent.focus(trigger)
 
     const tooltip = await screen.findByRole('tooltip')
     expect(within(tooltip).getByText('The current network matches the public-direct rule. Public traffic bypasses the proxy route; private routes are unaffected.')).toBeInTheDocument()
@@ -105,8 +112,8 @@ describe('Shell sidebar', () => {
     }))
     renderShell()
 
-    const triggers = await screen.findAllByLabelText('Public traffic: Public proxy')
-    fireEvent.focus(triggers[1])
+    const trigger = await screen.findByLabelText('Public traffic: Public proxy')
+    fireEvent.focus(trigger)
 
     const tooltip = await screen.findByRole('tooltip')
     expect(within(tooltip).getByText('The current network does not match a public-direct rule. Public traffic remains on the proxy route; private routes are unaffected.')).toBeInTheDocument()
@@ -129,9 +136,8 @@ describe('Shell sidebar', () => {
     }))
     renderShell()
 
-    const triggers = await screen.findAllByLabelText('Private access: Mixed')
-    expect(triggers).toHaveLength(2)
-    fireEvent.focus(triggers[1])
+    const trigger = await screen.findByLabelText('Private access: Mixed')
+    fireEvent.focus(trigger)
 
     const tooltip = await screen.findByRole('tooltip')
     expect(within(tooltip).getByText('Each connector evaluates its home-network rule independently. Matching connectors use local direct routes; unmatched connectors remain on WireGuard tunnels.')).toBeInTheDocument()
@@ -149,7 +155,7 @@ describe('Shell sidebar', () => {
     }))
     renderShell()
 
-    expect((await screen.findAllByText('Core stopped')).length).toBeGreaterThanOrEqual(2)
+    expect(await screen.findByText('Core stopped')).toBeInTheDocument()
   })
 
   it('shows pending instead of unknown after recognizing a staged network', async () => {
@@ -160,7 +166,7 @@ describe('Shell sidebar', () => {
     }))
     renderShell()
 
-    expect((await screen.findAllByText('Pending')).length).toBeGreaterThanOrEqual(2)
+    expect(await screen.findByText('Pending')).toBeInTheDocument()
     expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
   })
 

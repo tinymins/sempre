@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Activity, Cable, ChartNoAxesCombined, ChevronDown, ChevronLeft, ChevronRight, CircleGauge, Cpu, DatabaseZap, Gauge, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Radar, Router, Rss, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { Tooltip } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -108,6 +109,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   const privateMode = chrome || simple ? null : privateAccessMode(system.data?.private_access)
   const networkPath = chrome || simple ? null : networkAutomationDisplayPath(system.data?.network_automation)
   const networkPathLabel = networkPath === 'direct' ? t('publicDirect') : networkPath === 'proxy' ? t('publicProxy') : networkPath === 'pending' ? t('pendingApply') : networkPath === 'inactive' ? t('privateAccessInactive') : networkPath ? t('privateAccessUnknown') : ''
+  const sidebarStatusTags = networkPath || privateMode ? <div className="flex items-center gap-1 py-0.5">{networkPath ? <NetworkAutomationStatusTag status={system.data?.network_automation} path={networkPath} label={networkPathLabel} /> : null}<PrivateAccessStatusTag status={system.data?.private_access} /></div> : undefined
   const collapsedStatusDetail = chrome?.statusDetail ?? `${runtime}${networkPath ? ` · ${networkPathLabel}` : ''}${privateMode ? ` · ${modeLabel(privateMode, t)}` : ''}`
   const sidebarAction = desktopCollapsed ? t('expandSidebar') : t('collapseSidebar')
   const shellStyle = {
@@ -143,7 +145,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           })}
         </nav>
         <div className="border-t border-[var(--border)] p-3">
-          <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><span className="flex items-center gap-1"><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge>{networkPath ? <NetworkAutomationStatusTag status={system.data?.network_automation} path={networkPath} label={networkPathLabel} /> : null}<PrivateAccessStatusTag status={chrome || simple ? undefined : system.data?.private_access} /></span></div>
+          <div className={cn('flex items-center justify-between gap-2 px-2', desktopCollapsed && 'lg:hidden')}><span className="truncate text-xs text-[var(--muted)]">{statusLabel}</span><Tooltip placement="top-end" title={sidebarStatusTags}><span aria-label={`${statusLabel}: ${chrome ? statusTone : runtime}`} className={sidebarStatusTags ? 'inline-flex cursor-help' : 'inline-flex'} tabIndex={sidebarStatusTags ? 0 : undefined}><Badge tone={statusTone}>{chrome ? statusTone : runtime}</Badge></span></Tooltip></div>
           {desktopCollapsed ? <div className="hidden place-items-center lg:grid" aria-label={`${statusLabel}: ${collapsedStatusDetail}`} title={`${statusLabel}: ${collapsedStatusDetail}`}><span className={cn('size-2.5 rounded-full', statusTone === 'success' ? 'bg-emerald-500' : statusTone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400')} /></div> : null}
         </div>
       </aside>
