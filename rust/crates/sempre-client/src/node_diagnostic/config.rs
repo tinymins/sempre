@@ -70,7 +70,7 @@ fn sing_box_config(
     root.insert("route".into(), Value::Object(route));
     root.remove("experimental");
     if private_probe_url.is_some() {
-        retain_endpoint(root, node);
+        retain_endpoint_and_dns(root, node);
     } else {
         root.remove("endpoints");
     }
@@ -105,9 +105,31 @@ fn selected_endpoint_probe_url(
         .ok_or_else(|| format!("WireGuard endpoint {node:?} has no usable AllowedIPs probe target"))
 }
 
-fn retain_endpoint(root: &mut Map<String, Value>, node: &str) {
+fn retain_endpoint_and_dns(root: &mut Map<String, Value>, node: &str) {
+    let removed = root
+        .get("endpoints")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|endpoint| endpoint.get("tag").and_then(Value::as_str))
+        .filter(|tag| *tag != node)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
     if let Some(endpoints) = root.get_mut("endpoints").and_then(Value::as_array_mut) {
         endpoints.retain(|endpoint| endpoint.get("tag").and_then(Value::as_str) == Some(node));
+    }
+    if let Some(servers) = root
+        .get_mut("dns")
+        .and_then(Value::as_object_mut)
+        .and_then(|dns| dns.get_mut("servers"))
+        .and_then(Value::as_array_mut)
+    {
+        servers.retain(|server| {
+            server
+                .get("detour")
+                .and_then(Value::as_str)
+                .is_none_or(|detour| !removed.iter().any(|tag| tag == detour))
+        });
     }
 }
 
@@ -231,7 +253,11 @@ mod tests {
                 "default_domain_resolver":{"server":"bootstrap","strategy":"ipv4_only"},
                 "rules": [{"outbound":"direct"}]
             },
-            "dns": {"servers":[{"type":"tls","tag":"bootstrap"}]},
+            "dns": {"servers":[
+                {"type":"tls","tag":"bootstrap"},
+                {"type":"udp","tag":"home-wg-dns","detour":"home-wg"},
+                {"type":"udp","tag":"other-wg-dns","detour":"other-wg"}
+            ]},
             "experimental": {"clash_api":{"external_controller":"127.0.0.1:9090"}}
         });
         let (output, private_probe_url) =
@@ -239,6 +265,8 @@ mod tests {
         assert_eq!(private_probe_url.as_deref(), Some("http://10.8.28.1/"));
         assert_eq!(output["endpoints"].as_array().unwrap().len(), 1);
         assert_eq!(output["endpoints"][0]["tag"], "home-wg");
+        assert_eq!(output["dns"]["servers"].as_array().unwrap().len(), 2);
+        assert_eq!(output["dns"]["servers"][1]["tag"], "home-wg-dns");
         assert_eq!(
             output["route"]["default_domain_resolver"]["server"],
             "bootstrap"
