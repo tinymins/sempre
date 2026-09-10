@@ -7,6 +7,7 @@ use axum::{
     response::{IntoResponse, Response, Sse, sse::Event},
     routing::{get, post},
 };
+use sempre_network::{DOMESTIC_IP_PROBE, FOREIGN_IP_PROBE, PublicIpProbe};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -215,46 +216,7 @@ async fn run_debug(state: Arc<AppState>, node: String, sender: mpsc::Sender<Debu
         return;
     }
 
-    run_http_step(
-        &sender,
-        &core,
-        "probe",
-        "节点探活",
-        "https://cp.cloudflare.com/generate_204",
-    )
-    .await;
-    run_dns_step(
-        &sender,
-        &core,
-        "dns-baidu",
-        "DNS · www.baidu.com",
-        "www.baidu.com",
-    )
-    .await;
-    run_dns_step(
-        &sender,
-        &core,
-        "dns-google",
-        "DNS · www.google.com",
-        "www.google.com",
-    )
-    .await;
-    run_http_step(
-        &sender,
-        &core,
-        "http-baidu",
-        "HTTP · www.baidu.com",
-        "https://www.baidu.com/",
-    )
-    .await;
-    run_http_step(
-        &sender,
-        &core,
-        "http-google",
-        "HTTP · www.google.com",
-        "https://www.google.com/generate_204",
-    )
-    .await;
+    run_standard_steps(&sender, &core).await;
     core.stop().await;
     let _ = sender
         .send(DebugEvent {
@@ -262,6 +224,78 @@ async fn run_debug(state: Arc<AppState>, node: String, sender: mpsc::Sender<Debu
             payload: json!({"node":node,"duration_ms":millis(total)}),
         })
         .await;
+}
+
+async fn run_standard_steps(sender: &mpsc::Sender<DebugEvent>, core: &DiagnosticCore) {
+    run_http_step(
+        sender,
+        core,
+        "probe",
+        "节点探活",
+        "https://cp.cloudflare.com/generate_204",
+    )
+    .await;
+    run_ip_step(
+        sender,
+        core,
+        "domestic-ip",
+        "国内出口 IP",
+        DOMESTIC_IP_PROBE,
+    )
+    .await;
+    run_ip_step(sender, core, "foreign-ip", "国外出口 IP", FOREIGN_IP_PROBE).await;
+    run_dns_step(
+        sender,
+        core,
+        "dns-baidu",
+        "DNS · www.baidu.com",
+        "www.baidu.com",
+    )
+    .await;
+    run_dns_step(
+        sender,
+        core,
+        "dns-google",
+        "DNS · www.google.com",
+        "www.google.com",
+    )
+    .await;
+    run_http_step(
+        sender,
+        core,
+        "http-baidu",
+        "HTTP · www.baidu.com",
+        "https://www.baidu.com/",
+    )
+    .await;
+    run_http_step(
+        sender,
+        core,
+        "http-google",
+        "HTTP · www.google.com",
+        "https://www.google.com/generate_204",
+    )
+    .await;
+}
+
+async fn run_ip_step(
+    sender: &mpsc::Sender<DebugEvent>,
+    core: &DiagnosticCore,
+    id: &str,
+    label: &str,
+    probe: PublicIpProbe,
+) {
+    if !send_running(sender, id, label).await {
+        return;
+    }
+    let started = Instant::now();
+    match core.public_ip(probe).await {
+        Ok(result) => {
+            let data = serde_json::to_value(result).unwrap_or(Value::Null);
+            send_succeeded(sender, id, label, started, data).await;
+        }
+        Err(error) => send_failed(sender, id, label, started, &error).await,
+    }
 }
 
 async fn run_http_step(

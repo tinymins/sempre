@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { CheckCircle2, Circle, LoaderCircle, RotateCw, XCircle } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { CheckCircle2, Circle, Globe2, LoaderCircle, MapPin, Network, RotateCw, XCircle } from 'lucide-react'
 import { Button, Modal, Tag } from '@acme/components'
 import { streamRequest } from '../../lib/api'
 import { useI18n } from '../../lib/i18n'
@@ -19,8 +19,22 @@ interface DebugStep {
     domain?: string
     resolver?: string
     answers?: string[]
+    ip?: string
+    metadata?: IpMetadata
+    metadata_error?: string
   }
   error?: string
+}
+
+interface IpMetadata {
+  country_code?: string
+  country?: string
+  region?: string
+  city?: string
+  asn?: number
+  asn_organization?: string
+  isp?: string
+  organization?: string
 }
 
 export function NodeDebugModal({ node, open, onClose }: { node?: string; open: boolean; onClose: () => void }) {
@@ -124,6 +138,7 @@ function StepResult({ step, locale }: { step: DebugStep; locale: 'zh-CN' | 'en' 
   if (step.error) return <p className="mt-1 break-words text-xs text-red-600 dark:text-red-400">{step.error}</p>
   const data = step.data
   if (!data) return null
+  if (data.ip) return <IpResultCard step={step} locale={locale} />
   if (data.domain) {
     return <div className="mt-1 text-xs text-[var(--muted)]">
       <span>DoH · {data.resolver} · RCODE {data.status}</span>
@@ -133,10 +148,66 @@ function StepResult({ step, locale }: { step: DebugStep; locale: 'zh-CN' | 'en' 
   return <p className="mt-1 break-all text-xs text-[var(--muted)]">HTTP {data.status} · {formatBytes(data.bytes || 0)} · {data.url}</p>
 }
 
+function IpResultCard({ step, locale }: { step: DebugStep; locale: 'zh-CN' | 'en' }) {
+  const data = step.data!
+  const metadata = data.metadata
+  const domestic = step.id === 'domestic-ip'
+  const location = [metadata?.country, metadata?.region, metadata?.city].filter(Boolean).join(' · ')
+  const network = metadata?.isp || metadata?.organization || metadata?.asn_organization
+  const asn = metadata?.asn ? `AS${metadata.asn}` : undefined
+  return <div className="mt-2 overflow-hidden rounded-lg border border-black/[0.06] bg-black/[0.02] dark:border-white/[0.08] dark:bg-white/[0.03]">
+    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <Globe2 className={`size-4 shrink-0 ${domestic ? 'text-cyan-500' : 'text-blue-500'}`} />
+        <span className="break-all font-mono text-sm font-semibold tracking-tight text-[var(--text)]">{data.ip}</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        {asn ? <Tag color="purple" size="small">{asn}</Tag> : null}
+        <Tag color={domestic ? 'cyan' : 'blue'} size="small">
+          {domestic ? (locale === 'zh-CN' ? '国内探测' : 'Domestic probe') : (locale === 'zh-CN' ? '国外探测' : 'Foreign probe')}
+        </Tag>
+      </div>
+    </div>
+    {location || network ? <div className="grid gap-2 border-t border-black/[0.05] px-3 py-2.5 text-xs dark:border-white/[0.06] sm:grid-cols-2">
+      <IpDetail icon={<MapPin />} label={locale === 'zh-CN' ? '出口位置' : 'Location'} value={`${countryFlag(metadata?.country_code)}${location || '—'}`} />
+      <IpDetail icon={<Network />} label={locale === 'zh-CN' ? '网络归属' : 'Network'} value={network || metadata?.asn_organization || '—'} />
+    </div> : null}
+    <div className="border-t border-black/[0.05] px-3 py-2 text-[11px] text-[var(--muted)] dark:border-white/[0.06]">
+      <span>{locale === 'zh-CN' ? '探测来源' : 'Source'} · {sourceHost(data.url)}</span>
+      {metadata ? <span> · ASN via api.ip.sb</span> : null}
+      {data.metadata_error ? <span className="block break-words text-amber-600 dark:text-amber-400">{locale === 'zh-CN' ? 'ASN 信息暂不可用' : 'ASN metadata unavailable'} · {data.metadata_error}</span> : null}
+    </div>
+  </div>
+}
+
+function IpDetail({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return <div className="flex min-w-0 items-start gap-2">
+    <span className="mt-0.5 shrink-0 text-[var(--muted)] [&>svg]:size-3.5">{icon}</span>
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{label}</p>
+      <p className="mt-0.5 break-words font-medium text-[var(--text)]">{value}</p>
+    </div>
+  </div>
+}
+
+function countryFlag(code?: string) {
+  if (!code || !/^[a-z]{2}$/i.test(code)) return ''
+  return `${String.fromCodePoint(...code.toUpperCase().split('').map((letter) => 127397 + letter.charCodeAt(0)))} `
+}
+
+function sourceHost(url?: string) {
+  if (!url) return '—'
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
 function stepLabels(locale: 'zh-CN' | 'en'): Record<string, string> {
   return locale === 'zh-CN'
-    ? { prepare: '启动隔离 Core', probe: '节点探活', 'private-probe': '私网连通', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
-    : { prepare: 'Start isolated Core', probe: 'Node liveness', 'private-probe': 'Private reachability', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
+    ? { prepare: '启动隔离 Core', probe: '节点探活', 'private-probe': '私网连通', 'domestic-ip': '国内出口 IP', 'foreign-ip': '国外出口 IP', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
+    : { prepare: 'Start isolated Core', probe: 'Node liveness', 'private-probe': 'Private reachability', 'domestic-ip': 'Domestic exit IP', 'foreign-ip': 'Foreign exit IP', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
 }
 
 function formatBytes(bytes: number) {

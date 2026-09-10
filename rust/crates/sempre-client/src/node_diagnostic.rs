@@ -9,6 +9,7 @@ use std::{
 use futures_util::StreamExt;
 use reqwest::{Client, Proxy, redirect::Policy};
 use sempre_manager::Manager;
+use sempre_network::{IpMetadata, PublicIpProbe, lookup_ip_metadata};
 use sempre_state::RuntimeState;
 use serde::Serialize;
 use serde_json::Value;
@@ -44,6 +45,17 @@ pub(crate) struct DnsResult {
     pub(crate) resolver: &'static str,
     pub(crate) status: i64,
     pub(crate) answers: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct PublicIpResult {
+    pub(crate) url: &'static str,
+    pub(crate) status: u16,
+    pub(crate) ip: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) metadata: Option<IpMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) metadata_error: Option<String>,
 }
 
 impl DiagnosticCore {
@@ -172,6 +184,45 @@ impl DiagnosticCore {
             url: url.into(),
             status,
             bytes,
+        })
+    }
+
+    pub(crate) async fn public_ip(&self, probe: PublicIpProbe) -> Result<PublicIpResult, String> {
+        let response = self
+            .client
+            .get(probe.url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        let status = response.status();
+        if !status.is_success() && !status.is_redirection() {
+            return Err(format!("HTTP {}", status.as_u16()));
+        }
+        if response
+            .content_length()
+            .is_some_and(|size| size > MAX_BODY_SIZE)
+        {
+            return Err(format!("response body exceeds {MAX_BODY_SIZE} bytes"));
+        }
+        let mut body = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            body.extend_from_slice(&chunk.map_err(|error| error.to_string())?);
+            if body.len() as u64 > MAX_BODY_SIZE {
+                return Err(format!("response body exceeds {MAX_BODY_SIZE} bytes"));
+            }
+        }
+        let ip = probe.parse_response(&body)?;
+        let (metadata, metadata_error) = match lookup_ip_metadata(&self.client, &ip).await {
+            Ok(metadata) => (Some(metadata), None),
+            Err(error) => (None, Some(error)),
+        };
+        Ok(PublicIpResult {
+            url: probe.url,
+            status: status.as_u16(),
+            ip,
+            metadata,
+            metadata_error,
         })
     }
 
