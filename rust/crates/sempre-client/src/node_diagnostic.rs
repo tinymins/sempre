@@ -29,7 +29,6 @@ pub(crate) struct DiagnosticCore {
     child: Child,
     directory: TempDir,
     client: Client,
-    private_probe_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -140,22 +139,7 @@ impl DiagnosticCore {
             child,
             directory,
             client,
-            private_probe_url: config.private_probe_url,
         })
-    }
-
-    pub(crate) fn private_probe_url(&self) -> Option<&str> {
-        self.private_probe_url.as_deref()
-    }
-
-    pub(crate) async fn latency(&self, url: &str) -> Result<u64, String> {
-        let started = Instant::now();
-        self.client
-            .get(url)
-            .send()
-            .await
-            .map_err(|error| error.to_string())?;
-        Ok(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX))
     }
 
     pub(crate) async fn http_get(&self, url: &str) -> Result<HttpResult, String> {

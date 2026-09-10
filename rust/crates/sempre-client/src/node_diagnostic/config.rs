@@ -1,11 +1,9 @@
-use std::{fs, net::IpAddr, path::Path};
+use std::{fs, path::Path};
 
-use ipnet::IpNet;
 use serde_json::{Map, Value, json};
 
 pub(super) struct DiagnosticConfig {
     pub(super) text: String,
-    pub(super) private_probe_url: Option<String>,
 }
 
 pub(super) fn build_config(
@@ -21,23 +19,17 @@ pub(super) fn build_config(
     if core == "sing-box" {
         let value: Value = serde_json::from_str(&text)
             .map_err(|error| format!("parse sing-box configuration: {error}"))?;
-        let (value, private_probe_url) = sing_box_config(value, node, port, username, password)?;
+        let value = sing_box_config(value, node, port, username, password)?;
         let text = serde_json::to_string_pretty(&value)
             .map_err(|error| format!("serialize diagnostic configuration: {error}"))?;
-        Ok(DiagnosticConfig {
-            text,
-            private_probe_url,
-        })
+        Ok(DiagnosticConfig { text })
     } else {
         let value: Value = serde_yaml::from_str(&text)
             .map_err(|error| format!("parse Clash configuration: {error}"))?;
         let value = clash_config(value, node, port, username, password)?;
         let text = serde_yaml::to_string(&value)
             .map_err(|error| format!("serialize diagnostic configuration: {error}"))?;
-        Ok(DiagnosticConfig {
-            text,
-            private_probe_url: None,
-        })
+        Ok(DiagnosticConfig { text })
     }
 }
 
@@ -47,11 +39,11 @@ fn sing_box_config(
     port: u16,
     username: &str,
     password: &str,
-) -> Result<(Value, Option<String>), String> {
+) -> Result<Value, String> {
     let root = value
         .as_object_mut()
         .ok_or_else(|| "sing-box configuration must be an object".to_string())?;
-    let private_probe_url = selected_endpoint_probe_url(root, node)?;
+    ensure_outbound(root, node)?;
     let default_domain_resolver = root
         .get("route")
         .and_then(Value::as_object)
@@ -69,17 +61,14 @@ fn sing_box_config(
     }
     root.insert("route".into(), Value::Object(route));
     root.remove("experimental");
-    retain_endpoint_and_dns(root, private_probe_url.as_ref().map(|_| node));
+    remove_endpoints_and_dependent_dns(root);
     if let Some(dns) = root.get_mut("dns").and_then(Value::as_object_mut) {
         dns.remove("rules");
     }
-    Ok((value, private_probe_url))
+    Ok(value)
 }
 
-fn selected_endpoint_probe_url(
-    root: &Map<String, Value>,
-    node: &str,
-) -> Result<Option<String>, String> {
+fn ensure_outbound(root: &Map<String, Value>, node: &str) -> Result<(), String> {
     let outbound_exists = root
         .get("outbounds")
         .and_then(Value::as_array)
@@ -87,37 +76,32 @@ fn selected_endpoint_probe_url(
         .flatten()
         .any(|outbound| outbound.get("tag").and_then(Value::as_str) == Some(node));
     if outbound_exists {
-        return Ok(None);
+        return Ok(());
     }
-    let endpoint = root
+    let endpoint_exists = root
         .get("endpoints")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .find(|endpoint| endpoint.get("tag").and_then(Value::as_str) == Some(node))
-        .ok_or_else(|| format!("node {node:?} is not present in the runtime configuration"))?;
-    wireguard_probe_url(endpoint)
-        .map(Some)
-        .ok_or_else(|| format!("WireGuard endpoint {node:?} has no usable AllowedIPs probe target"))
+        .any(|endpoint| endpoint.get("tag").and_then(Value::as_str) == Some(node));
+    if endpoint_exists {
+        return Err("WireGuard diagnostics must reuse the endpoint in the managed core".into());
+    }
+    Err(format!(
+        "node {node:?} is not present in the runtime configuration"
+    ))
 }
 
-fn retain_endpoint_and_dns(root: &mut Map<String, Value>, retained: Option<&str>) {
+fn remove_endpoints_and_dependent_dns(root: &mut Map<String, Value>) {
     let removed = root
         .get("endpoints")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|endpoint| endpoint.get("tag").and_then(Value::as_str))
-        .filter(|tag| Some(*tag) != retained)
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if let Some(node) = retained {
-        if let Some(endpoints) = root.get_mut("endpoints").and_then(Value::as_array_mut) {
-            endpoints.retain(|endpoint| endpoint.get("tag").and_then(Value::as_str) == Some(node));
-        }
-    } else {
-        root.remove("endpoints");
-    }
+    root.remove("endpoints");
     if let Some(servers) = root
         .get_mut("dns")
         .and_then(Value::as_object_mut)
@@ -131,36 +115,6 @@ fn retain_endpoint_and_dns(root: &mut Map<String, Value>, retained: Option<&str>
                 .is_none_or(|detour| !removed.iter().any(|tag| tag == detour))
         });
     }
-}
-
-fn wireguard_probe_url(endpoint: &Value) -> Option<String> {
-    let allowed_ips = endpoint
-        .get("peers")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .flat_map(|peer| {
-            peer.get("allowed_ips")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-        })
-        .filter_map(Value::as_str)
-        .filter_map(|value| value.parse::<IpNet>().ok())
-        .collect::<Vec<_>>();
-    if allowed_ips.iter().any(|network| network.prefix_len() == 0) {
-        return Some("https://cp.cloudflare.com/generate_204".into());
-    }
-    let address = allowed_ips
-        .into_iter()
-        .filter_map(|network| network.hosts().next())
-        .find(|address| {
-            !address.is_unspecified() && !address.is_loopback() && !address.is_multicast()
-        })?;
-    Some(match address {
-        IpAddr::V4(address) => format!("http://{address}/"),
-        IpAddr::V6(address) => format!("http://[{address}]/"),
-    })
 }
 
 fn clash_config(
@@ -235,19 +189,17 @@ mod tests {
                 {"type":"udp","tag":"home-wg-dns","detour":"home-wg"}
             ],"rules":[{"rule_set":"remote"}]}
         });
-        let (output, private_probe_url) =
-            sing_box_config(input, "node-a", 19080, "user", "pass").unwrap();
+        let output = sing_box_config(input, "node-a", 19080, "user", "pass").unwrap();
         assert_eq!(output["inbounds"][0]["listen_port"], 19080);
         assert_eq!(output["route"]["final"], "node-a");
         assert!(output.get("experimental").is_none());
         assert!(output.get("endpoints").is_none());
         assert_eq!(output["dns"]["servers"].as_array().unwrap().len(), 1);
         assert!(output["dns"].get("rules").is_none());
-        assert!(private_probe_url.is_none());
     }
 
     #[test]
-    fn isolates_wireguard_endpoint_and_uses_allowed_ip_probe() {
+    fn refuses_to_start_a_second_wireguard_endpoint() {
         let input = json!({
             "inbounds": [{"type":"tun"}],
             "outbounds": [{"type":"direct","tag":"direct"}],
@@ -266,16 +218,10 @@ mod tests {
             ]},
             "experimental": {"clash_api":{"external_controller":"127.0.0.1:9090"}}
         });
-        let (output, private_probe_url) =
-            sing_box_config(input, "home-wg", 19080, "user", "pass").unwrap();
-        assert_eq!(private_probe_url.as_deref(), Some("http://10.8.28.1/"));
-        assert_eq!(output["endpoints"].as_array().unwrap().len(), 1);
-        assert_eq!(output["endpoints"][0]["tag"], "home-wg");
-        assert_eq!(output["dns"]["servers"].as_array().unwrap().len(), 2);
-        assert_eq!(output["dns"]["servers"][1]["tag"], "home-wg-dns");
+        let error = sing_box_config(input, "home-wg", 19080, "user", "pass").unwrap_err();
         assert_eq!(
-            output["route"]["default_domain_resolver"]["server"],
-            "bootstrap"
+            error,
+            "WireGuard diagnostics must reuse the endpoint in the managed core"
         );
     }
 

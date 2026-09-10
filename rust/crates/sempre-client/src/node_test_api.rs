@@ -17,6 +17,8 @@ use crate::{
     node_diagnostic::DiagnosticCore,
 };
 
+mod wireguard;
+
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/runtime/nodes", get(nodes))
@@ -77,7 +79,10 @@ async fn delay_node(State(state): State<Arc<AppState>>, Json(input): Json<DelayI
         );
     };
     if node.node_type.eq_ignore_ascii_case("wireguard") {
-        return wireguard_delay(&state, &node.name).await;
+        return match wireguard::delay(&state.manager, &client, &node.name).await {
+            Ok(result) => Json(result).into_response(),
+            Err(error) => node_test_error(error),
+        };
     }
     match client
         .proxy_delay(&node.name, "https://www.gstatic.com/generate_204", 5000)
@@ -85,23 +90,6 @@ async fn delay_node(State(state): State<Arc<AppState>>, Json(input): Json<DelayI
     {
         Ok(delay) => Json(json!({"delay":delay})).into_response(),
         Err(error) => crate::runtime_control_api::runtime_error(&error),
-    }
-}
-
-async fn wireguard_delay(state: &AppState, node: &str) -> Response {
-    let core = match DiagnosticCore::start(&state.manager, node).await {
-        Ok(core) => core,
-        Err(error) => return node_test_error(error),
-    };
-    let Some(target) = core.private_probe_url().map(str::to_owned) else {
-        core.stop().await;
-        return node_test_error("WireGuard private probe target is unavailable".into());
-    };
-    let result = core.latency(&target).await;
-    core.stop().await;
-    match result {
-        Ok(delay) => Json(json!({"delay":delay,"target":target})).into_response(),
-        Err(error) => node_test_error(error),
     }
 }
 
@@ -126,16 +114,23 @@ async fn debug_node(State(state): State<Arc<AppState>>, Json(input): Json<DebugI
         Ok(proxies) => proxies,
         Err(error) => return crate::runtime_control_api::runtime_error(&error),
     };
-    if !leaf_nodes(proxies).iter().any(|node| node.name == name) {
+    let Some(node) = leaf_nodes(proxies)
+        .into_iter()
+        .find(|node| node.name == name)
+    else {
         return api_error(
             StatusCode::NOT_FOUND,
             "NODE_NOT_FOUND",
             "proxy node not found",
         );
-    }
+    };
 
     let (sender, receiver) = mpsc::channel(32);
-    tokio::spawn(run_debug(state, name.to_owned(), sender));
+    if node.node_type.eq_ignore_ascii_case("wireguard") {
+        tokio::spawn(wireguard::run_debug(state, client, name.to_owned(), sender));
+    } else {
+        tokio::spawn(run_debug(state, name.to_owned(), sender));
+    }
     let stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
         let item = receiver.recv().await?;
         let event = Event::default().event(item.event).json_data(item.payload);
@@ -201,18 +196,6 @@ async fn run_debug(state: Arc<AppState>, node: String, sender: mpsc::Sender<Debu
     .await
     {
         core.stop().await;
-        return;
-    }
-
-    if let Some(url) = core.private_probe_url().map(str::to_owned) {
-        run_http_step(&sender, &core, "private-probe", "私网连通", &url).await;
-        core.stop().await;
-        let _ = sender
-            .send(DebugEvent {
-                event: "done",
-                payload: json!({"node":node,"duration_ms":millis(total)}),
-            })
-            .await;
         return;
     }
 
@@ -377,6 +360,22 @@ async fn send_failed(
             payload: json!({"id":id,"label":label,"state":"failed","duration_ms":millis(started),"error":error}),
         })
         .await;
+}
+
+async fn send_skipped(
+    sender: &mpsc::Sender<DebugEvent>,
+    id: &str,
+    label: &str,
+    message: &str,
+    data: Value,
+) -> bool {
+    sender
+        .send(DebugEvent {
+            event: "step",
+            payload: json!({"id":id,"label":label,"state":"skipped","message":message,"data":data}),
+        })
+        .await
+        .is_ok()
 }
 
 async fn send_error(sender: &mpsc::Sender<DebugEvent>, message: String) {

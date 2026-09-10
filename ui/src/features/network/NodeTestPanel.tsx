@@ -17,13 +17,14 @@ interface LatencyState {
   loading?: boolean
   value?: number
   error?: string
+  skipped?: string
 }
 
 export function NodeTestPanel() {
   const { locale, t } = useI18n()
   const { session } = useSession()
   const [latencies, setLatencies] = useState<Record<string, LatencyState>>({})
-  const [debugNode, setDebugNode] = useState<string>()
+  const [debugNode, setDebugNode] = useState<NodeSummary>()
   const nodes = useQuery({
     queryKey: ['runtime', 'nodes'],
     queryFn: () => api<NodeSummary[]>(session!, '/runtime/nodes'),
@@ -33,11 +34,16 @@ export function NodeTestPanel() {
   const testLatency = async (name: string) => {
     setLatencies((current) => ({ ...current, [name]: { loading: true } }))
     try {
-      const result = await api<{ delay: number }>(session!, '/runtime/nodes/delay', {
+      const result = await api<{ delay?: number; skipped?: boolean; reason?: string }>(session!, '/runtime/nodes/delay', {
         method: 'POST',
         body: JSON.stringify({ name }),
       })
-      setLatencies((current) => ({ ...current, [name]: { value: result.delay } }))
+      setLatencies((current) => ({
+        ...current,
+        [name]: result.skipped
+          ? { skipped: locale === 'zh-CN' ? '该 WireGuard 仅包含私网 AllowedIPs，未发送公网探测流量。' : (result.reason || 'Traffic test skipped') }
+          : { value: result.delay },
+      }))
     } catch (error) {
       setLatencies((current) => ({
         ...current,
@@ -75,8 +81,10 @@ export function NodeTestPanel() {
             shape="circle"
             icon={<Bug />}
             aria-label={`${locale === 'zh-CN' ? '调试' : 'Debug'} ${record.name}`}
-            title={locale === 'zh-CN' ? '完整流量调试' : 'Full traffic diagnostics'}
-            onClick={() => setDebugNode(record.name)}
+            title={record.type.toLowerCase() === 'wireguard'
+              ? (locale === 'zh-CN' ? 'WireGuard 安全诊断' : 'Safe WireGuard diagnostics')
+              : (locale === 'zh-CN' ? '完整流量调试' : 'Full traffic diagnostics')}
+            onClick={() => setDebugNode(record)}
           />
         </div>
       },
@@ -86,7 +94,7 @@ export function NodeTestPanel() {
   return <div className="mt-5 space-y-4">
     <div className="flex items-start justify-between gap-4">
       <p className="text-sm text-[var(--muted)]">
-        {locale === 'zh-CN' ? '延迟测试用于快速探活；调试会通过所选节点执行独立的 DNS 与 HTTP 流量测试。' : 'Latency is a quick liveness check. Debug runs isolated DNS and HTTP traffic through the selected node.'}
+        {locale === 'zh-CN' ? '普通节点使用隔离 Core 完成延迟、DNS、HTTP 与出口 IP 测试；WireGuard 仅复用当前 Core 中的 endpoint，私网路由不会发送公网探测流量。' : 'Regular nodes use an isolated Core for latency, DNS, HTTP, and exit IP tests. WireGuard reuses only the endpoint in the current Core, and private-only routes do not send public probes.'}
       </p>
       <Button size="small" icon={<RefreshCw />} loading={nodes.isFetching} onClick={() => nodes.refetch()}>{t('refresh')}</Button>
     </div>
@@ -104,11 +112,21 @@ export function NodeTestPanel() {
         }}
       />
     </Card>
-    <NodeDebugModal key={debugNode} node={debugNode} open={Boolean(debugNode)} onClose={() => setDebugNode(undefined)} />
+    <NodeDebugModal key={debugNode?.name} node={debugNode?.name} nodeType={debugNode?.type} open={Boolean(debugNode)} onClose={() => setDebugNode(undefined)} />
   </div>
 }
 
 function LatencyButton({ state, locale, privateAccess, onClick }: { state: LatencyState; locale: 'zh-CN' | 'en'; privateAccess: boolean; onClick: () => void }) {
+  if (state.skipped) {
+    return <Button
+      size="small"
+      className="!border-sky-500/40 !text-sky-700 dark:!text-sky-400"
+      icon={<Gauge />}
+      aria-label={`${locale === 'zh-CN' ? '仅私网' : 'Private only'}: ${state.skipped}`}
+      title={state.skipped}
+      onClick={onClick}
+    >{locale === 'zh-CN' ? '仅私网' : 'Private'}</Button>
+  }
   if (state.error) {
     return <Button
       size="small"
@@ -127,7 +145,7 @@ function LatencyButton({ state, locale, privateAccess, onClick }: { state: Laten
         ? '!border-amber-500/50 !text-amber-700 dark:!text-amber-400'
         : '!border-red-500/40 !text-red-600 dark:!text-red-400'
   const title = privateAccess
-    ? (locale === 'zh-CN' ? '私网连通延迟' : 'Private reachability latency')
+    ? (locale === 'zh-CN' ? 'WireGuard 安全探测' : 'Safe WireGuard probe')
     : (locale === 'zh-CN' ? '延迟测试' : 'Test latency')
   return <Button
     size="small"

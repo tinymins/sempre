@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { CheckCircle2, Circle, Globe2, LoaderCircle, MapPin, Network, RotateCw, XCircle } from 'lucide-react'
+import { CheckCircle2, Circle, CircleSlash2, Globe2, LoaderCircle, MapPin, Network, RotateCw, XCircle } from 'lucide-react'
 import { Button, Modal, Tag } from '@acme/components'
 import { streamRequest } from '../../lib/api'
 import { useI18n } from '../../lib/i18n'
 import { useSession } from '../../lib/session'
 
-type StepState = 'waiting' | 'running' | 'succeeded' | 'failed'
+type StepState = 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped'
 
 interface DebugStep {
   id: string
@@ -22,8 +22,13 @@ interface DebugStep {
     ip?: string
     metadata?: IpMetadata
     metadata_error?: string
+    delay?: number
+    method?: string
+    route_scope?: 'default' | 'private'
+    allowed_ips?: string[]
   }
   error?: string
+  message?: string
 }
 
 interface IpMetadata {
@@ -37,7 +42,7 @@ interface IpMetadata {
   organization?: string
 }
 
-export function NodeDebugModal({ node, open, onClose }: { node?: string; open: boolean; onClose: () => void }) {
+export function NodeDebugModal({ node, nodeType, open, onClose }: { node?: string; nodeType?: string; open: boolean; onClose: () => void }) {
   const { locale, t } = useI18n()
   const { session } = useSession()
   const [steps, setSteps] = useState<DebugStep[]>([])
@@ -74,7 +79,8 @@ export function NodeDebugModal({ node, open, onClose }: { node?: string; open: b
     setRun((value) => value + 1)
   }
 
-  const labels = stepLabels(locale)
+  const wireguard = nodeType?.toLowerCase() === 'wireguard'
+  const labels = stepLabels(locale, wireguard)
   const visibleSteps = steps.length ? steps : [{
     id: 'prepare',
     label: labels.prepare,
@@ -100,7 +106,9 @@ export function NodeDebugModal({ node, open, onClose }: { node?: string; open: b
           </Tag>
         </div>
         <p className="mt-1 text-xs text-[var(--muted)]">
-          {locale === 'zh-CN' ? '所有请求都经过该节点的隔离 Core 实例，不会切换当前使用中的代理节点。' : 'Every request uses an isolated Core instance pinned to this node. The active proxy selection is unchanged.'}
+          {wireguard
+            ? (locale === 'zh-CN' ? '仅复用当前 Core 已加载的 WireGuard endpoint；不会创建临时接口或修改机器路由。' : 'Reuses only the WireGuard endpoint loaded by the current Core. No temporary interface or host route is created.')
+            : (locale === 'zh-CN' ? '所有请求都经过该节点的隔离 Core 实例，不会切换当前使用中的代理节点。' : 'Every request uses an isolated Core instance pinned to this node. The active proxy selection is unchanged.')}
         </p>
       </div>
       <div className="overflow-hidden rounded-lg border border-black/[0.06] dark:border-white/[0.08]">
@@ -112,13 +120,15 @@ export function NodeDebugModal({ node, open, onClose }: { node?: string; open: b
 }
 
 function StepRow({ step, last, locale }: { step: DebugStep; last: boolean; locale: 'zh-CN' | 'en' }) {
-  const Icon = step.state === 'running' ? LoaderCircle : step.state === 'succeeded' ? CheckCircle2 : step.state === 'failed' ? XCircle : Circle
+  const Icon = step.state === 'running' ? LoaderCircle : step.state === 'succeeded' ? CheckCircle2 : step.state === 'failed' ? XCircle : step.state === 'skipped' ? CircleSlash2 : Circle
   const iconColor = step.state === 'running'
     ? 'text-sky-500'
     : step.state === 'succeeded'
       ? 'text-emerald-500'
       : step.state === 'failed'
         ? 'text-red-500'
+        : step.state === 'skipped'
+          ? 'text-amber-500'
         : 'text-[var(--muted)] opacity-40'
   return <div className={`flex gap-3 px-4 py-3 ${last ? '' : 'border-b border-black/[0.06] dark:border-white/[0.08]'}`}>
     <Icon className={`mt-0.5 size-4 shrink-0 ${iconColor} ${step.state === 'running' ? 'animate-spin' : ''}`} />
@@ -135,9 +145,17 @@ function StepRow({ step, last, locale }: { step: DebugStep; last: boolean; local
 function StepResult({ step, locale }: { step: DebugStep; locale: 'zh-CN' | 'en' }) {
   if (step.state === 'waiting') return <p className="mt-1 text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '等待执行' : 'Waiting'}</p>
   if (step.state === 'running') return <p className="mt-1 text-xs text-sky-600 dark:text-sky-400">{locale === 'zh-CN' ? '正在执行…' : 'Running…'}</p>
+  if (step.state === 'skipped') return <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+    <p>{localizedReason(step.message, locale)}</p>
+    {step.data?.allowed_ips?.length ? <p className="mt-1 break-all font-mono text-[11px] text-[var(--muted)]">AllowedIPs · {step.data.allowed_ips.join(' · ')}</p> : null}
+  </div>
   if (step.error) return <p className="mt-1 break-words text-xs text-red-600 dark:text-red-400">{step.error}</p>
   const data = step.data
   if (!data) return null
+  if (data.allowed_ips?.length) return <div className="mt-1 text-xs text-[var(--muted)]">
+    <p className="font-medium text-[var(--text)]">{data.route_scope === 'default' ? (locale === 'zh-CN' ? '默认路由型 WireGuard' : 'Default-route WireGuard') : (locale === 'zh-CN' ? '仅私网 WireGuard' : 'Private-only WireGuard')}</p>
+    <p className="mt-1 break-all font-mono text-[11px]">AllowedIPs · {data.allowed_ips.join(' · ')}</p>
+  </div>
   if (data.ip) return <IpResultCard step={step} locale={locale} />
   if (data.domain) {
     return <div className="mt-1 text-xs text-[var(--muted)]">
@@ -145,6 +163,7 @@ function StepResult({ step, locale }: { step: DebugStep; locale: 'zh-CN' | 'en' 
       <p className="mt-0.5 break-all text-[var(--text)]">{data.answers?.length ? data.answers.join(' · ') : (locale === 'zh-CN' ? '无应答记录' : 'No answer records')}</p>
     </div>
   }
+  if (data.delay !== undefined) return <p className="mt-1 break-all text-xs text-[var(--muted)]">URL-test · {data.delay} ms · {data.method || 'HEAD'} · {data.url}</p>
   return <p className="mt-1 break-all text-xs text-[var(--muted)]">HTTP {data.status} · {formatBytes(data.bytes || 0)} · {data.url}</p>
 }
 
@@ -204,10 +223,22 @@ function sourceHost(url?: string) {
   }
 }
 
-function stepLabels(locale: 'zh-CN' | 'en'): Record<string, string> {
+function stepLabels(locale: 'zh-CN' | 'en', wireguard: boolean): Record<string, string> {
+  if (wireguard) return locale === 'zh-CN'
+    ? { prepare: '复用当前 WireGuard', probe: '节点探活', 'private-probe': '私网连通', 'public-ip': '公网出口 IP', 'domestic-ip': '国内出口 IP', 'foreign-ip': '国外出口 IP', 'http-baidu': 'URL-test · www.baidu.com', 'http-google': 'URL-test · www.google.com' }
+    : { prepare: 'Reuse current WireGuard', probe: 'Node liveness', 'private-probe': 'Private reachability', 'public-ip': 'Public exit IP', 'domestic-ip': 'Domestic exit IP', 'foreign-ip': 'Foreign exit IP', 'http-baidu': 'URL-test · www.baidu.com', 'http-google': 'URL-test · www.google.com' }
   return locale === 'zh-CN'
     ? { prepare: '启动隔离 Core', probe: '节点探活', 'private-probe': '私网连通', 'domestic-ip': '国内出口 IP', 'foreign-ip': '国外出口 IP', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
     : { prepare: 'Start isolated Core', probe: 'Node liveness', 'private-probe': 'Private reachability', 'domestic-ip': 'Domestic exit IP', 'foreign-ip': 'Foreign exit IP', 'dns-baidu': 'DNS · www.baidu.com', 'dns-google': 'DNS · www.google.com', 'http-baidu': 'HTTP · www.baidu.com', 'http-google': 'HTTP · www.google.com' }
+}
+
+function localizedReason(message: string | undefined, locale: 'zh-CN' | 'en') {
+  if (!message) return locale === 'zh-CN' ? '该步骤不适用，已跳过。' : 'This step does not apply and was skipped.'
+  if (locale === 'en') return message
+  if (message.startsWith('This WireGuard endpoint has private-only')) return '该 WireGuard 仅包含私网 AllowedIPs，且未配置 HTTPS 私网健康地址；未发送任何测试流量。'
+  if (message.startsWith('Private WireGuard routing')) return '私网 WireGuard 不是公网出口，公网 IP 与 ASN 探测不适用。'
+  if (message.startsWith('sing-box URL-test only returns')) return 'sing-box URL-test 仅返回延迟，无法读取 IP 与 ASN 探测所需的响应正文。'
+  return message
 }
 
 function formatBytes(bytes: number) {

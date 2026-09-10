@@ -45,6 +45,29 @@ describe('NodeDebugModal', () => {
     expect(screen.getByText(/Source · api64\.ipify\.org/)).toBeInTheDocument()
     expect(screen.getByText('Completed')).toBeInTheDocument()
   })
+
+  it('shows private-only WireGuard as safely skipped without an isolated Core', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => sseResponse([
+      ['step', { id: 'prepare', label: '复用当前 WireGuard endpoint', state: 'succeeded', duration_ms: 1, data: {
+        node: 'home-wg', route_scope: 'private', allowed_ips: ['10.19.93.0/24', '10.19.94.0/24'],
+      } }],
+      ['step', { id: 'private-probe', label: '私网连通', state: 'skipped', message: 'This WireGuard endpoint has private-only AllowedIPs and no HTTPS private health target is configured; no test traffic was sent', data: {
+        allowed_ips: ['10.19.93.0/24', '10.19.94.0/24'],
+      } }],
+      ['step', { id: 'public-ip', label: '公网出口 IP', state: 'skipped', message: 'Private WireGuard routing is not a public internet exit; public IP and ASN detection do not apply' }],
+      ['done', { node: 'home-wg', duration_ms: 1 }],
+    ])))
+
+    render(<I18nProvider><SessionProvider><NodeDebugModal node="home-wg" nodeType="WireGuard" open onClose={() => undefined} /></SessionProvider></I18nProvider>)
+
+    expect(await screen.findByText('Private-only WireGuard')).toBeInTheDocument()
+    expect(screen.getAllByText(/AllowedIPs · 10\.19\.93\.0\/24 · 10\.19\.94\.0\/24/)).toHaveLength(2)
+    expect(screen.getByText(/no HTTPS private health target is configured/)).toBeInTheDocument()
+    expect(screen.getByText(/not a public internet exit/)).toBeInTheDocument()
+    expect(screen.getByText(/No temporary interface or host route is created/)).toBeInTheDocument()
+    expect(screen.queryByText('Start isolated Core')).not.toBeInTheDocument()
+    expect(screen.getByText('Completed')).toBeInTheDocument()
+  })
 })
 
 function sseResponse(events: Array<[string, object]>) {
