@@ -62,6 +62,20 @@ describe('Gateway page', () => {
     return render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Gateway /></SessionProvider></I18nProvider></QueryClientProvider>)
   }
 
+  it('separates network settings and DHCP into sub-tabs', async () => {
+    renderGateway()
+
+    const networkPanel = (await screen.findByText('Topology and LAN')).closest('[role="tabpanel"]')
+    const dhcpPanel = screen.getByText('DHCP settings').closest('[role="tabpanel"]')
+    expect(networkPanel).not.toHaveClass('hidden')
+    expect(dhcpPanel).toHaveClass('hidden')
+
+    fireEvent.click(screen.getByRole('button', { name: 'DHCP' }))
+    expect(networkPanel).toHaveClass('hidden')
+    expect(dhcpPanel).not.toHaveClass('hidden')
+    expect(screen.getByText('DHCP leases').closest('[role="tabpanel"]')).toBe(dhcpPanel)
+  })
+
   it('selects the detected default interface for a local PVE host', async () => {
     renderGateway()
 

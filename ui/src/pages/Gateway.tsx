@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Network, Play, RefreshCw, Save, Terminal, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Empty, Input, InputNumber, Select, Switch, Table, Tag, TextArea, type TableColumn } from '@acme/components'
+import { Alert, Button, Card, Empty, Input, InputNumber, Select, Switch, Table, Tabs, Tag, TextArea, type TableColumn } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -23,7 +23,7 @@ const emptyStatus: GatewayStatus = {
 }
 
 export function Gateway() {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState<GatewayConfig | null>(null)
@@ -85,6 +85,75 @@ export function Gateway() {
     { title: 'Expires', dataIndex: 'expires_at', minWidth: 180, sorter: (left, right) => compareDate(left.expires_at, right.expires_at), render: (value) => value ? new Date(String(value)).toLocaleString() : '-' },
     { title: '', key: 'action', width: 70, render: (_value, record) => record.reserved ? null : <Button size="small" variant="text" title="Revoke" onClick={() => revokeLease.mutate(record.mac)}><Trash2 size={15} /></Button> },
   ], [revokeLease])
+  const tabs = [
+    {
+      key: 'network',
+      label: locale === 'zh-CN' ? '网络设置' : 'Network settings',
+      children: <div className="space-y-5 pt-4">
+        <Section title="Topology and LAN">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Topology"><Select value={config.topology} options={[{ value: 'local-pve', label: 'PVE host local' }, { value: 'remote-pve', label: 'Gateway VM/LXC + PVE SSH/manual' }]} onChange={(value) => update((current) => ({ ...current, topology: value }))} /></Field>
+            <Field label="LAN interface"><Select showSearch allowClear popupMatchSelectWidth className="w-full max-w-full" value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
+            <Field label="Gateway CIDR"><Input value={config.lan.gateway_cidr} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, gateway_cidr: event.target.value } }))} /></Field>
+            <Field label="WAN interface">{config.topology === 'local-pve'
+              ? <Select showSearch popupMatchSelectWidth className="w-full max-w-full" value={localConfig.lan.wan_interface} options={lanOptions} placeholder="Select the local outbound interface" onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: String(value) } }))} />
+              : <Input value={config.lan.wan_interface} placeholder="Remote PVE interface name" onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: event.target.value } }))} />}
+            </Field>
+            <Field label="NAT masquerade"><Switch checked={config.lan.nat_enabled} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, nat_enabled: value } }))} /></Field>
+            <Field label="Proxy this host"><Switch checked={network.data?.settings.gateway_capture_host ?? false} loading={captureHost.isPending} onChange={(value) => captureHost.mutate(value)} /></Field>
+            <Field label="PVE host"><Input value={config.pve.host || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, host: event.target.value } }))} /></Field>
+            <Field label="SSH user"><Input value={config.pve.user || 'root'} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, user: event.target.value } }))} /></Field>
+            <Field label="SSH port"><InputNumber className="w-full" min={1} max={65535} value={config.pve.port || 22} disabled={config.topology === 'local-pve'} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, port: value ?? 22 } }))} /></Field>
+            <Field label="SSH key path"><Input value={config.pve.key_path || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, key_path: event.target.value } }))} /></Field>
+            <Field label="Host fingerprint"><Input value={config.pve.fingerprint || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, fingerprint: event.target.value } }))} /></Field>
+            <Field label="Persistent apply"><Switch checked={config.pve.apply_persistent} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, apply_persistent: value } }))} /></Field>
+          </div>
+        </Section>
+
+        <Alert type="info" showIcon message="LAN DNS entry is automatic" description="LAN clients use the gateway on TCP/UDP port 53. Sempre forwards those queries to the DNS frontend configured on the DNS page." />
+        {captureHost.isError ? <Alert type="error" showIcon message={captureHost.error instanceof Error ? captureHost.error.message : t('operationFailed')} /> : null}
+
+        <div className="border-t border-[var(--border)] pt-5">
+          <Section title="PVE host preparation">
+            {config.topology === 'remote-pve' ? <div className="mb-3"><Field label="One-time SSH private key"><TextArea rows={3} value={sshKey} placeholder="Optional when SSH key path is configured on the Sempre host" onChange={(event) => setSSHKey(event.target.value)} /></Field></div> : null}
+            <div className="mb-3 flex gap-2">
+              <Button icon={<Terminal size={16} />} loading={buildPlan.isPending} onClick={() => buildPlan.mutate(localConfig)}>Generate commands</Button>
+              <Button icon={<Copy size={16} />} disabled={!plan} onClick={() => plan && navigator.clipboard.writeText([...plan.commands, ...plan.persistent_commands].join('\n'))}>Copy</Button>
+              <Button variant="primary" icon={<Play size={16} />} loading={applyPlan.isPending} onClick={() => window.confirm('Apply these commands to the host now?') && applyPlan.mutate(localConfig)}>Apply confirmed plan</Button>
+            </div>
+            {buildPlan.isError ? <Alert type="error" showIcon message={buildPlan.error instanceof Error ? buildPlan.error.message : t('operationFailed')} /> : null}
+            {applyPlan.isError ? <Alert type="error" showIcon message={applyPlan.error instanceof Error ? applyPlan.error.message : t('operationFailed')} /> : null}
+            {plan ? <div className="space-y-3">
+              <Alert type="info" showIcon message={plan.summary} description={plan.warnings.join(' ')} />
+              <TextArea rows={Math.min(12, Math.max(4, plan.commands.length + plan.persistent_commands.length + 1))} value={[...plan.commands, ...plan.persistent_commands].join('\n')} readOnly />
+              {plan.output?.length ? <TextArea rows={Math.min(10, Math.max(3, plan.output.length + 1))} value={plan.output.join('\n')} readOnly /> : null}
+            </div> : null}
+          </Section>
+        </div>
+      </div>,
+    },
+    {
+      key: 'dhcp',
+      label: 'DHCP',
+      children: <div className="space-y-5 pt-4">
+        <Section title="DHCP settings">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Enabled"><Switch checked={config.dhcp.enabled} onChange={(value) => update((current) => ({ ...current, dhcp: { ...current.dhcp, enabled: value } }))} /></Field>
+            <Field label="Lease time"><Input value={config.dhcp.lease_time} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, lease_time: event.target.value } }))} /></Field>
+            <Field label="Range start"><Input value={config.dhcp.range_start} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, range_start: event.target.value } }))} /></Field>
+            <Field label="Range end"><Input value={config.dhcp.range_end} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, range_end: event.target.value } }))} /></Field>
+            <Field label="Domain"><Input value={config.dhcp.domain || ''} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, domain: event.target.value } }))} /></Field>
+          </div>
+        </Section>
+
+        <div className="border-t border-[var(--border)] pt-5">
+          <Section title="DHCP leases">
+            <Table<GatewayLease> rowKey="mac" size="middle" pagination={false} columns={leaseColumns} dataSource={runtime.dhcp_leases} scroll={{ x: 900 }} locale={{ emptyText: <Empty description="No DHCP leases" /> }} />
+          </Section>
+        </div>
+      </div>,
+    },
+  ]
 
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
@@ -106,66 +175,7 @@ export function Gateway() {
     </div>
 
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
-      <Section title="Topology and LAN">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Topology"><Select value={config.topology} options={[{ value: 'local-pve', label: 'PVE host local' }, { value: 'remote-pve', label: 'Gateway VM/LXC + PVE SSH/manual' }]} onChange={(value) => update((current) => ({ ...current, topology: value }))} /></Field>
-          <Field label="LAN interface"><Select showSearch allowClear popupMatchSelectWidth className="w-full max-w-full" value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
-          <Field label="Gateway CIDR"><Input value={config.lan.gateway_cidr} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, gateway_cidr: event.target.value } }))} /></Field>
-          <Field label="WAN interface">{config.topology === 'local-pve'
-            ? <Select showSearch popupMatchSelectWidth className="w-full max-w-full" value={localConfig.lan.wan_interface} options={lanOptions} placeholder="Select the local outbound interface" onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: String(value) } }))} />
-            : <Input value={config.lan.wan_interface} placeholder="Remote PVE interface name" onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: event.target.value } }))} />}
-          </Field>
-          <Field label="NAT masquerade"><Switch checked={config.lan.nat_enabled} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, nat_enabled: value } }))} /></Field>
-          <Field label="Proxy this host"><Switch checked={network.data?.settings.gateway_capture_host ?? false} loading={captureHost.isPending} onChange={(value) => captureHost.mutate(value)} /></Field>
-          <Field label="PVE host"><Input value={config.pve.host || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, host: event.target.value } }))} /></Field>
-          <Field label="SSH user"><Input value={config.pve.user || 'root'} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, user: event.target.value } }))} /></Field>
-          <Field label="SSH port"><InputNumber className="w-full" min={1} max={65535} value={config.pve.port || 22} disabled={config.topology === 'local-pve'} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, port: value ?? 22 } }))} /></Field>
-          <Field label="SSH key path"><Input value={config.pve.key_path || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, key_path: event.target.value } }))} /></Field>
-          <Field label="Host fingerprint"><Input value={config.pve.fingerprint || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, fingerprint: event.target.value } }))} /></Field>
-          <Field label="Persistent apply"><Switch checked={config.pve.apply_persistent} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, apply_persistent: value } }))} /></Field>
-        </div>
-      </Section>
-    </Card>
-
-    <Alert type="info" showIcon message="LAN DNS entry is automatic" description="LAN clients use the gateway on TCP/UDP port 53. Sempre forwards those queries to the DNS frontend configured on the DNS page." />
-    {captureHost.isError ? <Alert type="error" showIcon message={captureHost.error instanceof Error ? captureHost.error.message : t('operationFailed')} /> : null}
-
-    <div className="grid gap-5">
-      <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
-        <Section title="DHCP">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Enabled"><Switch checked={config.dhcp.enabled} onChange={(value) => update((current) => ({ ...current, dhcp: { ...current.dhcp, enabled: value } }))} /></Field>
-            <Field label="Lease time"><Input value={config.dhcp.lease_time} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, lease_time: event.target.value } }))} /></Field>
-            <Field label="Range start"><Input value={config.dhcp.range_start} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, range_start: event.target.value } }))} /></Field>
-            <Field label="Range end"><Input value={config.dhcp.range_end} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, range_end: event.target.value } }))} /></Field>
-            <Field label="Domain"><Input value={config.dhcp.domain || ''} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, domain: event.target.value } }))} /></Field>
-          </div>
-        </Section>
-      </Card>
-
-    </div>
-
-    <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
-      <Section title="PVE host preparation">
-        {config.topology === 'remote-pve' ? <div className="mb-3"><Field label="One-time SSH private key"><TextArea rows={3} value={sshKey} placeholder="Optional when SSH key path is configured on the Sempre host" onChange={(event) => setSSHKey(event.target.value)} /></Field></div> : null}
-        <div className="mb-3 flex gap-2">
-          <Button icon={<Terminal size={16} />} loading={buildPlan.isPending} onClick={() => buildPlan.mutate(localConfig)}>Generate commands</Button>
-          <Button icon={<Copy size={16} />} disabled={!plan} onClick={() => plan && navigator.clipboard.writeText([...plan.commands, ...plan.persistent_commands].join('\n'))}>Copy</Button>
-          <Button variant="primary" icon={<Play size={16} />} loading={applyPlan.isPending} onClick={() => window.confirm('Apply these commands to the host now?') && applyPlan.mutate(localConfig)}>Apply confirmed plan</Button>
-        </div>
-        {buildPlan.isError ? <Alert type="error" showIcon message={buildPlan.error instanceof Error ? buildPlan.error.message : t('operationFailed')} /> : null}
-        {applyPlan.isError ? <Alert type="error" showIcon message={applyPlan.error instanceof Error ? applyPlan.error.message : t('operationFailed')} /> : null}
-        {plan ? <div className="space-y-3">
-          <Alert type="info" showIcon message={plan.summary} description={plan.warnings.join(' ')} />
-          <TextArea rows={Math.min(12, Math.max(4, plan.commands.length + plan.persistent_commands.length + 1))} value={[...plan.commands, ...plan.persistent_commands].join('\n')} readOnly />
-          {plan.output?.length ? <TextArea rows={Math.min(10, Math.max(3, plan.output.length + 1))} value={plan.output.join('\n')} readOnly /> : null}
-        </div> : null}
-      </Section>
-    </Card>
-
-    <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
-      <div className="border-b border-[var(--border)] px-4 py-3"><h2 className="text-sm font-semibold">DHCP leases</h2></div>
-      <Table<GatewayLease> rowKey="mac" size="middle" pagination={false} columns={leaseColumns} dataSource={runtime.dhcp_leases} scroll={{ x: 900 }} locale={{ emptyText: <Empty description="No DHCP leases" /> }} />
+      <Tabs items={tabs} defaultActiveKey="network" destroyInactiveTabPane={false} />
     </Card>
   </div>
 }
