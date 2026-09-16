@@ -24,7 +24,7 @@ fn windivert_frontend_accepts_v13_without_a_tun() {
         vec!["223.5.5.5".into()],
     )
     .unwrap();
-    assert_eq!(plan.system_dns.unwrap().listen_port, 1054);
+    assert_eq!(plan.system_dns.unwrap().listen_port, 20_554);
     let output: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     assert_eq!(output["inbounds"], config["inbounds"]);
 }
@@ -73,7 +73,7 @@ fn managed_frontend_plan_does_not_depend_on_core_runtime_state() {
         }}),
         ..Profile::default()
     };
-    profile.transparent_proxy.tproxy.dns_listen_port = 2053;
+    profile.transparent_proxy.tproxy.dns_listen_port = 20_999;
 
     let plan = managed_frontend_plan(
         Platform::Macos,
@@ -84,7 +84,10 @@ fn managed_frontend_plan_does_not_depend_on_core_runtime_state() {
     .expect("frontend plan");
 
     assert_eq!(plan.listen_port, 20554);
-    assert_eq!(plan.core_listen_port, 2053);
+    assert_eq!(
+        plan.core_listen_port,
+        sempre_converter::DEFAULT_CORE_DNS_PORT
+    );
     assert_eq!(plan.original_upstreams, ["223.5.5.5"]);
 }
 
@@ -180,7 +183,7 @@ fn windows_redirects_dns_to_non_privileged_frontend_and_routes_only_fake_ip() {
         true,
     )
     .expect("plan");
-    assert_eq!(plan.system_dns.expect("system DNS").listen_port, 1054);
+    assert_eq!(plan.system_dns.expect("system DNS").listen_port, 20_554);
     let output: Value =
         serde_json::from_slice(&fs::read(config).expect("read config")).expect("decode config");
     assert_eq!(
@@ -199,7 +202,7 @@ fn windows_redirects_dns_to_non_privileged_frontend_and_routes_only_fake_ip() {
         json!({
             "inbound": "tun-in", "network": ["tcp", "udp"], "port": [53],
             "action": "route", "outbound": "direct",
-            "override_address": "127.0.0.1", "override_port": 1054,
+            "override_address": "127.0.0.1", "override_port": 20_554,
             "udp_connect": true
         })
     );
@@ -279,7 +282,7 @@ fn windows_real_ip_keeps_full_tun_routing() {
     let plan = Plan {
         core: "sing-box".into(),
         system_dns: Some(crate::SystemDnsPlan {
-            listen_port: 1054,
+            listen_port: 20_554,
             listen_hosts: vec!["127.0.0.1".into()],
             core_listen_port: 1053,
             original_upstreams: vec!["223.6.6.6".into()],
@@ -306,7 +309,7 @@ fn windows_rejects_core_without_configurable_tun_dns() {
     let plan = Plan {
         core: "sing-box".into(),
         system_dns: Some(crate::SystemDnsPlan {
-            listen_port: 1054,
+            listen_port: 20_554,
             listen_hosts: vec!["127.0.0.1".into()],
             core_listen_port: 1053,
             original_upstreams: vec!["223.6.6.6".into()],

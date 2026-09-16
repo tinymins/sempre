@@ -311,7 +311,7 @@ describe('ProxySubscribeEditor', () => {
 				mode: 'tproxy',
 				capture_host: false,
 				lan_interfaces: [],
-				tproxy: { listen_port: 7893, dns_listen_port: 20553 },
+				tproxy: { listen_port: 20582, dns_listen_port: 20553 },
 			},
 			management_api: { external_controller: '0.0.0.0:9090', secret: 'fixed-secret' },
 		})

@@ -33,6 +33,10 @@ pub(super) fn sing_box_fakeip_route_addresses(profile: &Profile, target: &Target
     }
 }
 
+pub(super) fn sing_box_managed_frontend(profile: &Profile, target: &Target) -> bool {
+    managed_frontend(&SharedDns::resolve(&profile.dns), target)
+}
+
 pub(super) fn sing_box_route_policy(
     profile: &Profile,
     target: &Target,
@@ -279,16 +283,30 @@ impl SharedDns {
                         .into(),
                 ));
             }
-            let managed_port = u64::from(profile.local_proxy.socks_port);
-            let ports = [
-                managed_port,
+            let active_ports = [
+                u64::from(profile.local_proxy.socks_port),
                 u64::from(profile.local_proxy.http_port),
                 u64::from(profile.transparent_proxy.tproxy.listen_port),
-                u64::from(profile.transparent_proxy.tproxy.dns_listen_port),
             ];
-            if ports.contains(&self.system_dns_listen_port) {
+            if active_ports.contains(&self.system_dns_listen_port) {
                 return Err(CompileError::Render(format!(
                     "system DNS takeover port {} conflicts with another managed listener",
+                    self.system_dns_listen_port
+                )));
+            }
+            if frontend && active_ports.contains(&u64::from(crate::DEFAULT_CORE_DNS_PORT)) {
+                return Err(CompileError::Render(format!(
+                    "core DNS port {} conflicts with another managed listener",
+                    crate::DEFAULT_CORE_DNS_PORT
+                )));
+            }
+            if !frontend
+                && profile.transparent_proxy.mode == "tproxy"
+                && self.system_dns_listen_port
+                    == u64::from(profile.transparent_proxy.tproxy.dns_listen_port)
+            {
+                return Err(CompileError::Render(format!(
+                    "system DNS takeover port {} conflicts with the TProxy DNS listener",
                     self.system_dns_listen_port
                 )));
             }

@@ -273,7 +273,7 @@ pub(super) fn route_policy(profile: &Profile, target: &Target) -> (Vec<Value>, V
 }
 
 pub(super) fn system_inbounds(
-    profile: &Profile,
+    _profile: &Profile,
     target: &Target,
     shared: &SharedDns,
 ) -> Vec<Value> {
@@ -281,14 +281,10 @@ pub(super) fn system_inbounds(
         return Vec::new();
     }
     if managed_frontend(shared, target) {
-        let listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
-            0 => crate::DEFAULT_CORE_DNS_PORT,
-            port => port,
-        };
         return vec![json!({
             "type": "direct", "tag": FRONTEND_DNS_INBOUND,
             "listen": "127.0.0.1",
-            "listen_port": listen_port,
+            "listen_port": crate::DEFAULT_CORE_DNS_PORT,
             "override_address": "1.1.1.1", "override_port": 53
         })];
     }

@@ -159,7 +159,7 @@ export function useProxySubscribeEditor({
 					address: values.tunAddress?.trim() || undefined,
 				},
 				tproxy: {
-					listen_port: values.tproxyPort ?? 7893,
+					listen_port: values.tproxyPort ?? 20582,
 					dns_listen_port: values.tproxyDNSPort ?? 20553,
 				},
 				ebpf: {

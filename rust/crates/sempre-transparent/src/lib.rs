@@ -198,10 +198,7 @@ pub(crate) fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
                 listen_port,
                 listen_hosts: vec![host],
                 core_listen_port: if managed_frontend {
-                    match profile.transparent_proxy.tproxy.dns_listen_port {
-                        0 => sempre_converter::DEFAULT_CORE_DNS_PORT,
-                        port => port,
-                    }
+                    sempre_converter::DEFAULT_CORE_DNS_PORT
                 } else {
                     listen_port
                 },
@@ -221,10 +218,7 @@ pub(crate) fn system_dns_intent(profile: &Profile) -> Option<SystemDnsPlan> {
         listen_port,
         listen_hosts,
         core_listen_port: if managed_frontend {
-            match profile.transparent_proxy.tproxy.dns_listen_port {
-                0 => sempre_converter::DEFAULT_CORE_DNS_PORT,
-                port => port,
-            }
+            sempre_converter::DEFAULT_CORE_DNS_PORT
         } else {
             listen_port
         },
@@ -500,3 +494,7 @@ mod system_plan_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "managed_frontend_tests.rs"]
+mod managed_frontend_tests;

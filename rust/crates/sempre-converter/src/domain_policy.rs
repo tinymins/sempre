@@ -53,10 +53,7 @@ pub fn dns_frontend_policy(
         fakeip_enabled: boolean(shared, "fakeipEnabled", true),
         fakeip_ipv4_range: string(shared, "fakeipIpv4Range", "198.18.0.0/15"),
         fakeip_ipv6_range: string(shared, "fakeipIpv6Range", "fc00::/18"),
-        core_listen_port: match profile.transparent_proxy.tproxy.dns_listen_port {
-            0 => crate::DEFAULT_CORE_DNS_PORT,
-            port => port,
-        },
+        core_listen_port: crate::DEFAULT_CORE_DNS_PORT,
         complete: true,
         warnings: Vec::new(),
     })

@@ -170,7 +170,13 @@ pub(crate) fn prepare_tproxy(
     match plan.core.as_str() {
         "sing-box" => {
             find_inbound(config, "tproxy-in", "type", "tproxy")?;
-            find_inbound(config, "dns-in", "type", "direct")?;
+            if !plan
+                .system_dns
+                .as_ref()
+                .is_some_and(|system_dns| system_dns.managed_frontend)
+            {
+                find_inbound(config, "dns-in", "type", "direct")?;
+            }
             let route = object_mut(config, "route");
             route.insert("default_mark".into(), json!(BYPASS_MARK));
             route.insert("auto_detect_interface".into(), json!(true));

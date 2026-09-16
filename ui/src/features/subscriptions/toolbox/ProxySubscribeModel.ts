@@ -56,7 +56,7 @@ export function profileFormValues(profile: SubscriptionProfile, configurationCon
 			tun: {
 				interface_name: "sempre-tun",
 			},
-			tproxy: { listen_port: 7893, dns_listen_port: 20553 },
+			tproxy: { listen_port: 20582, dns_listen_port: 20553 },
 			ebpf: { wan_interface: "auto", auto_config_kernel_parameter: false },
 		};
 	const localProxy = profile.local_proxy ?? { socks_port: 20580, http_port: 20581, username: "sempre", password: "" };

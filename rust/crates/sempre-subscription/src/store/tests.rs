@@ -19,6 +19,10 @@ fn initializes_a_private_catalog_with_runtime_credentials() {
         sempre_converter::DEFAULT_CORE_DNS_PORT
     );
     assert_eq!(
+        profile.transparent_proxy.tproxy.listen_port,
+        sempre_converter::DEFAULT_TPROXY_PORT
+    );
+    assert_eq!(
         profile.local_proxy.socks_port,
         sempre_converter::DEFAULT_LOCAL_SOCKS_PORT
     );

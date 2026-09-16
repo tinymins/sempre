@@ -2,6 +2,8 @@ use std::net::Ipv4Addr;
 
 use serde::{Deserialize, Serialize};
 
+pub const DEFAULT_FRONTEND_PORT: u16 = 20_554;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct DnsConfig {
@@ -36,7 +38,7 @@ impl Default for DnsConfig {
         Self {
             enabled: false,
             listen_hosts: vec!["127.0.0.1".into()],
-            listen_port: 1054,
+            listen_port: DEFAULT_FRONTEND_PORT,
             local_upstreams: Vec::new(),
             remote_upstream: "127.0.0.1:20553".into(),
             strategy: "rules-first".into(),

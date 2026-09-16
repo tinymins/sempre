@@ -5,8 +5,7 @@ use serde_json::{Value, json};
 
 use crate::{Plan, TransparentError};
 
-const WINDOWS_FRONTEND_PORT: u16 = 1054;
-const MACOS_FRONTEND_PORT: u16 = 20554;
+const DESKTOP_FRONTEND_PORT: u16 = 20_554;
 const WINDOWS_DNS_TARGET_PREFIX: &str = "192.0.2.1/32";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,7 +94,7 @@ const fn windows_ipv6_default_route_available() -> bool {
 }
 
 pub(crate) fn managed_frontend_plan(
-    platform: Platform,
+    _platform: Platform,
     core: &str,
     profile: &Profile,
     original_upstreams: Vec<String>,
@@ -106,14 +105,8 @@ pub(crate) fn managed_frontend_plan(
     let mut system_dns = crate::system_dns_intent(profile)?;
     system_dns.managed_frontend = true;
     system_dns.takeover_host = true;
-    system_dns.core_listen_port = match profile.transparent_proxy.tproxy.dns_listen_port {
-        0 => sempre_converter::DEFAULT_CORE_DNS_PORT,
-        port => port,
-    };
-    system_dns.listen_port = match platform {
-        Platform::Macos => MACOS_FRONTEND_PORT,
-        Platform::Windows | Platform::WindowsDivert => WINDOWS_FRONTEND_PORT,
-    };
+    system_dns.core_listen_port = sempre_converter::DEFAULT_CORE_DNS_PORT;
+    system_dns.listen_port = DESKTOP_FRONTEND_PORT;
     system_dns.original_upstreams = original_upstreams;
     Some(system_dns)
 }

@@ -48,7 +48,11 @@ pub(super) fn sing_box_inbounds(
     match transparent.mode.as_str() {
         "" | DISABLED => Vec::new(),
         TUN => vec![sing_box_tun(transparent)],
-        TPROXY => sing_box_tproxy(transparent, target.version != "11"),
+        TPROXY => sing_box_tproxy(
+            transparent,
+            target.version != "11",
+            super::dns::sing_box_managed_frontend(profile, target),
+        ),
         _ => Vec::new(),
     }
 }
@@ -66,7 +70,7 @@ fn sing_box_tun(config: &TransparentProxy) -> Value {
     inbound
 }
 
-fn sing_box_tproxy(config: &TransparentProxy, modern: bool) -> Vec<Value> {
+fn sing_box_tproxy(config: &TransparentProxy, modern: bool, managed_frontend: bool) -> Vec<Value> {
     let mut dns = json!({
         "type": "direct", "tag": "dns-in", "listen": "::",
         "listen_port": config.tproxy.dns_listen_port
@@ -81,7 +85,11 @@ fn sing_box_tproxy(config: &TransparentProxy, modern: bool) -> Vec<Value> {
         tproxy["sniff"] = json!(true);
         tproxy["sniff_override_destination"] = json!(false);
     }
-    vec![dns, tproxy]
+    if managed_frontend {
+        vec![tproxy]
+    } else {
+        vec![dns, tproxy]
+    }
 }
 
 pub(super) fn apply_clash(profile: &Profile, target: &Target, config: &mut Value) {

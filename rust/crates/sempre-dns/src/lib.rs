@@ -21,5 +21,5 @@ pub use domain_matcher::{
 };
 pub use error::DnsError;
 pub use frontend_service::DnsService;
-pub use model::{DnsConfig, DnsRuleSet};
+pub use model::{DEFAULT_FRONTEND_PORT, DnsConfig, DnsRuleSet};
 pub use probe::{DnsProbeResult, probe_dns};

@@ -183,6 +183,31 @@ fn sing_box_system_dns_takeover_supports_linux() {
     );
 }
 
+#[test]
+fn managed_frontend_owns_tproxy_dns_without_a_duplicate_inbound() {
+    let mut input = takeover_request("sing-box-v13");
+    input.profile.dns["shared"]["managedDnsFrontend"] = json!(true);
+    input.profile.transparent_proxy.mode = "tproxy".into();
+    input.profile.transparent_proxy.tproxy.listen_port = 20_582;
+    input.profile.transparent_proxy.tproxy.dns_listen_port = 20_554;
+
+    let output = compile(&input).expect("managed Gateway DNS");
+    let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
+    let inbounds = output["inbounds"].as_array().expect("inbounds");
+
+    assert!(
+        inbounds
+            .iter()
+            .any(|inbound| { inbound["tag"] == "tproxy-in" && inbound["listen_port"] == 20_582 })
+    );
+    assert!(inbounds.iter().any(|inbound| {
+        inbound["tag"] == "sempre-dns-core-in"
+            && inbound["listen"] == "127.0.0.1"
+            && inbound["listen_port"] == sempre_converter::DEFAULT_CORE_DNS_PORT
+    }));
+    assert!(!inbounds.iter().any(|inbound| inbound["tag"] == "dns-in"));
+}
+
 fn assert_managed_desktop_frontend(format: &str) {
     let mut input = takeover_request(format);
     let output = compile(&input).expect("managed desktop frontend");

@@ -186,6 +186,10 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
             NetworkMode::Gateway => {
                 profile.transparent_proxy.mode = "tproxy".into();
                 profile.transparent_proxy.capture_host = settings.gateway_capture_host;
+                profile.transparent_proxy.tproxy.listen_port =
+                    sempre_converter::DEFAULT_TPROXY_PORT;
+                profile.transparent_proxy.tproxy.dns_listen_port =
+                    sempre_converter::DEFAULT_CORE_DNS_PORT;
                 let gateway = self.gateway.read()?;
                 profile.transparent_proxy.lan_interfaces =
                     if gateway.lan.interface.trim().is_empty() {
@@ -217,7 +221,10 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
                 shared.insert("systemDnsTakeoverHost".into(), Value::Bool(true));
             }
             NetworkMode::Gateway => {
-                shared.insert("systemDnsListenPort".into(), json!(1054));
+                shared.insert(
+                    "systemDnsListenPort".into(),
+                    json!(sempre_dns::DEFAULT_FRONTEND_PORT),
+                );
                 shared.insert("systemDnsListenHosts".into(), json!(["0.0.0.0"]));
                 shared.insert("systemDnsTakeoverHost".into(), Value::Bool(false));
             }
@@ -299,12 +306,23 @@ mod tests {
         assert_eq!(network.transparent_proxy.mode, "tproxy");
         assert!(!network.transparent_proxy.capture_host);
         assert_eq!(network.transparent_proxy.lan_interfaces, ["vmbr1"]);
+        assert_eq!(
+            network.transparent_proxy.tproxy.listen_port,
+            sempre_converter::DEFAULT_TPROXY_PORT
+        );
+        assert_eq!(
+            network.transparent_proxy.tproxy.dns_listen_port,
+            sempre_converter::DEFAULT_CORE_DNS_PORT
+        );
 
         let target = Target::parse("sing-box-v14").expect("target");
         let dns = manager
             .apply_dns_frontend_settings(&network, &target, true)
             .expect("DNS overlay");
-        assert_eq!(dns.dns["shared"]["systemDnsListenPort"], 1054);
+        assert_eq!(
+            dns.dns["shared"]["systemDnsListenPort"],
+            sempre_dns::DEFAULT_FRONTEND_PORT
+        );
         assert_eq!(
             dns.dns["shared"]["systemDnsListenHosts"],
             json!(["0.0.0.0"])

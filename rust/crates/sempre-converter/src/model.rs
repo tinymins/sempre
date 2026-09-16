@@ -8,6 +8,7 @@ use crate::Target;
 pub const DEFAULT_CORE_DNS_PORT: u16 = 20_553;
 pub const DEFAULT_LOCAL_SOCKS_PORT: u16 = 20_580;
 pub const DEFAULT_LOCAL_HTTP_PORT: u16 = 20_581;
+pub const DEFAULT_TPROXY_PORT: u16 = 20_582;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompileRequest {
