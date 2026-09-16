@@ -78,7 +78,9 @@ it('requires confirmation before enabling preview updates and saves the choice',
   render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><ServiceUpdateFlow><ServicePanel /></ServiceUpdateFlow></SessionProvider></I18nProvider></QueryClientProvider>)
 
   const preview = await screen.findByRole('switch', { name: 'Allow preview updates' })
+  const checkForUpdates = screen.getByRole('button', { name: 'Check for updates' })
   await waitFor(() => expect(preview).toBeEnabled())
+  expect(preview.compareDocumentPosition(checkForUpdates) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(preview).toHaveAttribute('aria-checked', 'false')
   fireEvent.click(preview)
   expect(writes).toBe(0)
