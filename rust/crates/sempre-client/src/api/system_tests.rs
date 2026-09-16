@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{io::Write as _, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     body::{Body, to_bytes},
@@ -21,6 +21,12 @@ fn fixture() -> (tempfile::TempDir, Router, String) {
 fn development_fixture() -> (tempfile::TempDir, Router, String) {
     let root = tempfile::tempdir().expect("temporary directory");
     let layout = Layout::development_at(root.path());
+    fixture_with_layout(root, layout)
+}
+
+fn system_fixture() -> (tempfile::TempDir, Router, String) {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let layout = Layout::system_at(root.path());
     fixture_with_layout(root, layout)
 }
 
@@ -133,6 +139,70 @@ async fn service_update_task_starts_empty() {
         .expect("task body");
     let task: serde_json::Value = serde_json::from_slice(&body).expect("task JSON");
     assert!(task["task"].is_null());
+}
+
+#[tokio::test]
+async fn uploaded_update_reports_missing_release_entrypoints_in_the_update_task() {
+    let (_root, app, token) = system_fixture();
+    let archive = invalid_update_archive();
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/service/update/upload?name=sempre-update.zip")
+        .extension(ConnectInfo(
+            "127.0.0.1:1".parse::<SocketAddr>().expect("remote address"),
+        ))
+        .body(Body::from(archive))
+        .expect("request");
+    request.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(&token).expect("token"),
+    );
+    let response = app.clone().oneshot(request).await.expect("upload response");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    let task = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let response =
+                authenticated_get(app.clone(), &token, "/api/v1/service/update/task").await;
+            let body = to_bytes(response.into_body(), 16 * 1024)
+                .await
+                .expect("task body");
+            let value: serde_json::Value = serde_json::from_slice(&body).expect("task JSON");
+            if value["task"]["state"] == "failed" {
+                break value["task"].clone();
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("failed update task");
+    assert_eq!(task["stage"], "validating");
+    let error = task["error"].as_str().expect("task error");
+    assert!(error.contains(".sempre"));
+    assert!(error.contains("install"));
+}
+
+fn invalid_update_archive() -> Vec<u8> {
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        value => value,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        value => value,
+    };
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file(
+            format!("sempre-{os}-{arch}/README.txt"),
+            zip::write::SimpleFileOptions::default(),
+        )
+        .expect("archive entry");
+    archive
+        .write_all(b"not a release bundle")
+        .expect("archive data");
+    archive.finish().expect("finish archive").into_inner()
 }
 
 #[tokio::test]

@@ -79,6 +79,36 @@ fn unix_updates_prefer_tar_gz_and_fall_back_to_zip() {
 }
 
 #[test]
+fn uploaded_updates_accept_only_release_archive_formats() {
+    assert_eq!(
+        uploaded_archive_format("sempre-bundle-linux-amd64.zip").unwrap(),
+        ArchiveFormat::Zip
+    );
+    assert_eq!(
+        uploaded_archive_format("sempre-bundle-linux-amd64.tar.gz").unwrap(),
+        ArchiveFormat::TarGz
+    );
+    assert!(uploaded_archive_format("sempre.exe").is_err());
+}
+
+#[test]
+fn uploaded_updates_require_state_and_the_platform_installer() {
+    let root = tempfile::tempdir().unwrap();
+    let error = validate_uploaded_entrypoints(root.path()).unwrap_err();
+    assert!(error.contains(".sempre"));
+    assert!(error.contains(installer_name()));
+
+    std::fs::create_dir(root.path().join(".sempre")).unwrap();
+    assert!(validate_uploaded_entrypoints(root.path()).is_err());
+    std::fs::write(root.path().join(installer_name()), b"installer").unwrap();
+    validate_uploaded_entrypoints(root.path()).unwrap();
+
+    assert_eq!(installer_name_for_os("windows"), "install.cmd");
+    assert_eq!(installer_name_for_os("macos"), "install.command");
+    assert_eq!(installer_name_for_os("linux"), "install.sh");
+}
+
+#[test]
 fn nested_update_errors_include_the_root_cause() {
     #[derive(Debug, thiserror::Error)]
     #[error("request failed")]

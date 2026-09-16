@@ -16,6 +16,12 @@ const STABLE_MANIFEST_URL: &str = "https://sempre.run/api/releases/latest.json";
 const PREVIEW_MANIFEST_URL: &str = "https://sempre.run/api/releases/preview.json";
 const MAX_MANIFEST_SIZE: usize = 1 << 20;
 
+#[path = "service_update_upload.rs"]
+mod upload;
+#[cfg(test)]
+use upload::{installer_name, installer_name_for_os, validate_uploaded_entrypoints};
+pub(crate) use upload::{start_uploaded, uploaded_archive_format};
+
 #[derive(Clone, Debug, Deserialize)]
 struct Manifest {
     schema: u32,
@@ -106,16 +112,7 @@ async fn run_task(
     download_release(tasks, task_id, manager, &artifact, &archive).await?;
     tasks.set_stage(task_id, "verifying")?;
     let extracted = temporary.path().join("bundle");
-    tasks.set_stage(task_id, "extracting")?;
-    sempre_artifact::extract(
-        &archive,
-        &extracted,
-        &ExtractOptions {
-            format: archive_format,
-            single_file_name: None,
-        },
-    )
-    .map_err(|error| error.to_string())?;
+    extract_release(tasks, task_id, &archive, &extracted, archive_format)?;
     tasks.set_stage(task_id, "validating")?;
     let root = extracted.join(format!("sempre-{target}"));
     sempre_bundle::validate_release(&root).map_err(|error| error.to_string())?;
@@ -124,6 +121,25 @@ async fn run_task(
     tasks.set_stage(task_id, "installing")?;
     crate::service_update_schedule::schedule(temporary, &executable, tasks.installer_log_path())?;
     Ok(())
+}
+
+fn extract_release(
+    tasks: &ServiceUpdateTasks,
+    task_id: &str,
+    archive: &Path,
+    extracted: &Path,
+    archive_format: ArchiveFormat,
+) -> Result<(), String> {
+    tasks.set_stage(task_id, "extracting")?;
+    sempre_artifact::extract(
+        archive,
+        extracted,
+        &ExtractOptions {
+            format: archive_format,
+            single_file_name: None,
+        },
+    )
+    .map_err(|error| error.to_string())
 }
 
 async fn download_release(

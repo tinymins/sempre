@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Download, LoaderCircle, Power, RefreshCw, ServerCog, ShieldAlert } from 'lucide-react'
+import { CheckCircle2, Download, LoaderCircle, Power, RefreshCw, ServerCog, ShieldAlert, Upload } from 'lucide-react'
 import { Switch } from '@acme/components'
 import { api } from '../../lib/api'
 import { useI18n } from '../../lib/i18n'
@@ -14,6 +14,7 @@ export function ServicePanel() {
   const { locale, t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
+  const updatePackageInput = useRef<HTMLInputElement>(null)
   const [previewConfirmOpen, setPreviewConfirmOpen] = useState(false)
   const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system') })
   const update = useQuery({ queryKey: ['service', 'update'], queryFn: () => api<ServiceUpdateStatus>(session!, '/service/update'), enabled: false, retry: false })
@@ -26,10 +27,10 @@ export function ServicePanel() {
       setPreviewConfirmOpen(false)
     },
   })
-  const { task: updateTask, mutation: upgrade, openProgress } = useServiceUpdateFlow()
+  const { task: updateTask, mutation: upgrade, uploadMutation, openProgress } = useServiceUpdateFlow()
   const serviceAvailable = system.data?.mode === 'system' && system.data.service !== 'not installed'
   const currentVersion = update.data?.current_version ?? system.data?.version ?? '-'
-  const updating = upgrade.isPending || updateTask?.state === 'running'
+  const updating = upgrade.isPending || uploadMutation.isPending || updateTask?.state === 'running'
   const releaseHistory = (update.data?.release_history?.length ? update.data.release_history : update.data ? [{ version: update.data.latest_version, published_at: update.data.published_at, notes: update.data.release_notes }] : [])
     .map((release) => ({ ...release, notes: release.notes || t('noReleaseNotes') }))
   const zh = locale === 'zh-CN'
@@ -46,9 +47,16 @@ export function ServicePanel() {
     warning: 'Preview builds may be unstable. Update checks and one-click upgrades will use the prerelease channel; draft releases remain excluded.',
     confirm: 'Allow preview updates',
   }
+  const uploadCopy = zh ? '上传更新包' : 'Upload update package'
+
+  function uploadPackage(file?: File) {
+    if (!file || updating) return
+    openProgress()
+    uploadMutation.mutate({ targetVersion: update.data?.latest_version || '', file })
+  }
 
   return <Card className="p-4 md:p-5">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ServerCog size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('serviceUpdateTitle')}</h2></div><Button disabled={!updating && update.isFetching} onClick={() => updating ? openProgress() : void update.refetch()}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : update.isFetching ? <Spinner /> : <RefreshCw size={16} />}{updating ? t('serviceUpdateViewProgress') : t('checkForUpdates')}</Button></div>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ServerCog size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('serviceUpdateTitle')}</h2></div><div className="flex flex-wrap gap-2"><Button disabled={!updating && update.isFetching} onClick={() => updating ? openProgress() : void update.refetch()}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : update.isFetching ? <Spinner /> : <RefreshCw size={16} />}{updating ? t('serviceUpdateViewProgress') : t('checkForUpdates')}</Button><Button disabled={!serviceAvailable || updating} onClick={() => updatePackageInput.current?.click()}><Upload size={16} />{uploadCopy}</Button><input ref={updatePackageInput} aria-label={uploadCopy} className="sr-only" type="file" accept=".zip,.tar.gz,application/zip,application/gzip" disabled={!serviceAvailable || updating} onChange={(event) => { uploadPackage(event.target.files?.[0]); event.target.value = '' }} /></div></div>
       <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] p-3">
         <div><p className="text-sm font-medium">{previewCopy.label}</p><p className="mt-1 text-xs text-[var(--muted)]">{previewCopy.detail}</p></div>
         <Switch aria-label={previewCopy.label} checked={settings.data?.settings.allow_prerelease ?? false} loading={settings.isFetching || saveSettings.isPending} onChange={(checked) => checked ? setPreviewConfirmOpen(true) : saveSettings.mutate(false)} />

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from './api'
+import { api, uploadServiceUpdate } from './api'
 import { useSession } from './session'
 import type { ServiceUpdateTask } from './types'
 import { clearServiceUpdateMarker, readServiceUpdateMarker, writeServiceUpdateMarker } from './serviceUpdateState'
@@ -37,5 +37,18 @@ export function useServiceUpdateTask() {
     onError: () => clearServiceUpdateMarker(),
     onSettled: () => { void client.invalidateQueries({ queryKey: serviceUpdateTaskKey }) },
   })
-  return { task: query.data?.task, query, mutation }
+  const uploadMutation = useMutation({
+    mutationKey: serviceUpdateTaskKey,
+    mutationFn: ({ targetVersion, file }: { targetVersion: string; file: File }) => {
+      writeServiceUpdateMarker({ targetVersion, baseURL: session!.baseURL })
+      return uploadServiceUpdate(session!, file)
+    },
+    onSuccess: (result) => {
+      writeServiceUpdateMarker({ targetVersion: result.task.target_version || readServiceUpdateMarker()!.targetVersion, baseURL: session!.baseURL, task: result.task })
+      client.setQueryData(serviceUpdateTaskKey, result)
+    },
+    onError: () => clearServiceUpdateMarker(),
+    onSettled: () => { void client.invalidateQueries({ queryKey: serviceUpdateTaskKey }) },
+  })
+  return { task: query.data?.task, query, mutation, uploadMutation }
 }

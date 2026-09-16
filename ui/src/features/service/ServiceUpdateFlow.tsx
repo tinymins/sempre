@@ -11,14 +11,15 @@ export function ServiceUpdateFlow({ children }: { children: ReactNode }) {
   const { session, setSession } = useSession()
   const [open, setOpen] = useState(false)
   const marker = readServiceUpdateMarker()
-  const { query, mutation } = update
-  const task = mutation.isPending ? null : update.task
+  const { query, mutation, uploadMutation } = update
+  const submitting = mutation.isPending || uploadMutation.isPending
+  const task = submitting ? null : update.task
   const succeeded = task?.state === 'succeeded'
   const holding = Boolean(marker && task)
 
   function close() {
     setOpen(false)
-    if (task?.state === 'failed' || mutation.isError) {
+    if (task?.state === 'failed' || mutation.isError || uploadMutation.isError) {
       clearServiceUpdateMarker()
       if (!loadSession()) setSession(null)
     }
@@ -33,8 +34,8 @@ export function ServiceUpdateFlow({ children }: { children: ReactNode }) {
   return <Context.Provider value={{ ...update, openProgress: () => setOpen(true) }}>
     {children}
     <ServiceUpdateModal open={open || Boolean(holding && (succeeded || task?.state === 'failed'))} task={task} targetVersion={marker?.targetVersion || ''}
-      submitting={mutation.isPending} disconnected={Boolean(task?.state === 'running' && task.stage === 'installing' && (query.isError || !session))}
-      error={mutation.error?.message || (task?.state === 'failed' ? task.error : undefined)}
+      submitting={submitting} uploading={uploadMutation.isPending} disconnected={Boolean(task?.state === 'running' && task.stage === 'installing' && (query.isError || !session))}
+      error={mutation.error?.message || uploadMutation.error?.message || (task?.state === 'failed' ? task.error : undefined)}
       onClose={close} onRelogin={relogin} />
   </Context.Provider>
 }

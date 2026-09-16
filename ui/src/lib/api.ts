@@ -1,4 +1,4 @@
-import type { ApiErrorBody, RuntimeEvent, Session } from './types'
+import type { ApiErrorBody, RuntimeEvent, ServiceUpdateTask, Session } from './types'
 
 const SESSION_KEY = 'sempre.session.v1'
 const sessionInvalidationListeners = new Set<() => void>()
@@ -109,6 +109,18 @@ export async function uploadUI(session: Session, file: File, sha256 = '') {
     body: file,
   })
   return parseResponse(response, session)
+}
+
+export async function uploadServiceUpdate(session: Session, file: File) {
+  const response = await fetch(`${session.baseURL}/api/v1/service/update/upload?name=${encodeURIComponent(file.name)}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.token}`,
+      'Content-Type': file.name.toLowerCase().endsWith('.tar.gz') ? 'application/gzip' : 'application/zip',
+    },
+    body: file,
+  })
+  return parseResponse<{ task: ServiceUpdateTask }>(response, session)
 }
 
 export async function downloadBundle(session: Session) {

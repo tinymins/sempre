@@ -2,17 +2,23 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::State,
-    http::StatusCode,
+    body::Body,
+    extract::{DefaultBodyLimit, Query, State},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use futures_util::StreamExt as _;
 use serde::Deserialize;
 use serde_json::json;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use tokio::io::AsyncWriteExt as _;
 use tokio::time::{Duration, sleep};
 
 use crate::{VERSION, api::AppState};
+
+const MAX_UPDATE_ARCHIVE_SIZE: usize = 512 << 20;
+const MAX_UPDATE_ARCHIVE_SIZE_U64: u64 = sempre_artifact::MAX_ARTIFACT_SIZE;
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -23,6 +29,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route(
             "/api/v1/service/update",
             get(service_update_check).post(service_update),
+        )
+        .route(
+            "/api/v1/service/update/upload",
+            post(service_update_upload).layer(DefaultBodyLimit::max(MAX_UPDATE_ARCHIVE_SIZE)),
         )
         .route(
             "/api/v1/service/update/settings",
@@ -225,6 +235,147 @@ async fn service_update(State(state): State<Arc<AppState>>) -> Response {
         )
             .into_response(),
     }
+}
+
+async fn service_update_upload(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ServiceUpdateUploadQuery>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    if state.manager.store().layout().mode != sempre_state::Mode::System {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Sempre updates require an installed system service"
+                }
+            })),
+        )
+            .into_response();
+    }
+    let name = match update_upload_name(&query.name) {
+        Ok(name) => name,
+        Err(error) => return update_upload_error(StatusCode::BAD_REQUEST, error),
+    };
+    let archive_format = match crate::service_update::uploaded_archive_format(&name) {
+        Ok(format) => format,
+        Err(error) => return update_upload_error(StatusCode::BAD_REQUEST, error),
+    };
+    let total = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    if total > MAX_UPDATE_ARCHIVE_SIZE_U64 {
+        return update_upload_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("Sempre update package exceeds {MAX_UPDATE_ARCHIVE_SIZE} bytes"),
+        );
+    }
+    let settings = match read_service_update_settings(&state) {
+        Ok(settings) => settings,
+        Err(error) => return internal(error),
+    };
+    let temporary = match tempfile::Builder::new().prefix("sempre-update-").tempdir() {
+        Ok(temporary) => temporary,
+        Err(error) => return internal(format!("create update directory: {error}")),
+    };
+    let task = match state.service_updates.begin() {
+        Ok(task) => task,
+        Err(error) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": { "code": "UPDATE_IN_PROGRESS", "message": error }
+                })),
+            )
+                .into_response();
+        }
+    };
+    if let Err(error) = state.service_updates.set_upload(&task.id, &name, total) {
+        state.service_updates.fail(&task.id, &error);
+        return internal(error);
+    }
+    let archive = temporary.path().join("upload");
+    if let Err(error) =
+        receive_update_upload(body, &archive, &state.service_updates, &task.id, total).await
+    {
+        state.service_updates.fail(&task.id, &error);
+        return update_upload_error(StatusCode::BAD_REQUEST, error);
+    }
+    crate::service_update::start_uploaded(
+        Arc::clone(&state.service_updates),
+        task.id.clone(),
+        temporary,
+        archive_format,
+        settings.allow_prerelease,
+    );
+    let task = state.service_updates.snapshot().unwrap_or(task);
+    (StatusCode::ACCEPTED, Json(json!({ "task": task }))).into_response()
+}
+
+#[derive(Deserialize)]
+struct ServiceUpdateUploadQuery {
+    #[serde(default)]
+    name: String,
+}
+
+fn update_upload_name(value: &str) -> Result<String, String> {
+    let name = value.trim();
+    if name.is_empty() {
+        return Err("Sempre update package name is missing".into());
+    }
+    if name.len() > 255 || name.contains('/') || name.contains('\\') {
+        return Err("Sempre update package name is invalid".into());
+    }
+    Ok(name.to_owned())
+}
+
+async fn receive_update_upload(
+    body: Body,
+    archive: &std::path::Path,
+    tasks: &crate::service_update_task::ServiceUpdateTasks,
+    task_id: &str,
+    total: u64,
+) -> Result<(), String> {
+    let mut file = tokio::fs::File::create(archive)
+        .await
+        .map_err(|error| format!("create uploaded update package: {error}"))?;
+    let mut stream = body.into_data_stream();
+    let mut uploaded = 0_u64;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| format!("read uploaded update package: {error}"))?;
+        uploaded = uploaded
+            .checked_add(u64::try_from(chunk.len()).unwrap_or(u64::MAX))
+            .filter(|size| *size <= MAX_UPDATE_ARCHIVE_SIZE_U64)
+            .ok_or_else(|| {
+                format!("Sempre update package exceeds {MAX_UPDATE_ARCHIVE_SIZE} bytes")
+            })?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|error| format!("write uploaded update package: {error}"))?;
+        tasks.upload_progress(task_id, uploaded, total);
+    }
+    if uploaded == 0 {
+        return Err("Sempre update package is empty".into());
+    }
+    file.flush()
+        .await
+        .map_err(|error| format!("flush uploaded update package: {error}"))?;
+    tasks.upload_progress(task_id, uploaded, uploaded);
+    Ok(())
+}
+
+fn update_upload_error(status: StatusCode, message: impl Into<String>) -> Response {
+    (
+        status,
+        Json(json!({
+            "error": { "code": "UPDATE_UPLOAD_FAILED", "message": message.into() }
+        })),
+    )
+        .into_response()
 }
 
 #[derive(Deserialize)]

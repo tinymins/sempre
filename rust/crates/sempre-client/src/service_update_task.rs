@@ -105,6 +105,24 @@ impl ServiceUpdateTasks {
         })
     }
 
+    pub(crate) fn set_upload(&self, id: &str, artifact: &str, total: u64) -> Result<(), String> {
+        self.update(id, |state, now| {
+            let task = state.task.as_mut().expect("matching task");
+            task.artifact = Some(artifact.into());
+            task.total_bytes = total;
+            task.stage = "uploading".into();
+            task.updated_at = now;
+        })
+    }
+
+    pub(crate) fn set_target_version(&self, id: &str, version: &str) -> Result<(), String> {
+        self.update(id, |state, now| {
+            let task = state.task.as_mut().expect("matching task");
+            task.target_version = normalized_version(version).into();
+            task.updated_at = now;
+        })
+    }
+
     pub(crate) fn set_stage(&self, id: &str, stage: &str) -> Result<(), String> {
         self.update(id, |state, now| {
             let task = state.task.as_mut().expect("matching task");
@@ -127,6 +145,24 @@ impl ServiceUpdateTasks {
             task.bytes_per_second = speed;
             task.eta_seconds =
                 (speed > 0 && total > downloaded).then(|| (total - downloaded).div_ceil(speed));
+            task.updated_at = now;
+        });
+    }
+
+    pub(crate) fn upload_progress(&self, id: &str, uploaded: u64, total: u64) {
+        let _ = self.update(id, |state, now| {
+            let started = state.download_started.get_or_insert_with(Instant::now);
+            let millis = u64::try_from(started.elapsed().as_millis())
+                .unwrap_or(u64::MAX)
+                .max(1);
+            let speed = uploaded.saturating_mul(1000) / millis;
+            let task = state.task.as_mut().expect("matching task");
+            task.stage = "uploading".into();
+            task.downloaded_bytes = uploaded;
+            task.total_bytes = total.max(uploaded);
+            task.bytes_per_second = speed;
+            task.eta_seconds =
+                (speed > 0 && total > uploaded).then(|| (total - uploaded).div_ceil(speed));
             task.updated_at = now;
         });
     }
@@ -254,5 +290,20 @@ mod tests {
         assert_eq!(retried.downloaded_bytes, 0);
         assert_eq!(retried.bytes_per_second, 0);
         assert_eq!(retried.eta_seconds, None);
+    }
+
+    #[test]
+    fn uploaded_packages_use_the_existing_task_progress() {
+        let root = tempfile::tempdir().unwrap();
+        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
+        let task = tasks.begin().unwrap();
+        tasks.set_upload(&task.id, "release.zip", 100).unwrap();
+        tasks.upload_progress(&task.id, 40, 100);
+        tasks.set_target_version(&task.id, "2.1.0").unwrap();
+        let uploaded = tasks.snapshot().unwrap();
+        assert_eq!(uploaded.stage, "uploading");
+        assert_eq!(uploaded.artifact.as_deref(), Some("release.zip"));
+        assert_eq!(uploaded.target_version, "2.1.0");
+        assert_eq!((uploaded.downloaded_bytes, uploaded.total_bytes), (40, 100));
     }
 }
