@@ -21,7 +21,7 @@ pub struct BuildInput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BuildOutput {
     pub binary: PathBuf,
-    pub bundle: PathBuf,
+    pub bundles: Vec<PathBuf>,
     pub ui_archive: PathBuf,
     pub checksums: PathBuf,
 }
@@ -73,28 +73,32 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
         .map_err(|error| BuildError::io("copy release binary", &binary, error))?;
     make_executable(&binary)?;
     let release_target = ReleaseTarget::new(&input.target.os, &input.target.arch)?;
-    let bundle = sempre_bundle::package_release(
+    let bundles = sempre_bundle::package_release(
         &source,
         &document,
         &input.executable,
         &input.output,
         &release_target,
     )?
-    .archive;
+    .into_iter()
+    .map(|export| export.archive)
+    .collect::<Vec<_>>();
     let ui_archive = input.output.join("sempre-ui.zip");
     if input.ui_archive != ui_archive {
         fs::copy(&input.ui_archive, &ui_archive)
             .map_err(|error| BuildError::io("copy UI release archive", &ui_archive, error))?;
     }
-    let names = [
-        file_name(&binary)?,
-        file_name(&bundle)?,
-        file_name(&ui_archive)?,
-    ];
+    let mut names = vec![file_name(&binary)?, file_name(&ui_archive)?];
+    names.extend(
+        bundles
+            .iter()
+            .map(|bundle| file_name(bundle))
+            .collect::<Result<Vec<_>, _>>()?,
+    );
     checksum::write(&input.output, &names)?;
     Ok(BuildOutput {
         binary,
-        bundle,
+        bundles,
         ui_archive,
         checksums: input.output.join("SHA256SUMS"),
     })

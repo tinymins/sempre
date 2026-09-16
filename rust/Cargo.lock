@@ -2367,9 +2367,11 @@ name = "sempre-bundle"
 version = "2.0.7"
 dependencies = [
  "chrono",
+ "flate2",
  "sempre-state",
  "serde",
  "serde_json",
+ "tar",
  "tempfile",
  "thiserror 2.0.20",
  "uuid",

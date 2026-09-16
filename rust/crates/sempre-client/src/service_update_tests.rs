@@ -22,6 +22,16 @@ fn asset(sha256: &str) -> ManifestAsset {
     }
 }
 
+fn tar_gz_asset(sha256: &str) -> ManifestAsset {
+    ManifestAsset {
+        target: "linux-amd64".into(),
+        name: "sempre-bundle-linux-amd64.tar.gz".into(),
+        url: "https://example.com/sempre.tar.gz".into(),
+        sha256: sha256.into(),
+        size: 1,
+    }
+}
+
 #[test]
 fn update_status_uses_semantic_version_ordering() {
     let newer = status(&manifest("999.0.0")).expect("newer status");
@@ -49,6 +59,23 @@ fn release_manifest_digest_is_normalized_for_the_verified_downloader() {
     for invalid in ["", "00", &format!("{}g", "0".repeat(63))] {
         assert!(release_artifact(&asset(invalid), "linux-amd64").is_err());
     }
+}
+
+#[test]
+fn unix_updates_prefer_tar_gz_and_fall_back_to_zip() {
+    let digest = "a".repeat(64);
+    let zip = asset(&digest);
+    let tar_gz = tar_gz_asset(&digest);
+    let assets = [zip.clone(), tar_gz.clone()];
+    let (selected, format) = release_asset(&assets, "linux-amd64").expect("Linux release asset");
+    assert_eq!(selected.name, tar_gz.name);
+    assert_eq!(format, ArchiveFormat::TarGz);
+
+    let assets = [zip];
+    let (selected, format) = release_asset(&assets, "linux-amd64").expect("legacy Linux ZIP");
+    assert_eq!(selected.name, "sempre-bundle-linux-amd64.zip");
+    assert_eq!(format, ArchiveFormat::Zip);
+    assert!(release_asset(&[tar_gz], "windows-amd64").is_none());
 }
 
 #[test]

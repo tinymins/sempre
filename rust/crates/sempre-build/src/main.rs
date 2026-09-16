@@ -188,7 +188,9 @@ async fn build_release(
     })
     .await?;
     println!("Binary: {}", result.binary.display());
-    println!("Bundle: {}", result.bundle.display());
+    for bundle in result.bundles {
+        println!("Bundle: {}", bundle.display());
+    }
     println!("UI: {}", result.ui_archive.display());
     println!("Checksums: {}", result.checksums.display());
     Ok(())

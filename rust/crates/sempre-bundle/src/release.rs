@@ -1,8 +1,9 @@
 use std::{
-    fs,
+    fs::{self, File},
     path::{Path, PathBuf},
 };
 
+use flate2::{Compression, write::GzEncoder};
 use sempre_state::{Document, Layout, write_atomic};
 
 use crate::{
@@ -52,7 +53,7 @@ pub fn package_release(
     executable: &Path,
     output: &Path,
     target: &ReleaseTarget,
-) -> Result<Export, BundleError> {
+) -> Result<Vec<Export>, BundleError> {
     fs::create_dir_all(output).map_err(|source_error| BundleError::Io {
         operation: "create release output directory",
         path: output.to_path_buf(),
@@ -77,16 +78,62 @@ pub fn package_release(
     layout.ensure().map_err(BundleError::Layout)?;
     write_release_directory(source, &layout, document, executable, target)?;
 
-    let download_name = format!("sempre-bundle-{}-{}.zip", target.os, target.arch);
-    let archive = output.join(&download_name);
-    if let Err(error) = zip_directory(&archive, &package, &package_name) {
-        let _ = fs::remove_file(&archive);
+    let zip_name = format!("sempre-bundle-{}-{}.zip", target.os, target.arch);
+    let zip_archive = output.join(&zip_name);
+    if let Err(error) = zip_directory(&zip_archive, &package, &package_name) {
+        let _ = fs::remove_file(&zip_archive);
         return Err(error);
     }
-    Ok(Export {
-        archive,
-        download_name,
-    })
+    let mut exports = vec![Export {
+        archive: zip_archive,
+        download_name: zip_name,
+    }];
+    if target.os != "windows" {
+        let tar_name = format!("sempre-bundle-{}-{}.tar.gz", target.os, target.arch);
+        let tar_archive = output.join(&tar_name);
+        if let Err(error) = tar_gz_directory(&tar_archive, &package, &package_name) {
+            for export in &exports {
+                let _ = fs::remove_file(&export.archive);
+            }
+            let _ = fs::remove_file(&tar_archive);
+            return Err(error);
+        }
+        exports.push(Export {
+            archive: tar_archive,
+            download_name: tar_name,
+        });
+    }
+    Ok(exports)
+}
+
+fn tar_gz_directory(destination: &Path, source: &Path, prefix: &str) -> Result<(), BundleError> {
+    let file = File::create(destination).map_err(|source_error| BundleError::Io {
+        operation: "create release tar.gz",
+        path: destination.to_path_buf(),
+        source: source_error,
+    })?;
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+    archive
+        .append_dir_all(prefix, source)
+        .map_err(|source_error| BundleError::Io {
+            operation: "archive release tar.gz",
+            path: source.to_path_buf(),
+            source: source_error,
+        })?;
+    let encoder = archive
+        .into_inner()
+        .map_err(|source_error| BundleError::Io {
+            operation: "finish release tar",
+            path: destination.to_path_buf(),
+            source: source_error,
+        })?;
+    encoder.finish().map_err(|source_error| BundleError::Io {
+        operation: "finish release gzip",
+        path: destination.to_path_buf(),
+        source: source_error,
+    })?;
+    Ok(())
 }
 
 fn write_release_directory(
@@ -165,6 +212,7 @@ fn write(path: PathBuf, content: &[u8]) -> Result<(), BundleError> {
 mod tests {
     use std::{fs::File, io::Read as _};
 
+    use flate2::read::GzDecoder;
     use sempre_state::Store;
 
     use super::*;
@@ -184,68 +232,121 @@ mod tests {
                 &["install.cmd"][..],
             ),
         ] {
-            let temporary = tempfile::tempdir().expect("temporary directory");
-            let source = Layout::at(&temporary.path().join("source"));
-            let document = Store::new(source.clone()).initialize().expect("state");
-            fs::write(
-                &source.web_config,
-                b"{\"schema\":1,\"listen\":\"127.0.0.1:33211\"}",
-            )
-            .expect("web config");
-            let executable = temporary.path().join("sempre-source");
-            fs::write(&executable, b"binary").expect("binary");
-            let target = ReleaseTarget::new(os, "amd64").expect("target");
-            let result =
-                package_release(&source, &document, &executable, temporary.path(), &target)
-                    .expect("release bundle");
-            assert_eq!(
-                result.download_name,
-                format!("sempre-bundle-{os}-amd64.zip")
-            );
-            let mut archive = zip::ZipArchive::new(File::open(result.archive).expect("archive"))
-                .expect("release ZIP");
-            let prefix = format!("sempre-{os}-amd64");
-            let executable = if os == "windows" {
-                "sempre.exe"
-            } else {
-                "sempre"
-            };
-            assert!(archive.by_name(&format!("{prefix}/{executable}")).is_ok());
-            for installer in installers {
-                let mut entry = archive
-                    .by_name(&format!("{prefix}/{installer}"))
-                    .expect("installer");
-                let mut content = String::new();
-                entry.read_to_string(&mut content).expect("installer text");
-                if *installer == "install.desktop" {
-                    assert!(content.contains("sh install.sh"));
-                } else {
-                    assert!(content.contains(" install "));
-                }
-                if os == "darwin" {
-                    let cleanup = content
-                        .find(&format!("/usr/bin/xattr -cr \"./{executable}\" ./.sempre"))
-                        .unwrap();
-                    let install = content
-                        .find(&format!("\"./{executable}\" install"))
-                        .unwrap();
-                    assert!(cleanup < install);
-                } else {
-                    assert!(!content.contains("xattr"));
-                }
-                assert!(!content.contains("--yes"));
-            }
-            for name in absent {
-                assert!(archive.by_name(&format!("{prefix}/{name}")).is_err());
-            }
-            let metadata: serde_json::Value = {
-                let entry = archive
-                    .by_name(&format!("{prefix}/{}", crate::METADATA_NAME))
-                    .expect("metadata");
-                serde_json::from_reader(entry).expect("metadata JSON")
-            };
-            assert_eq!(metadata["kind"], "release");
+            assert_release_archives(os, installers, absent);
         }
+    }
+
+    fn assert_release_archives(os: &str, installers: &[&str], absent: &[&str]) {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let source = Layout::at(&temporary.path().join("source"));
+        let document = Store::new(source.clone()).initialize().expect("state");
+        fs::write(
+            &source.web_config,
+            b"{\"schema\":1,\"listen\":\"127.0.0.1:33211\"}",
+        )
+        .expect("web config");
+        let executable = temporary.path().join("sempre-source");
+        fs::write(&executable, b"binary").expect("binary");
+        let target = ReleaseTarget::new(os, "amd64").expect("target");
+        let results = package_release(&source, &document, &executable, temporary.path(), &target)
+            .expect("release bundle");
+        assert_eq!(results.len(), if os == "windows" { 1 } else { 2 });
+        let zip_name = format!("sempre-bundle-{os}-amd64.zip");
+        let zip = results
+            .iter()
+            .find(|result| result.download_name == zip_name)
+            .expect("release ZIP");
+        assert_zip_archive(&zip.archive, os, installers, absent);
+        if os != "windows" {
+            let tar_name = format!("sempre-bundle-{os}-amd64.tar.gz");
+            let tar_gz = results
+                .iter()
+                .find(|result| result.download_name == tar_name)
+                .expect("release tar.gz");
+            assert_tar_gz_archive(&tar_gz.archive, os);
+        }
+    }
+
+    fn assert_zip_archive(path: &Path, os: &str, installers: &[&str], absent: &[&str]) {
+        let mut archive =
+            zip::ZipArchive::new(File::open(path).expect("archive")).expect("release ZIP");
+        let prefix = format!("sempre-{os}-amd64");
+        let executable = if os == "windows" {
+            "sempre.exe"
+        } else {
+            "sempre"
+        };
+        let entry = archive
+            .by_name(&format!("{prefix}/{executable}"))
+            .expect("release executable");
+        if os != "windows" {
+            assert_eq!(entry.unix_mode().expect("executable mode") & 0o777, 0o755);
+        }
+        drop(entry);
+        for installer in installers {
+            let mut entry = archive
+                .by_name(&format!("{prefix}/{installer}"))
+                .expect("installer");
+            let mut content = String::new();
+            entry.read_to_string(&mut content).expect("installer text");
+            assert_installer_content(&content, os, installer, executable);
+        }
+        for name in absent {
+            assert!(archive.by_name(&format!("{prefix}/{name}")).is_err());
+        }
+        let metadata: serde_json::Value = {
+            let entry = archive
+                .by_name(&format!("{prefix}/{}", crate::METADATA_NAME))
+                .expect("metadata");
+            serde_json::from_reader(entry).expect("metadata JSON")
+        };
+        assert_eq!(metadata["kind"], "release");
+    }
+
+    fn assert_installer_content(content: &str, os: &str, installer: &str, executable: &str) {
+        if installer == "install.desktop" {
+            assert!(content.contains("sh install.sh"));
+        } else {
+            assert!(content.contains(" install "));
+        }
+        if os == "darwin" {
+            let cleanup = content
+                .find(&format!("/usr/bin/xattr -cr \"./{executable}\" ./.sempre"))
+                .unwrap();
+            let install = content
+                .find(&format!("\"./{executable}\" install"))
+                .unwrap();
+            assert!(cleanup < install);
+        } else {
+            assert!(!content.contains("xattr"));
+        }
+        assert!(!content.contains("--yes"));
+    }
+
+    fn assert_tar_gz_archive(path: &Path, os: &str) {
+        let decoder = GzDecoder::new(File::open(path).expect("tar.gz"));
+        let mut archive = tar::Archive::new(decoder);
+        let entries = archive
+            .entries()
+            .expect("tar entries")
+            .map(|entry| {
+                let entry = entry.expect("tar entry");
+                let path = entry
+                    .path()
+                    .expect("tar path")
+                    .to_string_lossy()
+                    .into_owned();
+                let mode = entry.header().mode().expect("tar mode") & 0o777;
+                (path, mode)
+            })
+            .collect::<Vec<_>>();
+        let prefix = format!("sempre-{os}-amd64");
+        assert!(entries.contains(&(format!("{prefix}/sempre"), 0o755)));
+        assert!(
+            entries
+                .iter()
+                .any(|(path, _)| path == &format!("{prefix}/{}", crate::METADATA_NAME))
+        );
     }
 
     #[cfg(target_os = "macos")]

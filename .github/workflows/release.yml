@@ -144,7 +144,7 @@ jobs:
         with:
           subject-path: |
             dist/${{ matrix.binary }}
-            dist/sempre-bundle-*.zip
+            dist/sempre-bundle-*
             dist/sempre-ui.zip
       - name: Attest SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4

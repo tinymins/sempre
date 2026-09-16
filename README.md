@@ -113,9 +113,9 @@ Canonical releases are published at [github.com/tinymins/sempre/releases](https:
 
 | Platform | amd64 | arm64 |
 | --- | --- | --- |
-| Windows | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-windows-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-windows-arm64.zip) |
-| Linux | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-arm64.zip) |
-| macOS | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-amd64.zip) | [Bundle](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-arm64.zip) |
+| Windows | [ZIP](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-windows-amd64.zip) | [ZIP](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-windows-arm64.zip) |
+| Linux | [tar.gz](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-amd64.tar.gz) · [ZIP](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-amd64.zip) | [tar.gz](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-arm64.tar.gz) · [ZIP](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-linux-arm64.zip) |
+| macOS | [tar.gz](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-amd64.tar.gz) · [ZIP](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-amd64.zip) | [tar.gz](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-arm64.tar.gz) · [ZIP](https://github.com/tinymins/sempre/releases/latest/download/sempre-bundle-darwin-arm64.zip) |
 
 Standalone binaries remain available and install the service without bundled UI or cores. Place the canonical `resources/` directory beside a standalone binary for an offline UI install, or add the UI later with `sempre ui install official`:
 
@@ -590,8 +590,9 @@ bun run build
 The build command validates both projects and emits Windows, Linux, and macOS
 binaries for amd64 and arm64, `sempre-ui.zip`, the canonical
 `resources/{sempre-ui.zip,SHA256SUMS}` directory, six self-contained portable
-bundle ZIPs, and `dist/SHA256SUMS`. Bundle ZIPs include the official UI plus
-stable sing-box, Mihomo, Xray, and V2Ray snapshots for their target platform.
+bundle ZIPs, four matching Unix `tar.gz` bundles, and `dist/SHA256SUMS`. Bundles
+include the official UI plus stable sing-box, Mihomo, Xray, and V2Ray snapshots
+for their target platform.
 Windows resources use an `asInvoker` manifest; UAC is requested at runtime only
 for privileged commands.
 

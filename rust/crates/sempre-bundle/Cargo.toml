@@ -7,9 +7,11 @@ license.workspace = true
 description = "Portable Sempre snapshot bundle export"
 
 [dependencies]
+flate2.workspace = true
 sempre-state = { path = "../sempre-state" }
 serde.workspace = true
 serde_json.workspace = true
+tar.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

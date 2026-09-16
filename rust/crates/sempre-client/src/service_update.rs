@@ -90,10 +90,7 @@ async fn run_task(
         return Err("Sempre is already up to date".into());
     }
     let target = release_target()?;
-    let asset = manifest
-        .assets
-        .iter()
-        .find(|asset| asset.target == target)
+    let (asset, archive_format) = release_asset(&manifest.assets, &target)
         .ok_or_else(|| format!("release {} has no asset for {target}", manifest.version))?;
     let artifact = release_artifact(asset, &target)?;
     tasks.set_release(task_id, &manifest.version, &asset.name, asset.size)?;
@@ -111,7 +108,7 @@ async fn run_task(
         &archive,
         &extracted,
         &ExtractOptions {
-            format: ArchiveFormat::Zip,
+            format: archive_format,
             single_file_name: None,
         },
     )
@@ -316,9 +313,10 @@ fn parse_version(value: &str) -> Result<Version, String> {
 }
 
 fn release_artifact(asset: &ManifestAsset, target: &str) -> Result<Artifact, String> {
-    let expected = format!("sempre-bundle-{target}.zip");
-    if asset.name != expected {
-        return Err(format!("update asset name must be {expected}"));
+    let zip = format!("sempre-bundle-{target}.zip");
+    let tar_gz = format!("sempre-bundle-{target}.tar.gz");
+    if asset.name != zip && asset.name != tar_gz {
+        return Err(format!("update asset name must be {zip} or {tar_gz}"));
     }
     let url = Url::parse(&asset.url)
         .map_err(|_| format!("update asset {} has an invalid URL", asset.name))?;
@@ -334,6 +332,26 @@ fn release_artifact(asset: &ManifestAsset, target: &str) -> Result<Artifact, Str
         digest: digest.to_string(),
         size: asset.size,
     })
+}
+
+fn release_asset<'a>(
+    assets: &'a [ManifestAsset],
+    target: &str,
+) -> Option<(&'a ManifestAsset, ArchiveFormat)> {
+    if !target.starts_with("windows-") {
+        let tar_gz = format!("sempre-bundle-{target}.tar.gz");
+        if let Some(asset) = assets
+            .iter()
+            .find(|asset| asset.target == target && asset.name == tar_gz)
+        {
+            return Some((asset, ArchiveFormat::TarGz));
+        }
+    }
+    let zip = format!("sempre-bundle-{target}.zip");
+    assets
+        .iter()
+        .find(|asset| asset.target == target && asset.name == zip)
+        .map(|asset| (asset, ArchiveFormat::Zip))
 }
 
 async fn validate_version(executable: &Path, expected: &str) -> Result<(), String> {

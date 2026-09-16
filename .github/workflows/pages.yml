@@ -104,17 +104,29 @@ jobs:
                     notes: ($notes[0][.tag_name] // .body // "")
                   }
               ],
-              assets: [
-                .assets[]
-                | select(.name | test("^sempre-bundle-(darwin|linux|windows)-(amd64|arm64)\\.zip$"))
-                | {
-                    target: (.name | capture("^sempre-bundle-(?<target>.+)\\.zip$").target),
-                    name,
-                    url: .browser_download_url,
-                    sha256: (.digest | ltrimstr("sha256:")),
-                    size
-                  }
-              ]
+              assets: (
+                [
+                  .assets[]
+                  | select(.name | test("^sempre-bundle-(darwin|linux|windows)-(amd64|arm64)\\.zip$"))
+                  | {
+                      target: (.name | capture("^sempre-bundle-(?<target>.+)\\.zip$").target),
+                      name,
+                      url: .browser_download_url,
+                      sha256: (.digest | ltrimstr("sha256:")),
+                      size
+                    }
+                ] + [
+                  .assets[]
+                  | select(.name | test("^sempre-bundle-(darwin|linux)-(amd64|arm64)\\.tar\\.gz$"))
+                  | {
+                      target: (.name | capture("^sempre-bundle-(?<target>.+)\\.tar\\.gz$").target),
+                      name,
+                      url: .browser_download_url,
+                      sha256: (.digest | ltrimstr("sha256:")),
+                      size
+                    }
+                ]
+              )
             }
           ' "$RUNNER_TEMP/sempre-release.json" > site/dist/api/releases/latest.json
           jq -e '
@@ -132,7 +144,9 @@ jobs:
               (.notes | contains("## 简体中文")) and
               (.notes | contains("## English"))
             ) and
-            (.assets | length == 6) and
+            (.assets | length == 10) and
+            ([.assets[] | select(.name | endswith(".zip"))] | length == 6) and
+            ([.assets[] | select(.name | endswith(".tar.gz"))] | length == 4) and
             all(.assets[]; (.sha256 | test("^[0-9a-f]{64}$")) and .size > 0 and (.url | startswith("https://")))
           ' site/dist/api/releases/latest.json >/dev/null
           jq -r '
@@ -142,10 +156,18 @@ jobs:
               "repository=\(.repository)"
             ] + [
               .assets[]
+              | select(.name | endswith(".zip"))
               | (.target | gsub("-"; "_")) as $target
               | "asset_\($target)_url=\(.url)",
                 "asset_\($target)_sha256=\(.sha256)",
                 "asset_\($target)_size=\(.size)"
+            ] + [
+              .assets[]
+              | select(.name | endswith(".tar.gz"))
+              | (.target | gsub("-"; "_")) as $target
+              | "asset_\($target)_tar_gz_url=\(.url)",
+                "asset_\($target)_tar_gz_sha256=\(.sha256)",
+                "asset_\($target)_tar_gz_size=\(.size)"
             ] | .[]
           ' site/dist/api/releases/latest.json > site/dist/api/releases/latest.env
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
