@@ -93,7 +93,7 @@ export function Gateway() {
         <Section title="Topology and LAN">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Topology"><Select value={config.topology} options={[{ value: 'local-pve', label: 'PVE host local' }, { value: 'remote-pve', label: 'Gateway VM/LXC + PVE SSH/manual' }]} onChange={(value) => update((current) => ({ ...current, topology: value }))} /></Field>
-            <Field label="LAN interface"><Select showSearch allowClear popupMatchSelectWidth className="w-full max-w-full" value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
+            <Field label="LAN interface" labelControl={false}><Select aria-label="LAN interface" showSearch allowClear popupMatchSelectWidth className="w-full max-w-full" value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
             <Field label="Gateway CIDR"><Input value={config.lan.gateway_cidr} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, gateway_cidr: event.target.value } }))} /></Field>
             <Field label="WAN interface">{config.topology === 'local-pve'
               ? <Select showSearch popupMatchSelectWidth className="w-full max-w-full" value={localConfig.lan.wan_interface} options={lanOptions} placeholder="Select the local outbound interface" onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: String(value) } }))} />
@@ -184,8 +184,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return <section className="space-y-3"><h2 className="text-sm font-semibold">{title}</h2>{children}</section>
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block min-w-0 space-y-1"><span className="block text-xs font-medium text-[var(--muted)]">{label}</span>{children}</label>
+function Field({ label, children, labelControl = true }: { label: string; children: React.ReactNode; labelControl?: boolean }) {
+  const content = <><span className="block text-xs font-medium text-[var(--muted)]">{label}</span>{children}</>
+  return labelControl
+    ? <label className="block min-w-0 space-y-1">{content}</label>
+    : <div className="block min-w-0 space-y-1">{content}</div>
 }
 
 function Metric({ icon: Icon, label, value, tone }: { icon: typeof Network; label: string; value: string; tone: 'green' | 'amber' | 'cyan' | 'blue' }) {

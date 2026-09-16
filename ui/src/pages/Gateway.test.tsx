@@ -88,6 +88,18 @@ describe('Gateway page', () => {
     expect(savedConfig).toMatchObject({ lan: { wan_interface: 'vmbr0' } })
   })
 
+  it('keeps the selected LAN interface when opening its options', async () => {
+    renderGateway()
+
+    const select = await screen.findByRole('combobox', { name: 'LAN interface' })
+    await waitFor(() => expect(select).toHaveTextContent('vmbr1'))
+
+    fireEvent.click(select)
+
+    expect(select).toHaveTextContent('vmbr1')
+    expect(await screen.findByRole('listbox')).toBeInTheDocument()
+  })
+
   it('keeps the remote PVE interface freely editable', async () => {
     renderGateway()
 

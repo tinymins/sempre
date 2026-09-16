@@ -20,6 +20,8 @@ export interface SelectProps {
   onChange?: (value: any, option?: any) => void;
   /** Placeholder */
   placeholder?: string;
+  /** Accessible label when no native label is associated */
+  "aria-label"?: string;
   /** Allow clear */
   allowClear?: boolean;
   /** Multiple select */

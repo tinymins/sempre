@@ -57,12 +57,14 @@ export function ServicePanel() {
 
   return <Card className="p-4 md:p-5">
       <div className="mb-5 flex items-center gap-2"><ServerCog size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('serviceUpdateTitle')}</h2></div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex w-full items-center justify-between gap-4 rounded-lg border border-[var(--border)] p-3 lg:flex-1">
-          <div><p className="text-sm font-medium">{previewCopy.label}</p><p className="mt-1 text-xs text-[var(--muted)]">{previewCopy.detail}</p></div>
-          <Switch aria-label={previewCopy.label} checked={settings.data?.settings.allow_prerelease ?? false} loading={settings.isFetching || saveSettings.isPending} onChange={(checked) => checked ? setPreviewConfirmOpen(true) : saveSettings.mutate(false)} />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-sm font-medium" title={previewCopy.detail}>
+          <Switch size="small" aria-label={previewCopy.label} checked={settings.data?.settings.allow_prerelease ?? false} loading={settings.isFetching || saveSettings.isPending} onChange={(checked) => checked ? setPreviewConfirmOpen(true) : saveSettings.mutate(false)} />
+          <span>{previewCopy.label}</span>
         </div>
-        <div className="flex flex-wrap gap-2"><Button disabled={!updating && update.isFetching} onClick={() => updating ? openProgress() : void update.refetch()}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : update.isFetching ? <Spinner /> : <RefreshCw size={16} />}{updating ? t('serviceUpdateViewProgress') : t('checkForUpdates')}</Button><Button disabled={!serviceAvailable || updating} onClick={() => updatePackageInput.current?.click()}><Upload size={16} />{uploadCopy}</Button><input ref={updatePackageInput} aria-label={uploadCopy} className="sr-only" type="file" accept=".zip,.tar.gz,application/zip,application/gzip" disabled={!serviceAvailable || updating} onChange={(event) => { uploadPackage(event.target.files?.[0]); event.target.value = '' }} /></div>
+        <Button disabled={!updating && update.isFetching} onClick={() => updating ? openProgress() : void update.refetch()}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : update.isFetching ? <Spinner /> : <RefreshCw size={16} />}{updating ? t('serviceUpdateViewProgress') : t('checkForUpdates')}</Button>
+        <Button disabled={!serviceAvailable || updating} onClick={() => updatePackageInput.current?.click()}><Upload size={16} />{uploadCopy}</Button>
+        <input ref={updatePackageInput} aria-label={uploadCopy} className="sr-only" type="file" accept=".zip,.tar.gz,application/zip,application/gzip" disabled={!serviceAvailable || updating} onChange={(event) => { uploadPackage(event.target.files?.[0]); event.target.value = '' }} />
       </div>
       {settings.isError || saveSettings.isError ? <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{(saveSettings.error || settings.error)?.message}</p> : null}
       <div className="grid gap-3 rounded-lg bg-[var(--surface-hover)] p-4 sm:grid-cols-2">

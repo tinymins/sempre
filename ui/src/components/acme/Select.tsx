@@ -32,6 +32,7 @@ export function Select({
   defaultValue,
   onChange,
   placeholder = "请选择",
+  "aria-label": ariaLabel,
   allowClear = false,
   mode,
   disabled = false,
@@ -287,6 +288,7 @@ export function Select({
         style={{
           ...style,
         }}
+        aria-label={ariaLabel}
         {...getReferenceProps()}
       >
         <div className="flex-1 flex items-center gap-1 overflow-hidden min-w-0">

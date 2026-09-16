@@ -80,6 +80,8 @@ it('requires confirmation before enabling preview updates and saves the choice',
   const preview = await screen.findByRole('switch', { name: 'Allow preview updates' })
   const checkForUpdates = screen.getByRole('button', { name: 'Check for updates' })
   await waitFor(() => expect(preview).toBeEnabled())
+  expect(preview.parentElement).toHaveClass('h-9', 'inline-flex')
+  expect(preview.parentElement).not.toHaveClass('w-full')
   expect(preview.compareDocumentPosition(checkForUpdates) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(preview).toHaveAttribute('aria-checked', 'false')
   fireEvent.click(preview)
