@@ -45,6 +45,9 @@ export function Gateway() {
   const runtime = status.data?.runtime ?? emptyStatus.runtime
   const validation = status.data?.validation_errors ?? []
   const lanOptions = useMemo(() => inventory.interfaces.map((item) => ({ value: item.name, label: `${item.name}${item.addresses.length ? ` · ${item.addresses.join(', ')}` : ''}` })), [inventory.interfaces])
+  const localConfig = config.topology === 'local-pve' && !config.lan.wan_interface && inventory.default_interface
+    ? { ...config, lan: { ...config.lan, wan_interface: inventory.default_interface } }
+    : config
   const save = useMutation({
     mutationFn: (next: GatewayConfig) => api<{ config: GatewayConfig; reload_requested: boolean }>(session!, '/gateway', { method: 'PUT', body: JSON.stringify(next) }),
     onSuccess: (result) => {
@@ -88,7 +91,7 @@ export function Gateway() {
       <div><h1 className="text-xl font-semibold">{t('gateway')}</h1><p className="mt-1 text-sm text-[var(--muted)]">LAN transparent proxy, DHCP, and PVE host preparation.</p></div>
       <div className="flex gap-2">
         <Button icon={<RefreshCw size={16} />} disabled={status.isFetching} onClick={() => status.refetch()}>{t('refresh')}</Button>
-        <Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(config)}>{t('save')}</Button>
+        <Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(localConfig)}>{t('save')}</Button>
       </div>
     </div>
 
@@ -108,7 +111,10 @@ export function Gateway() {
           <Field label="Topology"><Select value={config.topology} options={[{ value: 'local-pve', label: 'PVE host local' }, { value: 'remote-pve', label: 'Gateway VM/LXC + PVE SSH/manual' }]} onChange={(value) => update((current) => ({ ...current, topology: value }))} /></Field>
           <Field label="LAN interface"><Select showSearch allowClear popupMatchSelectWidth className="w-full max-w-full" value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
           <Field label="Gateway CIDR"><Input value={config.lan.gateway_cidr} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, gateway_cidr: event.target.value } }))} /></Field>
-          <Field label="WAN interface"><Input value={config.lan.wan_interface} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: event.target.value } }))} /></Field>
+          <Field label="WAN interface">{config.topology === 'local-pve'
+            ? <Select showSearch popupMatchSelectWidth className="w-full max-w-full" value={localConfig.lan.wan_interface} options={lanOptions} placeholder="Select the local outbound interface" onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: String(value) } }))} />
+            : <Input value={config.lan.wan_interface} placeholder="Remote PVE interface name" onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: event.target.value } }))} />}
+          </Field>
           <Field label="NAT masquerade"><Switch checked={config.lan.nat_enabled} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, nat_enabled: value } }))} /></Field>
           <Field label="Proxy this host"><Switch checked={network.data?.settings.gateway_capture_host ?? false} loading={captureHost.isPending} onChange={(value) => captureHost.mutate(value)} /></Field>
           <Field label="PVE host"><Input value={config.pve.host || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, host: event.target.value } }))} /></Field>
@@ -143,9 +149,9 @@ export function Gateway() {
       <Section title="PVE host preparation">
         {config.topology === 'remote-pve' ? <div className="mb-3"><Field label="One-time SSH private key"><TextArea rows={3} value={sshKey} placeholder="Optional when SSH key path is configured on the Sempre host" onChange={(event) => setSSHKey(event.target.value)} /></Field></div> : null}
         <div className="mb-3 flex gap-2">
-          <Button icon={<Terminal size={16} />} loading={buildPlan.isPending} onClick={() => buildPlan.mutate(config)}>Generate commands</Button>
+          <Button icon={<Terminal size={16} />} loading={buildPlan.isPending} onClick={() => buildPlan.mutate(localConfig)}>Generate commands</Button>
           <Button icon={<Copy size={16} />} disabled={!plan} onClick={() => plan && navigator.clipboard.writeText([...plan.commands, ...plan.persistent_commands].join('\n'))}>Copy</Button>
-          <Button variant="primary" icon={<Play size={16} />} loading={applyPlan.isPending} onClick={() => window.confirm('Apply these commands to the host now?') && applyPlan.mutate(config)}>Apply confirmed plan</Button>
+          <Button variant="primary" icon={<Play size={16} />} loading={applyPlan.isPending} onClick={() => window.confirm('Apply these commands to the host now?') && applyPlan.mutate(localConfig)}>Apply confirmed plan</Button>
         </div>
         {buildPlan.isError ? <Alert type="error" showIcon message={buildPlan.error instanceof Error ? buildPlan.error.message : t('operationFailed')} /> : null}
         {applyPlan.isError ? <Alert type="error" showIcon message={applyPlan.error instanceof Error ? applyPlan.error.message : t('operationFailed')} /> : null}
