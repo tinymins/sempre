@@ -226,7 +226,10 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
                     json!(sempre_dns::DEFAULT_FRONTEND_PORT),
                 );
                 shared.insert("systemDnsListenHosts".into(), json!(["0.0.0.0"]));
-                shared.insert("systemDnsTakeoverHost".into(), Value::Bool(false));
+                shared.insert(
+                    "systemDnsTakeoverHost".into(),
+                    Value::Bool(settings.gateway_capture_host),
+                );
             }
         }
         Ok(profile)
@@ -328,5 +331,21 @@ mod tests {
             json!(["0.0.0.0"])
         );
         assert_eq!(dns.dns["shared"]["systemDnsTakeoverHost"], false);
+
+        manager
+            .network_settings
+            .replace(NetworkSettings {
+                mode: NetworkMode::Gateway,
+                gateway_capture_host: true,
+                ..manager.network_settings.read()
+            })
+            .expect("capture gateway host");
+        let captured = manager
+            .apply_network_settings(&profile)
+            .expect("captured network overlay");
+        let dns = manager
+            .apply_dns_frontend_settings(&captured, &target, true)
+            .expect("captured DNS overlay");
+        assert_eq!(dns.dns["shared"]["systemDnsTakeoverHost"], true);
     }
 }

@@ -67,7 +67,7 @@ pub(crate) fn validate(config: &DnsConfig, errors: &mut Vec<String>) {
     {
         if crate::validate_upstream(upstream).is_err() {
             errors.push(format!(
-                "DNS upstream {upstream:?} must use tls://, tcp://, udp:// or host:port"
+                "DNS upstream {upstream:?} must be an address, host:port, tls://, tcp:// or udp://"
             ));
         }
     }
@@ -91,7 +91,7 @@ pub(crate) fn validate(config: &DnsConfig, errors: &mut Vec<String>) {
             && crate::validate_upstream(&rule_set.upstream).is_err()
         {
             errors.push(format!(
-                "DNS upstream {:?} must use tls://, tcp://, udp:// or host:port",
+                "DNS upstream {:?} must be an address, host:port, tls://, tcp:// or udp://",
                 rule_set.upstream
             ));
         }

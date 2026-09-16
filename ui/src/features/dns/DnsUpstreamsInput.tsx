@@ -19,6 +19,6 @@ export function DnsUpstreamsInput({ upstreams, onChange, zh }: { upstreams: stri
         <Button variant="text" className="shrink-0 text-amber-600 dark:text-amber-400" aria-label={zh ? '修改上游的风险' : 'Upstream configuration risks'} icon={<CircleAlert size={18} />} />
       </Tooltip>
     </div>
-    <div className="text-xs text-[var(--muted)]">{zh ? '支持 tls://、tcp://、udp://；多个地址用逗号分隔，按顺序尝试。留空保存恢复默认 DoT。用于国内域名和自定义直连规则。' : 'Supports tls://, tcp:// and udp://. Separate upstreams with commas; they are tried in order. Leave empty and save to restore default DoT. Used for domestic domains and custom direct rules.'}</div>
+    <div className="text-xs text-[var(--muted)]">{zh ? '支持裸 IP 或主机名（默认 UDP 53），以及 tls://、tcp://、udp://；多个地址用逗号分隔，按顺序尝试。留空保存恢复默认 DoT。用于国内域名和自定义直连规则。' : 'Supports bare IPs or hostnames (UDP 53 by default), plus tls://, tcp:// and udp://. Separate upstreams with commas; they are tried in order. Leave empty and save to restore default DoT. Used for domestic domains and custom direct rules.'}</div>
   </div>
 }

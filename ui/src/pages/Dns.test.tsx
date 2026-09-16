@@ -113,12 +113,12 @@ describe('DNS page', () => {
     const first = 'tls://dns.alidns.com'
     fireEvent.change(input, { target: { value: `${first},` } })
     expect(input).toHaveValue(`${first},`)
-    fireEvent.change(input, { target: { value: `${first}, tcp://1.1.1.1:53` } })
+    fireEvent.change(input, { target: { value: `${first}, 223.5.5.5` } })
     fireEvent.focus(screen.getByRole('button', { name: '修改上游的风险' }))
     expect(await screen.findByRole('tooltip')).toHaveTextContent('可能造成循环查询、解析超时')
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/dns/settings'), expect.objectContaining({
-      method: 'PUT', body: expect.stringContaining('"direct_upstreams":["tls://dns.alidns.com","tcp://1.1.1.1:53"]'),
+      method: 'PUT', body: expect.stringContaining('"direct_upstreams":["tls://dns.alidns.com","223.5.5.5"]'),
     })))
   })
 })

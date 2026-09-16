@@ -390,12 +390,9 @@ mod tests {
             sempre_dns::default_upstreams()
         );
         let mut custom = store.read();
-        custom.direct_upstreams = vec![" tcp://1.1.1.1:53, udp://223.5.5.5 ".into()];
+        custom.direct_upstreams = vec![" tcp://1.1.1.1:53, 223.5.5.5 ".into()];
         let saved = store.replace(custom).expect("protocol addresses");
-        assert_eq!(
-            saved.direct_upstreams,
-            ["tcp://1.1.1.1:53", "udp://223.5.5.5"]
-        );
+        assert_eq!(saved.direct_upstreams, ["tcp://1.1.1.1:53", "223.5.5.5"]);
         let reopened = DnsSettingsStore::open(path, queries, &profile).expect("reopen");
         assert_eq!(reopened.read(), saved);
         let mut reset = saved;

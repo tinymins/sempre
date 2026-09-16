@@ -31,7 +31,7 @@ impl Endpoint {
     pub fn parse(value: &str) -> Result<Self, DnsError> {
         let invalid = || {
             DnsError::invalid(format!(
-                "invalid DNS upstream {value:?}; use tls://, tcp://, udp:// or host:port"
+                "invalid DNS upstream {value:?}; use an address, host:port, tls://, tcp:// or udp://"
             ))
         };
         let value = value.trim();
@@ -52,7 +52,6 @@ impl Endpoint {
             || url.password().is_some()
             || url.fragment().is_some()
             || !matches!(url.path(), "" | "/")
-            || (!explicit && url.port().is_none())
         {
             return Err(invalid());
         }
@@ -92,6 +91,7 @@ mod tests {
     #[test]
     fn protocols_ports_and_tls_identity() {
         for (value, protocol, port) in [
+            ("223.5.5.5", Protocol::Udp, 53),
             ("udp://223.5.5.5", Protocol::Udp, 53),
             ("tcp://[::1]:1053", Protocol::Tcp, 1053),
             ("tls://dns.alidns.com", Protocol::Tls, 853),
@@ -113,7 +113,6 @@ mod tests {
     fn invalid_options_are_not_silently_ignored() {
         for value in [
             "",
-            "host",
             "https://dns.example/dns-query",
             "udp://1.1.1.1:0",
             "tcp://user@1.1.1.1",
