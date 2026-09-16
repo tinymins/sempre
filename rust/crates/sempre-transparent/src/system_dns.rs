@@ -33,6 +33,11 @@ impl SystemDns {
     pub(crate) fn discover_upstreams(&self) -> Result<Vec<String>, TransparentError> {
         let data = fs::read_to_string(&self.resolv_conf)
             .map_err(|source| self.io("read system resolver", source))?;
+        let data = if managed(data.as_bytes()) {
+            self.saved_original()?
+        } else {
+            data
+        };
         let mut upstreams = Vec::new();
         for address in data.lines().filter_map(|line| {
             let line = line.split('#').next()?.trim();
@@ -100,17 +105,7 @@ impl SystemDns {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(source) => return Err(self.io("read system DNS backup", source)),
         };
-        let saved: Value = serde_json::from_slice(&backup).map_err(|error| {
-            TransparentError::Invalid(format!("decode system DNS backup: {error}"))
-        })?;
-        let original = saved
-            .get("original")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                TransparentError::Invalid(
-                    "system DNS backup has no original resolver content".into(),
-                )
-            })?;
+        let original = decode_original(&backup)?;
         self.chattr("-i");
         let current = match fs::read(&self.resolv_conf) {
             Ok(current) => Some(current),
@@ -148,6 +143,12 @@ impl SystemDns {
         self.state_dir.join(STATE_FILE)
     }
 
+    fn saved_original(&self) -> Result<String, TransparentError> {
+        let backup = fs::read(self.state_path())
+            .map_err(|source| self.io("read system DNS backup", source))?;
+        decode_original(&backup)
+    }
+
     fn chattr(&self, flag: &str) {
         if self.resolv_conf == std::path::Path::new("/etc/resolv.conf") {
             let _ = Command::new("chattr")
@@ -163,6 +164,18 @@ impl SystemDns {
             source,
         }
     }
+}
+
+fn decode_original(backup: &[u8]) -> Result<String, TransparentError> {
+    let saved: Value = serde_json::from_slice(backup)
+        .map_err(|error| TransparentError::Invalid(format!("decode system DNS backup: {error}")))?;
+    saved
+        .get("original")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            TransparentError::Invalid("system DNS backup has no original resolver content".into())
+        })
 }
 
 fn managed(data: &[u8]) -> bool {
@@ -198,6 +211,21 @@ mod tests {
             b"nameserver 9.9.9.9\n"
         );
         assert!(!manager.state_path().exists());
+    }
+
+    #[test]
+    fn managed_resolver_reuses_saved_original_upstreams() {
+        let root = tempfile::tempdir().expect("directory");
+        let resolver = root.path().join("resolv.conf");
+        fs::write(&resolver, b"nameserver 223.5.5.5\nnameserver 223.6.6.6\n").expect("resolver");
+        let manager = SystemDns::new(true, root.path().join("state"), resolver);
+
+        manager.apply().expect("take over resolver");
+
+        assert_eq!(
+            manager.discover_upstreams().expect("saved upstreams"),
+            ["223.5.5.5", "223.6.6.6"]
+        );
     }
 
     #[cfg(unix)]
