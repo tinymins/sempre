@@ -61,6 +61,9 @@ impl<R: VersionRunner> Manager<R> {
         require_bundle_replacement_confirmation(kind, source, target, allow_replace)?;
         prepare_command_registration(target)?;
         let _operation = self.store.acquire_operation()?;
+        let document = self.store.read()?;
+        self.repair_and_validate_deployed_cores(source, &document, kind.name())
+            .await?;
         let mut transaction = match kind {
             BundleKind::Release => sempre_bundle::stage_install(source, target)?,
             BundleKind::Snapshot => sempre_bundle::stage_restore(source, target)?,

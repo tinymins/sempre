@@ -77,8 +77,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         self.validate_config_path(&reference, &deployment.version, &config)
             .await
     }
+}
 
-    async fn validate_deployed_cores(
+impl<R: VersionRunner> Manager<R> {
+    pub(super) async fn validate_deployed_cores(
         &self,
         layout: &Layout,
         document: &Document,
@@ -95,6 +97,38 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
         Ok(())
     }
+
+    pub(super) async fn repair_and_validate_deployed_cores(
+        &self,
+        layout: &Layout,
+        document: &Document,
+        owner: &'static str,
+    ) -> Result<(), ManagerError> {
+        for installed in installed_cores(document) {
+            let adapter = self.registry.get(&installed.core)?;
+            let binary = layout.core_binary(
+                &installed.core,
+                installed.repository.as_deref(),
+                &installed.version,
+            );
+            make_executable(&binary)?;
+            validate_version(&self.runner, adapter.as_ref(), &binary, &installed, owner).await?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn make_executable(path: &std::path::Path) -> Result<(), ManagerError> {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .map_err(|error| ManagerError::io("repair bundled core permissions", error))
+}
+
+#[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
+fn make_executable(_: &std::path::Path) -> Result<(), ManagerError> {
+    Ok(())
 }
 
 async fn activate_component(
@@ -383,5 +417,61 @@ mod tests {
             .validate_deployed_cores(&target, &document, "system")
             .await
             .expect("matching system core version");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn bundle_core_preflight_repairs_permissions_before_version_validation() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let source = Layout::at(&temporary.path().join("source"));
+        let manager =
+            Manager::with_runner(Store::new(source.clone()), FileVersionRunner).expect("manager");
+        manager
+            .store()
+            .update(|document| {
+                document.core_mut("sing-box").default.installed.insert(
+                    "1.2.3".into(),
+                    Installation {
+                        explicit: true,
+                        digest: format!("sha256:{}", "a".repeat(64)),
+                        source: "test".into(),
+                        installed_at: Utc::now(),
+                    },
+                );
+                Ok(())
+            })
+            .expect("source state");
+        let binary = source.core_binary("sing-box", None, "1.2.3");
+        std::fs::create_dir_all(binary.parent().expect("core parent")).expect("core parent");
+        std::fs::write(&binary, b"9.9.9\n").expect("wrong core version");
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644))
+            .expect("strip executable bit");
+
+        let document = manager.state().expect("document");
+        let error = manager
+            .repair_and_validate_deployed_cores(&source, &document, "release bundle")
+            .await
+            .expect_err("version validation still runs after repair");
+        assert!(
+            error
+                .to_string()
+                .contains("reports version 9.9.9, expected 1.2.3")
+        );
+        assert_eq!(
+            std::fs::metadata(&binary)
+                .expect("core metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o755
+        );
+
+        std::fs::write(&binary, b"1.2.3\n").expect("matching core version");
+        manager
+            .repair_and_validate_deployed_cores(&source, &document, "release bundle")
+            .await
+            .expect("matching executable core");
     }
 }
