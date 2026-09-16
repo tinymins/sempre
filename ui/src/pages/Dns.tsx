@@ -6,6 +6,7 @@ import { DnsUpstreamsInput } from '../features/dns/DnsUpstreamsInput'
 import type { DnsFrontendStatus, DnsRewrite, DnsSettings, DnsSettingsResponse } from '../features/dns/types'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
 import { compareNumber, compareText } from '../lib/sort'
 
@@ -22,7 +23,7 @@ interface DnsQueryEvent {
   error?: string
 }
 
-const emptyRewrite = (): DnsRewrite => ({ id: crypto.randomUUID(), enabled: true, domain: '', type: 'A', answer: '', ttl: 300, comment: '' })
+const emptyRewrite = (): DnsRewrite => ({ id: randomUuid(), enabled: true, domain: '', type: 'A', answer: '', ttl: 300, comment: '' })
 
 export function Dns() {
   const { locale } = useI18n()

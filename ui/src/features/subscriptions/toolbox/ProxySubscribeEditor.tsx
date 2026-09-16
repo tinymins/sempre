@@ -12,6 +12,7 @@ import {
 } from "@acme/components";
 import { forwardRef, useImperativeHandle } from "react";
 import { useTranslation } from "react-i18next";
+import { randomUuid } from "@/lib/randomUuid";
 import type { CustomNode, SubscriptionSource } from "@/lib/types";
 import PrivateAccessEditor from "./PrivateAccessEditor";
 import SubscribeItemsEditor from "./SubscribeItemsEditor";
@@ -216,7 +217,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                 variant="dashed"
                 block
                 onClick={() => {
-                  const next: SubscriptionSource[] = [...rawSourcesRef.current, { id: crypto.randomUUID(), type: "raw", enabled: true, content: "", remark: "" }];
+                  const next: SubscriptionSource[] = [...rawSourcesRef.current, { id: randomUuid(), type: "raw", enabled: true, content: "", remark: "" }];
                   rawSourcesRef.current = next;
                   setRawSources(next);
                   queueAutosave();

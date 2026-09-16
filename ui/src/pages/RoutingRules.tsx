@@ -6,6 +6,7 @@ import { RuntimeRestartButton } from '../components/RuntimeRestartButton'
 import type { DnsRoutingDomain, DnsRoutingRuleSet, DnsSettings, DnsSettingsResponse } from '../features/dns/types'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
 import type { ProxyNode } from '../lib/types'
 import { SimpleRoutingRules, type SimpleRoutingSave } from '../features/dns/SimpleRoutingRules'
@@ -81,7 +82,7 @@ export function RoutingRules() {
   }
   const addSet = () => {
     if (!current) return
-    const id = crypto.randomUUID()
+    const id = randomUuid()
     const used = new Set(current.rule_sets.map((item) => item.name))
     let index = current.rule_sets.length + 1
     let name = zh ? `新规则集 ${index}` : `New rule set ${index}`
@@ -110,7 +111,7 @@ export function RoutingRules() {
   const openDomainDialog = (entry?: DnsRoutingDomain) => {
     setDomainDialog({
       mode: entry ? 'edit' : 'add',
-      entry: entry ? { ...entry } : { id: crypto.randomUUID(), domain: '', include_subdomains: true },
+      entry: entry ? { ...entry } : { id: randomUuid(), domain: '', include_subdomains: true },
     })
   }
   const applyDomain = () => {

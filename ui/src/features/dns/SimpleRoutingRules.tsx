@@ -4,16 +4,13 @@ import { Plus, Save, Trash2 } from 'lucide-react'
 import { RuntimeRestartButton } from '../../components/RuntimeRestartButton'
 import { Button, Card, Input, Spinner } from '../../components/ui'
 import { useI18n } from '../../lib/i18n'
+import { randomUuid } from '../../lib/randomUuid'
 import type { ProxyNode } from '../../lib/types'
 import type { DnsRoutingDomain, DnsRoutingRuleSet, DnsSettings } from './types'
 
 const DIRECT = 'direct'
 const GROUP_PREFIX = 'group:'
 const NODE_PREFIX = 'node:'
-
-function newID(prefix: string) {
-  return crypto.randomUUID?.() ?? `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-}
 
 export interface SimpleRoutingRow extends DnsRoutingDomain {
   ruleSetID?: string
@@ -57,7 +54,7 @@ export function SimpleRoutingRules({ settings, proxyGroups, saving, saved, pendi
         </div>)}
         {!rows.length ? <p className="py-6 text-center text-sm text-[var(--muted)]">{zh ? '还没有分流域名。' : 'No routed domains yet.'}</p> : null}
       </div>
-      <Button className="mt-4" onClick={() => setRows((current) => [...current, { id: newID('domain'), domain: '', include_subdomains: true, target: DIRECT }])}><Plus size={16} />{zh ? '添加域名' : 'Add domain'}</Button>
+      <Button className="mt-4" onClick={() => setRows((current) => [...current, { id: randomUuid(), domain: '', include_subdomains: true, target: DIRECT }])}><Plus size={16} />{zh ? '添加域名' : 'Add domain'}</Button>
       {validation ? <p role="alert" className="mt-3 text-sm text-red-600">{validation}</p> : null}
     </Card>
   </div>
@@ -74,7 +71,7 @@ export function composeSimpleRouting(settings: DnsSettings, rows: SimpleRoutingR
     const existing = pickRuleSet(target, bucket, settings.rule_sets, proxyGroups, used)
     const node = target.startsWith(NODE_PREFIX) ? target.slice(NODE_PREFIX.length) : ''
     const mode: DnsRoutingRuleSet['mode'] = target === DIRECT ? 'direct' : 'proxy'
-    const id = existing?.id ?? newID('rule-set')
+    const id = existing?.id ?? randomUuid()
     const name = existing?.name ?? uniqueName(node || '代理分流', settings.rule_sets.map((item) => item.name), ruleSets.map((item) => item.name))
     used.add(id)
     ruleSets.push({

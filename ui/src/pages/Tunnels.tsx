@@ -4,6 +4,7 @@ import { CirclePlus, Download, FileText, Play, RefreshCw, RotateCw, Save, Square
 import { Alert, Button, Card, Collapse, Empty, Input, InputNumber, Select, Switch, TextArea } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
 import type { TunnelConfig, TunnelForward, TunnelInstance, TunnelStatus } from '../lib/types'
 
@@ -143,7 +144,7 @@ function resolverList(type: ResolverType, input: string): string[] | null {
   } catch { return null }
 }
 function defaultPlaceholderValue(value: string, defaultValue: string) { return value === defaultValue ? '' : value }
-function shortID(prefix: string) { return `${prefix}-${crypto.randomUUID().slice(0, 8)}` }
+function shortID(prefix: string) { return `${prefix}-${randomUuid().slice(0, 8)}` }
 function newInstance(): TunnelInstance { return { id: shortID('tunnel'), name: '', desired_state: 'stopped', server_url: '', dns_resolvers: [], prefer_ipv4: true, websocket_ping: '', connection_retry_max_backoff: '', forwards: [] } }
 function newForward(config: TunnelConfig): TunnelForward { const used = new Set(config.instances.flatMap((instance) => instance.forwards.map((forward) => forward.listen_port))); let port = 52001; while (used.has(port)) port += 1; return { id: shortID('wg'), name: '', listen_port: port, remote_host: '127.0.0.1', remote_port: 31088, timeout_seconds: 0 } }
 function updateInstance(config: TunnelConfig, index: number, change: Partial<TunnelInstance>, apply: (next: TunnelConfig) => void) { apply({ ...config, instances: config.instances.map((item, itemIndex) => itemIndex === index ? { ...item, ...change } : item) }) }

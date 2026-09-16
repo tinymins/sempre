@@ -4,6 +4,7 @@ import { Button, Checkbox, Input, Switch, Tag } from '@acme/components'
 import { Plus, Radar, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
 import type { KnownNetwork, NetworkSettings, NetworkSettingsResponse, SystemStatus } from '../lib/types'
 import { networkAutomationDisplayPath } from '../lib/networkAutomation'
@@ -48,7 +49,7 @@ export function NetworkAutomationPanel() {
     }
     const suffix = current.gateway_mac.split(':').slice(-3).join(':')
     const item: KnownNetwork = {
-      id: crypto.randomUUID(),
+      id: randomUuid(),
       name: zh ? `网络 ${suffix}` : `Network ${suffix}`,
       gateway_mac: current.gateway_mac,
       disable_proxy: true,

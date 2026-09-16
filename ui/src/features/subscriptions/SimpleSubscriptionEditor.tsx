@@ -3,15 +3,12 @@ import { Alert } from '@acme/components'
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { Button, Card, Input, Spinner } from '../../components/ui'
 import { useI18n } from '../../lib/i18n'
+import { randomUuid } from '../../lib/randomUuid'
 import type { SubscriptionProfile, SubscriptionSource } from '../../lib/types'
 import { SimplePrivateAccessDialog } from './SimplePrivateAccessDialog'
 
 function emptySource(): SubscriptionSource {
-  return { id: newID('source'), type: 'url', enabled: true, url: '', fetch_mode: 'auto' }
-}
-
-function newID(prefix: string) {
-  return crypto.randomUUID?.() ?? `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return { id: randomUuid(), type: 'url', enabled: true, url: '', fetch_mode: 'auto' }
 }
 
 function validURL(value: string) {

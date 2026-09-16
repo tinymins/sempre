@@ -26,6 +26,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { randomUuid } from "@/lib/randomUuid";
 import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -69,7 +70,7 @@ const UA_PRESETS = [
 ];
 
 const emptyItem = (): SubscribeItem => ({
-  id: crypto.randomUUID(),
+  id: randomUuid(),
   enabled: true,
   url: "",
   prefix: "",

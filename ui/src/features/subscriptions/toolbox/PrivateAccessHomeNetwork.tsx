@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { randomUuid } from "@/lib/randomUuid";
 import { useOptionalSession } from "@/lib/session";
 import type { NetworkSettings, NetworkSettingsResponse, PrivateAccessConnectorStatus, PrivateAccessStatus } from "@/lib/types";
 
@@ -38,7 +39,7 @@ export function PrivateAccessHomeNetwork({ enabled, networkIds, runtime, connect
       if (!networkIds.includes(existing.id)) onChange({ homeNetworkIds: [...networkIds, existing.id] });
       return;
     }
-    const id = crypto.randomUUID();
+    const id = randomUuid();
     const suffix = current.gateway_mac.split(":").slice(-3).join(":");
     save.mutate({
       ...settings,

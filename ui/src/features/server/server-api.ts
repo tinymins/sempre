@@ -1,4 +1,5 @@
 import type { CustomNode, SubscriptionProfile, SubscriptionTarget } from '../../lib/types'
+import { randomUuid } from '../../lib/randomUuid'
 
 const SESSION_KEY = 'sempre.server.session.v1'
 
@@ -156,7 +157,7 @@ async function serverResponse<T>(response: Response): Promise<T> {
 export function newServerProfile(name: string): SubscriptionProfile {
   const secret = randomSecret()
   return {
-    id: crypto.randomUUID(), revision: 1, name, mode: 'local', log_level: 'info',
+    id: randomUuid(), revision: 1, name, mode: 'local', log_level: 'info',
     editor: { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' },
     sources: [], custom_node_ids: [],
     local_proxy: { socks_port: 20580, http_port: 20581, username: 'sempre', password: secret },

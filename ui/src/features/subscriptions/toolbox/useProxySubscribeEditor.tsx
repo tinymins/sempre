@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { SubscriptionProfile, SubscriptionSource } from "@/lib/types";
+import { randomUuid } from "@/lib/randomUuid";
 
 import { AUTOSAVE_DELAY, BASE_TABS, type Props, type SaveFeedback, isValidJsonc, profileFormValues } from "./ProxySubscribeModel";
 
@@ -122,7 +123,7 @@ export function useProxySubscribeEditor({
       const cleanedItems = ((values.subscribeItems as SubscribeItem[]) || [])
         .filter((item: SubscribeItem) => item.url?.trim());
       const sources: SubscriptionSource[] = cleanedItems.map((item: SubscribeItem) => ({
-        id: item.id || crypto.randomUUID(),
+        id: item.id || randomUuid(),
         type: "url",
         enabled: item.enabled,
         url: item.url.trim(),
