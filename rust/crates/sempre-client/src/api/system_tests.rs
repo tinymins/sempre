@@ -62,6 +62,32 @@ async fn authenticated_get(app: Router, token: &str, path: &str) -> axum::respon
     app.oneshot(request).await.expect("response")
 }
 
+async fn authenticated_json(
+    app: Router,
+    token: &str,
+    method: &str,
+    path: &str,
+    body: &'static str,
+) -> axum::response::Response {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(path)
+        .extension(ConnectInfo(
+            "127.0.0.1:1".parse::<SocketAddr>().expect("remote address"),
+        ))
+        .body(Body::from(body))
+        .expect("request");
+    request.headers_mut().insert(
+        DAEMON_TOKEN_HEADER,
+        HeaderValue::from_str(token).expect("token"),
+    );
+    request.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    app.oneshot(request).await.expect("response")
+}
+
 #[tokio::test]
 async fn system_and_network_inventory_match_the_control_ui_contract() {
     let (_root, app, token) = fixture();
@@ -107,6 +133,38 @@ async fn service_update_task_starts_empty() {
         .expect("task body");
     let task: serde_json::Value = serde_json::from_slice(&body).expect("task JSON");
     assert!(task["task"].is_null());
+}
+
+#[tokio::test]
+async fn service_update_settings_default_to_stable_and_persist_prerelease_consent() {
+    let (root, app, token) = fixture();
+    let response = authenticated_get(app.clone(), &token, "/api/v1/service/update/settings").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 16 * 1024)
+        .await
+        .expect("settings body");
+    let settings: serde_json::Value = serde_json::from_slice(&body).expect("settings JSON");
+    assert_eq!(settings["settings"]["allow_prerelease"], false);
+
+    let response = authenticated_json(
+        app.clone(),
+        &token,
+        "PUT",
+        "/api/v1/service/update/settings",
+        r#"{"allow_prerelease":true}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let saved = std::fs::read_to_string(root.path().join(".sempre/service-update.json"))
+        .expect("saved settings");
+    assert!(saved.contains(r#""allow_prerelease": true"#));
+
+    let response = authenticated_get(app, &token, "/api/v1/service/update/settings").await;
+    let body = to_bytes(response.into_body(), 16 * 1024)
+        .await
+        .expect("settings body");
+    let settings: serde_json::Value = serde_json::from_slice(&body).expect("settings JSON");
+    assert_eq!(settings["settings"]["allow_prerelease"], true);
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../../lib/i18n'
@@ -26,6 +26,7 @@ it.each(['2.0.12', '2.0.13'])('allows an available %s upgrade after a historical
     const path = new URL(String(input)).pathname
     if (path.endsWith('/system')) return Response.json({ version: '2.0.0', mode: 'system', service: 'running' })
     if (path.endsWith('/service/update/task')) return Response.json({ task })
+    if (path.endsWith('/service/update/settings')) return Response.json({ settings: { schema: 1, allow_prerelease: false } })
     if (path.endsWith('/service/update')) {
       if (init?.method === 'POST') {
         starts += 1
@@ -52,5 +53,43 @@ it.each(['2.0.12', '2.0.13'])('allows an available %s upgrade after a historical
   fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!)
   fireEvent.click(screen.getAllByRole('button', { name: 'Updating · view progress' })[0])
   expect(starts).toBe(1)
+  client.clear()
+})
+
+it('requires confirmation before enabling preview updates and saves the choice', async () => {
+  localStorage.setItem('sempre.locale', 'en')
+  sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
+  let allowPrerelease = false
+  let writes = 0
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname
+    if (path.endsWith('/system')) return Response.json({ version: '2.0.0', mode: 'system', service: 'running' })
+    if (path.endsWith('/service/update/task')) return Response.json({ task: null })
+    if (path.endsWith('/service/update/settings')) {
+      if (init?.method === 'PUT') {
+        writes += 1
+        allowPrerelease = Boolean(JSON.parse(String(init.body)).allow_prerelease)
+      }
+      return Response.json({ settings: { schema: 1, allow_prerelease: allowPrerelease } })
+    }
+    return Response.json({}, { status: 404 })
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><ServiceUpdateFlow><ServicePanel /></ServiceUpdateFlow></SessionProvider></I18nProvider></QueryClientProvider>)
+
+  const preview = await screen.findByRole('switch', { name: 'Allow preview updates' })
+  await waitFor(() => expect(preview).toBeEnabled())
+  expect(preview).toHaveAttribute('aria-checked', 'false')
+  fireEvent.click(preview)
+  expect(writes).toBe(0)
+  const dialog = await screen.findByRole('dialog', { name: 'Allow preview updates?' })
+  expect(within(dialog).getByText(/may be unstable/)).toBeInTheDocument()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Allow preview updates' }))
+
+  await waitFor(() => expect(writes).toBe(1))
+  expect(preview).toHaveAttribute('aria-checked', 'true')
+  fireEvent.click(preview)
+  await waitFor(() => expect(writes).toBe(2))
+  expect(preview).toHaveAttribute('aria-checked', 'false')
   client.clear()
 })

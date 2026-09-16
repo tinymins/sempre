@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Download, LoaderCircle, Power, RefreshCw, ServerCog, ShieldAlert } from 'lucide-react'
+import { Switch } from '@acme/components'
 import { api } from '../../lib/api'
 import { useI18n } from '../../lib/i18n'
 import { useSession } from '../../lib/session'
@@ -12,17 +13,47 @@ import { ReleaseNotes } from './ReleaseNotes'
 export function ServicePanel() {
   const { locale, t } = useI18n()
   const { session } = useSession()
+  const queryClient = useQueryClient()
+  const [previewConfirmOpen, setPreviewConfirmOpen] = useState(false)
   const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system') })
   const update = useQuery({ queryKey: ['service', 'update'], queryFn: () => api<ServiceUpdateStatus>(session!, '/service/update'), enabled: false, retry: false })
+  const settings = useQuery({ queryKey: ['service', 'update-settings'], queryFn: () => api<ServiceUpdateSettingsResponse>(session!, '/service/update/settings'), retry: false })
+  const saveSettings = useMutation({
+    mutationFn: (allow_prerelease: boolean) => api<ServiceUpdateSettingsResponse>(session!, '/service/update/settings', { method: 'PUT', body: JSON.stringify({ allow_prerelease }) }),
+    onSuccess: (result) => {
+      queryClient.setQueryData(['service', 'update-settings'], result)
+      queryClient.removeQueries({ queryKey: ['service', 'update'], exact: true })
+      setPreviewConfirmOpen(false)
+    },
+  })
   const { task: updateTask, mutation: upgrade, openProgress } = useServiceUpdateFlow()
   const serviceAvailable = system.data?.mode === 'system' && system.data.service !== 'not installed'
   const currentVersion = update.data?.current_version ?? system.data?.version ?? '-'
   const updating = upgrade.isPending || updateTask?.state === 'running'
   const releaseHistory = (update.data?.release_history?.length ? update.data.release_history : update.data ? [{ version: update.data.latest_version, published_at: update.data.published_at, notes: update.data.release_notes }] : [])
     .map((release) => ({ ...release, notes: release.notes || t('noReleaseNotes') }))
+  const zh = locale === 'zh-CN'
+  const previewCopy = zh ? {
+    label: '允许更新到测试版',
+    detail: '检查并更新到版本号更高的预发布版本，例如 beta、dev 或 test。',
+    title: '允许更新到测试版？',
+    warning: '测试版可能不稳定。开启后，检查更新和一键升级会使用包含预发布版本的通道；草稿版本仍不会被包含。',
+    confirm: '允许测试版更新',
+  } : {
+    label: 'Allow preview updates',
+    detail: 'Check for and install newer prerelease versions such as beta, dev, or test.',
+    title: 'Allow preview updates?',
+    warning: 'Preview builds may be unstable. Update checks and one-click upgrades will use the prerelease channel; draft releases remain excluded.',
+    confirm: 'Allow preview updates',
+  }
 
   return <Card className="p-4 md:p-5">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ServerCog size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('serviceUpdateTitle')}</h2></div><Button disabled={!updating && update.isFetching} onClick={() => updating ? openProgress() : void update.refetch()}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : update.isFetching ? <Spinner /> : <RefreshCw size={16} />}{updating ? t('serviceUpdateViewProgress') : t('checkForUpdates')}</Button></div>
+      <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] p-3">
+        <div><p className="text-sm font-medium">{previewCopy.label}</p><p className="mt-1 text-xs text-[var(--muted)]">{previewCopy.detail}</p></div>
+        <Switch aria-label={previewCopy.label} checked={settings.data?.settings.allow_prerelease ?? false} loading={settings.isFetching || saveSettings.isPending} onChange={(checked) => checked ? setPreviewConfirmOpen(true) : saveSettings.mutate(false)} />
+      </div>
+      {settings.isError || saveSettings.isError ? <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{(saveSettings.error || settings.error)?.message}</p> : null}
       <div className="grid gap-3 rounded-lg bg-[var(--surface-hover)] p-4 sm:grid-cols-2">
         <Version label={t('currentVersion')} value={currentVersion} />
         <Version label={t('latestVersion')} value={update.data?.latest_version ?? t('notChecked')} />
@@ -32,7 +63,12 @@ export function ServicePanel() {
         <div className="flex flex-wrap items-center gap-3"><Badge tone={update.data.update_available ? 'warning' : 'success'}>{update.data.update_available ? t('updateAvailable') : t('upToDate')}</Badge>{update.data.published_at ? <span className="text-xs text-[var(--muted)]">{new Date(update.data.published_at).toLocaleString()}</span> : null}</div>
         {update.data.update_available ? <><div><h3 className="mb-2 text-sm font-semibold">{t('releaseNotes')}</h3><ReleaseNotes releases={releaseHistory.length ? releaseHistory : [{ version: update.data.latest_version, published_at: update.data.published_at, notes: t('noReleaseNotes') }]} locale={locale} /></div><Button variant="primary" disabled={!serviceAvailable} onClick={() => { openProgress(); if (!updating) upgrade.mutate(update.data.latest_version) }}>{updating ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />}{updating ? t('serviceUpdateViewProgress') : t('upgradeNow')}</Button>{!serviceAvailable ? <p className="text-xs text-[var(--muted)]">{t('systemServiceUpdateOnly')}</p> : null}</> : <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={17} />{t('upToDateDetail')}</div>}
       </div> : null}
+      <ConfirmDialog open={previewConfirmOpen} title={previewCopy.title} detail={previewCopy.warning} confirmLabel={previewCopy.confirm} cancelLabel={t('cancel')} pending={saveSettings.isPending} onCancel={() => setPreviewConfirmOpen(false)} onConfirm={() => saveSettings.mutate(true)} />
   </Card>
+}
+
+interface ServiceUpdateSettingsResponse {
+  settings: { schema: number; allow_prerelease: boolean }
 }
 
 export function ServiceActionsPanel() {

@@ -76,8 +76,30 @@ jobs:
           mkdir -p site/dist/api/releases
           gh api "repos/$GITHUB_REPOSITORY/releases/latest" > "$RUNNER_TEMP/sempre-release.json"
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            | jq -s 'add | map(select(.draft == false and .prerelease == false))' \
+            | jq -s 'add | map(select(.draft == false))' \
+            > "$RUNNER_TEMP/sempre-all-releases.json"
+          jq 'map(select(.prerelease == false))' "$RUNNER_TEMP/sempre-all-releases.json" \
             > "$RUNNER_TEMP/sempre-releases.json"
+          jq '
+            map(
+              . as $release
+              | (.tag_name | ltrimstr("v") | capture("^(?<major>0|[1-9][0-9]*)\\.(?<minor>0|[1-9][0-9]*)\\.(?<patch>0|[1-9][0-9]*)(?:-(?<pre>[0-9A-Za-z.-]+))?(?:\\+[0-9A-Za-z.-]+)?$")) as $version
+              | {
+                  release: $release,
+                  key: [
+                    ($version.major | tonumber),
+                    ($version.minor | tonumber),
+                    ($version.patch | tonumber),
+                    (if $version.pre == null then 1 else 0 end),
+                    (($version.pre // "") | split(".") | map(if test("^[0-9]+$") then [0, tonumber] else [1, .] end))
+                  ]
+                }
+            )
+            | sort_by(.key)
+            | last
+            | .release
+          ' "$RUNNER_TEMP/sempre-all-releases.json" \
+            > "$RUNNER_TEMP/sempre-preview-release.json"
           notes_map="$RUNNER_TEMP/sempre-release-notes.json"
           jq -n '{}' > "$notes_map"
           for notes_path in .github/release-notes/*.md; do
@@ -170,6 +192,65 @@ jobs:
                 "asset_\($target)_tar_gz_size=\(.size)"
             ] | .[]
           ' site/dist/api/releases/latest.json > site/dist/api/releases/latest.env
+          jq --arg repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --slurpfile releases "$RUNNER_TEMP/sempre-all-releases.json" \
+            --slurpfile notes "$notes_map" '
+            {
+              schema: 1,
+              version: (.tag_name | ltrimstr("v")),
+              published_at,
+              notes: ($notes[0][.tag_name] // .body // ""),
+              repository: $repository,
+              releases: [
+                $releases[0][]
+                | {
+                    version: (.tag_name | ltrimstr("v")),
+                    published_at,
+                    notes: ($notes[0][.tag_name] // .body // "")
+                  }
+              ],
+              assets: (
+                [
+                  .assets[]
+                  | select(.name | test("^sempre-bundle-(darwin|linux|windows)-(amd64|arm64)\\.zip$"))
+                  | {
+                      target: (.name | capture("^sempre-bundle-(?<target>.+)\\.zip$").target),
+                      name,
+                      url: .browser_download_url,
+                      sha256: (.digest | ltrimstr("sha256:")),
+                      size
+                    }
+                ] + [
+                  .assets[]
+                  | select(.name | test("^sempre-bundle-(darwin|linux)-(amd64|arm64)\\.tar\\.gz$"))
+                  | {
+                      target: (.name | capture("^sempre-bundle-(?<target>.+)\\.tar\\.gz$").target),
+                      name,
+                      url: .browser_download_url,
+                      sha256: (.digest | ltrimstr("sha256:")),
+                      size
+                    }
+                ]
+              )
+            }
+          ' "$RUNNER_TEMP/sempre-preview-release.json" > site/dist/api/releases/preview.json
+          jq -e '
+            .schema == 1 and
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$")) and
+            (.notes | type == "string") and
+            (.repository | startswith("https://")) and
+            (.releases | type == "array") and
+            (.version as $latest | [.releases[] | select(.version == $latest)] | length == 1) and
+            all(.releases[];
+              (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$")) and
+              (.published_at | type == "string") and
+              (.notes | type == "string")
+            ) and
+            (.assets | length == 10) and
+            ([.assets[] | select(.name | endswith(".zip"))] | length == 6) and
+            ([.assets[] | select(.name | endswith(".tar.gz"))] | length == 4) and
+            all(.assets[]; (.sha256 | test("^[0-9a-f]{64}$")) and .size > 0 and (.url | startswith("https://")))
+          ' site/dist/api/releases/preview.json >/dev/null
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

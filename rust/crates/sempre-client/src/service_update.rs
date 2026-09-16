@@ -12,7 +12,8 @@ use crate::{
     service_update_task::{ServiceUpdateTask, ServiceUpdateTasks},
 };
 
-const MANIFEST_URL: &str = "https://sempre.run/api/releases/latest.json";
+const STABLE_MANIFEST_URL: &str = "https://sempre.run/api/releases/latest.json";
+const PREVIEW_MANIFEST_URL: &str = "https://sempre.run/api/releases/preview.json";
 const MAX_MANIFEST_SIZE: usize = 1 << 20;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -61,18 +62,19 @@ pub(crate) struct Status {
     pub(crate) repository: String,
 }
 
-pub(crate) async fn check() -> Result<Status, String> {
-    status(&fetch_manifest().await?)
+pub(crate) async fn check(allow_prerelease: bool) -> Result<Status, String> {
+    status(&fetch_manifest(allow_prerelease).await?, allow_prerelease)
 }
 
 pub(crate) fn start(
     tasks: Arc<ServiceUpdateTasks>,
     manager: Arc<sempre_manager::Manager>,
+    allow_prerelease: bool,
 ) -> Result<ServiceUpdateTask, String> {
     let task = tasks.begin()?;
     let task_id = task.id.clone();
     tokio::spawn(async move {
-        if let Err(error) = run_task(&tasks, &task_id, &manager).await {
+        if let Err(error) = run_task(&tasks, &task_id, &manager, allow_prerelease).await {
             tasks.fail(&task_id, &error);
         }
     });
@@ -83,9 +85,10 @@ async fn run_task(
     tasks: &ServiceUpdateTasks,
     task_id: &str,
     manager: &sempre_manager::Manager,
+    allow_prerelease: bool,
 ) -> Result<(), String> {
-    let manifest = fetch_manifest().await?;
-    let status = status(&manifest)?;
+    let manifest = fetch_manifest(allow_prerelease).await?;
+    let status = status(&manifest, allow_prerelease)?;
     if !status.update_available {
         return Err("Sempre is already up to date".into());
     }
@@ -175,7 +178,7 @@ fn describe_error(error: &dyn Error) -> String {
     message
 }
 
-async fn fetch_manifest() -> Result<Manifest, String> {
+async fn fetch_manifest(allow_prerelease: bool) -> Result<Manifest, String> {
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
@@ -191,7 +194,11 @@ async fn fetch_manifest() -> Result<Manifest, String> {
         .build()
         .map_err(|error| format!("build update client: {error}"))?;
     let response = client
-        .get(MANIFEST_URL)
+        .get(if allow_prerelease {
+            PREVIEW_MANIFEST_URL
+        } else {
+            STABLE_MANIFEST_URL
+        })
         .send()
         .await
         .map_err(|error| format!("query Sempre update service: {error}"))?;
@@ -216,11 +223,11 @@ async fn fetch_manifest() -> Result<Manifest, String> {
     }
     let manifest: Manifest = serde_json::from_slice(&body)
         .map_err(|error| format!("decode Sempre update manifest: {error}"))?;
-    validate_manifest(&manifest)?;
+    validate_manifest(&manifest, allow_prerelease)?;
     Ok(manifest)
 }
 
-fn validate_manifest(manifest: &Manifest) -> Result<(), String> {
+fn validate_manifest(manifest: &Manifest, allow_prerelease: bool) -> Result<(), String> {
     if manifest.schema != 1 {
         return Err(format!(
             "unsupported Sempre update manifest schema {}",
@@ -228,7 +235,7 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), String> {
         ));
     }
     let latest = parse_version(&manifest.version)?;
-    if !latest.pre.is_empty() {
+    if !allow_prerelease && !latest.pre.is_empty() {
         return Err("update manifest latest version is a prerelease".into());
     }
     let repository = Url::parse(&manifest.repository)
@@ -242,7 +249,7 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), String> {
     let mut versions = HashSet::new();
     for release in &manifest.releases {
         let version = parse_version(&release.version)?;
-        if !version.pre.is_empty() {
+        if !allow_prerelease && !version.pre.is_empty() {
             return Err("update manifest history contains a prerelease".into());
         }
         if !versions.insert(version) {
@@ -255,13 +262,13 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), String> {
     Ok(())
 }
 
-fn status(manifest: &Manifest) -> Result<Status, String> {
+fn status(manifest: &Manifest, allow_prerelease: bool) -> Result<Status, String> {
     let current = parse_version(VERSION)?;
     let latest = parse_version(&manifest.version)?;
     let mut history = Vec::new();
     for release in &manifest.releases {
         let version = parse_version(&release.version)?;
-        if version > current && version <= latest && version.pre.is_empty() {
+        if version > current && version <= latest && (allow_prerelease || version.pre.is_empty()) {
             history.push((
                 version,
                 ReleaseNote {

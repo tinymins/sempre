@@ -21,6 +21,8 @@ export interface SwitchProps {
   className?: string;
   /** Value alias for form usage (antd compatibility) */
   value?: boolean;
+  /** Accessible label when the switch has no visible button text */
+  "aria-label"?: string;
 }
 
 export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
@@ -36,6 +38,7 @@ export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
       loading = false,
       className,
       value,
+      "aria-label": ariaLabel,
     },
     ref,
   ) => {
@@ -47,6 +50,7 @@ export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         ref={ref}
         type="button"
         role="switch"
+        aria-label={ariaLabel}
         aria-checked={isChecked}
         disabled={disabled || loading}
         className={cn(

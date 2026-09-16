@@ -34,9 +34,9 @@ fn tar_gz_asset(sha256: &str) -> ManifestAsset {
 
 #[test]
 fn update_status_uses_semantic_version_ordering() {
-    let newer = status(&manifest("999.0.0")).expect("newer status");
+    let newer = status(&manifest("999.0.0"), false).expect("newer status");
     assert!(newer.update_available);
-    let older = status(&manifest("0.1.0")).expect("older status");
+    let older = status(&manifest("0.1.0"), false).expect("older status");
     assert!(!older.update_available);
 }
 
@@ -44,7 +44,7 @@ fn update_status_uses_semantic_version_ordering() {
 fn manifest_rejects_untrusted_repository_and_asset_urls() {
     let mut value = manifest("2.0.8");
     value.repository = "http://example.com/sempre".into();
-    assert!(validate_manifest(&value).is_err());
+    assert!(validate_manifest(&value, false).is_err());
     let mut value = asset(&"a".repeat(64));
     value.url = "http://example.com/sempre.zip".into();
     assert!(release_artifact(&value, "linux-amd64").is_err());
@@ -93,7 +93,9 @@ fn nested_update_errors_include_the_root_cause() {
 
 #[test]
 fn manifest_rejects_prerelease_versions() {
-    assert!(validate_manifest(&manifest("2.0.10-beta.1")).is_err());
+    let value = manifest("2.0.10-beta.1");
+    assert!(validate_manifest(&value, false).is_err());
+    assert!(validate_manifest(&value, true).is_ok());
 }
 
 #[test]
@@ -120,7 +122,7 @@ fn update_status_joins_stable_release_history_in_descending_semver_order() {
         },
     ];
 
-    let result = status(&value).expect("update status");
+    let result = status(&value, false).expect("update status");
     assert_eq!(
         result
             .release_history
@@ -133,4 +135,35 @@ fn update_status_joins_stable_release_history_in_descending_semver_order() {
         result.release_notes,
         format!("## v{latest}\n\nLatest notes.\n\n## v{middle}\n\nMiddle notes.")
     );
+}
+
+#[test]
+fn prerelease_channel_includes_all_semver_prerelease_labels() {
+    let current = parse_version(VERSION).expect("current version");
+    let base = format!("{}.0.0", current.major + 1);
+    let latest = format!("{base}-test.2");
+    let mut value = manifest(&latest);
+    value.releases = vec![
+        ManifestRelease {
+            version: latest.clone(),
+            published_at: "2026-09-09T00:00:00Z".into(),
+            notes: "Test notes.".into(),
+        },
+        ManifestRelease {
+            version: format!("{base}-dev.1"),
+            published_at: "2026-09-08T00:00:00Z".into(),
+            notes: "Dev notes.".into(),
+        },
+        ManifestRelease {
+            version: format!("{base}-beta.1"),
+            published_at: "2026-09-07T00:00:00Z".into(),
+            notes: "Beta notes.".into(),
+        },
+    ];
+
+    validate_manifest(&value, true).expect("preview manifest");
+    let result = status(&value, true).expect("preview status");
+    assert!(result.update_available);
+    assert_eq!(result.latest_version, latest);
+    assert_eq!(result.release_history.len(), 3);
 }

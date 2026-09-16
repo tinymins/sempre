@@ -24,6 +24,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
             "/api/v1/service/update",
             get(service_update_check).post(service_update),
         )
+        .route(
+            "/api/v1/service/update/settings",
+            get(service_update_settings).put(update_service_update_settings),
+        )
         .route("/api/v1/service/update/task", get(service_update_task))
 }
 
@@ -173,8 +177,12 @@ async fn service_action(
         .into_response()
 }
 
-async fn service_update_check() -> Response {
-    match crate::service_update::check().await {
+async fn service_update_check(State(state): State<Arc<AppState>>) -> Response {
+    let settings = match read_service_update_settings(&state) {
+        Ok(settings) => settings,
+        Err(error) => return internal(error),
+    };
+    match crate::service_update::check(settings.allow_prerelease).await {
         Ok(status) => Json(status).into_response(),
         Err(error) => (
             StatusCode::BAD_GATEWAY,
@@ -199,9 +207,14 @@ async fn service_update(State(state): State<Arc<AppState>>) -> Response {
         )
             .into_response();
     }
+    let settings = match read_service_update_settings(&state) {
+        Ok(settings) => settings,
+        Err(error) => return internal(error),
+    };
     match crate::service_update::start(
         Arc::clone(&state.service_updates),
         Arc::clone(&state.manager),
+        settings.allow_prerelease,
     ) {
         Ok(task) => (StatusCode::ACCEPTED, Json(json!({ "task": task }))).into_response(),
         Err(error) => (
@@ -212,6 +225,44 @@ async fn service_update(State(state): State<Arc<AppState>>) -> Response {
         )
             .into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct ServiceUpdateSettingsInput {
+    allow_prerelease: bool,
+}
+
+async fn service_update_settings(State(state): State<Arc<AppState>>) -> Response {
+    match read_service_update_settings(&state) {
+        Ok(settings) => Json(json!({ "settings": settings })).into_response(),
+        Err(error) => internal(error),
+    }
+}
+
+async fn update_service_update_settings(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<ServiceUpdateSettingsInput>,
+) -> Response {
+    let path = service_update_settings_path(&state);
+    match crate::service_update_settings::write(&path, input.allow_prerelease) {
+        Ok(settings) => Json(json!({ "settings": settings })).into_response(),
+        Err(error) => internal(error),
+    }
+}
+
+fn read_service_update_settings(
+    state: &AppState,
+) -> Result<crate::service_update_settings::ServiceUpdateSettings, String> {
+    crate::service_update_settings::read(&service_update_settings_path(state))
+}
+
+fn service_update_settings_path(state: &AppState) -> std::path::PathBuf {
+    state
+        .manager
+        .store()
+        .layout()
+        .home
+        .join("service-update.json")
 }
 
 async fn service_update_task(State(state): State<Arc<AppState>>) -> Response {

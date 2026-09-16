@@ -42,6 +42,7 @@ describe('Management page', () => {
         return Response.json({ settings, current: { supported: true, name: 'en0', addresses: ['10.8.28.19/24'], gateway: '10.8.28.1', gateway_mac: 'aa:bb:cc:dd:ee:ff' }, platform: 'windows', gateway_available: false })
       }
       if (path.endsWith('/service/update/task')) return Response.json({ task: serviceUpdateTask })
+      if (path.endsWith('/service/update/settings')) return Response.json({ settings: { schema: 1, allow_prerelease: false } })
       if (path.endsWith('/service/update')) {
         const update = { current_version: '2.0.8', latest_version: '2.1.0', update_available: true, published_at: '2026-09-07T09:15:18Z', release_notes: '## Highlights\n\n- Safer one-click upgrades.', repository: 'https://code.example/sempre' }
         if (init?.method === 'POST') {
