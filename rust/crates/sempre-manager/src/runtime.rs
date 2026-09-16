@@ -47,8 +47,6 @@ pub struct RuntimeFailureOutput {
     pub occurred_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<RuntimeDeployment>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rolled_back_to: Option<RuntimeDeployment>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -339,7 +337,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 error: error.to_string(),
                 occurred_at: now,
                 failed: None,
-                rolled_back_to: document.active.clone(),
             });
             document.runtime.last_transition = Some(now);
             Ok(())
@@ -443,7 +440,6 @@ fn failure_value(failure: RuntimeFailure) -> RuntimeFailureOutput {
         error: failure.error,
         occurred_at: failure.occurred_at,
         failed: failure.failed.map(deployment_value),
-        rolled_back_to: failure.rolled_back_to.map(deployment_value),
     }
 }
 

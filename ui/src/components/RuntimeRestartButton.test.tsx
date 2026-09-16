@@ -109,7 +109,7 @@ describe('asynchronous restart task', () => {
     expect(window.getSelection()?.toString()).toBe('{"this_task":"configuration"}')
   })
 
-  it('keeps the completed duration fixed and marks rollback as failure', () => {
+  it('keeps the completed duration fixed', () => {
     expect(restartDuration('2026-09-03T00:00:00Z', '2026-09-03T00:01:21Z', Date.now())).toBe('1:21')
     expect(restartDuration('2026-09-03T00:01:21Z', null, Date.parse('2026-09-03T00:00:00Z'))).toBe('0:00')
   })

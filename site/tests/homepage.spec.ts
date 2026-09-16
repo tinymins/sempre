@@ -17,6 +17,7 @@ for (const theme of themes) {
 
       await expect(page.getByRole('heading', { name: 'Sempre', level: 1 })).toBeVisible()
       await expect(page.getByText('Any core. Always current. Always running.', { exact: true }).first()).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'No silent rollback' })).toBeVisible()
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
       await expect(page.locator('#product')).toBeAttached()
 
@@ -102,8 +103,8 @@ test('mobile Chinese content is readable without desktop center dividers', async
   await page.goto('/')
 
   await expect(page.getByRole('heading', { name: '换核心、升版本时，管理界面始终在线。' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '切换失败自动回退' })).toBeVisible()
-  await expect(page.getByText('新版本通过配置校验后才会启用；启动失败就自动恢复上一个可用版本。')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '失败后保留当前选择' })).toBeVisible()
+  await expect(page.getByText('新版本通过配置校验后才会启用；启动失败会保留用户当前选择并报告错误，不会改回旧版本或配置。')).toBeVisible()
   await expect(page).toHaveTitle('Sempre — 代理核心生命周期管理器')
 
   const dividers = await page.locator('.glass-story, .formal-band, .formal-footer').evaluateAll((elements) =>

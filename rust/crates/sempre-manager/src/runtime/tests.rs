@@ -287,13 +287,11 @@ fn status_describes_directly_recorded_profile_changes_without_exposing_values() 
     assert_eq!(status.pending_changes.len(), 1);
     let RuntimePendingChange::Configuration {
         fields,
-        previous_revision,
         current_revision,
     } = &status.pending_changes[0]
     else {
         panic!("expected configuration change");
     };
-    assert_eq!(previous_revision, &Some(profile.revision));
     assert_eq!(current_revision, &Some(profile.revision + 1));
     assert_eq!(
         fields,
@@ -320,19 +318,16 @@ fn status_describes_a_pending_core_switch_without_calling_it_a_config_edit() {
                 .default
                 .installed
                 .insert("1.12.20".into(), installation);
-            let previous = Deployment {
+            let current = Deployment {
                 core: "sing-box".into(),
                 repository: None,
                 reference: "stable".into(),
-                version: "1.12.20".into(),
+                version: "1.14.0-beta.13".into(),
                 config_hash: "a".repeat(64),
             };
-            let current = Deployment {
-                version: "1.14.0-beta.13".into(),
-                ..previous.clone()
-            };
-            document.previous = Some(previous);
             document.active = Some(current);
+            document.runtime.core = Some("sing-box".into());
+            document.runtime.version = Some("1.12.20".into());
             document.active_profile_id = None;
             document.pending = true;
             Ok(())
@@ -343,7 +338,6 @@ fn status_describes_a_pending_core_switch_without_calling_it_a_config_edit() {
     assert_eq!(
         status.pending_changes,
         vec![RuntimePendingChange::Core {
-            previous: Some("sing-box@1.12.20".into()),
             current: "sing-box@1.14.0-beta.13".into(),
         }]
     );

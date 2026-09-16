@@ -247,7 +247,7 @@ describe('Shell sidebar', () => {
       ...runtimeStatus,
       pending: true,
       pending_changes: [
-        { type: 'core', previous: 'sing-box@1.12.20', current: 'sing-box@1.14.0-beta.13' },
+        { type: 'core', current: 'sing-box@1.14.0-beta.13' },
         { type: 'configuration', fields: ['dns', 'management_api', 'transparent_proxy'] },
       ],
     }
@@ -297,12 +297,14 @@ describe('Shell sidebar', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Managed core is unavailable')
   })
 
-  it('shows asynchronous rollback output in the task log', async () => {
+  it('shows asynchronous startup failure without restoring an older deployment', async () => {
     const failed = { ...runtimeStatus.active, config_hash: 'b'.repeat(64) }
     const finalStatus = {
       ...runtimeStatus,
       last_exit: 'exit status 1',
-      last_failure: { stage: 'startup failed for sing-box@1.13.18', error: 'exit status 1', occurred_at: '2026-09-01T00:01:00Z', failed, rolled_back_to: runtimeStatus.active },
+      active: failed,
+      pending: true,
+      last_failure: { stage: 'startup failed for sing-box@1.13.18', error: 'exit status 1', occurred_at: '2026-09-01T00:01:00Z', failed },
     }
     let statusReads = 0
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -310,7 +312,7 @@ describe('Shell sidebar', () => {
       if (path.endsWith('/runtime/restart') && init.method === 'POST') {
         return Response.json({ action: 'restart', task: restartTask, status: { ...runtimeStatus, runtime_state: 'stopping', active: failed, pending: true } }, { status: 202 })
       }
-      if (path.endsWith('/runtime/restart')) return Response.json({ task: { ...restartTask, state: 'rolled_back', finished_at: '2026-09-03T00:01:00Z', logs: [{ sequence: 0, timestamp: '2026-09-03T00:01:00Z', stage: 'rolled_back', message: 'exit status 1; sing-box@1.13.18 restored' }] } })
+      if (path.endsWith('/runtime/restart')) return Response.json({ task: { ...restartTask, state: 'failed', finished_at: '2026-09-03T00:01:00Z', logs: [{ sequence: 0, timestamp: '2026-09-03T00:01:00Z', stage: 'error', message: 'startup failed: exit status 1' }] } })
       if (path.endsWith('/runtime/status')) {
         statusReads += 1
         return Response.json(statusReads > 1 ? finalStatus : runtimeStatus)
@@ -324,8 +326,7 @@ describe('Shell sidebar', () => {
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
 
     const log = await screen.findByRole('log')
-    await waitFor(() => expect(log).toHaveTextContent('Core restart failed; previous deployment restored'))
-    expect(log).toHaveTextContent('exit status 1; sing-box@1.13.18 restored')
+    await waitFor(() => expect(log).toHaveTextContent('Error startup failed: exit status 1'))
   })
 
   it('dismisses the password warning only for the current shell mount', async () => {

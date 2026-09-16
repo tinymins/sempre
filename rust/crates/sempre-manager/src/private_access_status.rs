@@ -63,18 +63,11 @@ impl<R: VersionRunner> Manager<R> {
 
 fn applied_build(document: &Document) -> Option<&ConfigBuild> {
     let runtime_hash = document.runtime.config_hash.as_deref()?;
-    if let Some(active) = document
+    document
         .active
         .as_ref()
         .filter(|deployment| deployment.config_hash == runtime_hash)
-    {
-        return document.config_builds.get(&active.core);
-    }
-    document
-        .previous
-        .as_ref()
-        .filter(|deployment| deployment.config_hash == runtime_hash)
-        .and(document.previous_config_build.as_ref())
+        .and_then(|active| document.config_builds.get(&active.core))
 }
 
 fn evaluate(

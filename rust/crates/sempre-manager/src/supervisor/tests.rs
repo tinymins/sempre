@@ -254,7 +254,7 @@ async fn resolve_failure_clears_stale_frontend_status_without_a_running_service(
             document.pending_config_fields.clear();
             Ok(())
         })
-        .expect("disable pending rollback");
+        .expect("clear pending state");
     manager
         .dns_frontend
         .record_failure(&"retained frontend marker");
@@ -309,13 +309,8 @@ async fn supervisor_starts_commits_and_stops_the_real_process() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn early_exit_rolls_back_a_pending_deployment() {
-    let (_root, manager) = fixture(
-        "#!/bin/sh\nconfig=''\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = '-c' ]; then config=\"$2\"; break; fi\n  shift\ndone\nif grep -q '\"old\"' \"$config\"; then\n  trap 'exit 0' TERM\n  while :; do sleep 1; done\nfi\nexit 7\n",
-    );
-    let old_hash = "c".repeat(64);
-    let old_config = manager.store.layout().config("sing-box", &old_hash);
-    fs::write(old_config, br#"{"old":true}"#).expect("old config");
+async fn early_exit_keeps_the_pending_deployment() {
+    let (_root, manager) = fixture("#!/bin/sh\nexit 7\n");
     let profiles = manager
         .subscriptions
         .update(|catalog| {
@@ -326,24 +321,10 @@ async fn early_exit_rolls_back_a_pending_deployment() {
             Ok(())
         })
         .expect("profiles");
-    let previous_profile_id = profiles.profiles[0].id.clone();
     let candidate_profile_id = profiles.profiles[1].id.clone();
-    let expected_profile_id = previous_profile_id.clone();
     manager
         .store
         .update(|document| {
-            let previous_build = ConfigBuild {
-                profile_id: previous_profile_id.clone(),
-                profile_revision: 1,
-                target_key: "sing-box|13|default".into(),
-                runtime_key: None,
-                private_access_policy: serde_json::json!({ "enabled": false, "connectors": [] }),
-            };
-            let mut previous = document.active.clone().expect("active");
-            previous.config_hash.clone_from(&old_hash);
-            document.previous = Some(previous);
-            document.previous_config_build = Some(previous_build);
-            document.previous_profile_id = Some(previous_profile_id.clone());
             document.config_builds.insert(
                 "sing-box".into(),
                 ConfigBuild {
@@ -357,7 +338,7 @@ async fn early_exit_rolls_back_a_pending_deployment() {
             document.active_profile_id = Some(candidate_profile_id.clone());
             Ok(())
         })
-        .expect("previous deployment");
+        .expect("candidate deployment");
     let (shutdown, receiver) = watch::channel(false);
     let running = Arc::clone(&manager);
     let task = tokio::spawn(async move {
@@ -366,36 +347,27 @@ async fn early_exit_rolls_back_a_pending_deployment() {
             .await
     });
     wait_until(Duration::from_secs(4), || {
-        manager.state().is_ok_and(|document| {
-            document
-                .active
-                .is_some_and(|item| item.config_hash == old_hash)
-                && document
-                    .runtime
-                    .last_failure
-                    .is_some_and(|failure| failure.rolled_back_to.is_some())
-        })
+        manager
+            .state()
+            .is_ok_and(|document| document.runtime.last_failure.is_some())
     })
     .await;
     let document = manager.state().expect("state");
-    assert!(!document.pending && document.previous.is_none());
-    assert!(document.pending_config_fields.is_empty());
-    assert!(document.previous_config_build.is_none());
-    assert!(document.previous_profile_id.is_none());
+    assert!(document.pending);
+    assert_eq!(
+        document.pending_config_fields,
+        vec![sempre_state::PendingConfigField::Dns]
+    );
     assert_eq!(
         document.config_builds["sing-box"].profile_id,
-        expected_profile_id
+        candidate_profile_id
     );
     assert_eq!(
         document.active_profile_id.as_deref(),
-        Some(expected_profile_id.as_str())
+        Some(candidate_profile_id.as_str())
     );
     let failure = document.runtime.last_failure.expect("failure");
     assert_eq!(failure.failed.expect("failed").config_hash, "a".repeat(64));
-    assert_eq!(
-        failure.rolled_back_to.expect("rollback").config_hash,
-        old_hash
-    );
     shutdown.send(true).expect("shutdown");
     task.await.expect("task").expect("supervisor");
 }

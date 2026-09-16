@@ -1,4 +1,5 @@
 mod v0002_pending_change_contract;
+mod v0003_remove_runtime_rollback;
 
 use crate::{
     AppliedMigration, Document, MigrationError,
@@ -12,7 +13,10 @@ pub(crate) struct MigrationOutcome {
 }
 
 const BASELINE_SCHEMA: u32 = 1;
-const REGISTRY: &[JsonMigration] = &[v0002_pending_change_contract::MIGRATION];
+const REGISTRY: &[JsonMigration] = &[
+    v0002_pending_change_contract::MIGRATION,
+    v0003_remove_runtime_rollback::MIGRATION,
+];
 
 pub(crate) fn current_ledger() -> Vec<AppliedMigration> {
     crate::schema_migration::current_ledger(REGISTRY)

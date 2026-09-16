@@ -1,4 +1,4 @@
-import { ArrowRight, Boxes, FileSliders, Layers3 } from 'lucide-react'
+import { Boxes, FileSliders } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useI18n } from '../lib/i18n'
 
@@ -7,9 +7,8 @@ type RuntimeConfigField =
   | 'dns' | 'private_access' | 'local_proxy' | 'transparent_proxy' | 'management_api' | 'advanced' | 'manual_configuration'
 
 export type RuntimePendingChange =
-  | { type: 'core'; previous?: string; current: string }
-  | { type: 'profile'; previous?: string; current: string }
-  | { type: 'configuration'; fields: RuntimeConfigField[]; previous_revision?: number; current_revision?: number }
+  | { type: 'core'; current: string }
+  | { type: 'configuration'; fields: RuntimeConfigField[]; current_revision?: number }
 
 export function pendingChangeCount(changes: RuntimePendingChange[]) {
   return changes.reduce((total, change) => total + (change.type === 'configuration' ? change.fields.length : 1), 0)
@@ -33,10 +32,10 @@ const fieldKeys = {
 } as const
 
 export function formatPendingChange(change: RuntimePendingChange, t: ReturnType<typeof useI18n>['t'], locale: string) {
-  const label = t(change.type === 'core' ? 'changeCore' : change.type === 'profile' ? 'changeProfile' : 'changeConfiguration')
+  const label = t(change.type === 'core' ? 'changeCore' : 'changeConfiguration')
   const detail = change.type === 'configuration'
     ? new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(change.fields.map((field) => t(fieldKeys[field])))
-    : `${change.previous || t('changeNone')} → ${change.current}`
+    : change.current
   return `${label}: ${detail}`
 }
 
@@ -53,12 +52,12 @@ export function RestartChangeSummary({ detail, changes }: { detail: string; chan
           {changes.map((change, index) => (
             <ChangeRow
               key={`${change.type}-${index}`}
-              icon={change.type === 'core' ? <Boxes size={15} /> : change.type === 'profile' ? <Layers3 size={15} /> : <FileSliders size={15} />}
-              label={t(change.type === 'core' ? 'changeCore' : change.type === 'profile' ? 'changeProfile' : 'changeConfiguration')}
+              icon={change.type === 'core' ? <Boxes size={15} /> : <FileSliders size={15} />}
+              label={t(change.type === 'core' ? 'changeCore' : 'changeConfiguration')}
             >
               {change.type === 'configuration'
                 ? fieldList.format(change.fields.map((field) => t(fieldKeys[field])))
-                : <Transition previous={change.previous} current={change.current} fallback={t('changeNone')} />}
+                : change.current}
             </ChangeRow>
           ))}
         </div>
@@ -76,15 +75,5 @@ function ChangeRow({ icon, label, children }: { icon: ReactNode; label: string; 
         <div className="mt-0.5 break-words text-sm font-medium text-[var(--text)]">{children}</div>
       </div>
     </div>
-  )
-}
-
-function Transition({ previous, current, fallback }: { previous?: string; current: string; fallback: string }) {
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      <span>{previous || fallback}</span>
-      <ArrowRight aria-hidden="true" size={14} className="text-[var(--muted)]" />
-      <span>{current}</span>
-    </span>
   )
 }

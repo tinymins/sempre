@@ -43,7 +43,6 @@ export interface ManagedRuntimeFailure {
   error: string
   occurred_at: string
   failed?: ManagedRuntimeDeployment
-  rolled_back_to?: ManagedRuntimeDeployment
 }
 
 export interface PrivateAccessConnectorStatus {

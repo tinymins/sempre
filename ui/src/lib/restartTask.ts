@@ -10,7 +10,7 @@ export interface RestartLogEntry {
 
 export interface RestartTask {
   id: string
-  state: 'running' | 'succeeded' | 'failed' | 'rolled_back'
+  state: 'running' | 'succeeded' | 'failed'
   started_at: string
   finished_at: string | null
   logs: RestartLogEntry[]
@@ -33,9 +33,7 @@ export const restartStageLabels: Record<string, [string, string]> = {
   starting: ['启动核心…', 'Starting core…'],
   health_check: ['等待核心和网络健康检查…', 'Waiting for core and network health checks…'],
   healthy: ['核心健康检查通过', 'Core health checks passed'],
-  rollback: ['启动失败，正在恢复旧版本/配置…', 'Startup failed; restoring previous deployment…'],
   succeeded: ['核心重启成功', 'Core restart succeeded'],
   failed: ['核心重启失败', 'Core restart failed'],
-  rolled_back: ['核心重启失败，已恢复旧版本/配置', 'Core restart failed; previous deployment restored'],
   error: ['错误', 'Error'],
 }

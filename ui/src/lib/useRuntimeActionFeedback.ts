@@ -48,13 +48,9 @@ export function useRuntimeActionFeedback(status: ManagedRuntimeStatus | undefine
 }
 
 export function formatRuntimeFailure(failure: ManagedRuntimeFailure, t: ReturnType<typeof useI18n>['t']) {
-  const rolledBack = Boolean(failure.rolled_back_to)
-  const lines = [t(rolledBack ? 'runtimeFailedRolledBack' : 'runtimeFailedNoRollback')]
+  const lines = [t('runtimeFailed')]
   lines.push(t('runtimeFailureStage').replace('{stage}', failure.stage))
   lines.push(t('runtimeFailureError').replace('{error}', failure.error))
-  if (failure.failed && failure.rolled_back_to) {
-    lines.push(t('runtimeRollback').replace('{failed}', deploymentLabel(failure.failed)).replace('{restored}', deploymentLabel(failure.rolled_back_to)))
-  }
   return lines.join('\n')
 }
 

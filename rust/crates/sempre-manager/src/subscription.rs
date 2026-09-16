@@ -77,32 +77,23 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let Some(profile_id) = document.active_profile_id.as_deref() else {
             return Ok((CoreChange::default(), saved));
         };
-        match self
+        self.store.update(|document| {
+            document.pending = true;
+            crate::pending_changes::record_pending_fields(
+                document,
+                &[
+                    PendingConfigField::TransparentProxy,
+                    PendingConfigField::Dns,
+                    PendingConfigField::PrivateAccess,
+                ],
+                true,
+            );
+            Ok(())
+        })?;
+        let (change, _) = self
             .prepare_subscription_locked(profile_id, false, false)
-            .await
-        {
-            Ok((change, _)) => {
-                if change.changed {
-                    self.store.update(|document| {
-                        crate::pending_changes::record_pending_fields(
-                            document,
-                            &[
-                                PendingConfigField::TransparentProxy,
-                                PendingConfigField::Dns,
-                                PendingConfigField::PrivateAccess,
-                            ],
-                            true,
-                        );
-                        Ok(())
-                    })?;
-                }
-                Ok((change, saved))
-            }
-            Err(error) => {
-                self.network_settings.restore(previous)?;
-                Err(error)
-            }
-        }
+            .await?;
+        Ok((change, saved))
     }
 
     pub async fn import_subscription_source(

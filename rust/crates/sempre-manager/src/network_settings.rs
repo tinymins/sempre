@@ -98,12 +98,6 @@ impl NetworkSettingsStore {
         *current = candidate.clone();
         Ok(candidate)
     }
-
-    pub(crate) fn restore(&self, settings: NetworkSettings) -> Result<(), ManagerError> {
-        write(&self.path, &settings)?;
-        *self.settings.lock().expect("network settings lock") = settings;
-        Ok(())
-    }
 }
 
 fn decode(data: &[u8]) -> Result<NetworkSettings, ManagerError> {

@@ -1,7 +1,5 @@
 use chrono::Utc;
-use sempre_state::{
-    ConfigBuild, Deployment, Document, Installation, Selection, StateValidationError,
-};
+use sempre_state::{Deployment, Document, Installation, Selection, StateValidationError};
 
 fn installation() -> Installation {
     Installation {
@@ -88,15 +86,8 @@ fn subscription_requires_https_without_credentials() {
 }
 
 #[test]
-fn staging_preserves_the_last_confirmed_deployment() {
+fn staging_keeps_only_the_new_deployment() {
     let mut document = Document::default();
-    let build = ConfigBuild {
-        profile_id: "profile-1".into(),
-        profile_revision: 1,
-        target_key: "sing-box|13|default".into(),
-        runtime_key: None,
-        private_access_policy: serde_json::json!({ "enabled": false, "connectors": [] }),
-    };
     let first = Deployment {
         core: "sing-box".into(),
         repository: None,
@@ -111,14 +102,13 @@ fn staging_preserves_the_last_confirmed_deployment() {
         ..first.clone()
     };
     document.active = Some(first.clone());
-    document
-        .config_builds
-        .insert("sing-box".into(), build.clone());
     document.active_profile_id = Some("profile-1".into());
     document.stage(second.clone());
-    assert_eq!(document.previous, Some(first));
-    assert_eq!(document.previous_config_build, Some(build));
-    assert_eq!(document.previous_profile_id.as_deref(), Some("profile-1"));
+    assert_ne!(document.active, Some(first));
     assert_eq!(document.active, Some(second));
     assert!(document.pending);
+    let encoded = serde_json::to_value(document).expect("serialize state");
+    assert!(encoded.get("previous").is_none());
+    assert!(encoded.get("previous_config_build").is_none());
+    assert!(encoded.get("previous_profile_id").is_none());
 }

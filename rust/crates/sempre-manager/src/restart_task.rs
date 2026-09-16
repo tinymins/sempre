@@ -32,8 +32,6 @@ pub struct RestartTask {
     config: Option<CurrentConfig>,
     #[serde(skip)]
     armed: bool,
-    #[serde(skip)]
-    rolled_back: bool,
 }
 
 #[derive(Default)]
@@ -73,7 +71,6 @@ impl RestartTasks {
             config_available: false,
             config: None,
             armed: false,
-            rolled_back: false,
         };
         task.push("begin", "");
         for change in changes {
@@ -101,29 +98,17 @@ impl RestartTasks {
         });
     }
 
-    pub fn failure(&self, stage: &str, error: &str, restored: Option<&str>) {
+    pub fn failure(&self, stage: &str, error: &str) {
         self.update(true, |task| {
             task.push("error", &format!("{stage}: {error}"));
-            if let Some(restored) = restored {
-                task.rolled_back = true;
-                task.push("rollback", restored);
-            } else {
-                task.finish("failed", "");
-            }
+            task.finish("failed", "");
         });
     }
 
     pub fn healthy(&self) {
         self.update(true, |task| {
             task.push("healthy", "");
-            task.finish(
-                if task.rolled_back {
-                    "rolled_back"
-                } else {
-                    "succeeded"
-                },
-                "",
-            );
+            task.finish("succeeded", "");
         });
     }
 

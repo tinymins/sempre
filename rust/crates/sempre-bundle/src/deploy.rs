@@ -146,10 +146,7 @@ fn referenced_configurations(document: &Document) -> BTreeSet<(String, String)> 
         .iter()
         .map(|(core, hash)| (core.clone(), hash.clone()))
         .collect::<BTreeSet<_>>();
-    for deployment in [document.active.as_ref(), document.previous.as_ref()]
-        .into_iter()
-        .flatten()
-    {
+    if let Some(deployment) = document.active.as_ref() {
         result.insert((deployment.core.clone(), deployment.config_hash.clone()));
     }
     result

@@ -227,16 +227,15 @@ fn reject_referenced_version(
             usage: "selected",
         });
     }
-    for (deployment, usage) in [
-        (document.active.as_ref(), "active"),
-        (document.previous.as_ref(), "retained for rollback"),
-    ] {
-        if deployment.is_some_and(|item| deployment_references(item, reference, version)) {
-            return Err(ManagerError::CoreInUse {
-                reference: exact,
-                usage,
-            });
-        }
+    if document
+        .active
+        .as_ref()
+        .is_some_and(|item| deployment_references(item, reference, version))
+    {
+        return Err(ManagerError::CoreInUse {
+            reference: exact,
+            usage: "active",
+        });
     }
     Ok(())
 }

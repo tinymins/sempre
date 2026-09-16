@@ -32,24 +32,22 @@ fn task_serializes_restarts_until_health_or_failure_and_keeps_config_private() {
 }
 
 #[test]
-fn rollback_is_not_success_and_remains_busy_until_restored_core_is_healthy() {
+fn startup_failure_finishes_without_waiting_for_a_restored_core() {
     let tasks = RestartTasks::default();
     tasks.begin(Vec::new()).unwrap();
     tasks.prepared(CurrentConfig {
         hash: "hash".into(),
         content: "{}".into(),
     });
-    tasks.failure("startup", "exit status 1", Some("sing-box@1.2.3"));
-    assert!(tasks.running());
-    tasks.healthy();
+    tasks.failure("startup", "exit status 1");
     let task = tasks.snapshot().unwrap();
-    assert_eq!(task.state, "rolled_back");
+    assert_eq!(task.state, "failed");
     assert!(
         task.logs
             .iter()
             .any(|entry| entry.message.contains("exit status 1"))
     );
-    assert!(task.logs.iter().any(|entry| entry.stage == "rollback"));
+    assert!(!task.logs.iter().any(|entry| entry.stage == "rollback"));
     assert!(!task.logs.iter().any(|entry| entry.stage == "succeeded"));
 }
 
@@ -64,7 +62,7 @@ fn preparation_and_supervisor_failures_release_the_task() {
         hash: "hash".into(),
         content: "{}".into(),
     });
-    tasks.failure("startup", "no rollback", None);
+    tasks.failure("startup", "exit status 1");
     assert_eq!(tasks.snapshot().unwrap().state, "failed");
 }
 

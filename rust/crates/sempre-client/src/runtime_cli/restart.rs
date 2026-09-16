@@ -53,12 +53,7 @@ fn completed(task: &Task) -> Result<bool, ClientError> {
             let output = task
                 .logs
                 .iter()
-                .filter(|entry| {
-                    matches!(
-                        entry.stage.as_str(),
-                        "error" | "failed" | "rollback" | "rolled_back"
-                    )
-                })
+                .filter(|entry| matches!(entry.stage.as_str(), "error" | "failed"))
                 .map(|entry| format!("{}: {}", entry.stage, entry.message))
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -74,7 +69,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn completion_uses_the_task_outcome_even_if_the_old_core_is_still_running() {
+    fn completion_uses_the_task_outcome() {
         let mut task = Task {
             id: "task".into(),
             state: "running".into(),
@@ -92,8 +87,6 @@ mod tests {
                 .to_string()
                 .contains("configuration validation failed")
         );
-        task.state = "rolled_back".into();
-        assert!(completed(&task).is_err());
         task.state = "succeeded".into();
         assert!(completed(&task).unwrap());
     }

@@ -33,7 +33,7 @@ pub(crate) struct RuntimePlan {
 
 enum CycleResult {
     Restart,
-    Failed { retry_immediately: bool },
+    Failed,
     Shutdown,
 }
 
@@ -100,10 +100,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     let error =
                         with_cleanup_failure(&error, self.cleanup_after_core_failure().await);
                     self.log_supervisor(&format!("resolve deployment failed: {error}"))?;
-                    if state::record_failure(self, "resolve failed", &error, true, false)? {
-                        backoff = Duration::from_secs(1);
-                        continue;
-                    }
+                    state::record_failure(self, "resolve failed", &error, false)?;
                     match wait_retry(self, &mut shutdown, backoff).await {
                         RetryEvent::Timer => {}
                         RetryEvent::Reload => self.cleanup_after_core_failure().await?,
@@ -126,21 +123,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             {
                 CycleResult::Restart => backoff = Duration::from_secs(1),
                 CycleResult::Shutdown => return Ok(()),
-                CycleResult::Failed { retry_immediately } => {
-                    if retry_immediately {
-                        backoff = Duration::from_secs(1);
-                    } else {
-                        match wait_retry(self, &mut shutdown, backoff).await {
-                            RetryEvent::Timer => {}
-                            RetryEvent::Reload => self.cleanup_retained_frontend().await?,
-                            RetryEvent::Shutdown => {
-                                self.cleanup_retained_frontend().await?;
-                                state::mark_intentional_exit(self, true)?;
-                                return Ok(());
-                            }
+                CycleResult::Failed => {
+                    match wait_retry(self, &mut shutdown, backoff).await {
+                        RetryEvent::Timer => {}
+                        RetryEvent::Reload => self.cleanup_retained_frontend().await?,
+                        RetryEvent::Shutdown => {
+                            self.cleanup_retained_frontend().await?;
+                            state::mark_intentional_exit(self, true)?;
+                            return Ok(());
                         }
-                        backoff = next_backoff(backoff);
                     }
+                    backoff = next_backoff(backoff);
                 }
             }
         }
@@ -156,11 +149,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         self.restart_tasks
             .runtime_log("starting", &deployment_label(&plan.deployment));
         if let Err(error) = self.start_gateway().await {
-            let retry =
-                self.handle_process_failure(plan, "gateway startup failed", &error, true)?;
-            return Ok(CycleResult::Failed {
-                retry_immediately: retry,
-            });
+            self.handle_process_failure(plan, "gateway startup failed", &error)?;
+            return Ok(CycleResult::Failed);
         }
         let tasks = self.restart_tasks.clone();
         let mut process = match ManagedProcess::spawn_observed(
@@ -175,10 +165,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             Err(error) => {
                 let cleanup = self.cleanup_after_core_failure().await;
                 let error = with_cleanup_failure(&error, cleanup);
-                let retry = self.handle_process_failure(plan, "startup failed", &error, true)?;
-                return Ok(CycleResult::Failed {
-                    retry_immediately: retry,
-                });
+                self.handle_process_failure(plan, "startup failed", &error)?;
+                return Ok(CycleResult::Failed);
             }
         };
         let setup = self.mark_runtime_started(plan, process.pid());
@@ -223,10 +211,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 self.remove_control();
                 let exit = exit_result(result);
                 let error = with_cleanup_failure(&exit, cleanup);
-                let retry = self.handle_process_failure(plan, "startup failed", &error, true)?;
-                return Ok(CycleResult::Failed {
-                    retry_immediately: retry,
-                });
+                self.handle_process_failure(plan, "startup failed", &error)?;
+                return Ok(CycleResult::Failed);
             }
         }
 
@@ -244,10 +230,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 let exit = exit_result(result);
                 let error = with_cleanup_failure(&exit, self.cleanup_after_core_failure().await);
                 self.dns_frontend.record_failure(&error);
-                self.handle_process_failure(plan, "core exited", &error, false)?;
-                Ok(CycleResult::Failed {
-                    retry_immediately: false,
-                })
+                self.handle_process_failure(plan, "core exited", &error)?;
+                Ok(CycleResult::Failed)
             }
             ProcessEvent::Healthy(_) => unreachable!("running process has no startup timer"),
         }
@@ -408,11 +392,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let _ = process.terminate(STOP_GRACE).await;
         let error = with_cleanup_failure(error, self.cleanup_after_core_failure().await);
         self.remove_control();
-        let retry =
-            self.handle_process_failure(plan, "transparent proxy startup failed", &error, true)?;
-        Ok(CycleResult::Failed {
-            retry_immediately: retry,
-        })
+        self.handle_process_failure(plan, "transparent proxy startup failed", &error)?;
+        Ok(CycleResult::Failed)
     }
 
     fn handle_process_failure(
@@ -420,14 +401,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         plan: &RuntimePlan,
         stage: &str,
         error: &impl ToString,
-        rollback: bool,
-    ) -> Result<bool, ManagerError> {
+    ) -> Result<(), ManagerError> {
         let message = error.to_string();
         self.log_supervisor(&format!(
             "{stage} for {}: {message}",
             deployment_label(&plan.deployment)
         ))?;
-        state::record_failure(self, stage, &message, rollback, true)
+        state::record_failure(self, stage, &message, true)
     }
 
     fn write_control(&self, control: Option<&ControlSpec>) -> Result<(), ManagerError> {

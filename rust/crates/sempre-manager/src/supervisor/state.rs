@@ -73,9 +73,6 @@ pub fn mark_healthy<R: VersionRunner>(
             return Ok(());
         }
         if document.pending {
-            document.previous = None;
-            document.previous_config_build = None;
-            document.previous_profile_id = None;
             document.pending = false;
             document.pending_config_fields.clear();
         }
@@ -135,48 +132,18 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
     manager: &Manager<R>,
     stage: &str,
     error: &str,
-    rollback_pending: bool,
     increment_restart: bool,
-) -> Result<bool, ManagerError> {
-    let mut retry = false;
-    let mut restored_label = None;
+) -> Result<(), ManagerError> {
     manager.store.update(|document| {
         let now = Utc::now();
         let failed = document.active.clone();
-        let mut failure = RuntimeFailure {
+        let failure = RuntimeFailure {
             stage: stage.into(),
             error: error.into(),
             occurred_at: now,
             failed,
-            rolled_back_to: None,
         };
         document.last_error = Some(format!("{stage}: {error}"));
-        if rollback_pending && document.pending {
-            if let Some(restored) = document.previous.take() {
-                failure.rolled_back_to = Some(restored.clone());
-                restored_label = Some(format!("{}@{}", restored.core, restored.version));
-                match document.previous_config_build.take() {
-                    Some(build) => {
-                        document.config_builds.insert(restored.core.clone(), build);
-                    }
-                    None => {
-                        document.config_builds.remove(&restored.core);
-                    }
-                }
-                document.active_profile_id = document.previous_profile_id.take();
-                document
-                    .configs
-                    .insert(restored.core.clone(), restored.config_hash.clone());
-                document.active = Some(restored);
-                retry = true;
-            } else {
-                document.active = None;
-                document.previous_config_build = None;
-                document.active_profile_id = document.previous_profile_id.take();
-            }
-            document.pending = false;
-            document.pending_config_fields.clear();
-        }
         document.runtime.state = if document.desired_state == DesiredState::Stopped {
             RuntimeState::Stopped
         } else {
@@ -192,10 +159,8 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
         document.runtime.last_transition = Some(now);
         Ok(())
     })?;
-    manager
-        .restart_tasks
-        .failure(stage, error, restored_label.as_deref());
-    Ok(retry)
+    manager.restart_tasks.failure(stage, error);
+    Ok(())
 }
 
 fn fill_runtime(document: &mut Document, plan: &RuntimePlan) {

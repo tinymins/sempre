@@ -49,7 +49,7 @@ export function RuntimeRestartModal({ open, task, submittedAt, submitting, error
       <div className="space-y-3">
         <div role="status" className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
           <span>{zh ? '开始时间：' : 'Started: '}{new Date(current?.started_at || submittedAt).toLocaleString(locale)}</span>
-          <span>{running ? (zh ? '执行中 · 实时日志' : 'Running · live output') : current?.state === 'rolled_back' ? (zh ? '失败 · 已回滚' : 'Failed · rolled back') : title}</span>
+          <span>{running ? (zh ? '执行中 · 实时日志' : 'Running · live output') : title}</span>
         </div>
         {error ? <div role="alert"><Alert type="error" showIcon message={error} /></div> : null}
         <div ref={attachLog} role="log" aria-label={zh ? '核心重启日志' : 'Core restart log'} aria-live="polite" tabIndex={0} onKeyDown={selectAllContents}
@@ -70,7 +70,7 @@ function LogLine({ entry, configAvailable, onConfig }: { entry: RestartLogEntry;
   const label = entry.change ? formatPendingChange(entry.change, t, locale) : restartStageLabels[entry.stage]?.[zh ? 0 : 1]
   const raw = ['stdout', 'stderr', 'validation', 'supervisor'].includes(entry.stage)
   const text = [label || (raw ? `[${entry.stage}]` : entry.stage), entry.message].filter(Boolean).join(' ')
-  return <div className={`whitespace-pre-wrap break-words ${['error', 'failed', 'rolled_back'].includes(entry.stage) ? 'text-red-300' : entry.stage === 'succeeded' ? 'text-emerald-300' : raw ? 'text-slate-400' : ''}`}>
+  return <div className={`whitespace-pre-wrap break-words ${['error', 'failed'].includes(entry.stage) ? 'text-red-300' : entry.stage === 'succeeded' ? 'text-emerald-300' : raw ? 'text-slate-400' : ''}`}>
     {text.split('\n').map((line, index) => <div key={index}><span className="select-none text-slate-500">[{new Date(entry.timestamp).toLocaleTimeString(locale, { hour12: false })}] </span>{line}
       {entry.stage === 'compiled' && configAvailable && index === 0 ? <Button variant="link" size="small" className="ml-2 !text-cyan-300" onClick={onConfig}>{zh ? '[查看完整配置]' : '[View full configuration]'}</Button> : null}
     </div>)}

@@ -2,7 +2,7 @@ use std::{
     future::Future,
     path::Path,
     pin::Pin,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use chrono::Utc;
@@ -12,9 +12,11 @@ use sempre_state::{Installation, Layout, Selection, Store};
 use serde_json::{Map, Value, json};
 
 use super::*;
+use crate::RuntimePendingChange;
 
 #[derive(Default)]
 struct FakeRunner {
+    reject: AtomicBool,
     validations: AtomicUsize,
 }
 
@@ -39,7 +41,15 @@ impl ValidationRunner for FakeRunner {
         Box::pin(async move {
             assert!(config.is_file());
             self.validations.fetch_add(1, Ordering::Relaxed);
-            Ok(())
+            if self.reject.load(Ordering::Relaxed) {
+                Err(ManagerError::ValidationCommand {
+                    core: "sing-box".into(),
+                    status: "1".into(),
+                    output: "invalid".into(),
+                })
+            } else {
+                Ok(())
+            }
         })
     }
 }
@@ -281,6 +291,68 @@ async fn runtime_validation_is_deferred_until_refresh() {
         .expect_err("refresh rejects invalid runtime");
     assert!(error.to_string().contains("TUN interface name"));
     assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn failed_dns_rebuild_keeps_the_saved_settings() {
+    let (_root, manager, profile_id) = fixture();
+    manager
+        .activate_subscription_profile(&profile_id)
+        .await
+        .expect("activate profile");
+    let before = manager.dns_settings();
+    manager.runner.reject.store(true, Ordering::Relaxed);
+    let mut candidate = before.clone();
+    candidate.enabled = true;
+
+    manager
+        .update_dns_settings(candidate)
+        .await
+        .expect_err("rebuild must fail");
+
+    let saved = manager.dns_settings();
+    assert!(saved.enabled);
+    assert_eq!(saved.revision, before.revision + 1);
+    let status = manager.runtime_status().expect("runtime status");
+    assert!(status.pending);
+    assert!(status.pending_changes.iter().any(|change| matches!(
+        change,
+        RuntimePendingChange::Configuration { fields, .. }
+            if fields.contains(&PendingConfigField::Dns)
+    )));
+}
+
+#[tokio::test]
+async fn failed_network_rebuild_keeps_the_saved_settings() {
+    let (_root, manager, profile_id) = fixture();
+    manager
+        .activate_subscription_profile(&profile_id)
+        .await
+        .expect("activate profile");
+    let before = manager.network_settings();
+    manager.runner.reject.store(true, Ordering::Relaxed);
+    let mut candidate = before.clone();
+    candidate.automatic_switching = true;
+
+    manager
+        .update_network_settings(candidate)
+        .await
+        .expect_err("rebuild must fail");
+
+    let saved = manager.network_settings();
+    assert!(saved.automatic_switching);
+    assert_eq!(saved.revision, before.revision + 1);
+    let status = manager.runtime_status().expect("runtime status");
+    assert!(status.pending);
+    assert!(status.pending_changes.iter().any(|change| matches!(
+        change,
+        RuntimePendingChange::Configuration { fields, .. }
+            if [
+                PendingConfigField::Dns,
+                PendingConfigField::PrivateAccess,
+                PendingConfigField::TransparentProxy,
+            ].iter().all(|field| fields.contains(field))
+    )));
 }
 
 #[tokio::test]

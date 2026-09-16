@@ -164,13 +164,12 @@ On amd64, the Mihomo adapter detects the host's x86-64 microarchitecture level. 
 
 `stable` keeps its existing meaning for every repository: the latest non-draft, non-prerelease GitHub Release. Install a prerelease fork build by its exact version. Sempre does not provide an implicit prerelease channel.
 
-An exact install is retained until explicitly removed. A channel is a weak reference to a concrete version. When `stable` advances, its previous version is removed only when no exact install, active deployment, rollback deployment, or other channel still references it.
+An exact install is retained until explicitly removed. A channel is a weak reference to a concrete version. When `stable` advances, its previous version is removed only when no exact install, active deployment, or other channel still references it.
 
 Installing a version never changes the selected core. Run `core use` after the first install; this is allowed before a configuration exists. The next profile save, `subscription set`, or `config import` converts the subscription for that selection, validates it with the installed core, and stages it. A channel update is validated against the current configuration before the channel advances.
 
 `core remove` removes the concrete version directory and every channel alias
-that points to it. Removal fails while the version is selected, active, or
-retained as the one automatic rollback deployment.
+that points to it. Removal fails while the version is selected or active.
 
 `sempre run --core` temporarily runs an installed version without changing the
 service selection.
@@ -233,9 +232,11 @@ to three times and use a persistent last-known-good cache keyed by URL,
 User-Agent, and fetch mode. Raw responses and generated configurations are
 stored by content hash. Profile edits are persisted locally without fetching,
 compiling, or validating a core; explicit refresh or runtime startup performs
-that work. Failed downloads, conversion, validation, resolve, or startup retain
-the previous deployment. Subscription data uses restricted permissions and URLs
-are omitted from normal status output and logs.
+that work. Failed downloads, conversion, or validation preserve the saved
+profile without staging an invalid candidate. Once a deployment is staged,
+resolve or startup failures keep that deployment selected and pending; Sempre
+never restores an older configuration automatically. Subscription data uses
+restricted permissions and URLs are omitted from normal status output and logs.
 
 Automatic checks for enabled URL sources in the active profile run every 24
 hours by default. The global interval has a five-minute minimum. A changed
@@ -373,7 +374,8 @@ An empty administrator password is accepted only by a same-origin UI and is
 shown as a warning. A password is required for cross-origin UI access; stored
 passwords use Argon2id and successful logins receive an expiring bearer
 session. Changing the listener is a live rebind: Sempre opens the new socket
-before closing the old one and rolls the configuration back on failure.
+before closing the old one. If a later discovery update fails, the requested
+listener setting remains saved and Sempre does not restore the old value.
 
 The official React console covers managed-core status and lifecycle controls,
 live traffic, proxy selection and

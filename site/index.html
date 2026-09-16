@@ -157,7 +157,7 @@
         <div class="glass-story-layout">
           <div class="glass-steps">
             <article data-reveal><span>01</span><i data-lucide="server-cog"></i><div><h3 data-i18n="signalNative">Native service managers</h3><p data-i18n="signalNativeDetail">Runs through Windows SCM, systemd, and launchd without an extra service wrapper.</p></div></article>
-            <article data-reveal data-reveal-delay="1"><span>02</span><i data-lucide="activity"></i><div><h3 data-i18n="signalAtomic">Atomic core switching</h3><p data-i18n="signalAtomicDetail">Validates a new deployment before activation and keeps the last working version for rollback.</p></div></article>
+            <article data-reveal data-reveal-delay="1"><span>02</span><i data-lucide="activity"></i><div><h3 data-i18n="signalAtomic">No silent rollback</h3><p data-i18n="signalAtomicDetail">Validates a new deployment before activation. A failed start stays selected and is reported without rewriting configuration.</p></div></article>
             <article data-reveal data-reveal-delay="2"><span>03</span><i data-lucide="monitor"></i><div><h3 data-i18n="signalReplaceable">Replaceable Web UI</h3><p data-i18n="signalReplaceableDetail">Install or replace the Web UI independently without changing the service or managed core.</p></div></article>
             <article data-reveal data-reveal-delay="3"><span>04</span><i data-lucide="command"></i><div><h3 data-i18n="signalCrossPlatform">Three operating systems</h3><p data-i18n="signalCrossPlatformDetail">One operating model across Windows, Linux, and macOS on amd64 and arm64.</p></div></article>
           </div>
@@ -174,14 +174,14 @@
       <section class="formal-band architecture-band" id="architecture" data-scene>
         <div class="formal-section-heading" data-reveal>
           <p class="eyebrow" data-i18n="sectionArchitecture">02 / ARCHITECTURE</p>
-          <div><h2 data-i18n="architectureTitle">One ownership chain. No wrapper stack.</h2><p data-i18n="architectureLead">A single Rust binary owns installation, service registration, validation, deployment, supervision, and rollback.</p></div>
+          <div><h2 data-i18n="architectureTitle">One ownership chain. No wrapper stack.</h2><p data-i18n="architectureLead">A single Rust binary owns installation, service registration, validation, deployment, supervision, and failure reporting.</p></div>
         </div>
         <div class="architecture-flow" aria-label="Sempre architecture">
           <div class="architecture-node" data-reveal><span>01</span><i data-lucide="monitor"></i><div><strong data-i18n="operatorSurface">Browser / CLI</strong><small data-i18n="interfaceNode">Operator interface</small></div></div>
           <i class="flow-arrow" data-lucide="arrow-right"></i>
           <div class="architecture-node active" data-reveal data-reveal-delay="1"><span>02</span><i data-lucide="server-cog"></i><div><strong>Sempre API</strong><small>localhost:33211</small></div></div>
           <i class="flow-arrow" data-lucide="arrow-right"></i>
-          <div class="architecture-node" data-reveal data-reveal-delay="2"><span>03</span><i data-lucide="activity"></i><div><strong>sempre daemon</strong><small data-i18n="supervisorNode">Supervisor + rollback</small></div></div>
+          <div class="architecture-node" data-reveal data-reveal-delay="2"><span>03</span><i data-lucide="activity"></i><div><strong>sempre daemon</strong><small data-i18n="supervisorNode">Supervisor + diagnostics</small></div></div>
           <i class="flow-arrow" data-lucide="arrow-right"></i>
           <div class="architecture-node" data-reveal data-reveal-delay="3"><span>04</span><i data-lucide="box"></i><div><strong>core@version</strong><small data-i18n="coreNode">Managed process</small></div></div>
         </div>

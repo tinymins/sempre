@@ -156,12 +156,6 @@ impl DnsSettingsStore {
         Ok(candidate)
     }
 
-    pub(crate) fn restore(&self, settings: DnsSettings) -> Result<(), ManagerError> {
-        write(&self.path, &settings)?;
-        *self.settings.lock().expect("DNS settings lock") = settings;
-        Ok(())
-    }
-
     pub(crate) fn queries(&self) -> Vec<DnsQueryEvent> {
         self.queries
             .lock()

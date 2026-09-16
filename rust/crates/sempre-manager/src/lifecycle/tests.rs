@@ -195,22 +195,6 @@ async fn version_selection_compiles_cached_subscription_for_candidate_target() {
             .target_key
             .contains("v14")
     );
-    assert_eq!(
-        document
-            .previous
-            .as_ref()
-            .expect("rollback deployment")
-            .config_hash,
-        old_hash
-    );
-    assert!(
-        document
-            .previous_config_build
-            .as_ref()
-            .expect("rollback build")
-            .target_key
-            .contains("v12")
-    );
     assert!(document.pending);
     let catalog = manager.subscriptions.read().expect("catalog");
     assert_eq!(
@@ -269,8 +253,8 @@ fn removal_deletes_version_and_channel_aliases_transactionally() {
 }
 
 #[test]
-fn removal_rejects_selected_active_and_rollback_versions() {
-    for usage in ["selected", "active", "rollback"] {
+fn removal_rejects_selected_and_active_versions() {
+    for usage in ["selected", "active"] {
         let (_root, manager) = fixture();
         manager
             .store
@@ -290,8 +274,7 @@ fn removal_rejects_selected_active_and_rollback_versions() {
                             reference: "1.14.0-beta.13".into(),
                         });
                     }
-                    "active" => document.active = Some(deployment),
-                    _ => document.previous = Some(deployment),
+                    _ => document.active = Some(deployment),
                 }
                 Ok(())
             })

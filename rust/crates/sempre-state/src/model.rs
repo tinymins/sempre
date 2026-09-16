@@ -6,7 +6,7 @@ use serde_json::Value;
 use thiserror::Error;
 use url::Url;
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -16,9 +16,6 @@ pub struct Document {
     pub updated_at: DateTime<Utc>,
     pub selected: Option<Selection>,
     pub active: Option<Deployment>,
-    pub previous: Option<Deployment>,
-    pub previous_config_build: Option<ConfigBuild>,
-    pub previous_profile_id: Option<String>,
     pub pending: bool,
     pub pending_config_fields: Vec<crate::PendingConfigField>,
     pub last_error: Option<String>,
@@ -137,7 +134,6 @@ pub struct RuntimeFailure {
     pub error: String,
     pub occurred_at: DateTime<Utc>,
     pub failed: Option<Deployment>,
-    pub rolled_back_to: Option<Deployment>,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -176,9 +172,6 @@ impl Default for Document {
             updated_at: Utc::now(),
             selected: None,
             active: None,
-            previous: None,
-            previous_config_build: None,
-            previous_profile_id: None,
             pending: false,
             pending_config_fields: Vec::new(),
             last_error: None,
@@ -265,9 +258,6 @@ impl Document {
         if let Some(deployment) = &self.active {
             self.validate_deployment(deployment)?;
         }
-        if let Some(deployment) = &self.previous {
-            self.validate_deployment(deployment)?;
-        }
         validate_subscription(&self.subscription)?;
         if let Some(core) = &self.runtime.core {
             validate_core_id(core)?;
@@ -295,14 +285,6 @@ impl Document {
     }
 
     pub fn stage(&mut self, deployment: Deployment) {
-        if !self.pending {
-            self.previous.clone_from(&self.active);
-            self.previous_config_build = self
-                .active
-                .as_ref()
-                .and_then(|active| self.config_builds.get(&active.core).cloned());
-            self.previous_profile_id.clone_from(&self.active_profile_id);
-        }
         self.active = Some(deployment);
         self.pending = true;
         self.last_error = None;

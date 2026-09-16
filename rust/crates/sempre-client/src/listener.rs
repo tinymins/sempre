@@ -139,14 +139,8 @@ async fn prepare_rebind(
         bind: listen.into(),
         local_url: local_url(listen)?,
     };
-    let previous_endpoint = endpoint_store.get();
-    let previous_config = web.read()?;
     web.set_listen(listen)?;
-    if let Err(error) = write_endpoints(&next, daemon_template, layout) {
-        let _ = web.set_listen(&previous_config.listen);
-        let _ = write_endpoints(&previous_endpoint, daemon_template, layout);
-        return Err(error);
-    }
+    write_endpoints(&next, daemon_template, layout)?;
     endpoint_store.set(next.clone());
     Ok(Prepared {
         listener,
@@ -262,7 +256,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rebind_prepares_new_listener_and_updates_discovery_transactionally() {
+    async fn rebind_prepares_new_listener_and_updates_discovery() {
         let root = tempfile::tempdir().expect("temporary directory");
         let layout = Layout::at(root.path());
         sempre_state::Store::new(layout.clone())
@@ -293,6 +287,29 @@ mod tests {
                 .bind,
             listen
         );
+    }
+
+    #[tokio::test]
+    async fn rebind_failure_keeps_the_requested_listener_configuration() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let layout = Layout::at(root.path());
+        sempre_state::Store::new(layout.clone())
+            .initialize()
+            .expect("layout");
+        std::fs::create_dir(&layout.endpoint).expect("block endpoint file");
+        let web = WebConfigStore::new(&layout.web_config);
+        web.initialize().expect("web config");
+        let reserve = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+        let listen = reserve.local_addr().expect("reserved address").to_string();
+        drop(reserve);
+        let current = EndpointStore::new("127.0.0.1:33211".into(), "http://127.0.0.1:33211".into());
+        let daemon = DaemonEndpoint::new("http://127.0.0.1:33211").expect("daemon endpoint");
+
+        let result = prepare_rebind(&listen, &current, &web, &daemon, &layout).await;
+        assert!(result.is_err(), "endpoint discovery write must fail");
+
+        assert_eq!(web.read().expect("web config").listen, listen);
+        assert_eq!(current.get().bind, "127.0.0.1:33211");
     }
 
     #[tokio::test]

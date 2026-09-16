@@ -133,14 +133,13 @@ describe('RuntimeControlPanel', () => {
   })
 
   it('opens the shared restart task log and keeps the runtime failure details', async () => {
-    const task = { id: 'restart', state: 'rolled_back', started_at: '2026-09-03T00:00:00Z', finished_at: '2026-09-03T00:00:10Z', omitted_logs: 0, config_available: false, logs: [{ sequence: 0, timestamp: '2026-09-03T00:00:10Z', stage: 'rolled_back', message: 'exit status 1; restored sing-box@1.2.3' }] }
+    const task = { id: 'restart', state: 'failed', started_at: '2026-09-03T00:00:00Z', finished_at: '2026-09-03T00:00:10Z', omitted_logs: 0, config_available: false, logs: [{ sequence: 0, timestamp: '2026-09-03T00:00:10Z', stage: 'error', message: 'startup failed: exit status 1' }] }
     const failed = { ...runningStatus.active!, config_hash: 'b'.repeat(64) }
     const failure = {
       stage: 'startup failed for sing-box@1.2.3',
       error: 'exit status 1',
       occurred_at: '2026-08-03T10:01:00Z',
       failed,
-      rolled_back_to: runningStatus.active!,
     }
     let current = runningStatus
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -165,8 +164,7 @@ describe('RuntimeControlPanel', () => {
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Restart the core?' })).getByRole('button', { name: 'Restart core' }))
 
     const log = await screen.findByRole('log')
-    await waitFor(() => expect(log).toHaveTextContent('Core restart failed; previous deployment restored'))
-    expect(log).toHaveTextContent('exit status 1; restored sing-box@1.2.3')
+    await waitFor(() => expect(log).toHaveTextContent('Error startup failed: exit status 1'))
   })
 
   it('describes a starting pending deployment as health-checking', async () => {
@@ -182,7 +180,7 @@ describe('RuntimeControlPanel', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
     renderRuntimePanel()
 
-    expect(await screen.findByText('The new core or configuration is being health-checked and will be committed after about 10 seconds.')).toBeInTheDocument()
+    expect(await screen.findByText('The selected configuration is being checked for core and network health for about 10 seconds.')).toBeInTheDocument()
   })
 
   it('keeps the generic pending message outside startup health checks', async () => {
@@ -193,7 +191,7 @@ describe('RuntimeControlPanel', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
     renderRuntimePanel()
 
-    expect(await screen.findByText('A core or configuration change is pending and will be committed after the core runs successfully.')).toBeInTheDocument()
+    expect(await screen.findByText('The selected configuration has not run successfully; Sempre will not restore an older configuration automatically.')).toBeInTheDocument()
   })
 })
 

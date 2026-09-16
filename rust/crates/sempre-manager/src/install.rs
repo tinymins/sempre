@@ -345,14 +345,11 @@ fn version_is_referenced(document: &Document, reference: &CoreRef, version: &str
             .is_some_and(|resolved| resolved == version)
     });
     selection_references
-        || [&document.active, &document.previous]
-            .into_iter()
-            .flatten()
-            .any(|deployment| {
-                deployment.core == reference.core
-                    && deployment.repository == reference.repository
-                    && deployment.version == version
-            })
+        || document.active.as_ref().is_some_and(|deployment| {
+            deployment.core == reference.core
+                && deployment.repository == reference.repository
+                && deployment.version == version
+        })
 }
 
 fn installation<'a>(

@@ -33,10 +33,11 @@ never recommended as a LAN interface.
 - Keep a direct console or other recovery path when first enabling gateway
   routing on a remote host.
 
-The service fails before committing a deployment if the TUN address conflicts,
-a configured LAN interface is missing, forwarding is disabled, a TProxy policy
+The service reports a failed deployment if the TUN address conflicts, a
+configured LAN interface is missing, forwarding is disabled, a TProxy policy
 table collides with user state, or the generated runtime configuration is
-invalid. The previous deployment is restored when one exists.
+invalid. The attempted deployment remains selected and pending for inspection
+and retry; Sempre does not restore an older configuration.
 
 ## TUN Router
 

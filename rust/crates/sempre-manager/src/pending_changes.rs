@@ -12,16 +12,10 @@ use crate::{Manager, ManagerError, VersionRunner};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RuntimePendingChange {
     Core {
-        previous: Option<String>,
-        current: String,
-    },
-    Profile {
-        previous: Option<String>,
         current: String,
     },
     Configuration {
         fields: Vec<PendingConfigField>,
-        previous_revision: Option<u64>,
         current_revision: Option<u64>,
     },
 }
@@ -38,12 +32,11 @@ impl<R: VersionRunner> Manager<R> {
 
         let mut changes = Vec::new();
         if document.pending
-            && deployment_identity(document.previous.as_ref())
+            && runtime_deployment_identity(document)
                 != deployment_identity(document.active.as_ref())
             && let Some(current) = document.active.as_ref()
         {
             changes.push(RuntimePendingChange::Core {
-                previous: document.previous.as_ref().map(deployment_label),
                 current: deployment_label(current),
             });
         }
@@ -51,32 +44,13 @@ impl<R: VersionRunner> Manager<R> {
         let Ok(catalog) = self.subscriptions.read() else {
             return changes;
         };
-        if document.pending && document.previous_profile_id != document.active_profile_id {
-            changes.push(RuntimePendingChange::Profile {
-                previous: document
-                    .previous_profile_id
-                    .as_deref()
-                    .map(|id| profile_label(&catalog.profiles, id)),
-                current: document.active_profile_id.as_deref().map_or_else(
-                    || "unknown".into(),
-                    |id| profile_label(&catalog.profiles, id),
-                ),
-            });
-        }
-
         if !document.pending_config_fields.is_empty() {
             let profile = document
                 .active_profile_id
                 .as_deref()
                 .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id));
-            let previous_revision = document
-                .selected
-                .as_ref()
-                .and_then(|selected| document.config_builds.get(&selected.core))
-                .map(|build| build.profile_revision);
             changes.push(RuntimePendingChange::Configuration {
                 fields: document.pending_config_fields.clone(),
-                previous_revision,
                 current_revision: profile.map(|profile| profile.revision),
             });
         }
@@ -340,6 +314,14 @@ fn deployment_identity(deployment: Option<&Deployment>) -> Option<(&str, Option<
     })
 }
 
+fn runtime_deployment_identity(document: &Document) -> Option<(&str, Option<&str>, &str)> {
+    Some((
+        document.runtime.core.as_deref()?,
+        document.runtime.repository.as_deref(),
+        document.runtime.version.as_deref()?,
+    ))
+}
+
 fn deployment_label(deployment: &Deployment) -> String {
     CoreRef {
         core: deployment.core.clone(),
@@ -347,20 +329,4 @@ fn deployment_label(deployment: &Deployment) -> String {
         reference: deployment.version.clone(),
     }
     .to_string()
-}
-
-fn profile_label(profiles: &[Profile], id: &str) -> String {
-    profiles
-        .iter()
-        .find(|profile| profile.id == id)
-        .map_or_else(
-            || id.to_owned(),
-            |profile| {
-                if profile.name.trim().is_empty() {
-                    profile.id.clone()
-                } else {
-                    profile.name.clone()
-                }
-            },
-        )
 }

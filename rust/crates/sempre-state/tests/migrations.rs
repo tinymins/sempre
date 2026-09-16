@@ -47,12 +47,16 @@ fn initialize_migrates_v1_once_and_preserves_existing_pending_fields() {
         fs::write(&store.layout().state, fixture).expect("write v1 state");
 
         let migrated = store.initialize().expect("migrate state");
-        assert_eq!(migrated.schema, 2);
+        assert_eq!(migrated.schema, 3);
         assert_eq!(migrated.pending_config_fields, expected);
-        assert_eq!(migrated.applied_migrations.len(), 1);
+        assert_eq!(migrated.applied_migrations.len(), 2);
         assert_eq!(
             migrated.applied_migrations[0].id,
             "v0002_pending_change_contract"
+        );
+        assert_eq!(
+            migrated.applied_migrations[1].id,
+            "v0003_remove_runtime_rollback"
         );
     }
 }
@@ -67,6 +71,64 @@ fn second_initialize_leaves_migrated_state_byte_identical() {
     store.initialize().expect("second initialize");
     let second = fs::read(&store.layout().state).expect("second state bytes");
     assert_eq!(second, first);
+}
+
+#[test]
+fn v3_migration_removes_every_runtime_rollback_target() {
+    let (_temporary, store) = store();
+    let mut value = serde_json::to_value(Document::default()).expect("serialize state");
+    value["schema"] = Value::from(2);
+    value["applied_migrations"]
+        .as_array_mut()
+        .expect("migration ledger")
+        .truncate(1);
+    let object = value.as_object_mut().expect("state object");
+    object.insert(
+        "previous".into(),
+        serde_json::json!({
+            "core": "sing-box",
+            "repository": null,
+            "reference": "stable",
+            "version": "1.13.2",
+            "config_hash": "a".repeat(64),
+        }),
+    );
+    object.insert("previous_config_build".into(), Value::Null);
+    object.insert(
+        "previous_profile_id".into(),
+        Value::String("old-profile".into()),
+    );
+    object
+        .get_mut("runtime")
+        .and_then(Value::as_object_mut)
+        .expect("runtime")
+        .insert(
+            "last_failure".into(),
+            serde_json::json!({
+                "stage": "startup failed",
+                "error": "exit status 1",
+                "occurred_at": "2026-09-16T00:00:00Z",
+                "failed": null,
+                "rolled_back_to": null,
+            }),
+        );
+    fs::write(
+        &store.layout().state,
+        serde_json::to_vec_pretty(&value).expect("encode v2 state"),
+    )
+    .expect("write v2 state");
+
+    let migrated = store.initialize().expect("migrate v2 state");
+    assert_eq!(migrated.schema, 3);
+    let encoded = serde_json::to_value(migrated).expect("serialize migrated state");
+    assert!(encoded.get("previous").is_none());
+    assert!(encoded.get("previous_config_build").is_none());
+    assert!(encoded.get("previous_profile_id").is_none());
+    assert!(
+        encoded["runtime"]["last_failure"]
+            .get("rolled_back_to")
+            .is_none()
+    );
 }
 
 #[test]
@@ -161,8 +223,8 @@ fn concurrent_initialize_applies_the_migration_once() {
 
     for handle in handles {
         let document = handle.join().expect("initialize thread");
-        assert_eq!(document.applied_migrations.len(), 1);
+        assert_eq!(document.applied_migrations.len(), 2);
     }
     let persisted = store.read().expect("read migrated state");
-    assert_eq!(persisted.applied_migrations.len(), 1);
+    assert_eq!(persisted.applied_migrations.len(), 2);
 }

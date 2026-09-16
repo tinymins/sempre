@@ -16,7 +16,8 @@ flowchart LR
 
 The server never installs, validates with, starts, stops, or supervises a proxy
 core. A Sempre client still owns local core validation, atomic staging,
-activation, rollback, and runtime lifecycle.
+activation, and runtime lifecycle. Failed activation remains selected for
+inspection and retry; the client does not restore an older configuration.
 
 ## Delivered boundary
 
@@ -45,5 +46,5 @@ published artifacts.
 Local profile saves remain persistence-only. Explicit refresh and runtime
 startup fetch snapshots, compile with the shared core, validate against the
 selected external core binary, and atomically stage the result. Missing inputs
-or validation failures preserve the saved draft and the last working runtime
-deployment.
+or validation failures preserve the saved draft without staging an invalid
+candidate. A staged candidate remains selected after runtime failure.
