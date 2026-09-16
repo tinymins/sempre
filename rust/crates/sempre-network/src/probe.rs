@@ -27,7 +27,11 @@ pub struct NetworkTestResult {
     pub category: &'static str,
     pub url: &'static str,
     pub ok: bool,
+    /// First request through response headers, including connection setup.
     pub latency_ms: u128,
+    /// Repeat request through response headers, reusing the connection when possible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_latency_ms: Option<u128>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_status: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -136,10 +140,18 @@ pub async fn run_network_test() -> Result<NetworkTestReport, NetworkError> {
 }
 
 async fn run_probe(client: &Client, probe: Probe) -> NetworkTestResult {
-    let started = std::time::Instant::now();
     let url = reqwest::Url::parse(probe.url).expect("built-in probe URL");
     let host = url.host_str().expect("built-in probe host");
-    let (dns, response) = tokio::join!(dns_probe::resolve(host), client.get(probe.url).send());
+    let (dns, mut result) = tokio::join!(dns_probe::resolve(host), run_http_probe(client, probe));
+    result.dns_answers = dns.answers;
+    result.dns_error = dns.error;
+    result
+}
+
+async fn run_http_probe(client: &Client, probe: Probe) -> NetworkTestResult {
+    let started = std::time::Instant::now();
+    let response = client.get(probe.url).send().await;
+    let latency_ms = started.elapsed().as_millis();
     let mut result = NetworkTestResult {
         id: probe.id,
         name: probe.name,
@@ -147,23 +159,22 @@ async fn run_probe(client: &Client, probe: Probe) -> NetworkTestResult {
         category: probe.category,
         url: probe.url,
         ok: false,
-        latency_ms: 0,
+        latency_ms,
+        response_latency_ms: None,
         http_status: None,
         ip: None,
         ip_metadata: None,
-        dns_answers: dns.answers,
-        dns_error: dns.error,
+        dns_answers: Vec::new(),
+        dns_error: None,
         detail: None,
     };
     let response = match response {
         Ok(response) => response,
         Err(error) => {
-            result.latency_ms = started.elapsed().as_millis();
             result.detail = Some(error.to_string());
             return result;
         }
     };
-    result.latency_ms = started.elapsed().as_millis();
     result.http_status = Some(response.status().as_u16());
     if !(probe.success)(response.status()) {
         result.detail = Some(format!("HTTP {}", response.status().as_u16()));
@@ -186,6 +197,14 @@ async fn run_probe(client: &Client, probe: Probe) -> NetworkTestResult {
         }
     }
     result.ok = true;
+    // Consume the first body before measuring again so its connection can be reused.
+    let started = std::time::Instant::now();
+    if let Ok(response) = client.get(probe.url).send().await {
+        let elapsed = started.elapsed().as_millis();
+        if (probe.success)(response.status()) && limited_body(response).await.is_ok() {
+            result.response_latency_ms = Some(elapsed);
+        }
+    }
     result
 }
 
@@ -261,3 +280,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "probe_timing_tests.rs"]
+mod timing_tests;

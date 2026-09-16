@@ -45,7 +45,8 @@ function GeneralNetworkTest() {
   })
   const results = report.data?.results.length ? report.data.results : defaultResults
   const okResults = results.filter((item) => item.ok)
-  const averageRequestDuration = okResults.length ? Math.round(okResults.reduce((sum, item) => sum + item.latency_ms, 0) / okResults.length) : 0
+  const latencies = okResults.flatMap((item) => item.response_latency_ms === undefined ? [] : [item.response_latency_ms])
+  const averageLatency = latencies.length ? Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length) : undefined
   const domesticResult = results.find((item) => item.id === 'domestic-ip')
   const foreignResult = results.find((item) => item.id === 'foreign-ip')
   const domesticIP = domesticResult?.ip || '-'
@@ -73,12 +74,12 @@ function GeneralNetworkTest() {
       render: (_value, record) => report.isFetching ? <Tag color="processing">{t('loading')}...</Tag> : <Tag color={record.ok ? 'success' : 'error'} icon={record.ok ? <CheckCircle2 /> : <XCircle />}>{record.ok ? t('reachable') : t('unreachable')}</Tag>,
     },
     {
-      title: t('requestDuration'),
-      dataIndex: 'latency_ms',
-      width: 120,
+      title: <span title={t('responseLatencyDetail')}>{t('responseLatency')}</span>,
+      key: 'latency',
+      width: 170,
       align: 'right',
-      sorter: (left, right) => left.latency_ms - right.latency_ms,
-      render: (value) => report.isFetching && !report.data ? '-' : value ? `${value} ms` : '-',
+      sorter: (left, right) => compareNumber(left.response_latency_ms, right.response_latency_ms),
+      render: (_value, record) => !report.data ? '—' : <div className="tabular-nums"><p className="font-medium">{record.response_latency_ms === undefined ? '—' : `${record.response_latency_ms} ms`}</p><p className="mt-1 text-xs text-[var(--muted)]">{t('firstRequestDuration')} {record.latency_ms >= 1000 ? `${(record.latency_ms / 1000).toFixed(2)} s` : `${record.latency_ms} ms`}</p></div>,
     },
     {
       title: 'HTTP',
@@ -109,7 +110,7 @@ function GeneralNetworkTest() {
     </div>
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       <Metric icon={CheckCircle2} label={t('reachable')} value={`${okResults.length}/${results.length}`} tone="green" />
-      <Metric icon={Clock3} label={t('averageRequestDuration')} value={averageRequestDuration ? `${averageRequestDuration} ms` : '-'} tone="amber" />
+      <Metric icon={Clock3} label={t('averageResponseLatency')} value={averageLatency === undefined ? '—' : `${averageLatency} ms`} tone="cyan" />
       <Metric icon={Activity} label={t('domesticIP')} value={domesticIP} detail={formatIpMetadata(domesticResult?.ip_metadata)} tone="cyan" />
       <Metric icon={Globe2} label={t('foreignIP')} value={foreignIP} detail={formatIpMetadata(foreignResult?.ip_metadata)} tone="blue" />
     </div>
@@ -151,10 +152,9 @@ function unique(values: Array<string | undefined>) {
   return [...new Set(values.filter((value): value is string => Boolean(value)))]
 }
 
-function Metric({ icon: Icon, label, value, detail, tone }: { icon: typeof Activity; label: string; value: string; detail?: string; tone: 'green' | 'amber' | 'cyan' | 'blue' }) {
+function Metric({ icon: Icon, label, value, detail, tone }: { icon: typeof Activity; label: string; value: string; detail?: string; tone: 'green' | 'cyan' | 'blue' }) {
   const colors = {
     green: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    amber: 'bg-amber-500/12 text-amber-700 dark:text-amber-400',
     cyan: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400',
     blue: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
   }

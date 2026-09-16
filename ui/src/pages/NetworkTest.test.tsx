@@ -9,9 +9,9 @@ import { NodeTest } from './NodeTest'
 const report = {
   checked_at: '2026-08-07T00:00:00Z',
   results: [
-    { id: 'domestic-ip', name: 'Domestic IP', region: 'domestic', category: 'ip', url: 'https://ip.3322.net', ok: true, latency_ms: 38, http_status: 200, ip: '183.131.177.101', ip_metadata: { country: 'China', region: 'Zhejiang', city: 'Hangzhou', isp: 'China Telecom', asn: 4134 }, dns_answers: [{ address: '223.5.5.5', fake_ip: false }] },
-    { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: true, latency_ms: 128, http_status: 200, ip: '144.34.229.119', ip_metadata: { country: 'United States', region: 'California', city: 'Los Angeles', asn_organization: 'Cloudflare, Inc.', asn: 13335 }, dns_answers: [{ address: '198.18.0.2', fake_ip: true }] },
-    { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: true, latency_ms: 42, http_status: 200, dns_answers: [{ address: '110.242.68.66', fake_ip: false }] },
+    { id: 'domestic-ip', name: 'Domestic IP', region: 'domestic', category: 'ip', url: 'https://ip.3322.net', ok: true, latency_ms: 2038, response_latency_ms: 38, http_status: 200, ip: '183.131.177.101', ip_metadata: { country: 'China', region: 'Zhejiang', city: 'Hangzhou', isp: 'China Telecom', asn: 4134 }, dns_answers: [{ address: '223.5.5.5', fake_ip: false }] },
+    { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: true, latency_ms: 2128, response_latency_ms: 128, http_status: 200, ip: '144.34.229.119', ip_metadata: { country: 'United States', region: 'California', city: 'Los Angeles', asn_organization: 'Cloudflare, Inc.', asn: 13335 }, dns_answers: [{ address: '198.18.0.2', fake_ip: true }] },
+    { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: true, latency_ms: 2042, response_latency_ms: 42, http_status: 200, dns_answers: [{ address: '110.242.68.66', fake_ip: false }] },
     { id: 'google', name: 'Google', region: 'foreign', category: 'reachability', url: 'https://www.google.com/generate_204', ok: false, latency_ms: 8000, http_status: 0, detail: 'context deadline exceeded', dns_answers: [{ address: '198.18.0.8', fake_ip: true }] },
   ],
 }
@@ -39,9 +39,9 @@ describe('NetworkTest', () => {
 
     expect(screen.getByText('Baidu')).toBeInTheDocument()
     expect(screen.getByText('Google')).toBeInTheDocument()
-    expect(screen.getByText('Request duration')).toBeInTheDocument()
+    expect(screen.getByText('Response latency')).toBeInTheDocument()
     expect(screen.getByText('Local DNS')).toBeInTheDocument()
-    expect(screen.getByText('Average request duration')).toBeInTheDocument()
+    expect(screen.getByText('Average response latency')).toBeInTheDocument()
     expect(screen.getAllByText('Loading...')).toHaveLength(4)
     expect(await screen.findAllByText('183.131.177.101')).toHaveLength(2)
     expect(screen.getAllByText('144.34.229.119')).toHaveLength(2)
@@ -66,6 +66,32 @@ describe('NetworkTest', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('emphasizes repeat latency and averages only measured responses', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(report)))
+    renderNetworkTest()
+
+    expect(await screen.findByText('69 ms')).toBeInTheDocument()
+    const baidu = within(screen.getByRole('row', { name: /Baidu/ }))
+    expect(baidu.getByText('42 ms')).toHaveClass('font-medium')
+    expect(baidu.getByText('First request 2.04 s')).toHaveClass('text-xs', 'text-[var(--muted)]')
+    const google = within(screen.getByRole('row', { name: /Google/ }))
+    expect(google.getByText('—')).toBeInTheDocument()
+    expect(google.getByText('First request 8.00 s')).toBeInTheDocument()
+  })
+
+  it('does not present legacy total time as response latency and retains zero samples', async () => {
+    const results = report.results.map((result) => ({ ...result, response_latency_ms: undefined }))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ...report, results: [
+      { ...results[0], response_latency_ms: 0 }, ...results.slice(1),
+    ] })))
+    renderNetworkTest()
+
+    expect(await screen.findAllByText('0 ms')).toHaveLength(2)
+    const baidu = within(screen.getByRole('row', { name: /Baidu/ }))
+    expect(baidu.getByText('—')).toBeInTheDocument()
+    expect(baidu.getByText('First request 2.04 s')).toBeInTheDocument()
+  })
+
   it('keeps the fixed table visible when the request fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'BROKEN', message: 'network test failed' } }, { status: 500 })))
     renderNetworkTest()
@@ -73,6 +99,7 @@ describe('NetworkTest', () => {
     expect(screen.getByText('Baidu')).toBeInTheDocument()
     expect(screen.getByText('Google')).toBeInTheDocument()
     expect(await screen.findAllByText('network test failed')).toHaveLength(4)
+    expect(screen.queryByText(/First request/)).not.toBeInTheDocument()
   })
 
   it('tests node latency and renders structured traffic diagnostics', async () => {
