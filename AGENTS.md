@@ -34,6 +34,14 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 - Remove imports, variables, functions, and files made unused by the change. Report unrelated dead code without modifying it.
 - Every changed line must trace to the requested outcome. Multiple agents may be working concurrently, so never modify unrelated files or modules.
 
+## Execution Scope and Concurrency
+
+- Start modifying tasks by checking the current branch, worktree status, and task-owned files. If unrelated uncommitted changes or another active task are present, use an isolated worktree before editing or running broad checks.
+- Do not create a named branch merely to obtain isolation. Use a detached or app-managed worktree unless the user explicitly requested a branch.
+- Do not run full-workspace Cargo commands in a shared dirty checkout. They validate other tasks' code, contend on build locks, and can turn unrelated failures into false blockers.
+- Keep discovered adjacent bugs separate. Report them, but do not repair, build, deploy, or release them unless the user adds that work to the scope.
+- A request to commit, push, tag, or trigger GitHub Actions is a delivery request. Resolve the branch, next tag, workflow trigger, and remote transport near the start. If the remote uses SSH, request the mandatory per-connection authorization early rather than after all implementation work.
+
 ## Code Organization
 
 - Keep every handwritten source file at or below 500 physical lines. This limit includes handwritten tests and applies to Rust, TypeScript, TSX, JavaScript, JSX, CSS, and other handwritten source formats.
@@ -44,10 +52,13 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 ## Verification
 
 - Define verifiable success criteria before implementation and use the narrowest meaningful checks while iterating.
-- After every code change, run both `bun run lint` and `bun run tsc` before reporting completion.
-- Run focused tests for the affected behavior. For Rust changes, run `bun run rust:lint` and `bun run rust:test`; use platform-native CI for OS-specific service and network behavior.
-- Run the relevant Vitest suite for `ui/` or `site/` behavior, and perform browser verification when rendered appearance or interaction is part of the requested outcome.
-- Run `bun run build` for release, packaged-resource, export, bundling, or cross-platform artifact changes.
+- Run focused tests for the affected behavior first. For Rust changes, test and lint the affected crate or package; for `ui/` or `site/`, run the relevant Vitest files and the owning package's lint/type check.
+- Before reporting a completed code change, run repository `bun run lint` and `bun run tsc` once on the final code state. These are final static gates, not commands to repeat after every edit.
+- Run full `bun run rust:lint` and `bun run rust:test` only when the change crosses shared Rust contracts, workspace configuration, foundational crates, or multiple independently owned crates, or when the user explicitly requests full local validation. Otherwise rely on affected-crate Clippy/tests plus CI for the workspace matrix.
+- For a requested commit/tag/push whose purpose is to trigger GitHub Actions, do not delay dispatch for a redundant local full-workspace run after focused tests and final static gates have passed. GitHub Actions owns the full matrix unless the user requested a local artifact.
+- Run a full local `bun run build` only when the user requested a local release artifact or the final artifact itself is the acceptance surface. For build-tooling or archive changes, prefer focused packaging tests when they prove the changed contract. Inspect the build entry point first and do not invoke a wrapper that repeats already completed verification.
+- Perform browser verification when rendered appearance or interaction is part of the requested outcome and a relevant browser surface is available; do not turn a source-only or CI-dispatch request into a deployment task.
+- If a full suite is required and produces no task-relevant progress for five minutes, or waits on another task's build lock, stop and report or move it to an isolated worktree/CI rather than repeatedly polling it.
 - Documentation-only changes require content review and `git diff --check`; do not run product builds or test suites for them.
 
 ## Git Workflow
