@@ -36,11 +36,20 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 
 ## Execution Scope and Concurrency
 
-- Start modifying tasks by checking the current branch, worktree status, and task-owned files. If unrelated uncommitted changes or another active task are present, use an isolated worktree before editing or running broad checks.
-- Do not create a named branch merely to obtain isolation. Use a detached or app-managed worktree unless the user explicitly requested a branch.
+- Start modifying tasks by recording the base commit and checking the current branch, worktree status, tracked remote ref, and task-owned files.
+- If unrelated uncommitted changes or another active task are present, use an existing approved worktree or ask the user to approve the exact new worktree path and starting ref. Do not create any branch or worktree without the global authorization requirements above.
 - Do not run full-workspace Cargo commands in a shared dirty checkout. They validate other tasks' code, contend on build locks, and can turn unrelated failures into false blockers.
 - Keep discovered adjacent bugs separate. Report them, but do not repair, build, deploy, or release them unless the user adds that work to the scope.
-- A request to commit, push, tag, or trigger GitHub Actions is a delivery request. Resolve the branch, next tag, workflow trigger, and remote transport near the start. If the remote uses SSH, request the mandatory per-connection authorization early rather than after all implementation work.
+- A request to commit, push, tag, or trigger GitHub Actions is a delivery request. Resolve the branch, next tag, workflow trigger, and remote transport near the start; follow the global SSH exceptions and approval rules exactly.
+- Before advancing shared `main`, compare the recorded base, current `main`, and `origin/main`. If either ref advanced, do not fast-forward the task commit into shared `main` first. Keep it isolated and rebuild a linear result on the latest base in an approved worktree, or report the pending integration.
+- Do not report a commit as integrated into `main` while `main...origin/main` is diverged. State `ahead`/`behind` status explicitly.
+
+## Discovery and Tool Efficiency
+
+- Begin with the existing feature owner and its tests. Use at most two targeted repository-search batches before selecting the implementation boundary; after that, open only files needed by the next edit or verification decision.
+- Keep command output bounded. Do not dump hundreds of unrelated matches or whole large files into context when a narrower `rg`, line range, or test name answers the question.
+- Batch related reads and status checks. Avoid long sequences of tiny tool calls and repeated unchanged `git status`, process, or test polls.
+- Reuse existing update-task, API, and UI contracts before designing new layers. Once the requested path is proven, stop exploring adjacent release, deployment, or runtime behavior.
 
 ## Code Organization
 
@@ -52,12 +61,13 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 ## Verification
 
 - Define verifiable success criteria before implementation and use the narrowest meaningful checks while iterating.
-- Run focused tests for the affected behavior first. For Rust changes, test and lint the affected crate or package; for `ui/` or `site/`, run the relevant Vitest files and the owning package's lint/type check.
+- Run focused tests for the affected behavior first. For Rust changes, default to named test modules or filters plus affected-target Clippy/checks; touching a crate does not by itself require every test in that crate. Run the full crate only when the change alters a shared crate-wide contract or no reliable focused filter exists.
+- For `ui/` or `site/`, run the relevant Vitest files and the owning package's lint/type check. Do not expand from component tests to unrelated page or browser suites without a behavior-specific reason.
 - Before reporting a completed code change, run repository `bun run lint` and `bun run tsc` once on the final code state. These are final static gates, not commands to repeat after every edit.
 - Run full `bun run rust:lint` and `bun run rust:test` only when the change crosses shared Rust contracts, workspace configuration, foundational crates, or multiple independently owned crates, or when the user explicitly requests full local validation. Otherwise rely on affected-crate Clippy/tests plus CI for the workspace matrix.
 - For a requested commit/tag/push whose purpose is to trigger GitHub Actions, do not delay dispatch for a redundant local full-workspace run after focused tests and final static gates have passed. GitHub Actions owns the full matrix unless the user requested a local artifact.
 - Run a full local `bun run build` only when the user requested a local release artifact or the final artifact itself is the acceptance surface. For build-tooling or archive changes, prefer focused packaging tests when they prove the changed contract. Inspect the build entry point first and do not invoke a wrapper that repeats already completed verification.
-- Perform browser verification when rendered appearance or interaction is part of the requested outcome and a relevant browser surface is available; do not turn a source-only or CI-dispatch request into a deployment task.
+- Perform browser verification only after confirming the exact Sempre dev server, owning process, working directory, and served source revision. If the correct source-backed surface is unavailable and deployment is not requested, accept focused component/DOM tests and report that limitation; do not probe unrelated ports or installed stale UI.
 - If a full suite is required and produces no task-relevant progress for five minutes, or waits on another task's build lock, stop and report or move it to an isolated worktree/CI rather than repeatedly polling it.
 - Documentation-only changes require content review and `git diff --check`; do not run product builds or test suites for them.
 
