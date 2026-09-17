@@ -38,7 +38,10 @@ describe('DNS page', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
       if (path.endsWith('/dns/settings')) return Response.json(settings)
-      if (path.endsWith('/dns/queries')) return Response.json({ queries: [{ time: 1_725_000_000_000, client: '10.23.0.153', name: 'example.com.', type: 'A', decision: 'core', answers: ['example.com. 60 IN CNAME edge.example.com.', 'edge.example.com. 60 IN A 198.18.0.1', 'edge.example.com. 60 IN A 198.18.0.2', 'alias.example.com. 60 IN A 198.18.0.1'], upstream: '127.0.0.1:1053', latency_ms: 2, detail: 'default-remote' }] })
+      if (path.endsWith('/dns/queries')) return Response.json({ queries: [
+        { time: 1_725_000_000_000, client: '10.23.0.153', name: 'example.com.', type: 'A', decision: 'core', answers: ['example.com. 60 IN CNAME edge.example.com.', 'edge.example.com. 60 IN A 198.18.0.1', 'edge.example.com. 60 IN A 198.18.0.2', 'alias.example.com. 60 IN A 198.18.0.1'], upstream: '127.0.0.1:20553', latency_ms: 2, detail: 'default-remote' },
+        { time: 1_725_000_000_001, client: '10.23.0.154', name: 'example.cn.', type: 'A', decision: 'local', answers: [], upstream: 'tls://223.6.6.6:853?server_name=dns.alidns.com', latency_ms: 3, detail: 'rule-set:domestic-domains' },
+      ] })
       return Response.json({}, { status: 404 })
     }))
   })
@@ -58,6 +61,9 @@ describe('DNS page', () => {
     expect(screen.getByRole('button', { name: '设置与状态' })).toBeInTheDocument()
     expect(await screen.findByText('example.com.')).toBeInTheDocument()
     expect(screen.getByText('10.23.0.153')).toBeInTheDocument()
+    expect(screen.getByText('sing-box')).toBeInTheDocument()
+    const tlsUpstream = screen.getByTitle('tls://223.6.6.6:853?server_name=dns.alidns.com')
+    expect(tlsUpstream.parentElement).toHaveTextContent('前置 DNS')
     const answerSummary = screen.getByRole('button', { name: /查看完整应答/ })
     expect(answerSummary).toHaveTextContent('198.18.0.1, 198.18.0.2 · 共 4 条')
     expect(screen.queryByText('example.com. 60 IN CNAME edge.example.com.')).not.toBeInTheDocument()

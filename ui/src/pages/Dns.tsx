@@ -75,7 +75,7 @@ export function Dns() {
     { title: zh ? '类型' : 'Type', dataIndex: 'type', width: 80, sorter: (left, right) => compareText(left.type, right.type) },
     { title: zh ? '决策' : 'Decision', dataIndex: 'decision', width: 100, sorter: (left, right) => compareText(left.decision, right.decision), render: (value) => <Tag color={value === 'local' ? 'green' : value === 'rewrite' ? 'blue' : value === 'reject' || value === 'error' ? 'red' : 'orange'}>{String(value)}</Tag> },
     { title: zh ? '应答' : 'Answers', dataIndex: 'answers', width: 340, ellipsis: true, sorter: (left, right) => compareText(left.answers.join(' '), right.answers.join(' ')), render: (value) => <DnsAnswerSummary answers={value as string[]} zh={zh} /> },
-    { title: zh ? '上游' : 'Upstream', dataIndex: 'upstream', minWidth: 170, sorter: (left, right) => compareText(left.upstream, right.upstream) },
+    { title: zh ? '上游' : 'Upstream', dataIndex: 'upstream', minWidth: 220, sorter: (left, right) => compareText(left.upstream, right.upstream), render: (value, item) => <DnsUpstream upstream={String(value || '-')} decision={item.decision} zh={zh} /> },
     { title: zh ? '耗时' : 'Latency', dataIndex: 'latency_ms', width: 90, sorter: (left, right) => left.latency_ms - right.latency_ms, render: (value) => `${value} ms` },
     { title: '', key: 'action', width: 60, render: (_value, item) => <Button size="small" variant="text" title={zh ? '添加重写' : 'Add rewrite'} onClick={() => setRewrite({ ...emptyRewrite(), domain: item.name.replace(/\.$/, ''), type: item.type === 'AAAA' ? 'AAAA' : 'A' })}><Plus size={14} /></Button> },
   ], [zh])
@@ -115,6 +115,11 @@ function DnsAnswerSummary({ answers, zh }: { answers: string[]; zh: boolean }) {
   const targets = answerTargets(answers)
   const summary = `${targets.slice(0, 2).join(', ')}${answers.length > 2 ? ` · ${zh ? `共 ${answers.length} 条` : `${answers.length} records`}` : ''}`
   return <Popover trigger="click" placement="bottomLeft" fitViewport title={zh ? `完整应答（${answers.length} 条）` : `Full answers (${answers.length})`} popupClassName="z-[9999] max-w-3xl overflow-hidden rounded-lg border border-black/[0.06] bg-[var(--surface)] p-3 shadow-lg dark:border-white/[0.08]" content={<div className="max-h-80 space-y-1 overflow-auto font-mono text-xs leading-5">{answers.map((answer, index) => <div key={`${index}-${answer}`} className="break-all">{answer}</div>)}</div>}><Button size="small" variant="text" className="max-w-full !justify-start !px-1 font-mono font-normal" aria-label={`${zh ? '查看完整应答' : 'View full answers'}: ${summary}`}><span className="truncate">{summary}</span></Button></Popover>
+}
+
+function DnsUpstream({ upstream, decision, zh }: { upstream: string; decision: string; zh: boolean }) {
+  const source = decision === 'core' ? 'sing-box' : decision === 'local' ? (zh ? '前置 DNS' : 'DNS frontend') : ''
+  return <div className="flex min-w-0 items-center gap-2"><span className="min-w-0 truncate font-mono" title={upstream}>{upstream}</span>{source ? <Tag color={decision === 'core' ? 'purple' : 'cyan'} size="small" bordered={false}>{source}</Tag> : null}</div>
 }
 
 function answerTargets(answers: string[]) {
