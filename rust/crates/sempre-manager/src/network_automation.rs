@@ -11,6 +11,27 @@ use crate::{KnownNetwork, Manager, ManagerError, ValidationRunner, VersionRunner
 const NORMAL_MODE: &str = "Rule";
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct NetworkIdentity {
+    supported: bool,
+    name: String,
+    addresses: Vec<String>,
+    gateway: String,
+    gateway_mac: String,
+}
+
+impl From<DefaultInterface> for NetworkIdentity {
+    fn from(interface: DefaultInterface) -> Self {
+        Self {
+            supported: interface.supported,
+            name: interface.name,
+            addresses: interface.addresses,
+            gateway: interface.gateway,
+            gateway_mac: interface.gateway_mac,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NetworkAutomationStatus {
     pub enabled: bool,
@@ -121,6 +142,45 @@ impl<R: VersionRunner> Manager<R> {
     }
 }
 
+pub(crate) async fn wait_for_network_change() {
+    wait_for_network_change_with(POLL_INTERVAL, observe_network).await;
+}
+
+async fn wait_for_network_change_with(
+    interval: Duration,
+    mut observe: impl FnMut() -> Option<NetworkIdentity>,
+) {
+    let initial = observe();
+    loop {
+        sleep(interval).await;
+        if network_changed(initial.as_ref(), observe().as_ref()) {
+            return;
+        }
+    }
+}
+
+fn network_changed(initial: Option<&NetworkIdentity>, current: Option<&NetworkIdentity>) -> bool {
+    match (initial, current) {
+        (None, None) => false,
+        (Some(_), None) | (None, Some(_)) => true,
+        (Some(initial), Some(current)) => {
+            initial.supported != current.supported
+                || initial.name != current.name
+                || initial.addresses != current.addresses
+                || initial.gateway != current.gateway
+                || (!initial.gateway_mac.is_empty()
+                    && !current.gateway_mac.is_empty()
+                    && initial.gateway_mac != current.gateway_mac)
+        }
+    }
+}
+
+fn observe_network() -> Option<NetworkIdentity> {
+    sempre_network::default_interface()
+        .ok()
+        .map(NetworkIdentity::from)
+}
+
 fn observe() -> (DefaultInterface, Option<String>) {
     match sempre_network::default_interface() {
         Ok(value) => (value, None),
@@ -181,6 +241,16 @@ fn automation_config_pending(document: &sempre_state::Document) -> bool {
 mod tests {
     use super::*;
 
+    fn interface(address: &str, gateway_mac: &str) -> DefaultInterface {
+        DefaultInterface {
+            supported: true,
+            name: "en0".into(),
+            addresses: vec![address.into()],
+            gateway: "10.23.0.1".into(),
+            gateway_mac: gateway_mac.into(),
+        }
+    }
+
     #[test]
     fn gateway_mac_selects_the_matching_network() {
         let networks = vec![KnownNetwork {
@@ -194,5 +264,38 @@ mod tests {
             Some("Home")
         );
         assert!(match_network(&networks, "00:11:22:33:44:55").is_none());
+    }
+
+    #[test]
+    fn network_identity_ignores_gateway_mac_refresh() {
+        let initial = NetworkIdentity::from(interface("10.23.2.158/21", ""));
+        let refreshed = NetworkIdentity::from(interface("10.23.2.158/21", "10:8f:fe:6b:a0:02"));
+        assert!(!network_changed(Some(&initial), Some(&refreshed)));
+    }
+
+    #[test]
+    fn network_identity_detects_known_gateway_change() {
+        let initial = NetworkIdentity::from(interface("10.23.2.158/21", "10:8f:fe:6b:a0:02"));
+        let changed = NetworkIdentity::from(interface("10.23.2.158/21", "a0:b1:c2:d3:e4:f5"));
+        assert!(network_changed(Some(&initial), Some(&changed)));
+    }
+
+    #[tokio::test]
+    async fn network_change_wakes_the_waiter() {
+        let mut samples = [
+            Some(NetworkIdentity::from(interface("10.23.2.158/21", ""))),
+            Some(NetworkIdentity::from(interface("10.23.2.158/21", ""))),
+            Some(NetworkIdentity::from(interface("10.23.2.159/21", ""))),
+        ]
+        .into_iter();
+
+        tokio::time::timeout(
+            Duration::from_millis(100),
+            wait_for_network_change_with(Duration::from_millis(1), || {
+                samples.next().expect("network sample")
+            }),
+        )
+        .await
+        .expect("network change");
     }
 }

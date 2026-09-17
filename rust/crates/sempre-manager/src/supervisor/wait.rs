@@ -15,6 +15,7 @@ pub(super) enum ProcessEvent {
 
 pub(super) enum RetryEvent {
     Reload,
+    NetworkChanged,
     Timer,
     Shutdown,
 }
@@ -89,6 +90,7 @@ pub(super) async fn wait_retry<R: VersionRunner>(
 ) -> RetryEvent {
     tokio::select! {
         () = manager.wait_runtime_reload() => RetryEvent::Reload,
+        () = crate::network_automation::wait_for_network_change() => RetryEvent::NetworkChanged,
         () = shutdown_requested(shutdown) => RetryEvent::Shutdown,
         () = sleep(delay) => RetryEvent::Timer,
     }

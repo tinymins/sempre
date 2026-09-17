@@ -18,7 +18,7 @@ use wait::{ProcessEvent, RetryEvent, wait_inactive, wait_retry, wait_running, wa
 
 const STARTUP_GRACE: Duration = Duration::from_secs(10);
 const STOP_GRACE: Duration = Duration::from_secs(10);
-const MAX_BACKOFF: Duration = Duration::from_mins(1);
+const RETRY_INTERVAL: Duration = Duration::from_secs(30);
 
 pub(crate) struct RuntimePlan {
     pub(crate) deployment: Deployment,
@@ -56,7 +56,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<(), ManagerError> {
         recovery::recover_stale_process(self).await?;
         self.transparent.recover_stale_system_dns().await?;
-        let mut backoff = Duration::from_secs(1);
         loop {
             let document = self.store.read()?;
             if *shutdown.borrow() {
@@ -78,7 +77,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
                 }
-                backoff = Duration::from_secs(1);
                 continue;
             }
             if document.active.is_none() {
@@ -91,7 +89,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
                 }
-                backoff = Duration::from_secs(1);
                 continue;
             }
             let plan = match self.resolve_runtime_plan().await {
@@ -101,8 +98,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                         with_cleanup_failure(&error, self.cleanup_after_core_failure().await);
                     self.log_supervisor(&format!("resolve deployment failed: {error}"))?;
                     state::record_failure(self, "resolve failed", &error, false)?;
-                    match wait_retry(self, &mut shutdown, backoff).await {
+                    match wait_retry(self, &mut shutdown, RETRY_INTERVAL).await {
                         RetryEvent::Timer => {}
+                        RetryEvent::NetworkChanged => {
+                            self.log_supervisor("network changed; retrying core immediately")?;
+                        }
                         RetryEvent::Reload => self.cleanup_after_core_failure().await?,
                         RetryEvent::Shutdown => {
                             self.cleanup_retained_frontend().await?;
@@ -110,7 +110,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                             return Ok(());
                         }
                     }
-                    backoff = next_backoff(backoff);
                     continue;
                 }
             };
@@ -121,11 +120,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .run_runtime_plan(&plan, &mut shutdown, startup_grace)
                 .await?
             {
-                CycleResult::Restart => backoff = Duration::from_secs(1),
+                CycleResult::Restart => {}
                 CycleResult::Shutdown => return Ok(()),
                 CycleResult::Failed => {
-                    match wait_retry(self, &mut shutdown, backoff).await {
+                    match wait_retry(self, &mut shutdown, RETRY_INTERVAL).await {
                         RetryEvent::Timer => {}
+                        RetryEvent::NetworkChanged => {
+                            self.log_supervisor("network changed; retrying core immediately")?;
+                        }
                         RetryEvent::Reload => self.cleanup_retained_frontend().await?,
                         RetryEvent::Shutdown => {
                             self.cleanup_retained_frontend().await?;
@@ -133,7 +135,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                             return Ok(());
                         }
                     }
-                    backoff = next_backoff(backoff);
                 }
             }
         }
@@ -451,10 +452,6 @@ fn with_cleanup_failure(
         Ok(()) => error,
         Err(cleanup) => format!("{error}; transparent proxy cleanup failed: {cleanup}"),
     }
-}
-
-fn next_backoff(current: Duration) -> Duration {
-    current.saturating_mul(2).min(MAX_BACKOFF)
 }
 
 fn deployment_label(deployment: &Deployment) -> String {
