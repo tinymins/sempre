@@ -127,8 +127,8 @@ export interface ServiceUpdateStatus {
 }
 export interface ServiceUpdateTask {
   id: string
-  state: 'running' | 'succeeded' | 'failed'
-  stage: 'checking' | 'resolving' | 'downloading' | 'verifying' | 'extracting' | 'validating' | 'installing' | 'completed' | 'failed'
+  state: 'running' | 'succeeded' | 'failed' | 'cancelled'
+  stage: 'checking' | 'resolving' | 'downloading' | 'verifying' | 'extracting' | 'validating' | 'awaiting_confirmation' | 'installing' | 'completed' | 'failed' | 'cancelled'
   current_version: string
   target_version: string
   artifact?: string

@@ -28,6 +28,7 @@ pub(crate) struct AppState {
     pub(crate) endpoint: EndpointStore,
     pub(crate) rebind: Option<RebindHandle>,
     pub(crate) service_updates: Arc<crate::service_update_task::ServiceUpdateTasks>,
+    pub(crate) ui_updates: Arc<crate::web_ui_api::UiUpdateTasks>,
 }
 
 impl AppState {
@@ -52,6 +53,7 @@ impl AppState {
             endpoint: EndpointStore::new(bind, local_url),
             rebind: None,
             service_updates,
+            ui_updates: Arc::new(crate::web_ui_api::UiUpdateTasks::default()),
         }
     }
 

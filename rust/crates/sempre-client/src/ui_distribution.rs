@@ -30,16 +30,25 @@ pub(crate) async fn install(
 }
 
 pub(crate) async fn update(layout: &Layout) -> Result<sempre_ui::Metadata, String> {
+    let prepared = prepare_update(layout).await?;
+    sempre_ui::Store::new(&layout.ui)
+        .activate_prepared(prepared)
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) async fn prepare_update(
+    layout: &Layout,
+) -> Result<sempre_ui::PreparedInstallation, String> {
     let store = sempre_ui::Store::new(&layout.ui);
     let current = store.current().map_err(|error| error.to_string())?;
     match current.source_type.as_str() {
-        "official" => install_official(layout).await,
+        "official" => prepare_official(layout).await,
         "github" => store
-            .install_github(&current.source)
+            .prepare_github(&current.source)
             .await
             .map_err(|error| error.to_string()),
         "url" => store
-            .install_url(&current.source, "url", &current.source, "")
+            .prepare_url(&current.source, "url", &current.source, "")
             .await
             .map_err(|error| error.to_string()),
         "local" => Err("locally installed UI has no update source; install another archive".into()),
@@ -48,12 +57,21 @@ pub(crate) async fn update(layout: &Layout) -> Result<sempre_ui::Metadata, Strin
 }
 
 pub(crate) async fn install_official(layout: &Layout) -> Result<sempre_ui::Metadata, String> {
+    let prepared = prepare_official(layout).await?;
+    sempre_ui::Store::new(&layout.ui)
+        .activate_prepared(prepared)
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) async fn prepare_official(
+    layout: &Layout,
+) -> Result<sempre_ui::PreparedInstallation, String> {
     let archive = layout.resources.join("sempre-ui.zip");
     if archive.is_file() {
         let digest = checksum(&layout.resources.join("SHA256SUMS"), "sempre-ui.zip")?;
         let store = sempre_ui::Store::new(&layout.ui);
         return tokio::task::spawn_blocking(move || {
-            store.install_file(&archive, "official", "bundle", &digest)
+            store.prepare_file(&archive, "official", "bundle", &digest)
         })
         .await
         .map_err(|error| error.to_string())?
@@ -76,7 +94,7 @@ pub(crate) async fn install_official(layout: &Layout) -> Result<sempre_ui::Metad
         .parse::<sempre_artifact::Sha256Digest>()
         .map_err(|_| "official UI release asset has no valid SHA-256 digest".to_owned())?;
     sempre_ui::Store::new(&layout.ui)
-        .install_url(&asset.url, "official", &asset.url, &digest.to_string())
+        .prepare_url(&asset.url, "official", &asset.url, &digest.to_string())
         .await
         .map_err(|error| error.to_string())
 }

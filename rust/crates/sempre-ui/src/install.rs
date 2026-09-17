@@ -18,6 +18,17 @@ use crate::{
     Manifest, Metadata, Store, UiError, validate,
 };
 
+pub struct PreparedInstallation {
+    staging: tempfile::TempDir,
+    metadata: Metadata,
+}
+
+impl PreparedInstallation {
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+}
+
 impl Store {
     pub fn install_bytes(
         &self,
@@ -26,6 +37,17 @@ impl Store {
         source: &str,
         expected_digest: &str,
     ) -> Result<Metadata, UiError> {
+        let prepared = self.prepare_bytes(data, source_type, source, expected_digest)?;
+        self.activate_prepared(prepared)
+    }
+
+    pub fn prepare_bytes(
+        &self,
+        data: &[u8],
+        source_type: &str,
+        source: &str,
+        expected_digest: &str,
+    ) -> Result<PreparedInstallation, UiError> {
         if data.is_empty() || data.len() > MAX_ARCHIVE_SIZE {
             return Err(invalid(format!(
                 "UI archive size must be between 1 and {MAX_ARCHIVE_SIZE} bytes"
@@ -35,7 +57,7 @@ impl Store {
         let mut archive = NamedTempFile::new_in(&self.root).map_err(UiError::Write)?;
         archive.write_all(data).map_err(UiError::Write)?;
         archive.flush().map_err(UiError::Write)?;
-        self.install_file(archive.path(), source_type, source, expected_digest)
+        self.prepare_file(archive.path(), source_type, source, expected_digest)
     }
 
     pub fn install_file(
@@ -45,6 +67,17 @@ impl Store {
         source: &str,
         expected_digest: &str,
     ) -> Result<Metadata, UiError> {
+        let prepared = self.prepare_file(path, source_type, source, expected_digest)?;
+        self.activate_prepared(prepared)
+    }
+
+    pub fn prepare_file(
+        &self,
+        path: &Path,
+        source_type: &str,
+        source: &str,
+        expected_digest: &str,
+    ) -> Result<PreparedInstallation, UiError> {
         let metadata = fs::metadata(path).map_err(UiError::Read)?;
         if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_ARCHIVE_SIZE as u64 {
             return Err(invalid(format!(
@@ -70,12 +103,10 @@ impl Store {
             installed_at: Utc::now(),
         };
         write_metadata(staging.path(), &installed)?;
-        let staging = staging.keep();
-        if let Err(error) = self.activate(&staging) {
-            let _ = fs::remove_dir_all(staging);
-            return Err(error);
-        }
-        Ok(installed)
+        Ok(PreparedInstallation {
+            staging,
+            metadata: installed,
+        })
     }
 
     pub async fn install_url(
@@ -85,6 +116,19 @@ impl Store {
         source: &str,
         expected_digest: &str,
     ) -> Result<Metadata, UiError> {
+        let prepared = self
+            .prepare_url(value, source_type, source, expected_digest)
+            .await?;
+        self.activate_prepared(prepared)
+    }
+
+    pub async fn prepare_url(
+        &self,
+        value: &str,
+        source_type: &str,
+        source: &str,
+        expected_digest: &str,
+    ) -> Result<PreparedInstallation, UiError> {
         let url = valid_https_url(value)?;
         fs::create_dir_all(&self.root).map_err(UiError::Write)?;
         let temporary = NamedTempFile::new_in(&self.root).map_err(UiError::Write)?;
@@ -132,7 +176,17 @@ impl Store {
         } else {
             source
         };
-        self.install_file(temporary.path(), source_type, source, expected_digest)
+        self.prepare_file(temporary.path(), source_type, source, expected_digest)
+    }
+
+    pub fn activate_prepared(&self, prepared: PreparedInstallation) -> Result<Metadata, UiError> {
+        let PreparedInstallation { staging, metadata } = prepared;
+        let staging = staging.keep();
+        if let Err(error) = self.activate(&staging) {
+            let _ = fs::remove_dir_all(staging);
+            return Err(error);
+        }
+        Ok(metadata)
     }
 
     pub fn remove(&self) -> Result<(), UiError> {
@@ -341,6 +395,19 @@ mod tests {
         assert_eq!(store.current().expect("current UI"), metadata);
         store.remove().expect("remove UI");
         assert!(store.current().is_err());
+    }
+
+    #[test]
+    fn prepared_archive_is_inert_until_activated() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let store = Store::new(root.path().join("ui"));
+        let prepared = store
+            .prepare_bytes(&archive(), "local", "test.zip", "")
+            .expect("prepare UI");
+        assert_eq!(prepared.metadata().manifest.version, "1");
+        assert!(store.current().is_err());
+        store.activate_prepared(prepared).expect("activate UI");
+        assert_eq!(store.current().expect("current UI").manifest.version, "1");
     }
 
     #[test]

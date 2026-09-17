@@ -16,18 +16,18 @@ export function useServiceUpdateTask() {
     queryFn: async ({ signal }) => {
       const current = readServiceUpdateMarker()
       const result = await api<{ task: ServiceUpdateTask | null }>(session!, '/service/update/task', { signal })
-      if (current && result.task) writeServiceUpdateMarker({ ...current, task: result.task })
+      if (current && result.task) writeServiceUpdateMarker({ ...current, targetVersion: result.task.target_version || current.targetVersion, task: result.task })
       return current?.task && !result.task ? { task: current.task } : result
     },
-    enabled: (query) => Boolean(session) && !(marker && ['succeeded', 'failed'].includes(query.state.data?.task?.state || '')),
+    enabled: (query) => Boolean(session) && !(marker && ['succeeded', 'failed', 'cancelled'].includes(query.state.data?.task?.state || '')),
     retry: false,
     refetchInterval: (query) => query.state.data?.task?.state === 'running' ? 500 : 3000,
     refetchIntervalInBackground: true,
   })
   const mutation = useMutation({
     mutationKey: serviceUpdateTaskKey,
-    mutationFn: (targetVersion: string) => {
-      writeServiceUpdateMarker({ targetVersion, baseURL: session!.baseURL })
+    mutationFn: () => {
+      writeServiceUpdateMarker({ targetVersion: '', baseURL: session!.baseURL })
       return api<{ task: ServiceUpdateTask }>(session!, '/service/update', { method: 'POST' })
     },
     onSuccess: (result) => {
@@ -39,8 +39,8 @@ export function useServiceUpdateTask() {
   })
   const uploadMutation = useMutation({
     mutationKey: serviceUpdateTaskKey,
-    mutationFn: ({ targetVersion, file }: { targetVersion: string; file: File }) => {
-      writeServiceUpdateMarker({ targetVersion, baseURL: session!.baseURL })
+    mutationFn: ({ file }: { file: File }) => {
+      writeServiceUpdateMarker({ targetVersion: '', baseURL: session!.baseURL })
       return uploadServiceUpdate(session!, file)
     },
     onSuccess: (result) => {
@@ -50,5 +50,14 @@ export function useServiceUpdateTask() {
     onError: () => clearServiceUpdateMarker(),
     onSettled: () => { void client.invalidateQueries({ queryKey: serviceUpdateTaskKey }) },
   })
-  return { task: query.data?.task, query, mutation, uploadMutation }
+  const confirmMutation = useMutation({
+    mutationFn: ({ id, confirmed }: { id: string; confirmed: boolean }) => api<{ task: ServiceUpdateTask }>(session!, '/service/update/confirm', { method: 'POST', body: JSON.stringify({ id, confirmed }) }),
+    onSuccess: (result) => {
+      client.setQueryData(serviceUpdateTaskKey, result)
+      if (result.task.state === 'cancelled') clearServiceUpdateMarker()
+      else writeServiceUpdateMarker({ targetVersion: result.task.target_version, baseURL: session!.baseURL, task: result.task })
+    },
+    onSettled: () => { void client.invalidateQueries({ queryKey: serviceUpdateTaskKey }) },
+  })
+  return { task: query.data?.task, query, mutation, uploadMutation, confirmMutation }
 }

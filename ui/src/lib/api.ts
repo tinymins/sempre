@@ -98,7 +98,7 @@ export async function api<T>(session: Session, path: string, init: RequestInit =
   return parseResponse<T>(response, session)
 }
 
-export async function uploadUI(session: Session, file: File, sha256 = '') {
+export async function uploadUI<T = unknown>(session: Session, file: File, sha256 = '') {
   const response = await fetch(`${session.baseURL}/api/v1/ui/upload?sha256=${encodeURIComponent(sha256)}`, {
     method: 'POST',
     headers: {
@@ -108,7 +108,7 @@ export async function uploadUI(session: Session, file: File, sha256 = '') {
     },
     body: file,
   })
-  return parseResponse(response, session)
+  return parseResponse<T>(response, session)
 }
 
 export async function uploadServiceUpdate(session: Session, file: File) {

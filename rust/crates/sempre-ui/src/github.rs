@@ -5,7 +5,7 @@ use regex::Regex;
 use reqwest::{Client, StatusCode};
 use sempre_artifact::{GithubClient, ReleaseAsset, Sha256Digest};
 
-use crate::{Store, UiError};
+use crate::{PreparedInstallation, Store, UiError};
 
 const ARCHIVE_NAME: &str = "sempre-ui.zip";
 const CHECKSUM_NAME: &str = "SHA256SUMS";
@@ -13,6 +13,11 @@ const MAX_CHECKSUM_SIZE: usize = 1 << 20;
 
 impl Store {
     pub async fn install_github(&self, value: &str) -> Result<crate::Metadata, UiError> {
+        let prepared = self.prepare_github(value).await?;
+        self.activate_prepared(prepared)
+    }
+
+    pub async fn prepare_github(&self, value: &str) -> Result<PreparedInstallation, UiError> {
         let reference = Reference::parse(value)?;
         let client = GithubClient::new(concat!("Sempre/", env!("CARGO_PKG_VERSION")))?;
         let release = client
@@ -37,7 +42,7 @@ impl Store {
             })?;
             checksum(checksums, ARCHIVE_NAME).await?
         };
-        self.install_url(&archive.url, "github", &reference.to_string(), &digest)
+        self.prepare_url(&archive.url, "github", &reference.to_string(), &digest)
             .await
     }
 }

@@ -102,7 +102,7 @@ async fn run_task(
     let (asset, archive_format) = release_asset(&manifest.assets, &target)
         .ok_or_else(|| format!("release {} has no asset for {target}", manifest.version))?;
     let artifact = release_artifact(asset, &target)?;
-    tasks.set_release(task_id, &manifest.version, &asset.name, asset.size)?;
+    tasks.set_release(task_id, &asset.name, asset.size)?;
     let temporary = tempfile::Builder::new()
         .prefix("sempre-update-")
         .tempdir()
@@ -117,10 +117,24 @@ async fn run_task(
     let root = extracted.join(format!("sempre-{target}"));
     sempre_bundle::validate_release(&root).map_err(|error| error.to_string())?;
     let executable = root.join(executable_name());
-    validate_version(&executable, &manifest.version).await?;
-    tasks.set_stage(task_id, "installing")?;
-    crate::service_update_schedule::schedule(temporary, &executable, tasks.installer_log_path())?;
+    let version = validate_version(&executable, &manifest.version).await?;
+    tasks.ready(task_id, &version, temporary, executable)?;
     Ok(())
+}
+
+pub(crate) fn confirm(
+    tasks: &ServiceUpdateTasks,
+    task_id: &str,
+) -> Result<ServiceUpdateTask, String> {
+    let prepared = tasks.confirm(task_id)?;
+    crate::service_update_schedule::schedule(
+        prepared.temporary,
+        &prepared.executable,
+        tasks.installer_log_path(),
+    )?;
+    tasks
+        .snapshot()
+        .ok_or_else(|| "Sempre update task is no longer available".into())
 }
 
 fn extract_release(
@@ -377,7 +391,7 @@ fn release_asset<'a>(
         .map(|asset| (asset, ArchiveFormat::Zip))
 }
 
-async fn validate_version(executable: &Path, expected: &str) -> Result<(), String> {
+async fn validate_version(executable: &Path, expected: &str) -> Result<String, String> {
     let output = Command::new(executable)
         .arg("version")
         .output()
@@ -395,7 +409,7 @@ async fn validate_version(executable: &Path, expected: &str) -> Result<(), Strin
             "downloaded Sempre executable reports {actual:?}, expected {expected}"
         ));
     }
-    Ok(())
+    Ok(actual_version.to_owned())
 }
 
 fn release_target() -> Result<String, String> {

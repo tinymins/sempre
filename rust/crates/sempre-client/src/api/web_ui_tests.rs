@@ -218,7 +218,7 @@ fn ui_archive() -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn ui_upload_is_immediately_served_and_can_be_removed() {
+async fn ui_upload_requires_confirmation_before_it_is_served() {
     let (_root, app, token) = fixture();
     let mut upload = request(
         "POST",
@@ -230,8 +230,52 @@ async fn ui_upload_is_immediately_served_and_can_be_removed() {
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/zip"),
     );
+    let response = app.clone().oneshot(upload).await.expect("upload");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 16 * 1024)
+        .await
+        .expect("proposal body");
+    let proposal: serde_json::Value = serde_json::from_slice(&body).expect("proposal JSON");
+    assert_eq!(proposal["proposal"]["target_version"], "1");
+    assert_eq!(proposal["proposal"]["name"], "Uploaded UI");
+    let status = app
+        .clone()
+        .oneshot(request("GET", "/api/v1/ui", Body::empty(), Some(&token)))
+        .await
+        .expect("UI status");
+    let body = to_bytes(status.into_body(), 16 * 1024)
+        .await
+        .expect("UI status body");
+    let status: serde_json::Value = serde_json::from_slice(&body).expect("UI status JSON");
+    assert_eq!(status["proposal"]["id"], proposal["proposal"]["id"]);
     assert_eq!(
-        app.clone().oneshot(upload).await.expect("upload").status(),
+        app.clone()
+            .oneshot(request("GET", "/", Body::empty(), None))
+            .await
+            .expect("unconfirmed page")
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+
+    let mut confirm = request(
+        "POST",
+        "/api/v1/ui/confirm",
+        Body::from(format!(
+            r#"{{"id":"{}","confirmed":true}}"#,
+            proposal["proposal"]["id"].as_str().expect("proposal id")
+        )),
+        Some(&token),
+    );
+    confirm.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(confirm)
+            .await
+            .expect("confirm")
+            .status(),
         StatusCode::OK
     );
     let page = app

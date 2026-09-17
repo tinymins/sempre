@@ -1,4 +1,7 @@
-use std::{path::Component, sync::Arc};
+use std::{
+    path::Component,
+    sync::{Arc, Mutex},
+};
 
 use axum::{
     Json, Router,
@@ -8,7 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceExt as _;
 use tower_http::services::ServeFile;
@@ -26,6 +29,65 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
                 .layer(DefaultBodyLimit::max(sempre_ui::MAX_ARCHIVE_SIZE)),
         )
         .route("/api/v1/ui/update", axum::routing::post(ui_update))
+        .route("/api/v1/ui/confirm", axum::routing::post(ui_confirm))
+}
+
+#[derive(Clone, Serialize)]
+struct UiUpdateProposal {
+    id: String,
+    current_version: Option<String>,
+    target_version: String,
+    name: String,
+}
+
+struct PendingUiUpdate {
+    proposal: UiUpdateProposal,
+    prepared: sempre_ui::PreparedInstallation,
+}
+
+#[derive(Default)]
+pub(crate) struct UiUpdateTasks {
+    pending: Mutex<Option<PendingUiUpdate>>,
+}
+
+impl UiUpdateTasks {
+    fn snapshot(&self) -> Option<UiUpdateProposal> {
+        self.pending
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|pending| pending.proposal.clone())
+    }
+
+    fn prepare(
+        &self,
+        current_version: Option<String>,
+        prepared: sempre_ui::PreparedInstallation,
+    ) -> Result<UiUpdateProposal, String> {
+        let mut pending = self.pending.lock().unwrap();
+        if pending.is_some() {
+            return Err("a UI update is already awaiting confirmation".into());
+        }
+        let proposal = UiUpdateProposal {
+            id: uuid::Uuid::new_v4().to_string(),
+            current_version,
+            target_version: prepared.metadata().manifest.version.clone(),
+            name: prepared.metadata().manifest.name.clone(),
+        };
+        *pending = Some(PendingUiUpdate {
+            proposal: proposal.clone(),
+            prepared,
+        });
+        Ok(proposal)
+    }
+
+    fn take(&self, id: &str) -> Result<PendingUiUpdate, String> {
+        let mut pending = self.pending.lock().unwrap();
+        if pending.as_ref().is_none_or(|value| value.proposal.id != id) {
+            return Err("UI update confirmation is no longer available".into());
+        }
+        Ok(pending.take().expect("matching UI update"))
+    }
 }
 
 #[derive(Deserialize)]
@@ -98,10 +160,14 @@ async fn web_patch(State(state): State<Arc<AppState>>, Json(input): Json<WebPatc
 
 async fn ui_get(State(state): State<Arc<AppState>>) -> Response {
     let store = sempre_ui::Store::new(&state.manager.store().layout().ui);
+    let proposal = state.ui_updates.snapshot();
     match store.current() {
-        Ok(metadata) => Json(json!({ "installed": true, "metadata": metadata })).into_response(),
+        Ok(metadata) => {
+            Json(json!({ "installed": true, "metadata": metadata, "proposal": proposal }))
+                .into_response()
+        }
         Err(sempre_ui::UiError::Read(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-            Json(json!({ "installed": false })).into_response()
+            Json(json!({ "installed": false, "proposal": proposal })).into_response()
         }
         Err(error) => operation(error.to_string()),
     }
@@ -120,16 +186,16 @@ async fn ui_install(
     Json(input): Json<UiInstallInput>,
 ) -> Response {
     let result = if input.source.is_empty() || input.source == "official" {
-        install_official(&state).await
+        prepare_official(&state).await
     } else {
         let store = ui_store(&state);
         store
-            .install_url(&input.source, "url", &input.source, &input.sha256)
+            .prepare_url(&input.source, "url", &input.source, &input.sha256)
             .await
             .map_err(|error| error.to_string())
     };
-    match result {
-        Ok(metadata) => Json(metadata).into_response(),
+    match result.and_then(|prepared| prepare_ui_update(&state, prepared)) {
+        Ok(proposal) => Json(json!({ "proposal": proposal })).into_response(),
         Err(error) => operation(error),
     }
 }
@@ -159,19 +225,50 @@ async fn ui_upload(
         .to_owned();
     let store = ui_store(&state);
     let digest = query.sha256;
-    match tokio::task::spawn_blocking(move || store.install_bytes(&data, "local", &source, &digest))
+    match tokio::task::spawn_blocking(move || store.prepare_bytes(&data, "local", &source, &digest))
         .await
     {
-        Ok(Ok(metadata)) => Json(metadata).into_response(),
+        Ok(Ok(prepared)) => match prepare_ui_update(&state, prepared) {
+            Ok(proposal) => Json(json!({ "proposal": proposal })).into_response(),
+            Err(error) => operation(error),
+        },
         Ok(Err(error)) => operation(error.to_string()),
         Err(error) => internal(error.to_string()),
     }
 }
 
 async fn ui_update(State(state): State<Arc<AppState>>) -> Response {
-    match crate::ui_distribution::update(state.manager.store().layout()).await {
-        Ok(metadata) => Json(metadata).into_response(),
+    match crate::ui_distribution::prepare_update(state.manager.store().layout())
+        .await
+        .and_then(|prepared| prepare_ui_update(&state, prepared))
+    {
+        Ok(proposal) => Json(json!({ "proposal": proposal })).into_response(),
         Err(error) => operation(error),
+    }
+}
+
+#[derive(Deserialize)]
+struct UiConfirmInput {
+    id: String,
+    confirmed: bool,
+}
+
+async fn ui_confirm(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<UiConfirmInput>,
+) -> Response {
+    let pending = match state.ui_updates.take(&input.id) {
+        Ok(pending) => pending,
+        Err(error) => return operation(error),
+    };
+    if !input.confirmed {
+        return StatusCode::NO_CONTENT.into_response();
+    }
+    let store = ui_store(&state);
+    match tokio::task::spawn_blocking(move || store.activate_prepared(pending.prepared)).await {
+        Ok(Ok(metadata)) => Json(metadata).into_response(),
+        Ok(Err(error)) => operation(error.to_string()),
+        Err(error) => internal(error.to_string()),
     }
 }
 
@@ -184,8 +281,19 @@ async fn ui_remove(State(state): State<Arc<AppState>>) -> Response {
     }
 }
 
-async fn install_official(state: &AppState) -> Result<sempre_ui::Metadata, String> {
-    crate::ui_distribution::install_official(state.manager.store().layout()).await
+async fn prepare_official(state: &AppState) -> Result<sempre_ui::PreparedInstallation, String> {
+    crate::ui_distribution::prepare_official(state.manager.store().layout()).await
+}
+
+fn prepare_ui_update(
+    state: &AppState,
+    prepared: sempre_ui::PreparedInstallation,
+) -> Result<UiUpdateProposal, String> {
+    let current = ui_store(state)
+        .current()
+        .ok()
+        .map(|metadata| metadata.manifest.version);
+    state.ui_updates.prepare(current, prepared)
 }
 
 fn ui_store(state: &AppState) -> sempre_ui::Store {

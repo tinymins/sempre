@@ -1,6 +1,8 @@
 mod github;
 mod install;
 
+pub use install::PreparedInstallation;
+
 use std::{fs, io, path::PathBuf};
 
 use chrono::{DateTime, Utc};

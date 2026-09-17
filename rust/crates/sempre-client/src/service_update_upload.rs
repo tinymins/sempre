@@ -80,9 +80,7 @@ async fn run_uploaded_task(
             "uploaded Sempre version {version} is not newer than {VERSION}"
         ));
     }
-    tasks.set_target_version(task_id, &version)?;
-    tasks.set_stage(task_id, "installing")?;
-    crate::service_update_schedule::schedule(temporary, &executable, tasks.installer_log_path())?;
+    tasks.ready(task_id, &version, temporary, executable)?;
     Ok(())
 }
 

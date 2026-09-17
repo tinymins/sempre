@@ -74,7 +74,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function stageIndex(stage: string, succeeded: boolean) {
   if (succeeded || stage === 'completed') return 4
-  if (stage === 'installing') return 3
+  if (stage === 'installing' || stage === 'awaiting_confirmation') return 3
   if (['verifying', 'extracting', 'validating'].includes(stage)) return 2
   if (stage === 'downloading') return 1
   return 0
@@ -91,9 +91,9 @@ function stageCopy(stage: string, submitting: boolean, disconnected: boolean, zh
   if (submitting) return zh ? ['正在创建更新任务', '服务正在准备后台更新任务。'] : ['Creating update task', 'The service is preparing the background update task.']
   if (disconnected) return zh ? ['正在安装并重启服务', '服务暂时离线，正在等待新版本恢复连接。'] : ['Installing and restarting', 'The service is temporarily offline while the new version starts.']
   const copy: Record<string, [string, string]> = zh ? {
-    checking: ['正在检查更新', '正在从 sempre.run 获取并验证发布清单。'], resolving: ['正在准备下载', '正在选择适合当前系统和架构的发布资源。'], downloading: ['正在下载安装包', '下载完成后将自动校验文件完整性。'], uploading: ['正在处理上传包', '上传完成，正在准备解压和校验。'], verifying: ['正在校验 SHA-256', '正在确认安装包未损坏且与发布摘要一致。'], extracting: ['正在解压安装包', '正在将经过校验的发布包解压到临时目录。'], validating: ['正在验证发布包', '正在检查 Bundle 完整性和可执行文件版本。'], installing: ['正在安装并重启服务', '即将短暂断开连接并原子替换当前安装。'], completed: ['更新完成', '新版本服务已恢复并通过版本检查。'],
+    checking: ['正在检查更新', '正在从 sempre.run 获取并验证发布清单。'], resolving: ['正在准备下载', '正在选择适合当前系统和架构的发布资源。'], downloading: ['正在下载安装包', '下载完成后将自动校验文件完整性。'], uploading: ['正在处理上传包', '上传完成，正在准备解压和校验。'], verifying: ['正在校验 SHA-256', '正在确认安装包未损坏且与发布摘要一致。'], extracting: ['正在解压安装包', '正在将经过校验的发布包解压到临时目录。'], validating: ['正在验证发布包', '正在检查 Bundle 完整性和可执行文件版本。'], awaiting_confirmation: ['等待确认安装', '安装包已完成校验，确认后才会替换当前版本。'], installing: ['正在安装并重启服务', '即将短暂断开连接并原子替换当前安装。'], completed: ['更新完成', '新版本服务已恢复并通过版本检查。'],
   } : {
-    checking: ['Checking for updates', 'Fetching and validating the release manifest from sempre.run.'], resolving: ['Preparing download', 'Selecting the release asset for this operating system and architecture.'], downloading: ['Downloading update', 'The package will be verified automatically after download.'], uploading: ['Processing uploaded package', 'The upload is complete and ready for extraction and validation.'], verifying: ['Verifying SHA-256', 'Confirming that the package matches the published digest.'], extracting: ['Extracting package', 'Extracting the verified release into a temporary directory.'], validating: ['Validating release', 'Checking bundle integrity and the executable version.'], installing: ['Installing and restarting', 'The connection will briefly close while the installation is replaced atomically.'], completed: ['Update complete', 'The new service is online and reported the expected version.'],
+    checking: ['Checking for updates', 'Fetching and validating the release manifest from sempre.run.'], resolving: ['Preparing download', 'Selecting the release asset for this operating system and architecture.'], downloading: ['Downloading update', 'The package will be verified automatically after download.'], uploading: ['Processing uploaded package', 'The upload is complete and ready for extraction and validation.'], verifying: ['Verifying SHA-256', 'Confirming that the package matches the published digest.'], extracting: ['Extracting package', 'Extracting the verified release into a temporary directory.'], validating: ['Validating release', 'Checking bundle integrity and the executable version.'], awaiting_confirmation: ['Waiting for confirmation', 'The package is verified and will not be installed until you confirm.'], installing: ['Installing and restarting', 'The connection will briefly close while the installation is replaced atomically.'], completed: ['Update complete', 'The new service is online and reported the expected version.'],
   }
   return copy[stage] || copy.checking
 }

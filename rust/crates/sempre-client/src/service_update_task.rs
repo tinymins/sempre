@@ -29,6 +29,12 @@ pub(crate) struct ServiceUpdateTask {
 struct TaskState {
     task: Option<ServiceUpdateTask>,
     download_started: Option<Instant>,
+    prepared: Option<PreparedServiceUpdate>,
+}
+
+pub(crate) struct PreparedServiceUpdate {
+    pub(crate) temporary: tempfile::TempDir,
+    pub(crate) executable: PathBuf,
 }
 
 pub(crate) struct ServiceUpdateTasks {
@@ -46,6 +52,7 @@ impl ServiceUpdateTasks {
             state: Mutex::new(TaskState {
                 task: None,
                 download_started: None,
+                prepared: None,
             }),
         }
     }
@@ -81,6 +88,7 @@ impl ServiceUpdateTasks {
         };
         state.task = Some(task.clone());
         state.download_started = None;
+        state.prepared = None;
         Ok(task)
     }
 
@@ -88,16 +96,9 @@ impl ServiceUpdateTasks {
         self.state.lock().unwrap().task.clone()
     }
 
-    pub(crate) fn set_release(
-        &self,
-        id: &str,
-        version: &str,
-        artifact: &str,
-        total: u64,
-    ) -> Result<(), String> {
+    pub(crate) fn set_release(&self, id: &str, artifact: &str, total: u64) -> Result<(), String> {
         self.update(id, |state, now| {
             let task = state.task.as_mut().expect("matching task");
-            task.target_version = normalized_version(version).into();
             task.artifact = Some(artifact.into());
             task.total_bytes = total;
             task.stage = "resolving".into();
@@ -115,12 +116,58 @@ impl ServiceUpdateTasks {
         })
     }
 
-    pub(crate) fn set_target_version(&self, id: &str, version: &str) -> Result<(), String> {
+    pub(crate) fn ready(
+        &self,
+        id: &str,
+        version: &str,
+        temporary: tempfile::TempDir,
+        executable: PathBuf,
+    ) -> Result<(), String> {
         self.update(id, |state, now| {
             let task = state.task.as_mut().expect("matching task");
             task.target_version = normalized_version(version).into();
+            task.stage = "awaiting_confirmation".into();
             task.updated_at = now;
+            task.eta_seconds = None;
+            state.prepared = Some(PreparedServiceUpdate {
+                temporary,
+                executable,
+            });
         })
+    }
+
+    pub(crate) fn confirm(&self, id: &str) -> Result<PreparedServiceUpdate, String> {
+        let mut state = self.state.lock().unwrap();
+        if state.task.as_ref().is_none_or(|task| {
+            task.id != id || task.state != "running" || task.stage != "awaiting_confirmation"
+        }) {
+            return Err("Sempre update confirmation is no longer available".into());
+        }
+        let now = Utc::now();
+        let task = state.task.as_mut().expect("matching task");
+        task.stage = "installing".into();
+        task.updated_at = now;
+        state
+            .prepared
+            .take()
+            .ok_or_else(|| "Sempre update package is no longer available".into())
+    }
+
+    pub(crate) fn cancel(&self, id: &str) -> Result<ServiceUpdateTask, String> {
+        let mut state = self.state.lock().unwrap();
+        if state.task.as_ref().is_none_or(|task| {
+            task.id != id || task.state != "running" || task.stage != "awaiting_confirmation"
+        }) {
+            return Err("Sempre update confirmation is no longer available".into());
+        }
+        state.prepared = None;
+        let now = Utc::now();
+        let task = state.task.as_mut().expect("matching task");
+        task.state = "cancelled".into();
+        task.stage = "cancelled".into();
+        task.updated_at = now;
+        task.finished_at = Some(now);
+        Ok(task.clone())
     }
 
     pub(crate) fn set_stage(&self, id: &str, stage: &str) -> Result<(), String> {
@@ -181,6 +228,7 @@ impl ServiceUpdateTasks {
 
     pub(crate) fn fail(&self, id: &str, error: &str) {
         let _ = self.update(id, |state, now| {
+            state.prepared = None;
             let task = state.task.as_mut().expect("matching task");
             task.state = "failed".into();
             task.error = Some(error.into());
@@ -233,9 +281,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
         let task = tasks.begin().unwrap();
-        tasks
-            .set_release(&task.id, "2.0.12", "bundle.zip", 100)
-            .unwrap();
+        tasks.set_release(&task.id, "bundle.zip", 100).unwrap();
         tasks.download_progress(&task.id, 50, 100);
         let progress = tasks.snapshot().unwrap();
         assert_eq!(progress.stage, "downloading");
@@ -299,11 +345,39 @@ mod tests {
         let task = tasks.begin().unwrap();
         tasks.set_upload(&task.id, "release.zip", 100).unwrap();
         tasks.upload_progress(&task.id, 40, 100);
-        tasks.set_target_version(&task.id, "2.1.0").unwrap();
         let uploaded = tasks.snapshot().unwrap();
         assert_eq!(uploaded.stage, "uploading");
         assert_eq!(uploaded.artifact.as_deref(), Some("release.zip"));
-        assert_eq!(uploaded.target_version, "2.1.0");
+        assert!(uploaded.target_version.is_empty());
         assert_eq!((uploaded.downloaded_bytes, uploaded.total_bytes), (40, 100));
+    }
+
+    #[test]
+    fn prepared_packages_require_confirmation_or_can_be_cancelled() {
+        let root = tempfile::tempdir().unwrap();
+        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
+        let task = tasks.begin().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let executable = temporary.path().join("sempre");
+        tasks
+            .ready(&task.id, "2.1.0", temporary, executable.clone())
+            .unwrap();
+        let ready = tasks.snapshot().unwrap();
+        assert_eq!(ready.stage, "awaiting_confirmation");
+        assert_eq!(ready.target_version, "2.1.0");
+        let prepared = tasks.confirm(&task.id).unwrap();
+        assert_eq!(prepared.executable, executable);
+        assert_eq!(tasks.snapshot().unwrap().stage, "installing");
+
+        let next = tasks.begin().unwrap_err();
+        assert!(next.contains("already in progress"));
+        tasks.fail(&task.id, "test cleanup");
+        let task = tasks.begin().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        tasks
+            .ready(&task.id, "2.1.0", temporary, PathBuf::from("sempre"))
+            .unwrap();
+        assert_eq!(tasks.cancel(&task.id).unwrap().state, "cancelled");
+        assert!(tasks.begin().is_ok());
     }
 }

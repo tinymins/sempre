@@ -8,7 +8,7 @@ import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import { useLocalUIMode } from '../lib/uiMode'
 import type { NetworkSettings, NetworkSettingsResponse, UIMetadata } from '../lib/types'
-import { Badge, Button, Card, Field, Input, PageTitle, Spinner } from '../components/ui'
+import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } from '../components/ui'
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 import { CorePanel } from '../features/core/CorePanel'
 import { ServiceActionsPanel, ServicePanel } from '../features/service/ServicePanel'
@@ -88,12 +88,19 @@ function BackupAndUpdatePanel() {
   const { locale, t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
+  const [uiProposal, setUIProposal] = useState<UiUpdateProposal | null>(null)
   const [source, setSource] = useState('')
   const [notice, setNotice] = useState('')
-  const ui = useQuery({ queryKey: ['ui'], queryFn: () => api<{ installed: boolean; metadata?: UIMetadata }>(session!, '/ui') })
+  const ui = useQuery({ queryKey: ['ui'], queryFn: () => api<{ installed: boolean; metadata?: UIMetadata; proposal?: UiUpdateProposal }>(session!, '/ui') })
+  const activeUIProposal = uiProposal || ui.data?.proposal
   const uiMutation = useMutation({
-    mutationFn: ({ operation, body }: { operation: 'install' | 'update' | 'remove'; body?: unknown }) => api(session!, '/ui' + (operation === 'remove' ? '' : `/${operation}`), { method: operation === 'remove' ? 'DELETE' : 'POST', body: body ? JSON.stringify(body) : undefined }),
-    onSuccess: () => { setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) }, onError: (error) => setNotice(error.message),
+    mutationFn: ({ operation, body }: { operation: 'install' | 'update' | 'remove'; body?: unknown }) => api<{ proposal?: UiUpdateProposal }>(session!, '/ui' + (operation === 'remove' ? '' : `/${operation}`), { method: operation === 'remove' ? 'DELETE' : 'POST', body: body ? JSON.stringify(body) : undefined }),
+    onSuccess: (result) => { if (result?.proposal) setUIProposal(result.proposal); else { setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) } }, onError: (error) => setNotice(error.message),
+  })
+  const uiConfirm = useMutation({
+    mutationFn: ({ proposal, confirmed }: { proposal: UiUpdateProposal; confirmed: boolean }) => api(session!, '/ui/confirm', { method: 'POST', body: JSON.stringify({ id: proposal.id, confirmed }) }),
+    onSuccess: (_result, { confirmed }) => { setUIProposal(null); if (confirmed) setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) },
+    onError: (error) => setNotice(error.message),
   })
   const bundleMutation = useMutation({
     mutationFn: () => downloadBundle(session!),
@@ -102,15 +109,18 @@ function BackupAndUpdatePanel() {
   })
   async function upload(file?: File) {
     if (!file) return
-    try { await uploadUI(session!, file); setNotice(t('operationDone')); await ui.refetch() } catch (error) { setNotice(error instanceof Error ? error.message : String(error)) }
+    try { const result = await uploadUI<{ proposal: UiUpdateProposal }>(session!, file); setUIProposal(result.proposal) } catch (error) { setNotice(error instanceof Error ? error.message : String(error)) }
   }
   return <div className="space-y-5">
     {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     <Section title={t('deploymentBackup')} icon={<Archive size={18} />}><Button disabled={bundleMutation.isPending} onClick={() => bundleMutation.mutate()}>{bundleMutation.isPending ? <Spinner /> : <Download size={16} />}{t('exportBundle')}</Button><p className="mt-2 text-xs leading-5 text-[var(--muted)]">{t('exportBundleDetail')}</p></Section>
     <ServicePanel />
-    <Section title={locale === 'zh-CN' ? 'UI 更新' : 'UI update'} icon={<Package size={18} />}><div className="mb-5 rounded-lg bg-[var(--surface-hover)] p-4"><p className="text-sm font-semibold">{ui.data?.metadata?.manifest.name || t('noData')}</p><p className="mt-1 break-all text-xs text-[var(--muted)]">{ui.data?.metadata ? `${ui.data.metadata.manifest.version} · ${ui.data.metadata.source_type} · ${compactHash(ui.data.metadata.sha256)}` : t('noDataDetail')}</p></div><div className="grid gap-4"><Button variant="primary" onClick={() => uiMutation.mutate({ operation: 'install', body: { source: 'official' } })}><Download size={16} />{t('officialUI')}</Button><Field label={t('customURL')}><div className="flex gap-2"><Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="https://example.com/sempre-ui.zip" /><Button disabled={!source} onClick={() => uiMutation.mutate({ operation: 'install', body: { source } })}>{t('install')}</Button></div></Field><label className="flex h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"><Upload size={17} />{t('uploadZIP')}<input className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => void upload(event.target.files?.[0])} /></label><div className="flex gap-2"><Button disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'update' })}><RefreshCw size={16} />{t('update')}</Button><Button variant="danger" disabled={!ui.data?.installed} onClick={() => uiMutation.mutate({ operation: 'remove' })}><Trash2 size={16} />{t('remove')}</Button></div></div></Section>
+    <Section title={locale === 'zh-CN' ? 'UI 更新' : 'UI update'} icon={<Package size={18} />}><div className="mb-5 rounded-lg bg-[var(--surface-hover)] p-4"><p className="text-sm font-semibold">{ui.data?.metadata?.manifest.name || t('noData')}</p><p className="mt-1 break-all text-xs text-[var(--muted)]">{ui.data?.metadata ? `${ui.data.metadata.manifest.version} · ${ui.data.metadata.source_type} · ${compactHash(ui.data.metadata.sha256)}` : t('noDataDetail')}</p></div><div className="grid gap-4"><Button variant="primary" disabled={uiMutation.isPending || uiConfirm.isPending} onClick={() => uiMutation.mutate({ operation: 'install', body: { source: 'official' } })}><Download size={16} />{t('officialUI')}</Button><Field label={t('customURL')}><div className="flex gap-2"><Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="https://example.com/sempre-ui.zip" /><Button disabled={!source || uiMutation.isPending || uiConfirm.isPending} onClick={() => uiMutation.mutate({ operation: 'install', body: { source } })}>{t('install')}</Button></div></Field><label className="flex h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"><Upload size={17} />{t('uploadZIP')}<input className="sr-only" type="file" accept=".zip,application/zip" disabled={uiMutation.isPending || uiConfirm.isPending} onChange={(event) => void upload(event.target.files?.[0])} /></label><div className="flex gap-2"><Button disabled={!ui.data?.installed || uiMutation.isPending || uiConfirm.isPending} onClick={() => uiMutation.mutate({ operation: 'update' })}><RefreshCw size={16} />{t('update')}</Button><Button variant="danger" disabled={!ui.data?.installed || uiMutation.isPending || uiConfirm.isPending} onClick={() => uiMutation.mutate({ operation: 'remove' })}><Trash2 size={16} />{t('remove')}</Button></div></div></Section>
+    {activeUIProposal ? <ConfirmDialog open title={locale === 'zh-CN' ? '确认更新 UI？' : 'Confirm UI update?'} detail={<div className="space-y-3"><p>{locale === 'zh-CN' ? `已从安装包读取 ${activeUIProposal.name} 的版本，请确认是否继续。` : `The ${activeUIProposal.name} version was read from the package. Confirm to continue.`}</p><div className="flex items-center justify-between rounded-md bg-[var(--surface-hover)] px-4 py-3 font-mono text-sm"><span>{activeUIProposal.current_version ? `v${activeUIProposal.current_version.replace(/^v/, '')}` : (locale === 'zh-CN' ? '未安装' : 'Not installed')}</span><span>→</span><span>v{activeUIProposal.target_version.replace(/^v/, '')}</span></div></div>} confirmLabel={locale === 'zh-CN' ? '确认安装' : 'Install UI'} cancelLabel={locale === 'zh-CN' ? '取消更新' : 'Cancel update'} pending={uiConfirm.isPending} onCancel={() => uiConfirm.mutate({ proposal: activeUIProposal, confirmed: false })} onConfirm={() => uiConfirm.mutate({ proposal: activeUIProposal, confirmed: true })} /> : null}
   </div>
 }
+
+interface UiUpdateProposal { id: string; current_version?: string; target_version: string; name: string }
 
 function Section({ title, icon, notice, children }: { title: string; icon: ReactNode; notice?: string; children: ReactNode }) {
   return <Card className="min-w-0 p-4 md:p-5"><div className="mb-5 flex items-center gap-2"><span className="text-emerald-600">{icon}</span><h2 className="text-sm font-semibold">{title}</h2></div>{notice ? <div className="mb-4 border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}{children}</Card>

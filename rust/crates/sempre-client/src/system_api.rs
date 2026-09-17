@@ -39,6 +39,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
             get(service_update_settings).put(update_service_update_settings),
         )
         .route("/api/v1/service/update/task", get(service_update_task))
+        .route(
+            "/api/v1/service/update/confirm",
+            post(service_update_confirm),
+        )
 }
 
 async fn system(State(state): State<Arc<AppState>>) -> Response {
@@ -235,6 +239,41 @@ async fn service_update(State(state): State<Arc<AppState>>) -> Response {
         )
             .into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct ServiceUpdateConfirmInput {
+    id: String,
+    confirmed: bool,
+}
+
+async fn service_update_confirm(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<ServiceUpdateConfirmInput>,
+) -> Response {
+    if !input.confirmed {
+        return match state.service_updates.cancel(&input.id) {
+            Ok(task) => Json(json!({ "task": task })).into_response(),
+            Err(error) => update_confirmation_error(&error),
+        };
+    }
+    match crate::service_update::confirm(&state.service_updates, &input.id) {
+        Ok(task) => (StatusCode::ACCEPTED, Json(json!({ "task": task }))).into_response(),
+        Err(error) => {
+            state.service_updates.fail(&input.id, &error);
+            update_confirmation_error(&error)
+        }
+    }
+}
+
+fn update_confirmation_error(message: &str) -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(json!({
+            "error": { "code": "UPDATE_CONFIRMATION_UNAVAILABLE", "message": message }
+        })),
+    )
+        .into_response()
 }
 
 async fn service_update_upload(
