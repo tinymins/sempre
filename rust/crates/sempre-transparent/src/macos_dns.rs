@@ -133,7 +133,9 @@ impl SystemDns {
         };
         let active_services = preferences::active_services(runner).await?;
         for service in &state.services {
-            let id = resolve_service_id(service, &active_services)?;
+            let Some(id) = find_service_id(service, &active_services) else {
+                continue;
+            };
             let current = preferences::dns_configuration(runner, id).await?;
             if current.servers == [MANAGED_SERVER]
                 && current.port.unwrap_or(STANDARD_DNS_PORT) == state.managed_port
@@ -164,7 +166,9 @@ impl SystemDns {
         }
         let active_services = preferences::active_services(runner).await?;
         for service in state.services {
-            let id = resolve_service_id(&service, &active_services)?;
+            let Some(id) = find_service_id(&service, &active_services) else {
+                continue;
+            };
             let current = preferences::dns_configuration(runner, id).await?;
             if current.servers != [MANAGED_SERVER]
                 || current.port.unwrap_or(STANDARD_DNS_PORT) != expected_port
@@ -191,16 +195,11 @@ impl SystemDns {
         let active_services = preferences::active_services(runner).await?;
         let mut services = Vec::new();
         for name in parse_services(&output.stdout) {
-            let service = active_services
-                .iter()
-                .find(|service| {
-                    service.name == name || service.interface_name.as_deref() == Some(&name)
-                })
-                .ok_or_else(|| {
-                    TransparentError::Invalid(format!(
-                        "enabled macOS network service {name:?} is not in the active location"
-                    ))
-                })?;
+            let Some(service) = active_services.iter().find(|service| {
+                service.name == name || service.interface_name.as_deref() == Some(&name)
+            }) else {
+                continue;
+            };
             let configuration = preferences::dns_configuration(runner, &service.id).await?;
             services.push(ServiceState {
                 id: Some(service.id.clone()),
@@ -243,10 +242,10 @@ impl SystemDns {
     }
 }
 
-fn resolve_service_id<'a>(
+fn find_service_id<'a>(
     service: &ServiceState,
     active_services: &'a [preferences::NetworkService],
-) -> Result<&'a str, TransparentError> {
+) -> Option<&'a str> {
     active_services
         .iter()
         .find(|candidate| {
@@ -255,12 +254,6 @@ fn resolve_service_id<'a>(
                 || candidate.interface_name.as_deref() == Some(&service.name)
         })
         .map(|service| service.id.as_str())
-        .ok_or_else(|| {
-            TransparentError::Invalid(format!(
-                "macOS network service {:?} is not in the active location",
-                service.name
-            ))
-        })
 }
 
 async fn restore_service(
@@ -358,8 +351,7 @@ mod tests {
                 let stdout = if program == "/usr/sbin/scselect" {
                     "Defined sets include: (* == current set)\n * SET-ID\t(Automatic)\n".into()
                 } else if program == "/usr/sbin/networksetup" {
-                    "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\niPhone USB\n"
-                        .into()
+                    "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\niPhone USB\nDetached USB\n".into()
                 } else if input.contains("list /Sets/SET-ID/Network/Service") {
                     "path [0] = /Sets/SET-ID/Network/Service/SERVICE-A\npath [1] = /Sets/SET-ID/Network/Service/SERVICE-B\n".into()
                 } else if input.contains("/Sets/SET-ID/Network/Service/SERVICE-A") {
@@ -401,19 +393,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolves_enabled_service_by_interface_name() {
+    async fn resolves_enabled_service_by_interface_name_and_ignores_removed_services() {
         let root = tempfile::tempdir().expect("temporary directory");
         let dns = SystemDns::new(true, root.path().into());
         let services = dns
             .capture_services(&FakeRunner::default())
             .await
             .expect("capture services");
+        assert_eq!(services.len(), 2);
         assert_eq!(services[1].id.as_deref(), Some("SERVICE-B"));
         assert_eq!(services[1].name, "iPhone");
     }
 
     #[tokio::test]
-    async fn stale_ownership_restores_static_and_dhcp_services() {
+    async fn stale_ownership_ignores_removed_services_and_restores_active_services() {
         let root = tempfile::tempdir().expect("temporary directory");
         let dns = SystemDns::new(true, root.path().into());
         fs::create_dir_all(root.path()).expect("state directory");
@@ -433,10 +426,19 @@ mod tests {
                     original: vec!["223.6.6.6".into()],
                     original_port: Some(5353),
                 },
+                ServiceState {
+                    id: Some("SERVICE-C".into()),
+                    name: "Removed iPhone".into(),
+                    original: Vec::new(),
+                    original_port: None,
+                },
             ],
         })
         .expect("ownership state");
         let runner = FakeRunner::default();
+        dns.verify(&runner, 20554)
+            .await
+            .expect("ignore removed service while verifying ownership");
         dns.restore(&runner).await.expect("restore stale ownership");
         let calls = runner.calls.lock().expect("calls");
         assert!(calls.iter().any(|call| {
@@ -449,6 +451,7 @@ mod tests {
                 && call.contains("d.add ServerAddresses * 223.6.6.6")
                 && call.contains("d.add ServerPort # 5353")
         }));
+        assert!(!calls.iter().any(|call| call.contains("SERVICE-C")));
         assert!(!dns.state_path().exists());
     }
 
