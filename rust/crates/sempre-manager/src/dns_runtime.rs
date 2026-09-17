@@ -75,24 +75,11 @@ impl DnsFrontendRuntime {
     pub(crate) async fn prepare(
         &self,
         frontend: Option<&DnsFrontendPlan>,
-        timeout: Duration,
     ) -> Result<(), ManagerError> {
         let Some(frontend) = frontend else {
             return Ok(());
         };
-        self.start_if_missing(frontend).await?;
-        let current = self
-            .running
-            .lock()
-            .await
-            .as_ref()
-            .map(|running| running.plan.clone())
-            .expect("prepared DNS frontend");
-        if let Err(error) = self.probe_local(&current, timeout).await {
-            self.stop().await;
-            return Err(error);
-        }
-        Ok(())
+        self.start_if_missing(frontend).await
     }
 
     pub(crate) async fn activate_core(

@@ -94,7 +94,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 backoff = Duration::from_secs(1);
                 continue;
             }
-            let plan = match self.resolve_runtime_plan(startup_grace).await {
+            let plan = match self.resolve_runtime_plan().await {
                 Ok(plan) => plan,
                 Err(error) => {
                     let error =
@@ -237,10 +237,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
     }
 
-    async fn resolve_runtime_plan(
-        &self,
-        startup_grace: Duration,
-    ) -> Result<RuntimePlan, ManagerError> {
+    async fn resolve_runtime_plan(&self) -> Result<RuntimePlan, ManagerError> {
         let document = self.store.read()?;
         let deployment = document
             .active
@@ -261,9 +258,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let dns_frontend = self
             .prepare_dns_frontend_plan(&document, &deployment, &reference)
             .await?;
-        self.dns_frontend
-            .prepare(dns_frontend.as_ref(), startup_grace)
-            .await?;
+        self.dns_frontend.prepare(dns_frontend.as_ref()).await?;
         let adapter = self.registry.get(&deployment.core)?;
         let binary = self.store.layout().core_binary(
             &deployment.core,
