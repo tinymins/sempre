@@ -119,7 +119,7 @@ function DnsAnswerSummary({ answers, zh }: { answers: string[]; zh: boolean }) {
 
 function DnsUpstream({ upstream, decision, zh }: { upstream: string; decision: string; zh: boolean }) {
   const source = decision === 'core' ? 'sing-box' : decision === 'local' ? (zh ? '前置 DNS' : 'DNS frontend') : ''
-  return <div className="flex min-w-0 items-center gap-2"><span className="min-w-0 truncate font-mono" title={upstream}>{upstream}</span>{source ? <Tag color={decision === 'core' ? 'purple' : 'cyan'} size="small" bordered={false}>{source}</Tag> : null}</div>
+  return <div className="flex min-w-0 items-center gap-2">{source ? <Tag color={decision === 'core' ? 'purple' : 'cyan'} size="small" bordered={false}>{source}</Tag> : null}<span className="min-w-0 truncate font-mono" title={upstream}>{upstream}</span></div>
 }
 
 function answerTargets(answers: string[]) {

@@ -64,6 +64,8 @@ describe('DNS page', () => {
     expect(screen.getByText('sing-box')).toBeInTheDocument()
     const tlsUpstream = screen.getByTitle('tls://223.6.6.6:853?server_name=dns.alidns.com')
     expect(tlsUpstream.parentElement).toHaveTextContent('前置 DNS')
+    expect(tlsUpstream.parentElement?.firstElementChild).toHaveTextContent('前置 DNS')
+    expect(tlsUpstream.parentElement?.lastElementChild).toBe(tlsUpstream)
     const answerSummary = screen.getByRole('button', { name: /查看完整应答/ })
     expect(answerSummary).toHaveTextContent('198.18.0.1, 198.18.0.2 · 共 4 条')
     expect(screen.queryByText('example.com. 60 IN CNAME edge.example.com.')).not.toBeInTheDocument()
