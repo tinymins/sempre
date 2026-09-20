@@ -1,6 +1,6 @@
 use std::{collections::HashSet, error::Error, path::Path, sync::Arc, time::Duration};
 
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, ClientBuilder, StatusCode};
 use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions, Sha256Digest};
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -68,8 +68,14 @@ pub(crate) struct Status {
     pub(crate) repository: String,
 }
 
-pub(crate) async fn check(allow_prerelease: bool) -> Result<Status, String> {
-    status(&fetch_manifest(allow_prerelease).await?, allow_prerelease)
+pub(crate) async fn check(
+    manager: &sempre_manager::Manager,
+    allow_prerelease: bool,
+) -> Result<Status, String> {
+    status(
+        &fetch_manifest(manager, allow_prerelease).await?,
+        allow_prerelease,
+    )
 }
 
 pub(crate) fn start(
@@ -93,7 +99,7 @@ async fn run_task(
     manager: &sempre_manager::Manager,
     allow_prerelease: bool,
 ) -> Result<(), String> {
-    let manifest = fetch_manifest(allow_prerelease).await?;
+    let manifest = fetch_manifest(manager, allow_prerelease).await?;
     let status = status(&manifest, allow_prerelease)?;
     if !status.update_available {
         return Err("Sempre is already up to date".into());
@@ -164,34 +170,33 @@ async fn download_release(
     archive: &Path,
 ) -> Result<(), String> {
     let user_agent = format!("Sempre/{VERSION}");
-    let direct = Downloader::new(&user_agent).map_err(|error| describe_error(&error))?;
-    let progress = |downloaded, total| tasks.download_progress(task_id, downloaded, total);
-    let direct_error = match direct
-        .verified_with_progress(artifact, archive, progress)
-        .await
-    {
-        Ok(()) => return Ok(()),
-        Err(error @ sempre_artifact::ArtifactError::Http { .. }) => error,
-        Err(error) => return Err(describe_error(&error)),
-    };
-    let proxy = crate::service_update_proxy::downloader(manager, &user_agent).map_err(|error| {
-        format!(
-            "{}; retry through the running core is unavailable: {}",
-            describe_error(&direct_error),
-            error
-        )
-    })?;
-    tasks.restart_download(task_id)?;
-    proxy
-        .verified_with_progress(artifact, archive, progress)
-        .await
-        .map_err(|error| {
-            format!(
-                "{}; retry through the running core failed: {}",
-                describe_error(&direct_error),
-                describe_error(&error)
-            )
-        })
+    let proxy =
+        crate::service_update_proxy::downloader(manager, &user_agent).map(|proxy| async move {
+            let progress = |downloaded, total| tasks.download_progress(task_id, downloaded, total);
+            proxy
+                .verified_with_progress(artifact, archive, progress)
+                .await
+                .map_err(|error| describe_error(&error))
+        });
+    crate::service_update_proxy::proxy_first(
+        "download Sempre update",
+        proxy,
+        |attempted| {
+            if attempted {
+                tasks.restart_download(task_id)?;
+            }
+            Ok(())
+        },
+        || async {
+            let direct = Downloader::new(&user_agent).map_err(|error| describe_error(&error))?;
+            let progress = |downloaded, total| tasks.download_progress(task_id, downloaded, total);
+            direct
+                .verified_with_progress(artifact, archive, progress)
+                .await
+                .map_err(|error| describe_error(&error))
+        },
+    )
+    .await
 }
 
 fn describe_error(error: &dyn Error) -> String {
@@ -208,8 +213,8 @@ fn describe_error(error: &dyn Error) -> String {
     message
 }
 
-async fn fetch_manifest(allow_prerelease: bool) -> Result<Manifest, String> {
-    let client = Client::builder()
+fn manifest_client_builder() -> ClientBuilder {
+    Client::builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 {
@@ -221,17 +226,43 @@ async fn fetch_manifest(allow_prerelease: bool) -> Result<Manifest, String> {
             }
         }))
         .user_agent(format!("Sempre/{VERSION}"))
-        .build()
-        .map_err(|error| format!("build update client: {error}"))?;
+}
+
+async fn fetch_manifest(
+    manager: &sempre_manager::Manager,
+    allow_prerelease: bool,
+) -> Result<Manifest, String> {
+    let url = if allow_prerelease {
+        PREVIEW_MANIFEST_URL
+    } else {
+        STABLE_MANIFEST_URL
+    };
+    let proxy = crate::service_update_proxy::client(manager, manifest_client_builder())
+        .map(|client| async move { fetch_manifest_body(&client, url).await });
+    let body = crate::service_update_proxy::proxy_first(
+        "query Sempre update service",
+        proxy,
+        |_| Ok(()),
+        || async {
+            let client = manifest_client_builder()
+                .build()
+                .map_err(|error| format!("build direct update client: {error}"))?;
+            fetch_manifest_body(&client, url).await
+        },
+    )
+    .await?;
+    let manifest: Manifest = serde_json::from_slice(&body)
+        .map_err(|error| format!("decode Sempre update manifest: {error}"))?;
+    validate_manifest(&manifest, allow_prerelease)?;
+    Ok(manifest)
+}
+
+async fn fetch_manifest_body(client: &Client, url: &str) -> Result<Vec<u8>, String> {
     let response = client
-        .get(if allow_prerelease {
-            PREVIEW_MANIFEST_URL
-        } else {
-            STABLE_MANIFEST_URL
-        })
+        .get(url)
         .send()
         .await
-        .map_err(|error| format!("query Sempre update service: {error}"))?;
+        .map_err(|error| describe_error(&error))?;
     if response.status() != StatusCode::OK {
         return Err(format!(
             "query Sempre update service: HTTP {}",
@@ -251,10 +282,7 @@ async fn fetch_manifest(allow_prerelease: bool) -> Result<Manifest, String> {
     if body.len() > MAX_MANIFEST_SIZE {
         return Err("Sempre update manifest exceeds 1 MiB".into());
     }
-    let manifest: Manifest = serde_json::from_slice(&body)
-        .map_err(|error| format!("decode Sempre update manifest: {error}"))?;
-    validate_manifest(&manifest, allow_prerelease)?;
-    Ok(manifest)
+    Ok(body.to_vec())
 }
 
 fn validate_manifest(manifest: &Manifest, allow_prerelease: bool) -> Result<(), String> {

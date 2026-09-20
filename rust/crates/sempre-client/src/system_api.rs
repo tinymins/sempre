@@ -196,7 +196,7 @@ async fn service_update_check(State(state): State<Arc<AppState>>) -> Response {
         Ok(settings) => settings,
         Err(error) => return internal(error),
     };
-    match crate::service_update::check(settings.allow_prerelease).await {
+    match crate::service_update::check(&state.manager, settings.allow_prerelease).await {
         Ok(status) => Json(status).into_response(),
         Err(error) => (
             StatusCode::BAD_GATEWAY,

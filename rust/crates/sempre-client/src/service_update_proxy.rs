@@ -1,5 +1,9 @@
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    future::Future,
+    net::{Ipv4Addr, SocketAddr},
+};
 
+use reqwest::{Client, ClientBuilder, Proxy};
 use sempre_artifact::Downloader;
 use sempre_manager::Manager;
 use sempre_state::{Document, RuntimeState};
@@ -12,6 +16,50 @@ struct RuntimeProxy {
 }
 
 pub(crate) fn downloader(manager: &Manager, user_agent: &str) -> Result<Downloader, String> {
+    let proxy = current(manager)?;
+    Downloader::new_via_http_proxy(user_agent, proxy.address, &proxy.username, &proxy.password)
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn client(manager: &Manager, builder: ClientBuilder) -> Result<Client, String> {
+    let runtime = current(manager)?;
+    let proxy = Proxy::all(format!("http://{}", runtime.address))
+        .map_err(|error| format!("configure update proxy: {error}"))?
+        .basic_auth(&runtime.username, &runtime.password);
+    builder
+        .proxy(proxy)
+        .build()
+        .map_err(|error| format!("build proxied update client: {error}"))
+}
+
+pub(crate) async fn proxy_first<T, P, D, DF, F>(
+    operation: &str,
+    proxy: Result<P, String>,
+    before_direct: F,
+    direct: D,
+) -> Result<T, String>
+where
+    P: Future<Output = Result<T, String>>,
+    D: FnOnce() -> DF,
+    DF: Future<Output = Result<T, String>>,
+    F: FnOnce(bool) -> Result<(), String>,
+{
+    let (attempted, proxy_error) = match proxy {
+        Ok(attempt) => match attempt.await {
+            Ok(value) => return Ok(value),
+            Err(error) => (true, error),
+        },
+        Err(error) => (false, error),
+    };
+    before_direct(attempted)?;
+    direct().await.map_err(|direct_error| {
+        format!(
+            "{operation} through the running core failed: {proxy_error}; direct fallback failed: {direct_error}"
+        )
+    })
+}
+
+fn current(manager: &Manager) -> Result<RuntimeProxy, String> {
     let document = manager
         .state()
         .map_err(|error| format!("read runtime state: {error}"))?;
@@ -19,9 +67,7 @@ pub(crate) fn downloader(manager: &Manager, user_agent: &str) -> Result<Download
         .subscriptions()
         .read()
         .map_err(|error| format!("read subscription profiles: {error}"))?;
-    let proxy = resolve(&document, &catalog)?;
-    Downloader::new_via_http_proxy(user_agent, proxy.address, &proxy.username, &proxy.password)
-        .map_err(|error| error.to_string())
+    resolve(&document, &catalog)
 }
 
 fn resolve(document: &Document, catalog: &Catalog) -> Result<RuntimeProxy, String> {

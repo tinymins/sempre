@@ -121,6 +121,44 @@ fn nested_update_errors_include_the_root_cause() {
     assert_eq!(describe_error(&error), "request failed: connection refused");
 }
 
+#[tokio::test]
+async fn proxy_success_does_not_attempt_direct_fallback() {
+    let direct_attempts = std::sync::atomic::AtomicUsize::new(0);
+    let result = crate::service_update_proxy::proxy_first(
+        "test update request",
+        Ok::<_, String>(async { Ok::<_, String>("proxy") }),
+        |_| Ok(()),
+        || async {
+            direct_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok("direct")
+        },
+    )
+    .await
+    .expect("proxy result");
+
+    assert_eq!(result, "proxy");
+    assert_eq!(direct_attempts.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn proxy_failure_attempts_direct_fallback() {
+    let fallback_observed = std::sync::atomic::AtomicBool::new(false);
+    let result = crate::service_update_proxy::proxy_first(
+        "test update request",
+        Ok::<_, String>(async { Err::<&str, _>("proxy failed".into()) }),
+        |attempted| {
+            fallback_observed.store(attempted, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        },
+        || async { Ok("direct") },
+    )
+    .await
+    .expect("direct fallback result");
+
+    assert_eq!(result, "direct");
+    assert!(fallback_observed.load(std::sync::atomic::Ordering::SeqCst));
+}
+
 #[test]
 fn manifest_rejects_prerelease_versions() {
     let value = manifest("2.0.10-beta.1");
