@@ -8,6 +8,7 @@ use crate::{
 };
 
 mod dns;
+mod readiness;
 
 const TUN_TIMEOUT: Duration = Duration::from_secs(20);
 const LISTENER_TIMEOUT: Duration = Duration::from_secs(8);
@@ -342,7 +343,7 @@ impl Controller {
             let result = if plan.mode == Mode::Tun {
                 tun_ready(plan)
             } else {
-                listeners_ready(plan).await
+                readiness::listeners_ready(self.runner.as_ref(), plan).await
             };
             if result.is_ok() {
                 return Ok(());
@@ -449,15 +450,4 @@ fn tun_ready(plan: &Plan) -> Result<(), TransparentError> {
             plan.tun_interface, plan.tun_address
         )))
     }
-}
-
-async fn listeners_ready(plan: &Plan) -> Result<(), TransparentError> {
-    for port in [plan.tproxy_port, plan.dns_port] {
-        TcpStream::connect(("127.0.0.1", port))
-            .await
-            .map_err(|error| {
-                TransparentError::Invalid(format!("TCP port {port} is not listening: {error}"))
-            })?;
-    }
-    Ok(())
 }

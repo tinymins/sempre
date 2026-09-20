@@ -51,9 +51,10 @@ async fn tproxy_owns_intercepts_and_cleans_kernel_state() {
     controller.verify(&plan).await.expect("verify TProxy state");
     assert!(tables().contains("table ip sempre_tproxy"));
     assert!(tables().contains("table ip6 sempre_tproxy"));
-    drain_readiness(&proxy).await;
+    assert_no_connection(&proxy).await;
     drain_readiness(&dns).await;
 
+    assert_local_listener_blocked(&proxy).await;
     assert_tproxy_intercepted("203.0.113.10:443", &proxy).await;
     assert_redirected("8.8.8.8:53", &dns, DNS_PORT).await;
 
@@ -71,6 +72,28 @@ async fn drain_readiness(listener: &TcpListener) {
         .await
         .is_ok()
     {}
+}
+
+async fn assert_no_connection(listener: &TcpListener) {
+    assert!(
+        timeout(Duration::from_millis(50), listener.accept())
+            .await
+            .is_err(),
+        "TProxy readiness must not connect to the transparent listener"
+    );
+}
+
+async fn assert_local_listener_blocked(listener: &TcpListener) {
+    let connect = timeout(
+        Duration::from_secs(1),
+        tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, PROXY_PORT)),
+    )
+    .await;
+    assert!(
+        !matches!(connect, Ok(Ok(_))),
+        "local processes must not connect to the TProxy listener"
+    );
+    assert_no_connection(listener).await;
 }
 
 fn transparent_listener(port: u16) -> TcpListener {

@@ -103,6 +103,7 @@ pub(crate) fn script(plan: &Plan) -> String {
         for protocol in ["tcp", "udp"] {
             capture_rules(&mut output, family, protocol, plan);
         }
+        self_guard_rules(&mut output, family, plan);
         if plan.capture_host {
             output_rules(&mut output, family, address_key, plan);
         }
@@ -111,6 +112,23 @@ pub(crate) fn script(plan: &Plan) -> String {
         }
     }
     output
+}
+
+fn self_guard_rules(output: &mut String, family: &str, plan: &Plan) {
+    let _ = writeln!(
+        output,
+        "add chain {family} {TABLE} self_guard {{ type filter hook output priority filter; policy accept; }}"
+    );
+    let _ = writeln!(
+        output,
+        "add rule {family} {TABLE} self_guard fib daddr type local meta l4proto tcp tcp dport {} counter reject with tcp reset comment \"sempre:tproxy:self:tcp:\"",
+        plan.tproxy_port
+    );
+    let _ = writeln!(
+        output,
+        "add rule {family} {TABLE} self_guard fib daddr type local meta l4proto udp udp dport {} counter drop comment \"sempre:tproxy:self:udp:\"",
+        plan.tproxy_port
+    );
 }
 
 fn capture_rules(output: &mut String, family: &str, protocol: &str, plan: &Plan) {
@@ -234,6 +252,9 @@ mod tests {
         assert_eq!(script.matches(OWNER_LABEL).count(), 2);
         assert!(script.contains("iifname \"vmbr1\""));
         assert!(script.contains("tproxy to :7893"));
+        assert_eq!(script.matches("self_guard fib daddr type local").count(), 4);
+        assert_eq!(script.matches("sempre:tproxy:self:tcp:").count(), 2);
+        assert_eq!(script.matches("sempre:tproxy:self:udp:").count(), 2);
         assert!(!script.contains("tproxy to :1053"));
         assert!(script.contains("udp dport 53 counter redirect to :1053"));
         assert!(script.contains("tcp dport 53 counter redirect to :1053"));
