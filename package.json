@@ -1,8 +1,12 @@
 {
   "name": "sempre-workspace",
   "private": true,
+  "workspaces": [
+    "ui",
+    "packages/*"
+  ],
   "scripts": {
-    "bootstrap": "cargo fetch --manifest-path=rust/Cargo.toml && cargo install cargo-watch --locked && bun install --cwd=ui --frozen-lockfile && bun install --cwd=site --frozen-lockfile",
+    "bootstrap": "cargo fetch --manifest-path=rust/Cargo.toml && cargo install cargo-watch --locked && bun install --frozen-lockfile && bun install --cwd=site --frozen-lockfile",
     "prestart": "bun run scripts/development-addresses.ts",
     "start": "bun run --parallel \"dev:*\"",
     "dev:api": "cargo watch -C rust -w crates -w Cargo.toml -w Cargo.lock -x \"run -p sempre-client -- daemon --development-root ../.cache/sempre-dev/runtime --listen 127.0.0.1:33212\"",
@@ -11,9 +15,9 @@
     "server": "cargo run --manifest-path=rust/Cargo.toml -p sempre-server",
     "rust:lint": "cargo fmt --manifest-path=rust/Cargo.toml --all -- --check && cargo clippy --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings",
     "rust:test": "cargo test --manifest-path=rust/Cargo.toml --workspace",
-		"lint": "bun --cwd=ui run lint && bun --cwd=site run lint && shellcheck installer/install.sh installer/install_test.sh rust/scripts/server_smoke.sh",
-    "tsc": "bun --cwd=ui run tsc && bun --cwd=site run tsc",
-    "test": "bun --cwd=ui run test && bun --cwd=site run test && sh installer/install_test.sh",
+    "lint": "bun --cwd=packages/components run lint && bun --cwd=ui run lint && bun --cwd=site run lint && shellcheck installer/install.sh installer/install_test.sh rust/scripts/server_smoke.sh",
+    "tsc": "bun --cwd=packages/components run tsc && bun --cwd=ui run tsc && bun --cwd=site run tsc",
+    "test": "bun --cwd=packages/components run test && bun --cwd=ui run test && bun --cwd=site run test && sh installer/install_test.sh",
     "build:ui": "bun --cwd=ui run build",
     "build:site": "bun --cwd=site run build",
     "build": "cargo run --manifest-path=rust/Cargo.toml -p sempre-build --",
