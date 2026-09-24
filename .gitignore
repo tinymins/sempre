@@ -3,6 +3,8 @@
 /.sempre/
 /node_modules/
 /packages/*/node_modules/
+/server-ui/dist/
+/server-ui/node_modules/
 /ui/dist/
 /ui/node_modules/
 /site/dist/

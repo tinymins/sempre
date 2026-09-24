@@ -1,0 +1,153 @@
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-surface-base: var(--bg-base);
+  --color-surface-elevated: var(--bg-elevated);
+  --color-surface-glass: var(--bg-glass);
+  --color-border-base: var(--border-base);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-glass: var(--glass-border);
+  --color-fg-primary: var(--text-primary);
+  --color-fg-secondary: var(--text-secondary);
+  --color-fg-muted: var(--text-muted);
+  --color-fill-tertiary: var(--fill-tertiary);
+}
+
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  letter-spacing: 0;
+  --background: #f6f7f6;
+  --sidebar: #fbfcfb;
+  --surface: #ffffff;
+  --surface-hover: #eef1ef;
+  --border: #dce1de;
+  --text: #171b19;
+  --muted: #68716d;
+  --bg-base: #f8fafc;
+  --bg-elevated: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.7);
+  --bg-skeleton: rgba(0, 0, 0, 0.04);
+  --fill-tertiary: rgba(0, 0, 0, 0.04);
+  --input-bg: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --border-base: rgba(0, 0, 0, 0.08);
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --text-primary: rgba(15, 23, 42, 0.95);
+  --text-secondary: rgba(15, 23, 42, 0.72);
+  --text-muted: rgba(15, 23, 42, 0.55);
+  --text-tertiary: rgba(15, 23, 42, 0.38);
+  --sidebar-bg: rgba(255, 255, 255, 0.3);
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-subtle: rgba(16, 185, 129, 0.1);
+  --accent-subtle-hover: rgba(16, 185, 129, 0.18);
+  --accent-muted: rgba(16, 185, 129, 0.5);
+  --accent-text: #34d399;
+  --slider-track: rgba(0, 0, 0, 0.12);
+}
+
+:root.dark {
+  color-scheme: dark;
+  --background: #101412;
+  --sidebar: #131816;
+  --surface: #181e1b;
+  --surface-hover: #222a26;
+  --border: #2d3732;
+  --text: #edf2ef;
+  --muted: #99a59f;
+  --bg-base: #0a0a0f;
+  --bg-elevated: rgba(255, 255, 255, 0.03);
+  --bg-glass: rgba(255, 255, 255, 0.04);
+  --bg-skeleton: rgba(255, 255, 255, 0.05);
+  --fill-tertiary: rgba(255, 255, 255, 0.06);
+  --input-bg: rgba(255, 255, 255, 0.07);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --border-base: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.03);
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.55);
+  --text-muted: rgba(255, 255, 255, 0.55);
+  --text-tertiary: rgba(255, 255, 255, 0.38);
+  --sidebar-bg: rgba(10, 10, 15, 0.3);
+  --accent-subtle: rgba(16, 185, 129, 0.08);
+  --accent-subtle-hover: rgba(16, 185, 129, 0.14);
+  --accent-text: #34d399;
+  --slider-track: rgba(255, 255, 255, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+  letter-spacing: 0;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--background);
+}
+
+@layer base {
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+button,
+input,
+select,
+textarea {
+  letter-spacing: 0;
+}
+
+button,
+select {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled {
+  cursor: default;
+}
+
+::selection {
+  background: rgba(5, 150, 105, 0.22);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+  background-clip: padding-box;
+}
+
+.acme-content-scope {
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

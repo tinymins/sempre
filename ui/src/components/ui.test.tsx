@@ -6,7 +6,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Button, EmptyState } from './ui'
 
-const stylesheet = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8')
+const stylesheet = readFileSync(resolve(process.cwd(), '../packages/components/styles.css'), 'utf8')
 
 describe('Control typography', () => {
   afterEach(() => cleanup())
