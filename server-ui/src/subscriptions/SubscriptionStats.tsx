@@ -3,8 +3,10 @@ import { useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { AccessStats } from './diagnostic-types'
 import type { Subscription } from './types'
+import { useI18n } from '../i18n/provider'
 
 export function SubscriptionStats({ subscription, onClose }: { subscription: Subscription | null; onClose: () => void }) {
+  const { t, date, number } = useI18n()
   const [stats, setStats] = useState<AccessStats | null>(null)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -18,27 +20,28 @@ export function SubscriptionStats({ subscription, onClose }: { subscription: Sub
     return () => { active = false }
   }, [subscription, page])
 
-  return <Modal open={Boolean(subscription)} title={`访问统计 · ${subscription?.remark || '未命名配置集'}`} footer={null} onCancel={onClose} size="large">
+  return <Modal open={Boolean(subscription)} title={t('stats.title', { name: subscription?.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} size="large">
     {loading ? <Spin size="large" /> : null}
     {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
     {stats ? <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label="累计访问" value={stats.totalAccesses} />
-        <Metric label="今日访问" value={stats.todayAccess} />
-        <Metric label="缓存节点" value={stats.cachedNodeCount} />
-        <Metric label="最后访问" value={stats.lastAccessAt ? new Date(stats.lastAccessAt).toLocaleString() : '—'} />
+        <Metric label={t('stats.retainedAccess')} value={number(stats.totalAccesses)} />
+        <Metric label={t('stats.todayAccess')} value={number(stats.todayAccess)} />
+        <Metric label={t('stats.cachedNodes')} value={number(stats.cachedNodeCount)} />
+        <Metric label={t('stats.lastAccess')} value={stats.lastAccessAt ? date(stats.lastAccessAt) : '—'} />
       </div>
-      <section><h3 className="mb-2 text-sm font-medium">按格式</h3>
-        <div className="flex flex-wrap gap-2">{stats.accessByType.map((item) => <span key={item.type} className="rounded border border-[var(--border)] px-2 py-1 text-xs">{item.type}: {item.count}</span>)}</div>
+      <p className="text-xs text-[var(--muted)]">{t('stats.retentionHint')}</p>
+      <section><h3 className="mb-2 text-sm font-medium">{t('stats.byFormat')}</h3>
+        <div className="flex flex-wrap gap-2">{stats.accessByType.map((item) => <span key={item.type} className="rounded border border-[var(--border)] px-2 py-1 text-xs">{item.type}: {number(item.count)}</span>)}</div>
       </section>
-      <section><h3 className="mb-2 text-sm font-medium">最近访问</h3>
+      <section><h3 className="mb-2 text-sm font-medium">{t('stats.recent')}</h3>
         <Table rowKey="id" dataSource={stats.recentAccesses} pagination={false} size="small" scroll={{ x: 620 }} columns={[
-          { title: '时间', render: (_, item) => new Date(item.createdAt).toLocaleString() },
-          { title: '格式', dataIndex: 'accessType' },
-          { title: '节点', dataIndex: 'nodeCount' },
-          { title: 'IP', dataIndex: 'ip' },
-          { title: 'User-Agent', dataIndex: 'userAgent' },
-        ]} />
+          { title: t('common.time'), render: (_, item) => date(item.createdAt) },
+          { title: t('common.format'), dataIndex: 'accessType' },
+          { title: t('stats.nodeCount'), render: (_, item) => item.nodeCount === null ? '—' : number(item.nodeCount) },
+          { title: t('stats.ip'), dataIndex: 'ip' },
+          { title: t('common.userAgent'), dataIndex: 'userAgent' },
+        ]} locale={{ emptyText: t('common.noData') }} />
         <Pagination className="mt-3" current={page} total={stats.recentAccessTotal} pageSize={20} onChange={setPage} />
       </section>
     </div> : null}

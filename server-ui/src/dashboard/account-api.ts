@@ -9,7 +9,7 @@ export interface AccountSettings {
 
 export const accountApi = {
   profile: async () => (await serverRequest<{ user: ServerUser }>('/account/profile')).user,
-  update: async (body: { name?: string; email?: string; settings?: Pick<AccountSettings, 'themeMode' | 'accentColor'> }) =>
+  update: async (body: { name?: string; email?: string; settings?: Pick<AccountSettings, 'langMode' | 'themeMode' | 'accentColor'> }) =>
     (await serverRequest<{ user: ServerUser }>('/account/profile', { method: 'PATCH', body: JSON.stringify(body) })).user,
   uploadAvatar: (file: File) => {
     const form = new FormData()

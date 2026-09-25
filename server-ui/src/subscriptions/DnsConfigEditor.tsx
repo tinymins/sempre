@@ -1,46 +1,106 @@
-import { Input, InputNumber, Select, TextArea } from '@acme/components'
+import { Input, InputNumber, Select, Tabs, TextArea } from '@acme/components'
+import { findNodeAtLocation, parse, parseTree, type ParseError } from 'jsonc-parser'
+import { useState } from 'react'
 import { editJsonc, objectAt, readJsoncObject } from './jsonc-edit'
+import { useI18n } from '../i18n/provider'
+import type { MessageKey } from '../i18n/zh-CN'
 
 interface Props {
   value: string | null
   onChange: (next: string | null) => void
   readOnly?: boolean
+  onInvalidChange?: (invalid: boolean) => void
 }
 
-const stringFields = [
-  ['localDns', '本地 DNS 地址'],
-  ['bootstrapDns', '引导 DNS 地址'],
-  ['remoteDns', '远程 DNS 地址'],
-  ['fakeipIpv4Range', 'FakeIP IPv4 网段'],
-  ['fakeipIpv6Range', 'FakeIP IPv6 网段'],
+const overrideTabs = [
+  { key: 'clash', label: 'Clash' },
+  { key: 'clashMeta', label: 'Clash Meta' },
+  { key: 'singbox', label: 'Sing-box v1.11' },
+  { key: 'singboxV12', label: 'Sing-box v1.12+' },
 ] as const
 
-const numberFields = [
-  ['localDnsPort', '本地 DNS 端口'],
-  ['bootstrapDnsPort', '引导 DNS 端口'],
-  ['remoteDnsPort', '远程 DNS 端口'],
-  ['fakeipTtl', 'FakeIP TTL'],
-] as const
+type OverrideKey = typeof overrideTabs[number]['key']
 
-const booleanFields = [
-  ['fakeipEnabled', '启用 FakeIP'],
-  ['rejectHttps', '拒绝 HTTPS DNS 查询'],
-  ['cnDomainLocalDns', '中国域名使用本地 DNS'],
-  ['cnIpLocalDns', '中国 IP 使用本地 DNS'],
-  ['preferIpv4', '优先 IPv4'],
-] as const
+function OverrideEditor({ name, value, onChange, onInvalidChange }: { name: OverrideKey; value: string | null; onChange: Props['onChange']; onInvalidChange?: Props['onInvalidChange'] }) {
+  const { t } = useI18n()
+  const [activeRange, setActiveRange] = useState<{ offset: number; length: number } | null>(null)
+  const [error, setError] = useState('')
+  const source = value?.trim() ? value : '{}'
+  const tree = parseTree(source)
+  const node = tree ? findNodeAtLocation(tree, ['overrides', name]) : undefined
+  const range = activeRange ?? (node ? { offset: node.offset, length: node.length } : null)
+  const text = range ? source.slice(range.offset, range.offset + range.length) : ''
+  const update = (next: string) => {
+    if (!next.trim()) {
+      onChange(editJsonc(value, ['overrides', name], undefined))
+      setActiveRange(null)
+      setError('')
+      onInvalidChange?.(false)
+      return
+    }
+    let base = source
+    let target = range
+    if (!target) {
+      base = editJsonc(value, ['overrides', name], {})
+      const insertedTree = parseTree(base)
+      const inserted = insertedTree ? findNodeAtLocation(insertedTree, ['overrides', name]) : undefined
+      if (!inserted) return
+      target = { offset: inserted.offset, length: inserted.length }
+    }
+    onChange(base.slice(0, target.offset) + next + base.slice(target.offset + target.length))
+    setActiveRange({ offset: target.offset, length: next.length })
+    const errors: ParseError[] = []
+    const parsed: unknown = parse(next, errors, { allowTrailingComma: true })
+    if (errors.length || !parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      setError(t('dns.invalidOverride'))
+      onInvalidChange?.(true)
+      return
+    }
+    setError('')
+    onInvalidChange?.(false)
+  }
+  return <div className="space-y-2">
+    <p className="text-xs text-[var(--muted)]">{t('dns.overrideHint')}</p>
+    {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
+    <TextArea aria-label={`${overrideTabs.find((tab) => tab.key === name)?.label} DNS`} rows={18} value={text} onChange={(event) => update(event.target.value)} className="font-mono text-xs" />
+  </div>
+}
 
-const booleanOptions = [
-  { value: 'unset', label: '未设置（使用生成配置默认值）' },
-  { value: 'true', label: '开启' },
-  { value: 'false', label: '关闭' },
+const stringFields: [string, MessageKey][] = [
+  ['localDns', 'dns.localAddress'], ['bootstrapDns', 'dns.bootstrapAddress'],
+  ['remoteDns', 'dns.remoteAddress'], ['fakeipIpv4Range', 'dns.fakeIpv4'],
+  ['fakeipIpv6Range', 'dns.fakeIpv6'], ['clashApiSecret', 'dns.apiSecret'],
+  ['clashApiUiPath', 'dns.apiUiPath'],
 ]
 
-export function DnsConfigEditor({ value, onChange, readOnly = false }: Props) {
+const numberFields: [string, MessageKey][] = [
+  ['localDnsPort', 'dns.localPort'], ['dnsListenPort', 'dns.listenPort'],
+  ['tproxyPort', 'dns.tproxyPort'], ['bootstrapDnsPort', 'dns.bootstrapPort'],
+  ['remoteDnsPort', 'dns.remotePort'], ['fakeipTtl', 'dns.fakeTtl'],
+  ['clashApiPort', 'dns.apiPort'],
+]
+
+const booleanFields: [string, MessageKey][] = [
+  ['fakeipEnabled', 'dns.fakeEnabled'], ['rejectHttps', 'dns.rejectHttps'],
+  ['cnDomainLocalDns', 'dns.cnDomain'], ['cnIpLocalDns', 'dns.cnIp'],
+  ['preferIpv4', 'dns.preferIpv4'],
+]
+
+export function DnsConfigEditor({ value, onChange, readOnly = false, onInvalidChange }: Props) {
+  const { t } = useI18n()
+  const booleanOptions = [
+    { value: 'unset', label: t('dns.unset') },
+    { value: 'true', label: t('dns.enabled') },
+    { value: 'false', label: t('dns.disabled') },
+  ]
+  const [tab, setTab] = useState<string>('shared')
+  const [invalidOverride, setInvalidOverride] = useState(false)
+  const [advancedInvalid, setAdvancedInvalid] = useState(false)
+  const [advancedRevision, setAdvancedRevision] = useState(0)
   const { object, error } = readJsoncObject(value)
   const shapeError = object && object.shared !== undefined && (object.shared === null || Array.isArray(object.shared) || typeof object.shared !== 'object')
-    ? 'shared 必须是对象，请先在高级 JSONC 中修正。' : null
-  const issue = error || shapeError
+    ? t('dns.invalidShared') : null
+  const issue = error ? t('editor.invalidObject') : shapeError
   const shared = object ? objectAt(object, 'shared') : {}
   const set = (key: string, next: unknown) => {
     if (issue || readOnly) return
@@ -49,26 +109,35 @@ export function DnsConfigEditor({ value, onChange, readOnly = false }: Props) {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-[var(--muted)]">这里编辑通用 DNS 字段。留空表示使用生成配置的默认值；各目标格式的覆盖配置和其他字段可在下方 JSONC 中编辑，并可用草稿调试核对输出。</p>
+      <p className="text-xs text-[var(--muted)]">{t('dns.intro')}</p>
       {issue ? <p role="alert" className="text-sm text-red-600">{issue}</p> : null}
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="space-y-1 text-sm">本地 DNS 传输
-          <Select value={typeof shared.localDnsTransport === 'string' ? shared.localDnsTransport : 'unset'} disabled={readOnly || Boolean(issue)} options={[{ value: 'unset', label: '未设置（使用生成配置默认值）' }, { value: 'udp', label: 'UDP' }, { value: 'tls', label: 'TLS' }, { value: 'system', label: '系统 DNS' }]} onChange={(next) => set('localDnsTransport', next === 'unset' ? undefined : next)} className="w-full" />
+      <Tabs type="segment" activeKey={tab} onChange={(next) => { if (!invalidOverride && !advancedInvalid) setTab(next) }} items={[{ key: 'shared', label: t('dns.shared') }, ...overrideTabs]} />
+      {invalidOverride ? <p role="alert" className="text-xs text-red-600">{t('dns.fixOverride')}</p> : null}
+      {tab !== 'shared' && !advancedInvalid && !shapeError ? <OverrideEditor key={`${tab}-${advancedRevision}`} name={tab as OverrideKey} value={value} onChange={onChange} onInvalidChange={(invalid) => { setInvalidOverride(invalid); onInvalidChange?.(invalid) }} /> : tab === 'shared' ? <div className="grid gap-3 md:grid-cols-2">
+        <label className="space-y-1 text-sm">{t('dns.transport')}
+          <Select value={typeof shared.localDnsTransport === 'string' ? shared.localDnsTransport : 'unset'} disabled={readOnly || Boolean(issue)} options={[{ value: 'unset', label: t('dns.unset') }, { value: 'udp', label: 'UDP' }, { value: 'tls', label: 'TLS' }, { value: 'system', label: t('dns.system') }]} onChange={(next) => set('localDnsTransport', next === 'unset' ? undefined : next)} className="w-full" />
         </label>
-        {stringFields.map(([key, label]) => <label key={key} className="space-y-1 text-sm">{label}
+        {stringFields.map(([key, label]) => <label key={key} className="space-y-1 text-sm">{t(label)}
           <Input value={typeof shared[key] === 'string' ? shared[key] : ''} disabled={readOnly || Boolean(issue)} onChange={(event) => set(key, event.target.value || undefined)} />
         </label>)}
-        {numberFields.map(([key, label]) => <label key={key} className="space-y-1 text-sm">{label}
+        {numberFields.map(([key, label]) => <label key={key} className="space-y-1 text-sm">{t(label)}
           <InputNumber value={typeof shared[key] === 'number' ? shared[key] : null} min={key === 'fakeipTtl' ? 0 : 1} max={key === 'fakeipTtl' ? undefined : 65535} disabled={readOnly || Boolean(issue)} onChange={(next) => set(key, next ?? undefined)} className="w-full" />
         </label>)}
-        {booleanFields.map(([key, label]) => <label key={key} className="space-y-1 text-sm">{label}
+        {booleanFields.map(([key, label]) => <label key={key} className="space-y-1 text-sm">{t(label)}
           <Select value={typeof shared[key] === 'boolean' ? String(shared[key]) : 'unset'} disabled={readOnly || Boolean(issue)} options={booleanOptions} onChange={(next) => set(key, next === 'unset' ? undefined : next === 'true')} className="w-full" />
         </label>)}
-      </div>
-      <label className="block space-y-1 text-sm">高级 JSONC 编辑
-        <TextArea rows={12} value={value ?? ''} readOnly={readOnly} onChange={(event) => onChange(event.target.value || null)} className="font-mono text-xs" />
+      </div> : null}
+      <label className="block space-y-1 text-sm">{t('filter.advanced')}
+        <TextArea rows={12} value={value ?? ''} readOnly={readOnly || invalidOverride} onChange={(event) => {
+          const next = event.target.value || null
+          const invalid = Boolean(readJsoncObject(next).error)
+          setAdvancedInvalid(invalid)
+          setAdvancedRevision((current) => current + 1)
+          onInvalidChange?.(invalid)
+          onChange(next)
+        }} className="font-mono text-xs" />
       </label>
-      {object && 'overrides' in object ? <p className="text-xs text-[var(--muted)]">目标格式覆盖配置会完整替换该目标的 DNS 段。sing-box 1.12 及更新版本优先使用 singboxV12，回退到 singbox；Clash Meta 优先使用 clashMeta，回退到 clash。</p> : null}
+      {object && 'overrides' in object ? <p className="text-xs text-[var(--muted)]">{t('dns.fallbackHint')}</p> : null}
     </div>
   )
 }

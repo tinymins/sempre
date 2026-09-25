@@ -1,3 +1,5 @@
+import { translateCurrent } from './i18n/provider'
+
 export interface ServerUser {
   id: string
   name: string
@@ -22,14 +24,14 @@ export async function serverRequest<T>(path: string, init: RequestInit = {}): Pr
   try {
     response = await fetch(`/api/v1${path}`, { ...init, headers, credentials: 'same-origin' })
   } catch (reason) {
-    throw new Error('无法连接订阅服务，请检查服务状态后重试。', { cause: reason })
+    throw new Error(translateCurrent('auth.networkError'), { cause: reason })
   }
   if (response.ok) {
     if (response.status === 204) return undefined as T
     try {
       return await response.json() as T
     } catch (reason) {
-      throw new ServerApiError('订阅服务返回了无效响应，请稍后重试。', response.status, { cause: reason })
+      throw new ServerApiError(translateCurrent('auth.invalidResponse'), response.status, { cause: reason })
     }
   }
   let message = `HTTP ${response.status}`

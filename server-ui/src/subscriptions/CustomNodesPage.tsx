@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
 import { CustomNodeEditor } from './CustomNodeEditor'
 import type { CustomNode, Subscription, UserBrief } from './types'
+import { useI18n } from '../i18n/provider'
 
 export function CustomNodesPage({ currentUserId }: { currentUserId: string }) {
+  const { t, number } = useI18n()
   const [nodes, setNodes] = useState<CustomNode[]>([])
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [users, setUsers] = useState<UserBrief[]>([])
@@ -42,15 +44,15 @@ export function CustomNodesPage({ currentUserId }: { currentUserId: string }) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
   }
   return <section className="space-y-4">
-    <div className="flex items-center justify-between gap-3"><div className="min-w-0"><h1 className="text-xl font-semibold">自定义节点</h1><p className="mt-1 text-sm text-[var(--muted)]">集中管理节点内容，并将节点使用权分配给配置集。</p></div><Button variant="primary" className="shrink-0 whitespace-nowrap" icon={<Plus size={16} />} onClick={() => setEditing(null)}>新建节点</Button></div>
-    {error ? <Card><p role="alert" className="text-sm text-red-600">{error}</p><Button className="mt-2" onClick={() => void load()}>重试</Button></Card> : null}
+    <div className="flex items-center justify-between gap-3"><div className="min-w-0"><h1 className="text-xl font-semibold">{t('nodes.title')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('nodes.subtitle')}</p></div><Button variant="primary" className="shrink-0 whitespace-nowrap" icon={<Plus size={16} />} onClick={() => setEditing(null)}>{t('nodes.new')}</Button></div>
+    {error ? <Card><p role="alert" className="text-sm text-red-600">{error}</p><Button className="mt-2" onClick={() => void load()}>{t('common.retry')}</Button></Card> : null}
     <Table<CustomNode> rowKey="id" dataSource={nodes} loading={loading} pagination={false} scroll={{ x: 700 }} columns={[
-      { title: '节点名称', dataIndex: 'name' }, { title: '协议', dataIndex: 'proxyType', render: (value) => <Tag color="blue">{value}</Tag> },
-      { title: '服务器', render: (_, node) => `${node.server}:${node.port}` },
-      { title: '创建者', render: (_, node) => node.creator.name },
-      { title: '已分配配置', render: (_, node) => node.assignments.length },
-      { title: '操作', render: (_, node) => <div className="flex gap-1">{node.canEdit ? <Button size="small" variant="text" icon={<Edit3 size={14} />} aria-label={`编辑 ${node.name}`} onClick={() => setEditing(node.id)} /> : null}{node.canManageAuthorization ? <Popconfirm title="删除这个自定义节点？" onConfirm={() => remove(node.id)} okType="danger"><Button size="small" variant="text" danger icon={<Trash2 size={14} />} aria-label={`删除 ${node.name}`} /></Popconfirm> : null}</div> },
-    ]} />
+      { title: t('common.node'), dataIndex: 'name' }, { title: t('common.protocol'), dataIndex: 'proxyType', render: (value) => <Tag color="blue">{value}</Tag> },
+      { title: t('common.server'), render: (_, node) => `${node.server}:${node.port}` },
+      { title: t('nodes.creator'), render: (_, node) => node.creator.name },
+      { title: t('nodes.assignedConfigs'), render: (_, node) => number(node.assignments.length) },
+      { title: t('common.actions'), render: (_, node) => <div className="flex gap-1">{node.canEdit ? <Button size="small" variant="text" icon={<Edit3 size={14} />} aria-label={`${t('common.edit')} ${node.name}`} onClick={() => setEditing(node.id)} /> : null}{node.canManageAuthorization ? <Popconfirm title={t('nodes.deleteTitle')} description={t('nodes.deleteHint')} okText={t('common.delete')} cancelText={t('common.cancel')} onConfirm={() => remove(node.id)} okType="danger"><Button size="small" variant="text" danger icon={<Trash2 size={14} />} aria-label={`${t('common.delete')} ${node.name}`} /></Popconfirm> : null}</div> },
+    ]} locale={{ emptyText: t('nodes.empty') }} />
     {editing !== undefined ? <CustomNodeEditor nodeId={editing} currentUserId={currentUserId} users={users} subscriptions={subscriptions} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); void load() }} /> : null}
   </section>
 }

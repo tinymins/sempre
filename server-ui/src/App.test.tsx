@@ -7,6 +7,8 @@ const user = { id: 'user-1', name: 'Owner', email: 'owner@example.com', role: 'u
 describe('server app authentication shell', () => {
   beforeEach(() => {
     window.location.hash = '#/subscriptions'
+    Object.defineProperty(navigator, 'languages', { configurable: true, value: ['zh-CN'] })
+    Object.defineProperty(navigator, 'language', { configurable: true, value: 'zh-CN' })
     vi.stubGlobal('fetch', vi.fn())
   })
 

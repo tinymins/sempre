@@ -28,8 +28,11 @@ export const subscriptionApi = {
   debug: (draft: SubscriptionDraft, target: Target, subscriptionId?: string) => serverRequest<DraftDebugResult>(`${base}/debug`, {
     method: 'POST', body: JSON.stringify({ draft, target, ...(subscriptionId ? { subscriptionId } : {}) }),
   }),
-  debugSource: (source: SubscriptionSource, mode: 'bypass-cache' | 'production') => serverRequest<SourceDebugResult>(`${base}/debug-source`, {
-    method: 'POST', body: JSON.stringify({ url: source.url, ua: source.fetchUa, prefix: source.prefix, cacheTtlMinutes: source.cacheTtlMinutes, fetchMode: source.fetchMode, mode }),
+  debugSaved: (id: string, target: Target) => serverRequest<DraftDebugResult>(`${base}/${encodeURIComponent(id)}/debug`, {
+    method: 'POST', body: JSON.stringify({ target }),
+  }),
+  debugSource: (source: SubscriptionSource, mode: 'bypass-cache' | 'production', saved?: { id: string; index: number }) => serverRequest<SourceDebugResult>(`${base}/debug-source`, {
+    method: 'POST', body: JSON.stringify({ url: source.url, ua: source.fetchUa, prefix: source.prefix, cacheTtlMinutes: source.cacheTtlMinutes, fetchMode: source.fetchMode, mode, ...(mode === 'production' && saved ? { subscriptionId: saved.id, sourceIndex: saved.index } : {}) }),
   }),
   customNodes: () => serverRequest<CustomNode[]>('/custom-nodes'),
   customNode: (id: string) => serverRequest<CustomNode>(`/custom-nodes/${encodeURIComponent(id)}`),

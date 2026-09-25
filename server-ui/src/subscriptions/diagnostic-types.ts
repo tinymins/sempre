@@ -43,11 +43,14 @@ export interface DraftDebugResult {
   nodeCount?: number
   diagnostics: { level: string; sourceId?: string; message: string }[]
   fieldDiffs?: unknown
+  decoded?: unknown
+  nodeOrigins?: unknown
   stages: { type: string; status: 'ok' | 'skipped' | 'error'; sourceId?: string; cached?: boolean; cacheState?: 'fresh' | 'stale' | 'miss' | 'bypass'; message?: string }[]
 }
 
 export interface SourceDebugResult {
-  status: number
+  ok: boolean
+  status: number | null
   ua: string
   nodeCount: number
   nodes: { name: string; type: string; server: string; port: number }[]
@@ -57,6 +60,10 @@ export interface SourceDebugResult {
   cacheState: 'fresh' | 'stale' | 'miss' | 'bypass'
   warning?: string
   diagnostics: unknown
+  responseHeaders: Record<string, string>
+  raw: string
+  rawTruncated: boolean
+  decoded: unknown[]
 }
 
 export interface NodeTraceResult {

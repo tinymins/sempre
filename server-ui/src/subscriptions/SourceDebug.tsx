@@ -1,11 +1,13 @@
-import { Button, Modal, Select, Spin, Table } from '@acme/components'
+import { Button, Collapse, Modal, Select, Spin, Table } from '@acme/components'
 import { useState } from 'react'
 import { subscriptionApi } from './api'
 import type { SourceDebugResult } from './diagnostic-types'
 import type { SubscriptionSource } from './types'
+import { useI18n } from '../i18n/provider'
 
-export function SourceDebug({ source, onClose }: { source: SubscriptionSource; onClose: () => void }) {
-  const [mode, setMode] = useState<'bypass-cache' | 'production'>('bypass-cache')
+export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSource; saved?: { id: string; index: number; source: SubscriptionSource }; onClose: () => void }) {
+  const { t, number } = useI18n()
+  const [mode, setMode] = useState<'bypass-cache' | 'production'>(saved ? 'production' : 'bypass-cache')
   const [result, setResult] = useState<SourceDebugResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -14,33 +16,40 @@ export function SourceDebug({ source, onClose }: { source: SubscriptionSource; o
     setError('')
     setResult(null)
     try {
-      setResult(await subscriptionApi.debugSource(source, mode))
+      setResult(await subscriptionApi.debugSource(source, mode, saved))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setLoading(false)
     }
   }
-  return <Modal open title={`来源调试 · ${source.remark || source.url}`} size="large" footer={null} onCancel={onClose}>
+  const displayedSource = mode === 'production' && saved ? saved.source : source
+  return <Modal open title={t('sourceDebug.title', { name: displayedSource.remark || displayedSource.url })} size="large" footer={null} onCancel={onClose}>
     <div className="space-y-4">
-      <p className="break-all text-xs text-[var(--muted)]">{source.url}</p>
-      <div className="flex items-end gap-2"><label className="min-w-48 flex-1 space-y-1 text-sm">抓取方式
-        <Select value={mode} options={[{ value: 'bypass-cache', label: '绕过缓存' }, { value: 'production', label: '按正式配置' }]} onChange={(next) => setMode(next as typeof mode)} className="w-full" />
-      </label><Button variant="primary" loading={loading} onClick={() => void run()}>开始调试</Button></div>
+      <p className="break-all text-xs text-[var(--muted)]">{displayedSource.url}</p>
+      <p className="text-xs text-[var(--muted)]">{saved ? t('sourceDebug.savedHint') : t('sourceDebug.draftHint')}</p>
+      <div className="flex items-end gap-2"><label className="min-w-48 flex-1 space-y-1 text-sm">{t('sourceDebug.mode')}
+        <Select value={mode} disabled={loading} options={[{ value: 'bypass-cache', label: t('sourceDebug.bypass') }, ...(saved ? [{ value: 'production', label: t('sourceDebug.production') }] : [])]} onChange={(next) => { setMode(next as typeof mode); setResult(null); setError('') }} className="w-full" />
+      </label><Button variant="primary" loading={loading} onClick={() => void run()}>{t('sourceDebug.run')}</Button></div>
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       {loading ? <Spin /> : null}
       {result ? <>
         <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-          <span>HTTP {result.status}</span><span>缓存：{result.cacheState}</span>
-          <span>{result.elapsedMs} ms</span><span>{result.bodyBytes} 字节</span>
+          <span>{result.status === null ? result.cacheState === 'fresh' ? t('sourceDebug.cacheHit') : t('sourceDebug.noHttp') : `HTTP ${result.status}`}</span><span>{t('sourceDebug.cache', { state: result.cacheState })}</span>
+          <span>{number(result.elapsedMs)} ms</span><span>{number(result.bodyBytes)} B</span>
         </div>
-        <p className="text-xs text-[var(--muted)]">User-Agent: {result.ua} · 解析节点 {result.nodeCount}</p>
+        <p className="text-xs text-[var(--muted)]">{t('sourceDebug.summary', { status: result.ok ? t('common.completed') : t('common.failed'), ua: result.ua, count: number(result.nodeCount) })}</p>
         {result.warning ? <p className="text-xs text-amber-700">{result.warning}</p> : null}
-        {result.diagnostics != null ? <details><summary className="cursor-pointer text-sm">抓取与解析诊断</summary><pre className="max-h-60 overflow-auto text-xs">{JSON.stringify(result.diagnostics, null, 2)}</pre></details> : null}
-        <Table rowKey={(_, index) => String(index)} dataSource={result.nodes} pagination={false} size="small" scroll={{ x: 500 }} columns={[
-          { title: '名称', dataIndex: 'name' }, { title: '协议', dataIndex: 'type' },
-          { title: '服务器', render: (_, node) => `${node.server}:${node.port}` },
+        <Collapse size="small" items={[
+          { key: 'diagnostics', label: t('sourceDebug.diagnostics'), children: <pre className="max-h-60 overflow-auto text-xs">{JSON.stringify(result.diagnostics, null, 2)}</pre> },
+          ...(Object.keys(result.responseHeaders).length ? [{ key: 'headers', label: t('sourceDebug.headers'), children: <pre className="max-h-40 overflow-auto text-xs">{JSON.stringify(result.responseHeaders, null, 2)}</pre> }] : []),
+          ...(result.raw ? [{ key: 'raw', label: `${t('sourceDebug.raw')}${result.rawTruncated ? t('sourceDebug.truncated') : ''}`, children: <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{result.raw}</pre> }] : []),
+          ...(result.decoded.length ? [{ key: 'decoded', label: t('sourceDebug.decoded', { count: number(result.decoded.length) }), children: <pre className="max-h-60 overflow-auto text-xs">{JSON.stringify(result.decoded, null, 2)}</pre> }] : []),
         ]} />
+        <Table rowKey={(_, index) => String(index)} dataSource={result.nodes} pagination={false} size="small" scroll={{ x: 500 }} columns={[
+          { title: t('common.name'), dataIndex: 'name' }, { title: t('common.protocol'), dataIndex: 'type' },
+          { title: t('common.server'), render: (_, node) => `${node.server}:${node.port}` },
+        ]} locale={{ emptyText: t('common.noData') }} />
       </> : null}
     </div>
   </Modal>
