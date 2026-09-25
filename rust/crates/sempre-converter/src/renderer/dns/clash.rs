@@ -10,8 +10,17 @@ pub(super) fn render(
     final_group: &str,
     shared: &SharedDns,
 ) -> Option<Value> {
-    match target.core.as_str() {
-        "mihomo" | "clash-rs" => Some(managed(target.core.as_str(), final_group, shared)),
+    let core = if target.core.is_empty() {
+        match target.format.as_str() {
+            "clash-meta" => "mihomo",
+            "clash-rs" => "clash-rs",
+            _ => "",
+        }
+    } else {
+        target.core.as_str()
+    };
+    match core {
+        "mihomo" | "clash-rs" => Some(managed(core, final_group, shared)),
         _ => None,
     }
 }

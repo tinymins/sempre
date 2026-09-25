@@ -14,6 +14,7 @@ pub use defaults::{
     system_defaults,
 };
 pub use domain_policy::{DnsFrontendPolicy, apply_dns_frontend_settings, dns_frontend_policy};
+pub use editor::parse_jsonc_value;
 pub use inspection::{PreviewNode, preview_nodes, preview_proxy, trace_node_steps};
 pub use model::{
     CompileOverlay, CompileRequest, CompileResult, CustomNode, DEFAULT_CORE_DNS_PORT,
@@ -78,6 +79,21 @@ pub fn compile_with_overlay(
             .map_err(|_| CompileError::InvalidCustomNode("manual server".into()))?;
         nodes.push((proxy, "manual-server".into()));
     }
+    let custom_nodes = request
+        .custom_nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    for node in profile
+        .custom_node_ids
+        .iter()
+        .filter_map(|id| custom_nodes.get(id.as_str()).copied())
+    {
+        let proxy = Proxy::from_value(node.proxy.clone())
+            .map_err(|_| CompileError::InvalidCustomNode(node.name.clone()))?;
+        nodes.push((proxy, format!("custom-node:{}", node.id)));
+    }
+
     for source in profile.sources.iter().filter(|source| source.enabled) {
         let snapshot = snapshots
             .get(source.id.as_str())
@@ -100,21 +116,6 @@ pub fn compile_with_overlay(
             }
             nodes.push((proxy, format!("source:{}", source.id)));
         }
-    }
-
-    let custom_nodes = request
-        .custom_nodes
-        .iter()
-        .map(|node| (node.id.as_str(), node))
-        .collect::<HashMap<_, _>>();
-    for node in profile
-        .custom_node_ids
-        .iter()
-        .filter_map(|id| custom_nodes.get(id.as_str()).copied())
-    {
-        let proxy = Proxy::from_value(node.proxy.clone())
-            .map_err(|_| CompileError::InvalidCustomNode(node.name.clone()))?;
-        nodes.push((proxy, format!("custom-node:{}", node.id)));
     }
 
     apply_filters(&mut nodes, &profile.filters);

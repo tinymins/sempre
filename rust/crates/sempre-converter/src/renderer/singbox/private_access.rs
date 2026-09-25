@@ -37,7 +37,7 @@ pub(super) fn resolve(
             .map_or_else(|| format!("private-access-{}", index + 1), str::to_owned);
         let kind = string(connector, "type").unwrap_or("outbound");
         let represented = match kind {
-            "wireguard" => endpoint(connector, &tag, desktop, &mut resolved),
+            "wireguard" | "tailscale" => endpoint(connector, kind, &tag, desktop, &mut resolved),
             kind if supported_outbound(kind) => {
                 outbound(connector, kind, &tag, desktop, &mut resolved)
             }
@@ -67,15 +67,23 @@ pub(super) fn resolve(
             }
         }
         if let Some(items) = connector.get("dns").and_then(Value::as_array) {
-            for (dns_index, value) in items.iter().take(1).enumerate() {
+            for (dns_index, value) in items.iter().enumerate() {
                 let Some(dns) = value.as_object() else {
                     continue;
                 };
                 let Some(server) = string(dns, "server") else {
                     continue;
                 };
-                let dns_tag = string(dns, "tag")
-                    .map_or_else(|| format!("{tag}-dns-{}", dns_index + 1), str::to_owned);
+                let dns_tag = string(dns, "tag").map_or_else(
+                    || {
+                        if items.len() == 1 {
+                            format!("{tag}-dns")
+                        } else {
+                            format!("{tag}-dns-{}", dns_index + 1)
+                        }
+                    },
+                    str::to_owned,
+                );
                 if !home_modes.is_empty() {
                     let direct_tag = format!("{dns_tag}-home-direct");
                     resolved.dns_servers.push(json!({
@@ -118,6 +126,7 @@ fn home_network_modes(connector: &Map<String, Value>) -> Vec<String> {
 
 fn endpoint(
     connector: &Map<String, Value>,
+    kind: &str,
     tag: &str,
     desktop: bool,
     resolved: &mut Resolved,
@@ -125,34 +134,16 @@ fn endpoint(
     let Some(endpoint) = connector.get("endpoint").and_then(Value::as_object) else {
         return false;
     };
-    let peer = endpoint
-        .get("peers")
-        .and_then(Value::as_array)
-        .and_then(|peers| peers.first())
-        .and_then(Value::as_object);
-    let mut value = json!({
-        "type": "wireguard",
-        "tag": tag,
-        "address": clean_strings(endpoint.get("address")),
-        "private_key": string_alias(endpoint, "privateKey", "private_key").unwrap_or_default(),
-        "peers": peer.into_iter().map(|peer| json!({
-            "address": string(peer, "address").unwrap_or_default(),
-            "port": integer(peer.get("port"), 0),
-            "public_key": string_alias(peer, "publicKey", "public_key").unwrap_or_default(),
-            "pre_shared_key": string_alias(peer, "preSharedKey", "pre_shared_key").unwrap_or_default(),
-            "allowed_ips": clean_strings(peer.get("allowedIps").or_else(|| peer.get("allowed_ips"))),
-            "persistent_keepalive_interval": integer(
-                peer.get("persistentKeepaliveInterval")
-                    .or_else(|| peer.get("persistent_keepalive_interval")),
-                25,
-            ),
-        })).collect::<Vec<_>>()
-    });
-    if let Some(domain) = first_endpoint_domain(&value) {
-        push_unique(&mut resolved.direct_domains, domain);
-        if value.get("domain_resolver").is_none() {
-            value["domain_resolver"] = resolver(if desktop { "bootstrap" } else { "local" });
-        }
+    let mut value = Value::Object(endpoint.clone());
+    normalize_keys(&mut value);
+    value["type"] = json!(kind);
+    value["tag"] = json!(tag);
+    let domains = endpoint_domains(&value);
+    for domain in &domains {
+        push_unique(&mut resolved.direct_domains, domain.clone());
+    }
+    if !domains.is_empty() && value.get("domain_resolver").is_none() {
+        value["domain_resolver"] = resolver(if desktop { "bootstrap" } else { "local" });
     }
     resolved.endpoints.push(value);
     true
@@ -188,7 +179,13 @@ fn outbound(
 }
 
 fn add_matchers(target: &mut Value, source: &Map<String, Value>) {
-    for (from, to) in [("ipCidrs", "ip_cidr"), ("domainSuffixes", "domain_suffix")] {
+    for (from, to) in [
+        ("ipCidrs", "ip_cidr"),
+        ("domains", "domain"),
+        ("domainSuffixes", "domain_suffix"),
+        ("domainKeywords", "domain_keyword"),
+        ("domainRegexes", "domain_regex"),
+    ] {
         let values = clean_strings(source.get(from));
         if !values.is_empty() {
             target[to] = json!(values);
@@ -226,7 +223,7 @@ fn normalize_keys(value: &mut Value) {
                 ("alterId", "alter_id"),
             ] {
                 if let Some(item) = object.remove(from) {
-                    object.insert(to.into(), item);
+                    object.entry(to).or_insert(item);
                 }
             }
             for item in object.values_mut() {
@@ -238,14 +235,18 @@ fn normalize_keys(value: &mut Value) {
     }
 }
 
-fn first_endpoint_domain(endpoint: &Value) -> Option<String> {
+fn endpoint_domains(endpoint: &Value) -> Vec<String> {
     endpoint
-        .get("peers")?
-        .as_array()?
-        .first()?
-        .get("address")?
-        .as_str()
-        .and_then(domain_name)
+        .get("peers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|peer| {
+            peer.get("address")
+                .and_then(Value::as_str)
+                .and_then(domain_name)
+        })
+        .collect()
 }
 
 fn domain_name(value: &str) -> Option<String> {
@@ -267,14 +268,6 @@ fn string<'a>(value: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
         .filter(|value| !value.is_empty())
 }
 
-fn string_alias<'a>(
-    value: &'a Map<String, Value>,
-    primary: &str,
-    alternate: &str,
-) -> Option<&'a str> {
-    string(value, primary).or_else(|| string(value, alternate))
-}
-
 fn integer(value: Option<&Value>, fallback: u64) -> u64 {
     value.and_then(Value::as_u64).unwrap_or(fallback)
 }
@@ -286,6 +279,18 @@ fn resolver(server: &str) -> Value {
 fn supported_outbound(value: &str) -> bool {
     matches!(
         value,
-        "vmess" | "vless" | "trojan" | "socks" | "http" | "ssh" | "hysteria2" | "tuic" | "anytls"
+        "outbound"
+            | "v2ray"
+            | "xray"
+            | "vmess"
+            | "vless"
+            | "trojan"
+            | "socks"
+            | "socks5"
+            | "http"
+            | "ssh"
+            | "hysteria2"
+            | "tuic"
+            | "anytls"
     )
 }

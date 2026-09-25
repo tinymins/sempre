@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -22,7 +21,7 @@ pub(super) fn apply(input: &Profile) -> Result<Profile, CompileError> {
         profile.groups = parse("group", &editor.group)?;
     }
     if !editor.rule_list.trim().is_empty() {
-        let providers: HashMap<String, Vec<EditorRuleProvider>> =
+        let providers: IndexMap<String, Vec<EditorRuleProvider>> =
             parse("rule_list", &editor.rule_list)?;
         profile.rule_providers = providers
             .into_iter()
@@ -110,7 +109,23 @@ fn parse_dns(input: &str) -> Result<Value, CompileError> {
                 .map(|value| ((*field).into(), value.clone()))
         })
         .collect::<Map<_, _>>();
-    Ok(serde_json::json!({ "shared": filtered }))
+    let overrides = parsed
+        .get("overrides")
+        .and_then(Value::as_object)
+        .map(|values| {
+            values
+                .iter()
+                .filter(|(key, value)| {
+                    matches!(
+                        key.as_str(),
+                        "singbox" | "singboxV12" | "clash" | "clashMeta"
+                    ) && !value.is_null()
+                })
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect::<Map<_, _>>()
+        })
+        .unwrap_or_default();
+    Ok(serde_json::json!({ "shared": filtered, "overrides": overrides }))
 }
 
 fn parse_private_access(input: &str) -> Result<Value, CompileError> {
@@ -132,6 +147,11 @@ fn parse_private_access(input: &str) -> Result<Value, CompileError> {
 fn sanitize_connector(connector: &Map<String, Value>) -> Option<Value> {
     const TYPES: &[&str] = &[
         "wireguard",
+        "tailscale",
+        "outbound",
+        "v2ray",
+        "xray",
+        "socks5",
         "vmess",
         "vless",
         "trojan",
@@ -146,103 +166,7 @@ fn sanitize_connector(connector: &Map<String, Value>) -> Option<Value> {
     if !TYPES.contains(&kind) {
         return None;
     }
-    let mut output = Map::new();
-    copy_fields(connector, &mut output, &["enabled", "tag", "type"]);
-    if let Some(home) = connector.get("homeNetwork").and_then(Value::as_object) {
-        output.insert(
-            "homeNetwork".into(),
-            object_fields(home, &["enabled", "networkIds"]),
-        );
-    }
-    if let Some(routes) = connector.get("routes").and_then(Value::as_object) {
-        output.insert(
-            "routes".into(),
-            object_fields(routes, &["ipCidrs", "domainSuffixes"]),
-        );
-    }
-    if let Some(dns) = connector
-        .get("dns")
-        .and_then(Value::as_array)
-        .and_then(|items| items.first())
-        .and_then(Value::as_object)
-    {
-        output.insert(
-            "dns".into(),
-            Value::Array(vec![object_fields(
-                dns,
-                &["tag", "domainSuffixes", "server", "serverPort"],
-            )]),
-        );
-    }
-    if kind == "wireguard" {
-        copy_fields(connector, &mut output, &["transport_endpoint_ref"]);
-        if let Some(endpoint) = connector.get("endpoint").and_then(Value::as_object) {
-            let mut sanitized = Map::new();
-            copy_fields(endpoint, &mut sanitized, &["address"]);
-            copy_alias(
-                endpoint,
-                &mut sanitized,
-                "privateKey",
-                &["privateKey", "private_key"],
-            );
-            if let Some(peer) = endpoint
-                .get("peers")
-                .and_then(Value::as_array)
-                .and_then(|items| items.first())
-                .and_then(Value::as_object)
-            {
-                let mut sanitized_peer = Map::new();
-                copy_fields(peer, &mut sanitized_peer, &["address", "port"]);
-                for (target, aliases) in [
-                    ("publicKey", &["publicKey", "public_key"][..]),
-                    ("preSharedKey", &["preSharedKey", "pre_shared_key"][..]),
-                    ("allowedIps", &["allowedIps", "allowed_ips"][..]),
-                    (
-                        "persistentKeepaliveInterval",
-                        &[
-                            "persistentKeepaliveInterval",
-                            "persistent_keepalive_interval",
-                        ][..],
-                    ),
-                ] {
-                    copy_alias(peer, &mut sanitized_peer, target, aliases);
-                }
-                sanitized.insert(
-                    "peers".into(),
-                    Value::Array(vec![Value::Object(sanitized_peer)]),
-                );
-            }
-            output.insert("endpoint".into(), Value::Object(sanitized));
-        }
-    } else if let Some(outbound) = connector.get("outbound").and_then(Value::as_object) {
-        output.insert("outbound".into(), Value::Object(outbound.clone()));
-    }
-    Some(Value::Object(output))
-}
-
-fn object_fields(source: &Map<String, Value>, fields: &[&str]) -> Value {
-    let mut output = Map::new();
-    copy_fields(source, &mut output, fields);
-    Value::Object(output)
-}
-
-fn copy_fields(source: &Map<String, Value>, output: &mut Map<String, Value>, fields: &[&str]) {
-    for field in fields {
-        if let Some(value) = source.get(*field) {
-            output.insert((*field).into(), value.clone());
-        }
-    }
-}
-
-fn copy_alias(
-    source: &Map<String, Value>,
-    output: &mut Map<String, Value>,
-    target: &str,
-    aliases: &[&str],
-) {
-    if let Some(value) = aliases.iter().find_map(|field| source.get(*field)) {
-        output.insert(target.into(), value.clone());
-    }
+    Some(Value::Object(connector.clone()))
 }
 
 fn parse<T: serde::de::DeserializeOwned>(
@@ -255,6 +179,10 @@ fn parse<T: serde::de::DeserializeOwned>(
         field,
         detail: error.to_string(),
     })
+}
+
+pub fn parse_jsonc_value(input: &str) -> Result<Value, CompileError> {
+    parse("jsonc", input)
 }
 
 fn validate_groups(groups: &[ProxyGroup]) -> Result<(), CompileError> {
@@ -363,13 +291,13 @@ mod tests {
         assert_eq!(
             applied.dns,
             serde_json::json!({
-                "shared": { "remoteDns": "1.1.1.1" }
+                "shared": { "remoteDns": "1.1.1.1" }, "overrides": {}
             })
         );
     }
 
     #[test]
-    fn removes_private_access_fields_without_ui_controls() {
+    fn preserves_private_access_fields_used_by_renderer() {
         let mut profile = Profile::default();
         profile.editor.private_access_config = serde_json::json!({
             "enabled": true,
@@ -394,14 +322,17 @@ mod tests {
         let connectors = applied.private_access["connectors"]
             .as_array()
             .expect("connectors");
-        assert_eq!(connectors.len(), 1);
+        assert_eq!(connectors.len(), 2);
         assert_eq!(
             connectors[0]["endpoint"]["peers"].as_array().map(Vec::len),
-            Some(1)
+            Some(2)
         );
-        assert!(connectors[0]["endpoint"].get("hidden").is_none());
-        assert!(connectors[0]["routes"].get("domainKeywords").is_none());
-        assert_eq!(connectors[0]["dns"].as_array().map(Vec::len), Some(1));
+        assert_eq!(connectors[0]["endpoint"]["hidden"], true);
+        assert_eq!(
+            connectors[0]["routes"]["domainKeywords"],
+            serde_json::json!(["hidden"])
+        );
+        assert_eq!(connectors[0]["dns"].as_array().map(Vec::len), Some(2));
     }
 
     #[test]

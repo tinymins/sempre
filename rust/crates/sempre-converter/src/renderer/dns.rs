@@ -11,6 +11,22 @@ pub(super) fn sing_box(
     proxies: &[Proxy],
     target: &Target,
 ) -> Result<Value, CompileError> {
+    let override_key = if target.version == "11" {
+        "singbox"
+    } else {
+        "singboxV12"
+    };
+    if let Some(value) = profile
+        .dns
+        .pointer(&format!("/overrides/{override_key}"))
+        .or_else(|| {
+            (target.version != "11")
+                .then(|| profile.dns.pointer("/overrides/singbox"))
+                .flatten()
+        })
+    {
+        return Ok(value.clone());
+    }
     let shared = SharedDns::resolve(&profile.dns);
     shared.validate(profile, target)?;
     Ok(singbox::render(profile, proxies, target, &shared))
@@ -74,6 +90,22 @@ fn managed_frontend(shared: &SharedDns, target: &Target) -> bool {
 }
 
 pub(super) fn clash(profile: &Profile, target: &Target, final_group: &str) -> Option<Value> {
+    let override_key = if target.format == "clash" {
+        "clash"
+    } else {
+        "clashMeta"
+    };
+    if let Some(value) = profile
+        .dns
+        .pointer(&format!("/overrides/{override_key}"))
+        .or_else(|| {
+            (override_key == "clashMeta")
+                .then(|| profile.dns.pointer("/overrides/clash"))
+                .flatten()
+        })
+    {
+        return Some(value.clone());
+    }
     clash::render(
         profile,
         target,
