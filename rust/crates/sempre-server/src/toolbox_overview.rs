@@ -47,7 +47,7 @@ async fn overview(
         "SELECT COUNT(*) AS total_subscriptions, COALESCE(SUM(s.cached_node_count),0) AS total_nodes FROM proxy_subscribes s WHERE {visible}"
     )).bind(user.id).fetch_one(&state.pool).await?;
     let today_requests: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM proxy_access_logs l JOIN proxy_subscribes s ON s.id=l.subscribe_id WHERE ({visible}) AND l.created_at >= CURRENT_DATE"
+        "SELECT COUNT(*) FROM proxy_access_logs l JOIN proxy_subscribes s ON s.id=l.subscribe_id WHERE ({visible}) AND l.created_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'"
     )).bind(user.id).fetch_one(&state.pool).await?;
     let rows = sqlx::query(&format!(
         "SELECT s.id,s.remark,s.last_access_at,u.id AS creator_id,u.name AS creator_name,u.email AS creator_email FROM proxy_subscribes s JOIN users u ON u.id=s.user_id WHERE {visible} ORDER BY s.created_at DESC LIMIT 5"

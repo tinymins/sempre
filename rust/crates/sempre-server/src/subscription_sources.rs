@@ -1,4 +1,4 @@
-use sempre_converter::{Diagnostic, Profile, Source, SourceSnapshot};
+use sempre_converter::{Diagnostic, Profile, Source, SourceSnapshot, parse_subscription};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -12,21 +12,35 @@ use crate::{
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SourceItem {
+pub(crate) struct SourceItem {
     #[serde(default = "default_true")]
-    enabled: bool,
-    url: String,
+    pub enabled: bool,
+    pub url: String,
     #[serde(default)]
-    prefix: String,
+    pub prefix: String,
     #[serde(default)]
     remark: String,
-    cache_ttl_minutes: Option<i32>,
-    fetch_ua: Option<String>,
-    fetch_mode: Option<String>,
+    pub cache_ttl_minutes: Option<i32>,
+    pub fetch_ua: Option<String>,
+    pub fetch_mode: Option<String>,
+}
+
+impl SourceItem {
+    pub(crate) fn effective_ua(&self) -> &str {
+        self.fetch_ua
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("clash.meta")
+    }
 }
 
 fn default_true() -> bool {
     true
+}
+
+pub(crate) struct SourceLoadSummary {
+    pub enabled: usize,
+    pub failed: usize,
 }
 
 pub(crate) async fn load_sources(
@@ -37,12 +51,16 @@ pub(crate) async fn load_sources(
     stages: &mut Vec<Value>,
     snapshots: &mut Vec<SourceSnapshot>,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Result<(), ApiError> {
+) -> Result<SourceLoadSummary, ApiError> {
     let items = source_items(fields)?;
     let enabled_items = items
         .into_iter()
         .filter(|item| item.enabled)
         .collect::<Vec<_>>();
+    let mut summary = SourceLoadSummary {
+        enabled: enabled_items.len(),
+        failed: 0,
+    };
     if enabled_items.is_empty() {
         stages.push(
             json!({"type":"fetch","status":"skipped","message":"no enabled subscription sources"}),
@@ -52,13 +70,10 @@ pub(crate) async fn load_sources(
         if item.url.trim().is_empty() {
             return Err(ApiError::bad_request("enabled source URL is empty"));
         }
-        let ua = item.fetch_ua.unwrap_or_else(|| "clash.meta".into());
+        let ua = item.effective_ua().to_owned();
         let mode = item.fetch_mode.unwrap_or_else(|| "auto".into());
         let proxy = source_proxy(state, &mode)?;
-        let source_id = format!(
-            "{:x}",
-            Sha256::digest(format!("{}\0{}\0{}", item.url, ua, mode).as_bytes())
-        );
+        let source_id = source_id(&item.url, &ua, &mode);
         let ttl = item
             .cache_ttl_minutes
             .or(fields.cache_ttl_minutes)
@@ -66,13 +81,39 @@ pub(crate) async fn load_sources(
         if ttl < 0 {
             return Err(ApiError::bad_request("cache TTL must be nonnegative"));
         }
-        let loaded = source_cache::load(state, SourceRequest {
-            url: &item.url, ua: &ua, fetch_mode: &mode, proxy, source_id: &source_id, ttl_minutes: ttl,
-            mode: cache_mode,
-            kind: SourceKind::Nodes,
-        }).await.inspect_err(|error| {
-            stages.push(json!({"type":"fetch","status":"error","sourceId":source_id,"message":error.message()}));
-        })?;
+        let loaded = source_cache::load(
+            state,
+            SourceRequest {
+                url: &item.url,
+                ua: &ua,
+                fetch_mode: &mode,
+                proxy,
+                source_id: &source_id,
+                ttl_minutes: ttl,
+                mode: cache_mode,
+                kind: SourceKind::Nodes,
+                inspect_unusable: true,
+            },
+        )
+        .await;
+        let loaded = match loaded {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                summary.failed += 1;
+                stages.push(json!({"type":"fetch","status":"error","sourceId":source_id,"message":error.message()}));
+                diagnostics.push(Diagnostic {
+                    level: "error".into(),
+                    source_id: Some(source_id),
+                    message: error.message().into(),
+                });
+                continue;
+            }
+        };
+        if !loaded.usable {
+            summary.failed += 1;
+            record_unusable(loaded, &source_id, stages, diagnostics);
+            continue;
+        }
         stages.push(json!({
             "type":"fetch","status":"ok","sourceId":source_id,
             "cached":matches!(loaded.cache_state, "fresh" | "stale"),
@@ -105,10 +146,39 @@ pub(crate) async fn load_sources(
             extra,
         });
     }
-    Ok(())
+    Ok(summary)
 }
 
-fn source_items(fields: &SubscriptionFields) -> Result<Vec<SourceItem>, ApiError> {
+fn record_unusable(
+    loaded: source_cache::LoadedSource,
+    source_id: &str,
+    stages: &mut Vec<Value>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let message = loaded
+        .warning
+        .unwrap_or_else(|| "source has no usable nodes".into());
+    stages.push(json!({"type":"fetch","status":"error","sourceId":source_id,"httpStatus":loaded.http_status,"message":message.clone()}));
+    diagnostics.push(Diagnostic {
+        level: "error".into(),
+        source_id: Some(source_id.into()),
+        message,
+    });
+    if loaded.http_status == Some(200) {
+        diagnostics.extend(
+            parse_subscription(&loaded.content)
+                .diagnostics
+                .into_iter()
+                .map(|message| Diagnostic {
+                    level: "warning".into(),
+                    source_id: Some(source_id.into()),
+                    message,
+                }),
+        );
+    }
+}
+
+pub(crate) fn source_items(fields: &SubscriptionFields) -> Result<Vec<SourceItem>, ApiError> {
     let mut items: Vec<SourceItem> = if let Some(items) = &fields.subscribe_items {
         serde_json::from_value(items.clone())
             .map_err(|error| ApiError::bad_request(format!("invalid subscribeItems: {error}")))?
@@ -139,6 +209,28 @@ fn source_items(fields: &SubscriptionFields) -> Result<Vec<SourceItem>, ApiError
             .collect();
     }
     Ok(items)
+}
+
+pub(crate) fn source_id(url: &str, ua: &str, mode: &str) -> String {
+    format!(
+        "{:x}",
+        Sha256::digest(format!("{url}\0{ua}\0{mode}").as_bytes())
+    )
+}
+
+pub(crate) fn all_sources_failed(stages: &[Value]) -> bool {
+    let fetches = stages
+        .iter()
+        .filter(|stage| stage.get("type").and_then(Value::as_str) == Some("fetch"));
+    let mut failed = false;
+    for stage in fetches {
+        match stage.get("status").and_then(Value::as_str) {
+            Some("ok") => return false,
+            Some("error") => failed = true,
+            _ => {}
+        }
+    }
+    failed
 }
 
 pub(crate) fn source_proxy<'a>(

@@ -4,13 +4,15 @@ use axum::{Json, Router, extract::State, routing::post};
 use sempre_converter::parse_subscription;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::{
     AppState,
     auth::CurrentUser,
     error::ApiError,
-    source_cache::{self, CacheMode, SourceKind, SourceRequest},
-    subscription_sources::source_proxy,
+    source_cache::{self, CacheMode, LoadedSource, SourceKind, SourceRequest},
+    subscription_compile::saved_input,
+    subscription_sources::{source_id, source_items, source_proxy},
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -26,13 +28,11 @@ struct DebugSourceInput {
     cache_ttl_minutes: Option<i32>,
     fetch_mode: Option<String>,
     mode: Option<String>,
+    subscription_id: Option<Uuid>,
+    source_index: Option<usize>,
 }
 
-async fn debug_source(
-    State(state): State<Arc<AppState>>,
-    CurrentUser(_user): CurrentUser,
-    Json(input): Json<DebugSourceInput>,
-) -> Result<Json<Value>, ApiError> {
+fn validate_input(input: &DebugSourceInput) -> Result<(), ApiError> {
     if input
         .mode
         .as_deref()
@@ -43,50 +43,158 @@ async fn debug_source(
     if input.cache_ttl_minutes.is_some_and(|ttl| ttl < 0) {
         return Err(ApiError::bad_request("cacheTtlMinutes must be nonnegative"));
     }
-    let ua = input
-        .ua
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "clash.meta".into());
-    let fetch_mode = input.fetch_mode.as_deref().unwrap_or("auto");
+    if input.subscription_id.is_some() != input.source_index.is_some() {
+        return Err(ApiError::bad_request(
+            "subscriptionId and sourceIndex must be provided together",
+        ));
+    }
+    if input.mode.as_deref() == Some("production") && input.subscription_id.is_none() {
+        return Err(ApiError::bad_request(
+            "production source debug requires subscriptionId and sourceIndex",
+        ));
+    }
+    Ok(())
+}
+
+async fn debug_source(
+    State(state): State<Arc<AppState>>,
+    CurrentUser(user): CurrentUser,
+    Json(input): Json<DebugSourceInput>,
+) -> Result<Json<Value>, ApiError> {
+    validate_input(&input)?;
+    let saved = if input.mode.as_deref() == Some("production") {
+        if let (Some(id), Some(index)) = (input.subscription_id, input.source_index) {
+            let (fields, _) = saved_input(&state, id, user.id).await?;
+            let item = source_items(&fields)?
+                .into_iter()
+                .nth(index)
+                .ok_or_else(|| ApiError::bad_request("saved source index is invalid"))?;
+            if !item.enabled {
+                return Err(ApiError::bad_request("saved source is disabled"));
+            }
+            Some((id, fields.cache_ttl_minutes, item))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let url = saved
+        .as_ref()
+        .map_or(input.url.as_str(), |(_, _, item)| item.url.as_str());
+    let ua = if let Some((_, _, item)) = &saved {
+        Some(item.effective_ua())
+    } else {
+        input.ua.as_deref().filter(|value| !value.trim().is_empty())
+    }
+    .unwrap_or("clash.meta")
+    .to_owned();
+    let fetch_mode = if let Some((_, _, item)) = &saved {
+        item.fetch_mode.as_deref()
+    } else {
+        input.fetch_mode.as_deref()
+    }
+    .unwrap_or("auto");
+    let ttl = saved.as_ref().map_or(
+        input.cache_ttl_minutes.unwrap_or(60),
+        |(_, default_ttl, item)| item.cache_ttl_minutes.or(*default_ttl).unwrap_or(60),
+    );
     let proxy = source_proxy(&state, fetch_mode)?;
+    let identity = source_id(url, &ua, fetch_mode);
+    let prefix = saved.as_ref().map_or_else(
+        || input.prefix.clone().unwrap_or_default(),
+        |(_, _, item)| item.prefix.clone(),
+    );
     let started = Instant::now();
     let loaded = source_cache::load(
         &state,
         SourceRequest {
-            url: &input.url,
+            url,
             ua: &ua,
             fetch_mode,
             proxy,
-            source_id: "debug-source",
-            ttl_minutes: input.cache_ttl_minutes.unwrap_or(60),
-            mode: if input.mode.as_deref() == Some("bypass-cache") {
-                CacheMode::Bypass
+            source_id: &identity,
+            ttl_minutes: ttl,
+            mode: if input.mode.as_deref() == Some("production") {
+                CacheMode::ReadOnlySubscription(
+                    saved.as_ref().expect("production source checked").0,
+                )
             } else {
-                CacheMode::Global
+                CacheMode::Bypass
             },
             kind: SourceKind::Nodes,
+            inspect_unusable: true,
         },
     )
     .await;
-    let loaded = match loaded {
-        Ok(loaded) => loaded,
-        Err(error) => {
-            return Ok(Json(json!({
-                "ok": false,
-                "status": 0,
-                "ua": ua,
-                "nodeCount": 0,
-                "nodes": [],
-                "elapsedMs": started.elapsed().as_millis(),
-                "bodyBytes": 0,
-                "cached": false,
-                "cacheState": if input.mode.as_deref() == Some("bypass-cache") { "bypass" } else { "miss" },
-                "diagnostics": [{"level":"error","message":error.message()}],
-            })));
-        }
-    };
+    Ok(Json(match loaded {
+        Ok(loaded) => debug_result(
+            &loaded,
+            &ua,
+            fetch_mode,
+            ttl,
+            &prefix,
+            started.elapsed().as_millis(),
+        ),
+        Err(error) => error_result(
+            &error,
+            &ua,
+            fetch_mode,
+            ttl,
+            &prefix,
+            started.elapsed().as_millis(),
+            input.mode.as_deref() == Some("production"),
+        ),
+    }))
+}
+
+fn error_result(
+    error: &ApiError,
+    ua: &str,
+    fetch_mode: &str,
+    ttl: i32,
+    prefix: &str,
+    elapsed_ms: u128,
+    production: bool,
+) -> Value {
+    json!({
+        "ok": false,
+        "status": null,
+        "responseHeaders": {},
+        "raw": "",
+        "rawTruncated": false,
+        "decoded": [],
+        "ua": ua,
+        "fetchMode": fetch_mode,
+        "cacheTtlMinutes": ttl,
+        "prefix": prefix,
+        "nodeCount": 0,
+        "nodes": [],
+        "elapsedMs": elapsed_ms,
+        "bodyBytes": 0,
+        "cached": false,
+        "cacheState": if production { "miss" } else { "bypass" },
+        "diagnostics": [{"level":"error","message":error.message()}],
+    })
+}
+
+fn debug_result(
+    loaded: &LoadedSource,
+    ua: &str,
+    fetch_mode: &str,
+    ttl: i32,
+    prefix: &str,
+    elapsed_ms: u128,
+) -> Value {
     let parsed = parse_subscription(&loaded.content);
-    let prefix = input.prefix.unwrap_or_default();
+    let mut diagnostics = parsed
+        .diagnostics
+        .iter()
+        .map(|message| json!({"level":"warning","message":message}))
+        .collect::<Vec<_>>();
+    if !loaded.usable {
+        diagnostics.insert(0, json!({"level":"error","message":loaded.warning.as_deref().unwrap_or("source has no usable nodes")}));
+    }
     let nodes = parsed
         .nodes
         .iter()
@@ -100,17 +208,24 @@ async fn debug_source(
             })
         })
         .collect::<Vec<_>>();
-    Ok(Json(json!({
-        "ok": true,
-        "status": 200,
+    json!({
+        "ok": loaded.usable,
+        "status": loaded.http_status,
+        "responseHeaders": loaded.response_headers,
+        "raw": loaded.content.chars().take(65536).collect::<String>(),
+        "rawTruncated": loaded.content.chars().count() > 65536,
+        "decoded": parsed.nodes.iter().map(sempre_converter::Proxy::as_value).collect::<Vec<_>>(),
         "ua": ua,
+        "fetchMode": fetch_mode,
+        "cacheTtlMinutes": ttl,
+        "prefix": prefix,
         "nodeCount": nodes.len(),
         "nodes": nodes,
-        "elapsedMs": started.elapsed().as_millis(),
+        "elapsedMs": elapsed_ms,
         "bodyBytes": loaded.content.len(),
         "cached": matches!(loaded.cache_state, "fresh" | "stale"),
         "cacheState": loaded.cache_state,
-        "warning": loaded.warning,
-        "diagnostics": parsed.diagnostics,
-    })))
+        "warning": loaded.warning.clone(),
+        "diagnostics": diagnostics,
+    })
 }

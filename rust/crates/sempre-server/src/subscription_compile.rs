@@ -21,13 +21,15 @@ use crate::{
     error::ApiError,
     source_cache::CacheMode,
     subscription_rules::load_rule_snapshots,
-    subscription_sources::load_sources,
+    subscription_sources::{all_sources_failed, load_sources},
+    subscription_validation::effective_default_on_empty,
     subscriptions::{SubscriptionFields, parse_input, row_fields},
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/subscriptions/debug", post(debug))
+        .route("/api/v1/subscriptions/{id}/debug", post(saved_debug))
         .route("/api/v1/subscriptions/{id}/preview-nodes", post(preview))
         .route("/api/v1/subscriptions/{id}/trace-node", post(trace))
 }
@@ -77,28 +79,74 @@ async fn debug(
         }
         Err(error) => return Ok(Json(debug_failure(stages, "draft", error.message()))),
     };
-    let (request, diagnostics) = match prepare(
-        &state,
-        &fields,
-        &selected,
-        input.target,
-        PrepareOptions {
-            viewer: user.id,
-            cache_mode,
-            node_scope: input.subscription_id,
-            include_rule_snapshots: true,
-        },
-        &mut stages,
-    )
-    .await
-    {
-        Ok(prepared) => prepared,
-        Err(error) => return Ok(Json(debug_failure(stages, "prepare", error.message()))),
-    };
+    Ok(Json(
+        run_debug(
+            &state,
+            &fields,
+            &selected,
+            input.target,
+            PrepareOptions {
+                viewer: user.id,
+                cache_mode,
+                node_scope: input.subscription_id,
+                include_rule_snapshots: true,
+            },
+            &mut stages,
+        )
+        .await,
+    ))
+}
+
+async fn saved_debug(
+    State(state): State<Arc<AppState>>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(input): Json<TargetInput>,
+) -> Result<Json<Value>, ApiError> {
+    let (fields, selected) = saved_input(&state, id, user.id).await?;
+    let mut stages = vec![json!({"type":"saved-subscription","status":"ok"})];
+    Ok(Json(
+        run_debug(
+            &state,
+            &fields,
+            &selected,
+            input.target,
+            PrepareOptions {
+                viewer: user.id,
+                cache_mode: CacheMode::ReadOnlySubscription(id),
+                node_scope: Some(id),
+                include_rule_snapshots: true,
+            },
+            &mut stages,
+        )
+        .await,
+    ))
+}
+
+async fn run_debug(
+    state: &AppState,
+    fields: &SubscriptionFields,
+    selected: &[Uuid],
+    target: Target,
+    options: PrepareOptions,
+    stages: &mut Vec<Value>,
+) -> Value {
+    let (request, diagnostics) =
+        match prepare(state, fields, selected, target, options, stages).await {
+            Ok(prepared) => prepared,
+            Err(error) => return debug_failure(stages.clone(), "prepare", error.message()),
+        };
     let mut result = match compile(&request) {
         Ok(result) => result,
-        Err(error) => return Ok(Json(debug_failure(stages, "compile", &error.to_string()))),
+        Err(error) => return debug_failure(stages.clone(), "compile", &error.to_string()),
     };
+    if result.node_count == 0 && all_sources_failed(stages) {
+        return debug_failure(
+            stages.clone(),
+            "compile",
+            "all enabled subscription sources failed and no usable nodes remain",
+        );
+    }
     result.diagnostics.splice(0..0, diagnostics);
     if result.node_count == 0 {
         result.diagnostics.push(Diagnostic {
@@ -110,7 +158,7 @@ async fn debug(
     } else {
         stages.push(json!({"type":"compile","status":"ok","nodeCount":result.node_count}));
     }
-    Ok(Json(result_output(&result, &stages)))
+    result_output(&result, stages)
 }
 
 async fn preview(
@@ -200,16 +248,16 @@ pub(crate) async fn prepare(
             .unwrap_or_else(|| "Subscription".into()),
         log_level: fields.log_level.clone(),
         editor: EditorConfig {
-            rule_list: effective(
+            rule_list: effective_default_on_empty(
                 fields.use_system_rule_list,
                 fields.rule_list.as_ref(),
                 include_str!("toolbox_defaults/rules.jsonc"),
-            ),
-            group: effective(
+            )?,
+            group: effective_default_on_empty(
                 fields.use_system_group,
                 fields.group.as_ref(),
                 include_str!("toolbox_defaults/groups.jsonc"),
-            ),
+            )?,
             filter: effective(
                 fields.use_system_filter,
                 fields.filter.as_ref(),
@@ -232,7 +280,7 @@ pub(crate) async fn prepare(
     };
     let mut snapshots = Vec::new();
     let mut diagnostics = Vec::new();
-    load_sources(
+    let source_summary = load_sources(
         state,
         fields,
         &mut profile,
@@ -242,6 +290,27 @@ pub(crate) async fn prepare(
         &mut diagnostics,
     )
     .await?;
+    let custom_nodes = load_custom_nodes(state, selected, options.viewer, options.node_scope)
+        .await
+        .inspect_err(|error| {
+            stages.push(json!({"type":"custom-nodes","status":"error","message":error.message()}));
+        })?;
+    stages.push(json!({"type":"custom-nodes","status":if selected.is_empty() { "skipped" } else { "ok" },"count":custom_nodes.len()}));
+    if source_summary.enabled > 0 && source_summary.failed == source_summary.enabled {
+        let manual_count = if profile.editor.servers.trim().is_empty() {
+            0
+        } else {
+            parse_jsonc_value(&profile.editor.servers)
+                .map_err(|error| ApiError::bad_request(error.to_string()))?
+                .as_array()
+                .map_or(0, Vec::len)
+        };
+        if manual_count == 0 && custom_nodes.is_empty() {
+            return Err(ApiError::unavailable(
+                "all enabled subscription sources failed and no manual or assigned nodes are available",
+            ));
+        }
+    }
     if options.include_rule_snapshots && target.core == "sing-box" {
         load_rule_snapshots(
             state,
@@ -254,12 +323,6 @@ pub(crate) async fn prepare(
         )
         .await?;
     }
-    let custom_nodes = load_custom_nodes(state, selected, options.viewer, options.node_scope)
-        .await
-        .inspect_err(|error| {
-            stages.push(json!({"type":"custom-nodes","status":"error","message":error.message()}));
-        })?;
-    stages.push(json!({"type":"custom-nodes","status":if selected.is_empty() { "skipped" } else { "ok" },"count":custom_nodes.len()}));
     profile.custom_node_ids = custom_nodes.iter().map(|node| node.id.clone()).collect();
     Ok((
         CompileRequest {
@@ -322,14 +385,24 @@ fn debug_failure(mut stages: Vec<Value>, stage: &str, message: &str) -> Value {
     {
         stages.push(json!({"type":stage,"status":"error","message":message}));
     }
-    json!({"ok":false,"diagnostics":[{"level":"error","message":message}],"stages":stages})
+    let mut diagnostics = stages.iter().filter(|event| event.get("status").and_then(Value::as_str) == Some("error"))
+        .map(|event| json!({"level":"error","sourceId":event.get("sourceId"),"message":event.get("message")}))
+        .collect::<Vec<_>>();
+    if diagnostics.is_empty() {
+        diagnostics.push(json!({"level":"error","message":message}));
+    }
+    json!({"ok":false,"diagnostics":diagnostics,"stages":stages})
 }
 
 fn result_output(result: &CompileResult, stages: &[Value]) -> Value {
+    let decoded = serde_yaml::from_str::<Value>(&result.content).ok();
     json!({
         "ok": true,
         "format": result.format,
         "content": result.content,
+        "decoded": decoded,
+        "nodeOrigins": result.node_origins,
+        "runtimeValidated": result.runtime_validated,
         "nodeCount": result.node_count,
         "diagnostics": result.diagnostics,
         "fieldDiffs": result.field_diffs,

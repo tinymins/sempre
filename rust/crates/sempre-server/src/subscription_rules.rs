@@ -9,8 +9,80 @@ use sempre_converter::{
 use crate::{
     AppState,
     error::ApiError,
-    source_cache::{self, CacheMode, SourceKind, SourceRequest},
+    source_cache::{self, CacheMode, LoadedSource, SourceKind, SourceRequest},
 };
+
+pub(crate) async fn load_rule_source(
+    state: &AppState,
+    url: &str,
+    ua: &str,
+    source_id: &str,
+    ttl_minutes: i32,
+    cache_mode: CacheMode,
+) -> Result<LoadedSource, ApiError> {
+    if let Some(proxy) = state.config.direct_proxy_url.as_deref() {
+        let direct = source_cache::load(
+            state,
+            SourceRequest {
+                url,
+                ua,
+                fetch_mode: "domestic-direct",
+                proxy: Some(proxy),
+                source_id,
+                ttl_minutes,
+                mode: cache_mode,
+                kind: SourceKind::RuleSet,
+                inspect_unusable: false,
+            },
+        );
+        let automatic = source_cache::load(
+            state,
+            SourceRequest {
+                url,
+                ua,
+                fetch_mode: "auto",
+                proxy: None,
+                source_id,
+                ttl_minutes,
+                mode: cache_mode,
+                kind: SourceKind::RuleSet,
+                inspect_unusable: false,
+            },
+        );
+        tokio::pin!(direct, automatic);
+        return tokio::select! {
+            result = &mut direct => match result {
+                Ok(loaded) => Ok(loaded),
+                Err(error) => {
+                    tracing::warn!(reason = %error.message(), "configured rule fetch route failed");
+                    automatic.await
+                }
+            },
+            result = &mut automatic => match result {
+                Ok(loaded) => Ok(loaded),
+                Err(error) => {
+                    tracing::warn!(reason = %error.message(), "automatic rule fetch route failed");
+                    direct.await
+                }
+            },
+        };
+    }
+    source_cache::load(
+        state,
+        SourceRequest {
+            url,
+            ua,
+            fetch_mode: "auto",
+            proxy: None,
+            source_id,
+            ttl_minutes,
+            mode: cache_mode,
+            kind: SourceKind::RuleSet,
+            inspect_unusable: false,
+        },
+    )
+    .await
+}
 
 pub(crate) async fn load_rule_snapshots(
     state: &AppState,
@@ -29,18 +101,13 @@ pub(crate) async fn load_rule_snapshots(
         .filter(|provider| !provider.url.trim().is_empty());
     let loaded_rules = stream::iter(providers.map(|provider| async move {
         let source_id = rule_provider_snapshot_id(&provider.tag);
-        let loaded = source_cache::load(
+        let loaded = load_rule_source(
             state,
-            SourceRequest {
-                url: &provider.url,
-                ua: "clash.meta",
-                fetch_mode: "auto",
-                proxy: None,
-                source_id: &source_id,
-                ttl_minutes,
-                mode: cache_mode,
-                kind: SourceKind::RuleSet,
-            },
+            &provider.url,
+            "clash.meta",
+            &source_id,
+            ttl_minutes,
+            cache_mode,
         )
         .await;
         (source_id, loaded)

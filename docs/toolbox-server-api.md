@@ -104,7 +104,8 @@ client-chosen public `url`.
 | `POST` | `/api/v1/subscriptions/{id}/preview-nodes` | Preview effective saved config for a target. |
 | `POST` | `/api/v1/subscriptions/{id}/trace-node` | Trace a saved node and target. |
 | `POST` | `/api/v1/subscriptions/debug` | Compile an unsaved complete draft for a target, with diagnostics and output; no persistence. |
-| `POST` | `/api/v1/subscriptions/debug-source` | Fetch and inspect an unsaved source and its fetch options. |
+| `POST` | `/api/v1/subscriptions/{id}/debug` | Compile the saved subscription for `{target}` with its saved node assignments and source identity. |
+| `POST` | `/api/v1/subscriptions/debug-source` | Inspect a source; production mode requires saved `subscriptionId` and zero-based `sourceIndex`. |
 | `POST` | `/api/v1/subscriptions/clear-cache` | Explicitly clear saved source snapshots; owner only. |
 | `GET, POST` | `/api/v1/custom-nodes` | List available reusable nodes or create one. |
 | `GET, PATCH, DELETE` | `/api/v1/custom-nodes/{id}` | Read/edit/delete a reusable node according to ownership. |
@@ -144,6 +145,30 @@ and public rendering, with any debug-only network behavior identified in the
 response; it must not silently load the saved row in place of the submitted
 draft.
 
+Saved source debugging accepts
+`{mode:"production",url:"https://example.com/nodes",subscriptionId,sourceIndex}`.
+`url` is required by the request DTO but ignored in production mode. The
+server enforces the subscription ACL and uses that saved source's URL, UA, fetch
+mode, TTL, and prefix; unsaved request fields cannot override them. Unsaved
+source debugging uses `{mode:"bypass-cache",url,ua?,fetchMode?,cacheTtlMinutes?,prefix?}`.
+Both modes are read-only and never store fetched text. The response contains
+`ok`, `status` (an actual HTTP response status, or `null` when no HTTP response
+was received or a cache snapshot was used), `cacheState`, safe
+`responseHeaders` (`content-type`, `etag`, `last-modified`, `cache-control`),
+`raw` (at most 65,536 characters) with `rawTruncated`, `decoded` (parsed node
+objects), node summaries, elapsed time, and diagnostics. A non-200 or 200
+response without usable nodes can be inspected but is never stored in the
+formal source cache. `decoded` is parsed nodes, not a base64-decoded text copy.
+Saved target debugging accepts `{target}` at
+`/api/v1/subscriptions/{id}/debug` and returns the same `ok`, `content`,
+`stages`, `diagnostics`, `fieldDiffs`, and `nodeCount` shape as draft debug,
+plus `decoded` (parsed JSON/YAML when applicable) and converter
+`nodeOrigins`. It does not make a target HTTP request or run a proxy core, so
+it does not invent response headers or runtime validation.
+Both debug endpoints return observed stages after the request completes; they
+do not stream Toolbox-style SSE events in real time. Source debug does not
+separately return the pre-parse, base64-decoded source text.
+
 ## Public URLs and target mapping
 
 All historical Toolbox paths use the original `proxy_subscribes.url` value.
@@ -176,7 +201,10 @@ refresh cannot change the SHA-256 before the client fetches it. A stable
 direct public URL renders the latest saved input. A successful public compile
 persists the same immutable artifact internally. Failed public compilation
 serves the most recently successful artifact for that subscription and target
-with `x-sempre-stale: true`; stale source-cache fallback also sets this header.
+with `x-sempre-stale: true`; stale source-cache fallback or successful partial
+output that omitted a failed source also sets this header. The boolean header
+does not distinguish these cases; authenticated debug stage events and
+diagnostics identify the failed source and cache state.
 The manifest's
 `read_only` key must use that exact snake-case wire name, as required by
 `sempre-subscription::remote::Manifest`. Revision must be monotonic across
@@ -192,6 +220,16 @@ snapshots or artifacts. Node preview and trace do not fetch rule providers.
 An empty draft output remains `ok: true` because a direct-only configuration
 can be intentional; debug reports `nodeCount: 0` and a warning to inspect
 enabled sources, nodes, and filters when proxy nodes were expected.
+When an enabled source fails, its fetch event and diagnostic retain the
+`sourceId` while healthy sources, manual nodes, and assigned nodes continue.
+If all enabled sources fail and no usable nodes remain, compilation fails;
+public output uses the last successful artifact if one exists. An invalid
+editor JSONC field still fails explicitly. With `useSystemRuleList` or
+`useSystemGroup` false, an empty/null custom value falls back to the system
+default, whereas an invalid nonempty JSONC value fails. An empty custom filter
+intentionally stays empty. Rule-provider fetching races automatic and configured
+domestic-direct routes when `DIRECT_PROXY_URL` exists, using the first
+successful safe response.
 
 ## Known migration differences
 
@@ -199,7 +237,8 @@ enabled sources, nodes, and filters when proxy nodes were expected.
 | --- | --- | --- |
 | Duplicate node names | Sempre adds ` (2)` suffixes; Toolbox could emit duplicate names. | Preserve this safety improvement; compare real reference output before claiming byte equality. |
 | Remote Clash rules for sing-box | Rule-provider content is fetched through bounded cache and compiled into a fixed snapshot. | Valid sing-box output has precedence over preserving the old remote conversion URL byte-for-byte. |
-| Password writes | New registrations and changes require 12–1024 characters; existing shorter Toolbox passwords still verify. | Confirm policy before production data migration. |
+| Password writes | New registrations and changes currently validate `String::len()`, so the 12–1024 limit is measured in UTF-8 bytes, despite the API error saying "characters". Existing shorter Toolbox passwords still verify. | Confirm policy and align the error wording before production data migration. |
+| Access statistics | Access logs are retained for the configured window (90 days by default), so `totalAccesses` is the count of retained logs, not a lifetime total. Recent logs are paginated at at most 100 per page. "Today" starts at UTC midnight. | Confirm the long-term retention and lifetime-total policy before production migration; no historical counter was invented. |
 | Existing Toolbox database | Fresh schema and local browser/public flows are implemented. | In-place migration and real production-row equivalence remain unaccepted. |
 
 ## Current network acceptance boundary

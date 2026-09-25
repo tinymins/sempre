@@ -296,15 +296,22 @@ async fn generate(
     input.extend_from_slice(subscription.updated_at.to_rfc3339().as_bytes());
     let input_hash = format!("{:x}", Sha256::digest(&input));
     let result = compile(&request).map_err(|error| ApiError::bad_request(error.to_string()))?;
+    if result.node_count == 0 && crate::subscription_sources::all_sources_failed(&stages) {
+        return Err(ApiError::unavailable(
+            "all enabled subscription sources failed and no usable nodes remain",
+        ));
+    }
     let hash = format!("{:x}", Sha256::digest(result.content.as_bytes()));
     let runtime = json!({
         "local_proxy": request.profile.local_proxy,
         "transparent_proxy": request.profile.transparent_proxy,
         "management_api": request.profile.management_api,
     });
-    let stale_source = stages
-        .iter()
-        .any(|stage| stage.get("cacheState").and_then(Value::as_str) == Some("stale"));
+    let stale_source = stages.iter().any(|stage| {
+        stage.get("cacheState").and_then(Value::as_str) == Some("stale")
+            || (stage.get("type").and_then(Value::as_str) == Some("fetch")
+                && stage.get("status").and_then(Value::as_str) == Some("error"))
+    });
     Ok(Generated {
         subscription,
         target: request.target,

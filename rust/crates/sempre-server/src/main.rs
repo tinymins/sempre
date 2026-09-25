@@ -10,6 +10,7 @@ mod subscription_selected_nodes;
 mod subscription_source_debug;
 mod subscription_sources;
 mod subscription_stats;
+mod subscription_validation;
 mod subscriptions;
 mod toolbox_account;
 mod toolbox_admin;

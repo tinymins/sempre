@@ -79,7 +79,7 @@ async fn stats(
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
-    let today: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM proxy_access_logs WHERE subscribe_id=$1 AND created_at >= CURRENT_DATE")
+    let today: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM proxy_access_logs WHERE subscribe_id=$1 AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'")
         .bind(id).fetch_one(&state.pool).await?;
     let by_type = sqlx::query("SELECT access_type,COUNT(*) AS count FROM proxy_access_logs WHERE subscribe_id=$1 GROUP BY access_type ORDER BY count DESC")
         .bind(id).fetch_all(&state.pool).await?;

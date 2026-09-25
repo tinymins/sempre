@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     AppState, auth::CurrentUser, error::ApiError, subscription_selected_nodes::sync_selected,
+    subscription_validation::validate,
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -116,7 +117,7 @@ async fn list(
     CurrentUser(user): CurrentUser,
 ) -> Result<Json<Vec<SubscriptionOutput>>, ApiError> {
     let sql = format!(
-        "{SELECT_SUBSCRIPTION} WHERE s.user_id = $1 OR s.authorized_user_ids @> jsonb_build_array($1::text) ORDER BY s.updated_at DESC"
+        "{SELECT_SUBSCRIPTION} WHERE s.user_id = $1 OR s.authorized_user_ids @> jsonb_build_array($1::text) ORDER BY s.created_at DESC"
     );
     let rows = sqlx::query(&sql)
         .bind(user.id)
@@ -457,43 +458,4 @@ pub(crate) fn parse_input(value: &Value) -> Result<(SubscriptionFields, Vec<Uuid
     let fields = serde_json::from_value(Value::Object(object))
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
     Ok((fields, selected))
-}
-
-async fn validate(
-    pool: &PgPool,
-    fields: &SubscriptionFields,
-    selected: &[Uuid],
-) -> Result<(), ApiError> {
-    if !matches!(
-        fields.log_level.as_str(),
-        "off" | "error" | "warn" | "info" | "debug"
-    ) {
-        return Err(ApiError::bad_request("invalid logLevel"));
-    }
-    if fields.cache_ttl_minutes.is_some_and(|value| value < 0) {
-        return Err(ApiError::bad_request("cacheTtlMinutes must be nonnegative"));
-    }
-    if fields
-        .subscribe_items
-        .as_ref()
-        .is_some_and(|value| !value.is_array())
-    {
-        return Err(ApiError::bad_request("subscribeItems must be an array"));
-    }
-    if !fields.authorized_user_ids.is_empty() {
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = ANY($1)")
-            .bind(&fields.authorized_user_ids)
-            .fetch_one(pool)
-            .await?;
-        if usize::try_from(count).ok() != Some(fields.authorized_user_ids.len()) {
-            return Err(ApiError::bad_request("authorized user does not exist"));
-        }
-    }
-    let mut unique = std::collections::HashSet::new();
-    if !selected.iter().all(|id| unique.insert(id)) {
-        return Err(ApiError::bad_request(
-            "selectedCustomNodeIds contains duplicates",
-        ));
-    }
-    Ok(())
 }
