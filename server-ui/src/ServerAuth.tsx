@@ -1,20 +1,35 @@
 import { Button, Card, Input, Password } from '@acme/components'
 import { KeyRound } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { login, type ServerSession } from './server-api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { authConfig, login, register, type ServerUser } from './server-api'
 
-export function ServerAuth({ onAuthenticated }: { onAuthenticated: (session: ServerSession) => void }) {
+export function ServerAuth({ onAuthenticated }: { onAuthenticated: (user: ServerUser) => void }) {
   const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [invitationCode, setInvitationCode] = useState(new URLSearchParams(window.location.search).get('invite') ?? '')
+  const [mode, setMode] = useState<'login' | 'register'>(invitationCode ? 'register' : 'login')
+  const [registration, setRegistration] = useState<{ allowRegistration: boolean; firstUser: boolean } | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    let active = true
+    void authConfig().then((config) => {
+      if (!active) return
+      setRegistration(config)
+      if (config.firstUser) setMode('register')
+    }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)) })
+    return () => { active = false }
+  }, [])
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (mode === 'register' && password.length < 12) { setError('新密码至少需要 12 个字符。'); return }
     setPending(true)
     setError('')
     try {
-      onAuthenticated(await login(email.trim(), password))
+      onAuthenticated(mode === 'register' ? await register(name.trim(), email.trim(), password, invitationCode.trim() || undefined) : await login(email.trim(), password))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -30,10 +45,14 @@ export function ServerAuth({ onAuthenticated }: { onAuthenticated: (session: Ser
             <KeyRound size={23} />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Sempre Server</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">多人订阅转换与配置管理</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">{registration?.firstUser ? '创建首个管理员账号' : '多人订阅转换与配置管理'}</p>
         </div>
         <Card>
           <form className="space-y-4" onSubmit={submit}>
+            {mode === 'register' ? <label className="block space-y-1.5" htmlFor="server-name">
+              <span className="text-sm font-medium">姓名</span>
+              <Input id="server-name" size="large" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} />
+            </label> : null}
             <label className="block space-y-1.5" htmlFor="server-email">
               <span className="text-sm font-medium">邮箱</span>
               <Input
@@ -51,11 +70,12 @@ export function ServerAuth({ onAuthenticated }: { onAuthenticated: (session: Ser
               <Password
                 id="server-password"
                 size="large"
-                autoComplete="current-password"
+                autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
             </label>
+            {mode === 'register' && !registration?.firstUser ? <label className="block space-y-1.5" htmlFor="server-invite"><span className="text-sm font-medium">邀请码{registration?.allowRegistration ? '（可选）' : ''}</span><Input id="server-invite" value={invitationCode} onChange={(event) => setInvitationCode(event.target.value)} /></label> : null}
             {error ? <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
             <Button
               block
@@ -63,11 +83,14 @@ export function ServerAuth({ onAuthenticated }: { onAuthenticated: (session: Ser
               loading={pending}
               size="large"
               variant="primary"
-              disabled={!email.trim() || !password}
+              disabled={!email.trim() || !password || (mode === 'register' && (!name.trim() || password.length < 12 || (!registration?.firstUser && !registration?.allowRegistration && !invitationCode.trim())))}
             >
-              登录
+              {mode === 'register' ? '创建账号并登录' : '登录'}
             </Button>
           </form>
+          {registration ? <Button block className="mt-3" variant="text" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
+            {mode === 'login' ? registration.allowRegistration || registration.firstUser ? '注册账号' : '使用邀请码注册' : '已有账号？返回登录'}
+          </Button> : null}
         </Card>
       </div>
     </main>

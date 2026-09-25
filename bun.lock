@@ -40,6 +40,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@acme/components": "workspace:*",
+        "jsonc-parser": "^3.3.1",
         "lucide-react": "latest",
         "react": "latest",
         "react-dom": "latest",

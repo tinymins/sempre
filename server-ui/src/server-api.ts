@@ -1,92 +1,68 @@
-const SESSION_KEY = 'sempre.server.session.v1'
-
-export interface ServerSession {
-  token: string
-  expiresAt: string
-  user: {
-    id: string
-    email: string
-  }
+export interface ServerUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  settings: Record<string, unknown> | null
 }
 
 interface ErrorBody {
-  error?: {
-    message?: string
-  }
+  error?: { code?: string; message?: string }
 }
 
-export function loadServerSession(): ServerSession | null {
-  try {
-    const stored = localStorage.getItem(SESSION_KEY)
-    if (!stored) return null
-    const session = JSON.parse(stored) as ServerSession
-    if (!session.token || !session.expiresAt || new Date(session.expiresAt) <= new Date()) {
-      saveServerSession(null)
-      return null
-    }
-    return session
-  } catch {
-    saveServerSession(null)
-    return null
-  }
+export class ServerApiError extends Error {
+  constructor(message: string, readonly status: number, options?: ErrorOptions) { super(message, options) }
 }
 
-export function saveServerSession(session: ServerSession | null) {
-  if (session) {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-    return
-  }
-  localStorage.removeItem(SESSION_KEY)
-}
-
-export async function login(email: string, password: string): Promise<ServerSession> {
-  const response = await fetch('/api/v1/auth/login', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, password }),
-  })
-  const result = await readResponse<{
-    token: string
-    expires_at: string
-    user: ServerSession['user']
-  }>(response)
-  return {
-    token: result.token,
-    expiresAt: result.expires_at,
-    user: result.user,
-  }
-}
-
-export async function verifyServerSession(session: ServerSession) {
-  return authenticatedRequest<ServerSession['user']>(session, '/auth/me')
-}
-
-export async function logout(session: ServerSession) {
-  await authenticatedRequest<void>(session, '/auth/logout', { method: 'DELETE' })
-}
-
-async function authenticatedRequest<T>(session: ServerSession, path: string, init: RequestInit = {}) {
+export async function serverRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
-  headers.set('Authorization', `Bearer ${session.token}`)
-  const response = await fetch(`/api/v1${path}`, { ...init, headers })
-  if (response.status === 401) saveServerSession(null)
-  return readResponse<T>(response)
-}
-
-async function readResponse<T>(response: Response): Promise<T> {
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+  let response: Response
+  try {
+    response = await fetch(`/api/v1${path}`, { ...init, headers, credentials: 'same-origin' })
+  } catch (reason) {
+    throw new Error('无法连接订阅服务，请检查服务状态后重试。', { cause: reason })
+  }
   if (response.ok) {
     if (response.status === 204) return undefined as T
-    return response.json() as Promise<T>
+    try {
+      return await response.json() as T
+    } catch (reason) {
+      throw new ServerApiError('订阅服务返回了无效响应，请稍后重试。', response.status, { cause: reason })
+    }
   }
+  let message = `HTTP ${response.status}`
   try {
     const body = await response.json() as ErrorBody
-    throw new Error(body.error?.message || `HTTP ${response.status}`)
-  } catch (error) {
-    if (error instanceof Error && !error.message.startsWith('Unexpected')) throw error
-    throw new Error(`HTTP ${response.status}`, { cause: error })
-  }
+    message = body.error?.message || message
+  } catch { /* Keep the HTTP status for non-JSON errors. */ }
+  throw new ServerApiError(message, response.status)
+}
+
+export async function login(email: string, password: string): Promise<ServerUser> {
+  const result = await serverRequest<{ user: ServerUser }>('/auth/login', {
+    method: 'POST', body: JSON.stringify({ email, password }),
+  })
+  return result.user
+}
+
+export function authConfig(): Promise<{ allowRegistration: boolean; firstUser: boolean }> {
+  return serverRequest('/auth/config')
+}
+
+export async function register(name: string, email: string, password: string, invitationCode?: string): Promise<ServerUser> {
+  const result = await serverRequest<{ user: ServerUser }>('/auth/register', {
+    method: 'POST', body: JSON.stringify({ name, email, password, ...(invitationCode ? { invitationCode } : {}) }),
+  })
+  return result.user
+}
+
+export async function verifyServerSession(): Promise<ServerUser> {
+  const result = await serverRequest<{ user: ServerUser }>('/auth/me')
+  return result.user
+}
+
+export async function logout(): Promise<void> {
+  await serverRequest<void>('/auth/logout', { method: 'POST' })
 }
