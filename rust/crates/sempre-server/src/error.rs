@@ -37,6 +37,13 @@ impl ApiError {
             "authentication required",
         )
     }
+    pub fn invalid_credentials() -> Self {
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            "INVALID_CREDENTIALS",
+            "invalid email or password",
+        )
+    }
     pub fn forbidden(message: impl Into<String>) -> Self {
         Self::new(StatusCode::FORBIDDEN, "FORBIDDEN", message)
     }
@@ -49,9 +56,6 @@ impl ApiError {
     }
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, "CONFLICT", message)
-    }
-    pub fn too_many_requests(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", message)
     }
     pub fn unavailable(message: impl Into<String>) -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, "UNAVAILABLE", message)

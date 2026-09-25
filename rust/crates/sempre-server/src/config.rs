@@ -8,8 +8,6 @@ pub(crate) struct Config {
     pub database_url: String,
     pub bind_address: SocketAddr,
     pub public_url: Url,
-    pub allow_registration: bool,
-    pub session_days: i64,
     pub access_log_retention_days: i64,
     pub web_root: PathBuf,
     pub direct_proxy_url: Option<String>,
@@ -39,14 +37,6 @@ impl Config {
         if !matches!(public_url.scheme(), "http" | "https") || public_url.cannot_be_a_base() {
             return Err(invalid("SEMPRE_PUBLIC_URL", &"must be an HTTP(S) base URL"));
         }
-        let allow_registration = parse_bool("SEMPRE_ALLOW_REGISTRATION", true)?;
-        let session_days = env::var("SEMPRE_SESSION_DAYS")
-            .unwrap_or_else(|_| "30".into())
-            .parse::<i64>()
-            .map_err(|error| invalid("SEMPRE_SESSION_DAYS", &error))?;
-        if !(1..=365).contains(&session_days) {
-            return Err(invalid("SEMPRE_SESSION_DAYS", &"must be between 1 and 365"));
-        }
         let access_log_retention_days = env::var("SEMPRE_ACCESS_LOG_RETENTION_DAYS")
             .unwrap_or_else(|_| "90".into())
             .parse::<i64>()
@@ -72,11 +62,9 @@ impl Config {
             database_url,
             bind_address,
             public_url,
-            allow_registration,
-            session_days,
             access_log_retention_days,
             web_root: env::var("SEMPRE_WEB_ROOT")
-                .map_or_else(|_| PathBuf::from("ui/dist"), PathBuf::from),
+                .map_or_else(|_| PathBuf::from("server-ui/dist"), PathBuf::from),
             direct_proxy_url,
         })
     }
@@ -87,15 +75,6 @@ fn required(name: &'static str) -> Result<String, ConfigError> {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .ok_or(ConfigError::Missing(name))
-}
-
-fn parse_bool(name: &'static str, default: bool) -> Result<bool, ConfigError> {
-    match env::var(name).ok().as_deref() {
-        None => Ok(default),
-        Some("1" | "true" | "yes" | "on") => Ok(true),
-        Some("0" | "false" | "no" | "off") => Ok(false),
-        Some(_) => Err(invalid(name, &"must be true or false")),
-    }
 }
 
 fn invalid(name: &'static str, detail: &impl ToString) -> ConfigError {

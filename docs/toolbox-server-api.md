@@ -1,0 +1,248 @@
+# Toolbox subscription server contract
+
+This document records the frozen server contract. The source
+baseline is OhMyWrt Toolbox `master@969c0db` and Sempre `main@e88cea6`.
+
+## Product and data boundary
+
+The canonical subscription record is Toolbox `proxy_subscribes`, including its
+separate, immutable `url` value. `id` is the internal UUID; `url` is the stable
+public subscription identifier. Saving a record is explicit and immediately
+affects the next public request. It does not require a compile, publish, or
+share step. The server fetches sources and renders target configurations but
+never installs or starts a proxy core. TUN, DNS, and platform settings in a
+generated configuration remain valid output intent.
+
+Toolbox `users`, `sessions`, `system_settings`, `proxy_custom_nodes`,
+`proxy_subscribe_custom_nodes`, and `proxy_access_logs` are also canonical.
+Subscription access follows the subscription owner and `authorized_user_ids`.
+The existing Sempre `profiles`, `shares`, and `artifacts` tables
+are a different product model and must not receive Toolbox subscriptions.
+
+| Table | Contract |
+| --- | --- |
+| `users` | Preserve UUID, name, email, Argon2 password hash, role, and settings. |
+| `sessions` | Preserve UUID `id`, user ID, and expiry. Browser auth uses `SESSION_ID` HttpOnly cookie. |
+| `system_settings` | Keep `allow_registration` authoritative. |
+| `proxy_subscribes` | Preserve every existing `id`, `user_id`, `url`, config column, authorized user list, and timestamps. |
+| `proxy_custom_nodes` | Preserve owner, JSONC `content`, and authorized user list. |
+| `proxy_subscribe_custom_nodes` | Preserve assignment, `enabled`, and `position`; disabled assignment remains available to the editor. |
+| `proxy_access_logs` | Preserve subscription, format, IP, user agent, node count, and access time. |
+
+The old server applied `sqlx::migrate!("./migrations")` at startup.
+That is unsafe against a Toolbox database: its first migration creates
+`users` and `sessions` unconditionally, while Toolbox already has different
+versions of both tables. In particular, Sempre's `sessions.token_hash BYTEA`
+primary key differs from Toolbox's `sessions.id UUID` primary key. The
+similarly named Sempre `custom_nodes` table is not Toolbox
+`proxy_custom_nodes`.
+
+The new server's `migrate` command explicitly initializes a fresh database
+with the Toolbox business tables; ordinary startup only checks the schema.
+Migration `0007` removes the Workspace tables and setting that earlier local
+development migrations created. The applied `0001` and `0005` files remain
+unchanged so the migration ledger stays valid. `users`, subscriptions, node
+authorization, invitations, and avatars remain independent of those tables.
+Existing Toolbox database migration has not been implemented or accepted; it
+must preserve rows in place when undertaken. Startup never applies Sempre's old
+`0001`–`0006` migrations to it. The existing local Sempre Docker and
+profile test databases are outside this migration. The product server uses one
+subscription model; unused profile/share/artifact modules are removed as the
+replacement is completed.
+
+## Authentication and permissions
+
+| Operation | Allowed identity |
+| --- | --- |
+| Read subscription, preview, trace, debug | Owner or authorized user. |
+| Edit subscription config, select assigned nodes | Owner or authorized user. |
+| Edit authorized user list, delete subscription | Owner only. |
+| Manage global node content | Node owner or authorized user; only owner changes its authorization or assignments. |
+| Read generated public URL | Anyone holding the opaque `url`; no session. |
+
+Assigning a reusable node to a subscription grants that subscription the right
+to render the node. It does not grant its owner or authorized editors global
+permission to edit the node. Editing the subscription authorization list
+requires `confirmShareAssignedNodes` when assigned nodes would become visible
+to new users; the confirmation does not expand the node's global ACL. The
+node list hides assignments to subscriptions a viewer does not own.
+
+The server should filter visible subscriptions in SQL by owner or membership
+in `authorized_user_ids`. Toolbox currently loads non-owned records into the
+application and filters there, which should not be copied. Writes and node
+assignment changes must share a transaction. A failed build cannot roll back
+an already accepted save; syntax validation of edited fields may still reject
+invalid input before persistence.
+
+Reusable node content is one JSONC proxy object with nonempty `name`, `type`,
+and `server`, plus a nonzero port. Node lists use creation time descending.
+Only the node owner may change its authorization or subscription assignments;
+an authorized editor may change its content. An assignment already present may
+be retained even if the node owner later loses edit access to that subscription.
+Adding an assignment requires current subscription edit access. Removing an
+enabled assignment requires `confirmUnassignEnabled`; a new assignment starts
+disabled and is enabled or ordered through subscription selection.
+
+## Management API
+
+The server UI uses JSON with camelCase keys. All routes below except
+the public routes require the Toolbox session cookie. `PATCH` changes only
+present fields; explicit `null` clears a nullable field. No request takes a
+client-chosen public `url`.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/auth/register` | Register when `system_settings.allow_registration` permits it. |
+| `POST` | `/api/v1/auth/login` | Create a seven-day Toolbox UUID session and set `SESSION_ID`. |
+| `POST` | `/api/v1/auth/logout` | Revoke session and clear cookie. |
+| `GET` | `/api/v1/auth/me` | Return user `id`, `name`, `email`, `role`, `settings`. |
+| `GET` | `/api/v1/users` | Candidate users for subscription and node authorization. |
+| `GET, POST` | `/api/v1/subscriptions` | List visible subscriptions or explicitly save a new one. |
+| `GET, PATCH, DELETE` | `/api/v1/subscriptions/{id}` | Read, explicitly save changes, or owner-delete. |
+| `GET` | `/api/v1/subscription-defaults` | Return current server `ruleList`, `group`, `filter`, `customConfig`, `dnsConfig` defaults as editor text. |
+| `GET` | `/api/v1/subscriptions/{id}/stats` | Access counts, node count, and recent accesses. |
+| `POST` | `/api/v1/subscriptions/{id}/preview-nodes` | Preview effective saved config for a target. |
+| `POST` | `/api/v1/subscriptions/{id}/trace-node` | Trace a saved node and target. |
+| `POST` | `/api/v1/subscriptions/debug` | Compile an unsaved complete draft for a target, with diagnostics and output; no persistence. |
+| `POST` | `/api/v1/subscriptions/debug-source` | Fetch and inspect an unsaved source and its fetch options. |
+| `POST` | `/api/v1/subscriptions/clear-cache` | Explicitly clear saved source snapshots; owner only. |
+| `GET, POST` | `/api/v1/custom-nodes` | List available reusable nodes or create one. |
+| `GET, PATCH, DELETE` | `/api/v1/custom-nodes/{id}` | Read/edit/delete a reusable node according to ownership. |
+
+The subscription response retains Toolbox's `ProxySubscribe` shape:
+`id`, `userId`, `url`, `remark`, `logLevel`, `subscribeUrl`,
+`subscribeItems`, `ruleList`, `useSystemRuleList`, `group`,
+`useSystemGroup`, `filter`, `useSystemFilter`, `servers`, `customConfig`,
+`useSystemCustomConfig`, `dnsConfig`, `useSystemDnsConfig`,
+`privateAccessConfig`, `authorizedUserIds`, `cacheTtlMinutes`,
+`assignedCustomNodes`, `selectedCustomNodeIds`, `lastAccessAt`,
+`createdAt`, and `updatedAt`. Full read responses also include
+`creator:{id,name,email}`, `cachedNodeCount`, `accessCount`,
+`canEdit`, `canDelete`, and `canManageAuthorization`. The last three
+values come from the server ACL.
+
+Nonempty `subscribeItems` takes priority over the old `subscribeUrl` field;
+an empty list falls back to the old field for migrated records. Each item
+has `enabled`, `url`, `prefix`, `remark`, optional `cacheTtlMinutes`,
+`fetchUa`, and `fetchMode` (`auto` or `domestic-direct`). The old
+`subscribeUrl` value remains readable and editable for existing rows.
+`servers` remains the configuration's private inline JSONC nodes; global
+nodes remain separately owned and assigned. Inline, enabled global, then
+remote source nodes is the output order.
+
+The five `useSystem*` flags are per-field selectors. When true, compilation
+uses the current server default, even when a stored custom field is present.
+When false, compilation uses the saved field according to the original field's
+empty-value semantics. `GET /api/v1/subscription-defaults` supplies editor
+display values but does not copy defaults into every subscription on save.
+Draft debugging accepts `{draft,target,subscriptionId?}`. For an existing
+subscription, `subscriptionId` grants access to its assigned nodes through the
+subscription ACL; a new draft may use only globally authorized nodes. It
+accepts the full editable config and selected global node
+IDs. It must use the same source fetch/cache and conversion service as preview
+and public rendering, with any debug-only network behavior identified in the
+response; it must not silently load the saved row in place of the submitted
+draft.
+
+## Public URLs and target mapping
+
+All historical Toolbox paths use the original `proxy_subscribes.url` value.
+They must remain multi-segment routes where shown.
+
+| Toolbox path suffix after `/api/public/proxy/{url}/` | Converter target |
+| --- | --- |
+| `clash`, `clash-meta` | `clash`, `clash-meta` |
+| `sing-box`, `sing-box/windows`, `sing-box/macos` | `sing-box`, `sing-box-windows`, `sing-box-macos` |
+| `sing-box/12`, `sing-box/12/windows`, `sing-box/12/macos` | `sing-box-v12`, `sing-box-v12-windows`, `sing-box-v12-macos` |
+| `sing-box/13`, `sing-box/13/windows`, `sing-box/13/macos` | `sing-box-v13`, `sing-box-v13-windows`, `sing-box-v13-macos` |
+| `sing-box/14`, `sing-box/14/windows`, `sing-box/14/macos` | `sing-box-v14`, `sing-box-v14-windows`, `sing-box-v14-macos` |
+| `xray`, `v2ray`, `clash-rs`, `dae` | Same-named converter target. |
+
+Keep `/api/proxy/sing-box/convert/rule` and its `/12`, `/13`, and `/14` variants for
+the public rule conversion URLs embedded in generated configurations.
+
+Sempre's remote subscription client also has a real consumer contract. It
+fetches a manifest URL with `?target=<converter-format>`, requires a
+`schema: 1`, `service: "sempre"`, `read_only: true` manifest, then fetches a
+same-origin artifact and checks its SHA-256. A public manifest endpoint can
+is derived from a subscription's stable `url` at
+`/api/public/proxy/{url}/manifest` or `/api/v1/public/subscriptions/{url}`, and returns an artifact link backed by
+the same current compilation service. It needs `profile` name/revision/time,
+`target`, artifact URL/hash/node count/time, runtime output settings, and an
+edit URL. This preserves the client contract without a user-facing publish or share
+operation. Manifest creation must persist an internal immutable artifact
+snapshot. Its URL must retrieve those exact bytes so a later save or source
+refresh cannot change the SHA-256 before the client fetches it. A stable
+direct public URL renders the latest saved input. A successful public compile
+persists the same immutable artifact internally. Failed public compilation
+serves the most recently successful artifact for that subscription and target
+with `x-sempre-stale: true`; stale source-cache fallback also sets this header.
+The manifest's
+`read_only` key must use that exact snake-case wire name, as required by
+`sempre-subscription::remote::Manifest`. Revision must be monotonic across
+saves; a seconds-resolution timestamp alone is insufficient.
+
+Artifact identity includes both the input snapshot hash and output content
+hash. A content match reuses immutable bytes and ID, while a separate
+`last_success_at` pointer tracks the most recently successful result for
+last-known-good fallback. The saved subscription row and selected assignments
+are read from one repeatable-read snapshot. Draft debug returns actual
+fetch/rule-provider/compile stage evidence and never writes persistent source
+snapshots or artifacts. Node preview and trace do not fetch rule providers.
+An empty draft output remains `ok: true` because a direct-only configuration
+can be intentional; debug reports `nodeCount: 0` and a warning to inspect
+enabled sources, nodes, and filters when proxy nodes were expected.
+
+## Known migration differences
+
+| Area | Current behavior | Acceptance boundary |
+| --- | --- | --- |
+| Duplicate node names | Sempre adds ` (2)` suffixes; Toolbox could emit duplicate names. | Preserve this safety improvement; compare real reference output before claiming byte equality. |
+| Remote Clash rules for sing-box | Rule-provider content is fetched through bounded cache and compiled into a fixed snapshot. | Valid sing-box output has precedence over preserving the old remote conversion URL byte-for-byte. |
+| Password writes | New registrations and changes require 12–1024 characters; existing shorter Toolbox passwords still verify. | Confirm policy before production data migration. |
+| Existing Toolbox database | Fresh schema and local browser/public flows are implemented. | In-place migration and real production-row equivalence remain unaccepted. |
+
+## Current network acceptance boundary
+
+All remote subscription sources and default rule providers use the server's
+safe fetch path. It rejects loopback, private, reserved, and FakeIP DNS answers
+before making a request, including on every redirect. The current macOS QA
+host resolves `raw.githubusercontent.com` through a local FakeIP resolver to
+`198.18.0.68` and `fc00::52`. As a result, a first fetch of the Toolbox default
+AppleApns rule provider fails with `FORBIDDEN` and a newly saved sing-box
+subscription using all system defaults cannot yet render there. This is a
+runtime acceptance failure, not evidence that the default rule URL is private.
+The SSRF check remains enabled.
+
+Independent public DNS verification followed by a pinned connection would
+preserve the SSRF boundary, but direct connections to the verified GitHub IPs
+timed out from that host. A reachable, explicitly configured SOCKS5 egress
+that accepts a locally resolved and pinned IP is a possible design; neither
+that egress nor the independent resolver is implemented yet. The existing
+`DIRECT_PROXY_URL` supports HTTP(S) proxy URLs, whose CONNECT destination may
+be resolved again by the proxy, so it must not be described as end-to-end
+DNS-rebinding protection. Ordinary subscription sources share this pending
+network boundary with default rules.
+
+## Independent acceptance slices
+
+1. **Schema and auth:** A fresh database reaches the canonical schema through
+   explicit `sempre-server migrate`; login and `me` work. Existing Toolbox
+   production database in-place migration is pending separate acceptance.
+2. **Subscription CRUD and authorization:** Owner and authorized editor read
+   and save; only owner changes authorized users or deletes; all original
+   fields round-trip; saved public `url` stays fixed.
+3. **Nodes and defaults:** Existing global node assignments and inline nodes
+   render in the expected order; disabled assignments stay selectable; the
+   five default selectors and `GET defaults` agree.
+4. **Fetch and compile:** Source UA, fetch mode, TTL, stale-cache fallback,
+   and enabled flags work through one compile service. Draft debug has no
+   database write; saved preview and public output agree for the same target.
+5. **Public compatibility:** Every path in the table returns the expected
+   format and records access; a Sempre remote client accepts the manifest and
+   hash-checked artifact for a saved subscription.
+
+Focused verification uses the existing converter and server tests, affected
+target Clippy, and the QA browser and public-route smoke checks. New test cases
+and old production database compatibility code still require approval under
+`AGENTS.md` section 1.3.
