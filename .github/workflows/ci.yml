@@ -111,10 +111,16 @@ jobs:
       SEMPRE_PUBLIC_URL: http://127.0.0.1:8787/
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Build and start the multi-user server
-        run: docker compose -p sempre-server-ci -f rust/compose.yml up --build --detach --wait
+      - name: Build the multi-user server
+        run: docker compose -p sempre-server-ci -f rust/compose.yml build server
+      - name: Start PostgreSQL and initialize the Toolbox schema
+        run: |
+          docker compose -p sempre-server-ci -f rust/compose.yml up --detach --wait postgres
+          docker compose -p sempre-server-ci -f rust/compose.yml run --rm --no-deps server migrate
+      - name: Start the multi-user server
+        run: docker compose -p sempre-server-ci -f rust/compose.yml up --detach --wait server
       - name: Verify publishing keeps the last successful artifact
-        run: sh rust/scripts/server_smoke.sh
+        run: SEMPRE_SERVER_URL=http://127.0.0.1:8787 sh rust/scripts/server_smoke.sh
       - name: Verify the server does not run a proxy core
         run: |
           docker top sempre-server-ci-server-1 | tee /tmp/sempre-server-processes

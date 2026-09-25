@@ -3,13 +3,13 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: sempre
+      POSTGRES_DB: toolbox
       POSTGRES_USER: sempre
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sempre -d sempre"]
+      test: ["CMD-SHELL", "pg_isready -U sempre -d toolbox"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -23,11 +23,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://sempre:${POSTGRES_PASSWORD}@postgres:5432/sempre
+      DATABASE_URL: postgres://sempre:${POSTGRES_PASSWORD}@postgres:5432/toolbox
       SEMPRE_PUBLIC_URL: ${SEMPRE_PUBLIC_URL:?set SEMPRE_PUBLIC_URL}
       SEMPRE_BIND: 0.0.0.0:8787
-      SEMPRE_ALLOW_REGISTRATION: ${SEMPRE_ALLOW_REGISTRATION:-true}
-      SEMPRE_SESSION_DAYS: ${SEMPRE_SESSION_DAYS:-30}
       SEMPRE_ACCESS_LOG_RETENTION_DAYS: ${SEMPRE_ACCESS_LOG_RETENTION_DAYS:-90}
       RUST_LOG: ${RUST_LOG:-sempre_server=info,tower_http=info}
     ports:
