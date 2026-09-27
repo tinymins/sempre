@@ -1,6 +1,8 @@
 import { serverRequest } from '../server-api'
 import type { CustomNode, Subscription, SubscriptionDefaults, SubscriptionDraft, SubscriptionSource, UserBrief } from './types'
 import type { AccessStats, DraftDebugResult, NodeTraceResult, PreviewNode, SourceDebugResult, Target } from './diagnostic-types'
+import type { DebugStage } from './diagnostic-types'
+import { readDebugStream } from './debug-stream'
 
 const base = '/subscriptions'
 
@@ -25,15 +27,11 @@ export const subscriptionApi = {
   trace: (id: string, target: Target, name: string) => serverRequest<NodeTraceResult>(`${base}/${encodeURIComponent(id)}/trace-node`, {
     method: 'POST', body: JSON.stringify({ target, name }),
   }),
-  debug: (draft: SubscriptionDraft, target: Target, subscriptionId?: string) => serverRequest<DraftDebugResult>(`${base}/debug`, {
-    method: 'POST', body: JSON.stringify({ draft, target, ...(subscriptionId ? { subscriptionId } : {}) }),
-  }),
-  debugSaved: (id: string, target: Target) => serverRequest<DraftDebugResult>(`${base}/${encodeURIComponent(id)}/debug`, {
-    method: 'POST', body: JSON.stringify({ target }),
-  }),
-  debugSource: (source: SubscriptionSource, mode: 'bypass-cache' | 'production', saved?: { id: string; index: number }) => serverRequest<SourceDebugResult>(`${base}/debug-source`, {
-    method: 'POST', body: JSON.stringify({ url: source.url, ua: source.fetchUa, prefix: source.prefix, cacheTtlMinutes: source.cacheTtlMinutes, fetchMode: source.fetchMode, mode, ...(mode === 'production' && saved ? { subscriptionId: saved.id, sourceIndex: saved.index } : {}) }),
-  }),
+  debug: (draft: SubscriptionDraft, target: Target, signal: AbortSignal, onStage: (stage: DebugStage) => void, subscriptionId?: string) => readDebugStream<DraftDebugResult>(`${base}/debug`, { draft, target, ...(subscriptionId ? { subscriptionId } : {}) }, signal, onStage),
+  debugSaved: (id: string, target: Target, signal: AbortSignal, onStage: (stage: DebugStage) => void) => readDebugStream<DraftDebugResult>(`${base}/${encodeURIComponent(id)}/debug`, { target }, signal, onStage),
+  debugSource: (source: SubscriptionSource, mode: 'bypass-cache' | 'production', signal: AbortSignal, onStage: (stage: DebugStage) => void, saved?: { id: string; index: number }) => readDebugStream<SourceDebugResult>(`${base}/debug-source`, {
+    url: source.url, ua: source.fetchUa, prefix: source.prefix, cacheTtlMinutes: source.cacheTtlMinutes, fetchMode: source.fetchMode, mode, ...(mode === 'production' && saved ? { subscriptionId: saved.id, sourceIndex: saved.index } : {}),
+  }, signal, onStage),
   customNodes: () => serverRequest<CustomNode[]>('/custom-nodes'),
   customNode: (id: string) => serverRequest<CustomNode>(`/custom-nodes/${encodeURIComponent(id)}`),
   createCustomNode: (input: { content: string; authorizedUserIds: string[]; assignedSubscribeIds: string[] }) => serverRequest<CustomNode>('/custom-nodes', {

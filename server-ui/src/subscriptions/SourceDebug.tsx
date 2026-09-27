@@ -1,7 +1,7 @@
 import { Button, Collapse, Modal, Select, Spin, Table } from '@acme/components'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { subscriptionApi } from './api'
-import type { SourceDebugResult } from './diagnostic-types'
+import type { DebugStage, SourceDebugResult } from './diagnostic-types'
 import type { SubscriptionSource } from './types'
 import { useI18n } from '../i18n/provider'
 
@@ -11,28 +11,55 @@ export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSo
   const [result, setResult] = useState<SourceDebugResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [progress, setProgress] = useState<DebugStage[]>([])
+  const requestId = useRef(0)
+  const controller = useRef<AbortController | null>(null)
+  useEffect(() => () => { requestId.current += 1; controller.current?.abort() }, [])
+  const stop = () => {
+    requestId.current += 1
+    controller.current?.abort()
+    controller.current = null
+    setLoading(false)
+  }
   const run = async () => {
+    controller.current?.abort()
+    const currentRequest = ++requestId.current
+    const nextController = new AbortController()
+    controller.current = nextController
     setLoading(true)
     setError('')
     setResult(null)
+    setProgress([])
     try {
-      setResult(await subscriptionApi.debugSource(source, mode, saved))
+      const next = await subscriptionApi.debugSource(source, mode, nextController.signal, (stage) => {
+        if (requestId.current === currentRequest && !nextController.signal.aborted) setProgress((items) => [...items, stage])
+      }, saved)
+      if (requestId.current === currentRequest && !nextController.signal.aborted) {
+        setResult(next)
+        setProgress(next.stages)
+      }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      if (requestId.current === currentRequest && !nextController.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      setLoading(false)
+      if (requestId.current === currentRequest && !nextController.signal.aborted) {
+        controller.current = null
+        setLoading(false)
+      }
     }
   }
   const displayedSource = mode === 'production' && saved ? saved.source : source
-  return <Modal open title={t('sourceDebug.title', { name: displayedSource.remark || displayedSource.url })} size="large" footer={null} onCancel={onClose}>
+  return <Modal open title={t('sourceDebug.title', { name: displayedSource.remark || displayedSource.url })} size="large" footer={null} onCancel={() => { stop(); onClose() }}>
     <div className="space-y-4">
       <p className="break-all text-xs text-[var(--muted)]">{displayedSource.url}</p>
       <p className="text-xs text-[var(--muted)]">{saved ? t('sourceDebug.savedHint') : t('sourceDebug.draftHint')}</p>
       <div className="flex items-end gap-2"><label className="min-w-48 flex-1 space-y-1 text-sm">{t('sourceDebug.mode')}
-        <Select value={mode} disabled={loading} options={[{ value: 'bypass-cache', label: t('sourceDebug.bypass') }, ...(saved ? [{ value: 'production', label: t('sourceDebug.production') }] : [])]} onChange={(next) => { setMode(next as typeof mode); setResult(null); setError('') }} className="w-full" />
-      </label><Button variant="primary" loading={loading} onClick={() => void run()}>{t('sourceDebug.run')}</Button></div>
+        <Select value={mode} disabled={loading} options={[{ value: 'bypass-cache', label: t('sourceDebug.bypass') }, ...(saved ? [{ value: 'production', label: t('sourceDebug.production') }] : [])]} onChange={(next) => { stop(); setMode(next as typeof mode); setResult(null); setProgress([]); setError('') }} className="w-full" />
+      </label><Button variant="primary" loading={loading} onClick={() => void run()}>{t('sourceDebug.run')}</Button>{loading ? <Button onClick={stop}>{t('debug.cancel')}</Button> : null}</div>
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       {loading ? <Spin /> : null}
+      {progress.length ? <section className="space-y-2"><h3 className="text-sm font-semibold">{t('debug.stages')}</h3>
+        {progress.map((stage, index) => <div key={index} className="rounded border border-[var(--border)] p-2 text-sm"><strong>{stage.type}</strong> · {stage.status}{stage.sourceId ? ` · ${stage.sourceId}` : ''}{stage.cacheState ? ` · ${stage.cacheState}` : ''}{stage.message ? <p className="text-xs text-[var(--muted)]">{stage.message}</p> : null}</div>)}
+      </section> : null}
       {result ? <>
         <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
           <span>{result.status === null ? result.cacheState === 'fresh' ? t('sourceDebug.cacheHit') : t('sourceDebug.noHttp') : `HTTP ${result.status}`}</span><span>{t('sourceDebug.cache', { state: result.cacheState })}</span>
@@ -44,6 +71,7 @@ export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSo
           { key: 'diagnostics', label: t('sourceDebug.diagnostics'), children: <pre className="max-h-60 overflow-auto text-xs">{JSON.stringify(result.diagnostics, null, 2)}</pre> },
           ...(Object.keys(result.responseHeaders).length ? [{ key: 'headers', label: t('sourceDebug.headers'), children: <pre className="max-h-40 overflow-auto text-xs">{JSON.stringify(result.responseHeaders, null, 2)}</pre> }] : []),
           ...(result.raw ? [{ key: 'raw', label: `${t('sourceDebug.raw')}${result.rawTruncated ? t('sourceDebug.truncated') : ''}`, children: <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{result.raw}</pre> }] : []),
+          ...(result.decodedText ? [{ key: 'decodedText', label: `${t('sourceDebug.decodedText')}${result.decodedTextTruncated ? t('sourceDebug.truncated') : ''}`, children: <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{result.decodedText}</pre> }] : []),
           ...(result.decoded.length ? [{ key: 'decoded', label: t('sourceDebug.decoded', { count: number(result.decoded.length) }), children: <pre className="max-h-60 overflow-auto text-xs">{JSON.stringify(result.decoded, null, 2)}</pre> }] : []),
         ]} />
         <Table rowKey={(_, index) => String(index)} dataSource={result.nodes} pagination={false} size="small" scroll={{ x: 500 }} columns={[

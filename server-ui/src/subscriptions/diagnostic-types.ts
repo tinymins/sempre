@@ -36,6 +36,15 @@ export interface AccessStats {
   }[]
 }
 
+export interface DebugStage {
+  type: string
+  status: 'running' | 'ok' | 'skipped' | 'error'
+  sourceId?: string
+  cached?: boolean
+  cacheState?: 'fresh' | 'stale' | 'miss' | 'bypass'
+  message?: string
+}
+
 export interface DraftDebugResult {
   ok: boolean
   format?: string
@@ -45,7 +54,8 @@ export interface DraftDebugResult {
   fieldDiffs?: unknown
   decoded?: unknown
   nodeOrigins?: unknown
-  stages: { type: string; status: 'ok' | 'skipped' | 'error'; sourceId?: string; cached?: boolean; cacheState?: 'fresh' | 'stale' | 'miss' | 'bypass'; message?: string }[]
+  stages: DebugStage[]
+  elapsedMs: number
 }
 
 export interface SourceDebugResult {
@@ -63,7 +73,10 @@ export interface SourceDebugResult {
   responseHeaders: Record<string, string>
   raw: string
   rawTruncated: boolean
+  decodedText: string
+  decodedTextTruncated: boolean
   decoded: unknown[]
+  stages: DebugStage[]
 }
 
 export interface NodeTraceResult {
