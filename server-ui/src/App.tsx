@@ -138,8 +138,8 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
             <Route path="/network" element={<NetworkToolsPage />} />
             <Route path="/settings/general" element={<GeneralSettingsPage />} />
             <Route path="/admin" element={isAdmin ? <AdminSettingsPage user={user} /> : <Navigate to="/subscriptions" replace />} />
-            <Route path="/" element={<Navigate to="/subscriptions" replace />} />
-            <Route path="*" element={<Navigate to="/subscriptions" replace />} />
+            <Route path="/" element={<Navigate to="/overview" replace />} />
+            <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </main>
       </div>
