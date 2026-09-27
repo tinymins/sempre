@@ -1,5 +1,5 @@
 use futures_util::{StreamExt as _, stream};
-use serde_json::{Value, json};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use sempre_converter::{
@@ -8,6 +8,7 @@ use sempre_converter::{
 
 use crate::{
     AppState,
+    debug_stream::StageLog,
     error::ApiError,
     source_cache::{self, CacheMode, LoadedSource, SourceKind, SourceRequest},
 };
@@ -91,15 +92,19 @@ pub(crate) async fn load_rule_snapshots(
     ttl_minutes: i32,
     snapshots: &mut Vec<SourceSnapshot>,
     diagnostics: &mut Vec<Diagnostic>,
-    stages: &mut Vec<Value>,
+    stages: &mut StageLog,
 ) -> Result<(), ApiError> {
     let effective =
         profile_from_editor(profile).map_err(|error| ApiError::bad_request(error.to_string()))?;
     let providers = effective
         .rule_providers
         .into_iter()
-        .filter(|provider| !provider.url.trim().is_empty());
-    let loaded_rules = stream::iter(providers.map(|provider| async move {
+        .filter(|provider| !provider.url.trim().is_empty())
+        .collect::<Vec<_>>();
+    if !providers.is_empty() {
+        stages.push(json!({"type":"rule-providers","status":"running","count":providers.len()}));
+    }
+    let loaded_rules = stream::iter(providers.into_iter().map(|provider| async move {
         let source_id = rule_provider_snapshot_id(&provider.tag);
         let loaded = load_rule_source(
             state,
@@ -112,10 +117,9 @@ pub(crate) async fn load_rule_snapshots(
         .await;
         (source_id, loaded)
     }))
-    .buffered(4)
-    .collect::<Vec<_>>()
-    .await;
-    for (source_id, loaded) in loaded_rules {
+    .buffered(4);
+    tokio::pin!(loaded_rules);
+    while let Some((source_id, loaded)) = loaded_rules.next().await {
         let loaded = loaded.inspect_err(|error| {
             stages.push(json!({"type":"rule-provider","status":"error","sourceId":source_id,"message":error.message()}));
         })?;

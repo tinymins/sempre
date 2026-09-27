@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Path, State},
+    response::Response,
     routing::post,
 };
 use serde::Deserialize;
@@ -18,6 +19,7 @@ use sempre_converter::{
 use crate::{
     AppState,
     auth::CurrentUser,
+    debug_stream::{self, StageLog},
     error::ApiError,
     source_cache::CacheMode,
     subscription_rules::load_rule_snapshots,
@@ -64,22 +66,16 @@ async fn debug(
     State(state): State<Arc<AppState>>,
     CurrentUser(user): CurrentUser,
     Json(input): Json<DebugInput>,
-) -> Result<Json<Value>, ApiError> {
-    let mut stages = Vec::new();
+) -> Result<Response, ApiError> {
     let cache_mode = if let Some(id) = input.subscription_id {
         saved_input(&state, id, user.id).await?;
         CacheMode::ReadOnlySubscription(id)
     } else {
         CacheMode::ReadOnlyGlobal
     };
-    let (fields, selected) = match parse_input(&input.draft) {
-        Ok(parsed) => {
-            stages.push(json!({"type":"draft","status":"ok"}));
-            parsed
-        }
-        Err(error) => return Ok(Json(debug_failure(stages, "draft", error.message()))),
-    };
-    Ok(Json(
+    let (fields, selected) = parse_input(&input.draft)?;
+    Ok(debug_stream::response(move |mut stages| async move {
+        stages.push(json!({"type":"draft","status":"ok"}));
         run_debug(
             &state,
             &fields,
@@ -93,8 +89,8 @@ async fn debug(
             },
             &mut stages,
         )
-        .await,
-    ))
+        .await
+    }))
 }
 
 async fn saved_debug(
@@ -102,10 +98,10 @@ async fn saved_debug(
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
     Json(input): Json<TargetInput>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Response, ApiError> {
     let (fields, selected) = saved_input(&state, id, user.id).await?;
-    let mut stages = vec![json!({"type":"saved-subscription","status":"ok"})];
-    Ok(Json(
+    Ok(debug_stream::response(move |mut stages| async move {
+        stages.push(json!({"type":"saved-subscription","status":"ok"}));
         run_debug(
             &state,
             &fields,
@@ -119,8 +115,8 @@ async fn saved_debug(
             },
             &mut stages,
         )
-        .await,
-    ))
+        .await
+    }))
 }
 
 async fn run_debug(
@@ -129,13 +125,16 @@ async fn run_debug(
     selected: &[Uuid],
     target: Target,
     options: PrepareOptions,
-    stages: &mut Vec<Value>,
+    stages: &mut StageLog,
 ) -> Value {
+    stages.push(json!({"type":"prepare","status":"running"}));
     let (request, diagnostics) =
         match prepare(state, fields, selected, target, options, stages).await {
             Ok(prepared) => prepared,
             Err(error) => return debug_failure(stages.clone(), "prepare", error.message()),
         };
+    stages.push(json!({"type":"prepare","status":"ok"}));
+    stages.push(json!({"type":"compile","status":"running"}));
     let mut result = match compile(&request) {
         Ok(result) => result,
         Err(error) => return debug_failure(stages.clone(), "compile", &error.to_string()),
@@ -179,7 +178,7 @@ async fn preview(
             node_scope: Some(id),
             include_rule_snapshots: false,
         },
-        &mut Vec::new(),
+        &mut StageLog::default(),
     )
     .await?;
     let nodes =
@@ -205,7 +204,7 @@ async fn trace(
             node_scope: Some(id),
             include_rule_snapshots: false,
         },
-        &mut Vec::new(),
+        &mut StageLog::default(),
     )
     .await?;
     let trace = trace_node_steps(&request, &input.name)
@@ -236,7 +235,7 @@ pub(crate) async fn prepare(
     selected: &[Uuid],
     target: Target,
     options: PrepareOptions,
-    stages: &mut Vec<Value>,
+    stages: &mut StageLog,
 ) -> Result<(CompileRequest, Vec<Diagnostic>), ApiError> {
     let mut target =
         Target::parse(&target.format).map_err(|error| ApiError::bad_request(error.to_string()))?;
@@ -378,11 +377,12 @@ async fn load_custom_nodes(
     Ok(output)
 }
 
-fn debug_failure(mut stages: Vec<Value>, stage: &str, message: &str) -> Value {
-    if !stages
-        .last()
-        .is_some_and(|value| value.get("status") == Some(&json!("error")))
-    {
+fn debug_failure(mut stages: StageLog, stage: &str, message: &str) -> Value {
+    if !stages.last().is_some_and(|value| {
+        value.get("type") == Some(&json!(stage))
+            && value.get("status") == Some(&json!("error"))
+            && value.get("message") == Some(&json!(message))
+    }) {
         stages.push(json!({"type":stage,"status":"error","message":message}));
     }
     let mut diagnostics = stages.iter().filter(|event| event.get("status").and_then(Value::as_str) == Some("error"))
@@ -391,10 +391,10 @@ fn debug_failure(mut stages: Vec<Value>, stage: &str, message: &str) -> Value {
     if diagnostics.is_empty() {
         diagnostics.push(json!({"level":"error","message":message}));
     }
-    json!({"ok":false,"diagnostics":diagnostics,"stages":stages})
+    json!({"ok":false,"message":message,"diagnostics":diagnostics,"stages":stages.into_events()})
 }
 
-fn result_output(result: &CompileResult, stages: &[Value]) -> Value {
+fn result_output(result: &CompileResult, stages: &StageLog) -> Value {
     let decoded = serde_yaml::from_str::<Value>(&result.content).ok();
     json!({
         "ok": true,
@@ -406,6 +406,6 @@ fn result_output(result: &CompileResult, stages: &[Value]) -> Value {
         "nodeCount": result.node_count,
         "diagnostics": result.diagnostics,
         "fieldDiffs": result.field_diffs,
-        "stages": stages
+        "stages": &**stages
     })
 }

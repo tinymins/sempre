@@ -1,5 +1,6 @@
 mod auth;
 mod config;
+mod debug_stream;
 mod error;
 mod fetch;
 mod maintenance;

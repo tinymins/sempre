@@ -277,7 +277,7 @@ async fn generate(
     subscription: Subscription,
     target: Target,
 ) -> Result<Generated, ApiError> {
-    let mut stages = Vec::new();
+    let mut stages = crate::debug_stream::StageLog::default();
     let (request, _) = prepare(
         state,
         &subscription.fields,

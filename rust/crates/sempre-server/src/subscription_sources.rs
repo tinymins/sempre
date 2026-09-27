@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     AppState,
+    debug_stream::StageLog,
     error::ApiError,
     source_cache::{self, CacheMode, SourceKind, SourceRequest},
     subscriptions::SubscriptionFields,
@@ -48,7 +49,7 @@ pub(crate) async fn load_sources(
     fields: &SubscriptionFields,
     profile: &mut Profile,
     cache_mode: CacheMode,
-    stages: &mut Vec<Value>,
+    stages: &mut StageLog,
     snapshots: &mut Vec<SourceSnapshot>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<SourceLoadSummary, ApiError> {
@@ -74,6 +75,7 @@ pub(crate) async fn load_sources(
         let mode = item.fetch_mode.unwrap_or_else(|| "auto".into());
         let proxy = source_proxy(state, &mode)?;
         let source_id = source_id(&item.url, &ua, &mode);
+        stages.push(json!({"type":"fetch","status":"running","sourceId":source_id}));
         let ttl = item
             .cache_ttl_minutes
             .or(fields.cache_ttl_minutes)
@@ -152,7 +154,7 @@ pub(crate) async fn load_sources(
 fn record_unusable(
     loaded: source_cache::LoadedSource,
     source_id: &str,
-    stages: &mut Vec<Value>,
+    stages: &mut StageLog,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let message = loaded

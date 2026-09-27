@@ -1,6 +1,6 @@
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
-use axum::{Json, Router, extract::State, routing::post};
+use axum::{Json, Router, extract::State, response::Response, routing::post};
 use sempre_converter::parse_subscription;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::{
     AppState,
     auth::CurrentUser,
+    debug_stream::{self, StageLog},
     error::ApiError,
     source_cache::{self, CacheMode, LoadedSource, SourceKind, SourceRequest},
     subscription_compile::saved_input,
@@ -60,7 +61,7 @@ async fn debug_source(
     State(state): State<Arc<AppState>>,
     CurrentUser(user): CurrentUser,
     Json(input): Json<DebugSourceInput>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Response, ApiError> {
     validate_input(&input)?;
     let saved = if input.mode.as_deref() == Some("production") {
         if let (Some(id), Some(index)) = (input.subscription_id, input.source_index) {
@@ -99,52 +100,54 @@ async fn debug_source(
         input.cache_ttl_minutes.unwrap_or(60),
         |(_, default_ttl, item)| item.cache_ttl_minutes.or(*default_ttl).unwrap_or(60),
     );
-    let proxy = source_proxy(&state, fetch_mode)?;
+    let proxy = source_proxy(&state, fetch_mode)?.map(str::to_owned);
     let identity = source_id(url, &ua, fetch_mode);
     let prefix = saved.as_ref().map_or_else(
         || input.prefix.clone().unwrap_or_default(),
         |(_, _, item)| item.prefix.clone(),
     );
-    let started = Instant::now();
-    let loaded = source_cache::load(
-        &state,
-        SourceRequest {
-            url,
-            ua: &ua,
-            fetch_mode,
-            proxy,
-            source_id: &identity,
-            ttl_minutes: ttl,
-            mode: if input.mode.as_deref() == Some("production") {
-                CacheMode::ReadOnlySubscription(
-                    saved.as_ref().expect("production source checked").0,
-                )
-            } else {
-                CacheMode::Bypass
+    let cache_mode = if input.mode.as_deref() == Some("production") {
+        CacheMode::ReadOnlySubscription(saved.as_ref().expect("production source checked").0)
+    } else {
+        CacheMode::Bypass
+    };
+    let url = url.to_owned();
+    let fetch_mode = fetch_mode.to_owned();
+    Ok(debug_stream::response(move |mut stages| async move {
+        stages.push(json!({"type":"source","status":"running","cacheMode":if matches!(cache_mode, CacheMode::Bypass) { "bypass" } else { "production" }}));
+        let loaded = source_cache::load(
+            &state,
+            SourceRequest {
+                url: &url,
+                ua: &ua,
+                fetch_mode: &fetch_mode,
+                proxy: proxy.as_deref(),
+                source_id: &identity,
+                ttl_minutes: ttl,
+                mode: cache_mode,
+                kind: SourceKind::Nodes,
+                inspect_unusable: true,
             },
-            kind: SourceKind::Nodes,
-            inspect_unusable: true,
-        },
-    )
-    .await;
-    Ok(Json(match loaded {
-        Ok(loaded) => debug_result(
-            &loaded,
-            &ua,
-            fetch_mode,
-            ttl,
-            &prefix,
-            started.elapsed().as_millis(),
-        ),
-        Err(error) => error_result(
-            &error,
-            &ua,
-            fetch_mode,
-            ttl,
-            &prefix,
-            started.elapsed().as_millis(),
-            input.mode.as_deref() == Some("production"),
-        ),
+        )
+        .await;
+        match loaded {
+            Ok(loaded) => {
+                stages.push(json!({"type":"source","status":if loaded.usable { "ok" } else { "error" },"httpStatus":loaded.http_status,"cacheState":loaded.cache_state}));
+                debug_result(&loaded, &ua, &fetch_mode, ttl, &prefix, stages)
+            }
+            Err(error) => {
+                stages.push(json!({"type":"source","status":"error","message":error.message()}));
+                error_result(
+                    &error,
+                    &ua,
+                    &fetch_mode,
+                    ttl,
+                    &prefix,
+                    matches!(cache_mode, CacheMode::ReadOnlySubscription(_)),
+                    stages,
+                )
+            }
+        }
     }))
 }
 
@@ -154,15 +157,18 @@ fn error_result(
     fetch_mode: &str,
     ttl: i32,
     prefix: &str,
-    elapsed_ms: u128,
     production: bool,
+    stages: StageLog,
 ) -> Value {
     json!({
         "ok": false,
+        "message": error.message(),
         "status": null,
         "responseHeaders": {},
         "raw": "",
         "rawTruncated": false,
+        "decodedText": "",
+        "decodedTextTruncated": false,
         "decoded": [],
         "ua": ua,
         "fetchMode": fetch_mode,
@@ -170,11 +176,11 @@ fn error_result(
         "prefix": prefix,
         "nodeCount": 0,
         "nodes": [],
-        "elapsedMs": elapsed_ms,
         "bodyBytes": 0,
         "cached": false,
         "cacheState": if production { "miss" } else { "bypass" },
         "diagnostics": [{"level":"error","message":error.message()}],
+        "stages": stages.into_events(),
     })
 }
 
@@ -184,7 +190,7 @@ fn debug_result(
     fetch_mode: &str,
     ttl: i32,
     prefix: &str,
-    elapsed_ms: u128,
+    stages: StageLog,
 ) -> Value {
     let parsed = parse_subscription(&loaded.content);
     let mut diagnostics = parsed
@@ -210,10 +216,13 @@ fn debug_result(
         .collect::<Vec<_>>();
     json!({
         "ok": loaded.usable,
+        "message": if loaded.usable { None } else { loaded.warning.as_deref() },
         "status": loaded.http_status,
         "responseHeaders": loaded.response_headers,
         "raw": loaded.content.chars().take(65536).collect::<String>(),
         "rawTruncated": loaded.content.chars().count() > 65536,
+        "decodedText": parsed.decoded_text.chars().take(65536).collect::<String>(),
+        "decodedTextTruncated": parsed.decoded_text.chars().count() > 65536,
         "decoded": parsed.nodes.iter().map(sempre_converter::Proxy::as_value).collect::<Vec<_>>(),
         "ua": ua,
         "fetchMode": fetch_mode,
@@ -221,11 +230,11 @@ fn debug_result(
         "prefix": prefix,
         "nodeCount": nodes.len(),
         "nodes": nodes,
-        "elapsedMs": elapsed_ms,
         "bodyBytes": loaded.content.len(),
         "cached": matches!(loaded.cache_state, "fresh" | "stale"),
         "cacheState": loaded.cache_state,
         "warning": loaded.warning.clone(),
         "diagnostics": diagnostics,
+        "stages": stages.into_events(),
     })
 }

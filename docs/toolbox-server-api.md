@@ -103,9 +103,9 @@ client-chosen public `url`.
 | `GET` | `/api/v1/subscriptions/{id}/stats` | Access counts, node count, and recent accesses. |
 | `POST` | `/api/v1/subscriptions/{id}/preview-nodes` | Preview effective saved config for a target. |
 | `POST` | `/api/v1/subscriptions/{id}/trace-node` | Trace a saved node and target. |
-| `POST` | `/api/v1/subscriptions/debug` | Compile an unsaved complete draft for a target, with diagnostics and output; no persistence. |
-| `POST` | `/api/v1/subscriptions/{id}/debug` | Compile the saved subscription for `{target}` with its saved node assignments and source identity. |
-| `POST` | `/api/v1/subscriptions/debug-source` | Inspect a source; production mode requires saved `subscriptionId` and zero-based `sourceIndex`. |
+| `POST` | `/api/v1/subscriptions/debug` | Stream compilation of an unsaved complete draft for a target; no persistence. |
+| `POST` | `/api/v1/subscriptions/{id}/debug` | Stream compilation of the saved subscription for `{target}` with its saved node assignments and source identity. |
+| `POST` | `/api/v1/subscriptions/debug-source` | Stream source inspection; production mode requires saved `subscriptionId` and zero-based `sourceIndex`. |
 | `POST` | `/api/v1/subscriptions/clear-cache` | Explicitly clear saved source snapshots; owner only. |
 | `GET, POST` | `/api/v1/custom-nodes` | List available reusable nodes or create one. |
 | `GET, PATCH, DELETE` | `/api/v1/custom-nodes/{id}` | Read/edit/delete a reusable node according to ownership. |
@@ -136,6 +136,20 @@ uses the current server default, even when a stored custom field is present.
 When false, compilation uses the saved field according to the original field's
 empty-value semantics. `GET /api/v1/subscription-defaults` supplies editor
 display values but does not copy defaults into every subscription on save.
+The three debug POST routes accept JSON with the existing session cookie and
+respond with `text/event-stream`. They emit `stage` events as work occurs,
+followed by exactly one terminal `result` (success) or `error` (failure).
+Every event uses SSE `data:` containing a JSON object. A `stage` object has
+`type` and `status` (`running`, `ok`, `skipped`, or `error`), with actual source
+IDs, cache state, HTTP status, count, or message when observed. The terminal
+event contains the complete debug DTO, including `ok`, `elapsedMs`, and the
+accumulated `stages` and `diagnostics`; consumers replace the incremental
+stage list with this final list. End of stream before a terminal event is a
+failure, except when the caller deliberately aborts. Aborting the request
+cancels the server work and any in-progress source fetch. Authentication,
+subscription ACL, and malformed request errors occur before the stream opens
+and retain their normal HTTP JSON error status.
+
 Draft debugging accepts `{draft,target,subscriptionId?}`. For an existing
 subscription, `subscriptionId` grants access to its assigned nodes through the
 subscription ACL; a new draft may use only globally authorized nodes. It
@@ -155,19 +169,21 @@ Both modes are read-only and never store fetched text. The response contains
 `ok`, `status` (an actual HTTP response status, or `null` when no HTTP response
 was received or a cache snapshot was used), `cacheState`, safe
 `responseHeaders` (`content-type`, `etag`, `last-modified`, `cache-control`),
-`raw` (at most 65,536 characters) with `rawTruncated`, `decoded` (parsed node
-objects), node summaries, elapsed time, and diagnostics. A non-200 or 200
+`raw` (at most 65,536 characters) with `rawTruncated`, `decodedText` (the
+pre-parse base64-decoded text, when present, at most 65,536 characters) with
+`decodedTextTruncated`, `decoded` (parsed node objects), node summaries,
+elapsed time, and diagnostics. A non-200 or 200
 response without usable nodes can be inspected but is never stored in the
-formal source cache. `decoded` is parsed nodes, not a base64-decoded text copy.
+formal source cache. Other formats have empty `decodedText`; their parsed
+nodes remain in `decoded`.
 Saved target debugging accepts `{target}` at
 `/api/v1/subscriptions/{id}/debug` and returns the same `ok`, `content`,
 `stages`, `diagnostics`, `fieldDiffs`, and `nodeCount` shape as draft debug,
 plus `decoded` (parsed JSON/YAML when applicable) and converter
 `nodeOrigins`. It does not make a target HTTP request or run a proxy core, so
 it does not invent response headers or runtime validation.
-Both debug endpoints return observed stages after the request completes; they
-do not stream Toolbox-style SSE events in real time. Source debug does not
-separately return the pre-parse, base64-decoded source text.
+The server streams real source and compilation stages, then the complete DTO;
+it does not start a proxy core or invent network evidence for target compilation.
 
 ## Public URLs and target mapping
 
