@@ -119,6 +119,25 @@ export const ProxyDebugSourceStartStepSchema = z.object({
   }),
 });
 
+const ProxyDebugSourceFetchDataSchema = z.object({
+  sourceIndex: z.number(),
+  url: z.string(),
+  httpStatus: z.number().nullable(),
+  httpHeaders: z.record(z.string(), z.string()).nullable(),
+  fetchDurationMs: z.number().nullable(),
+  cached: z.boolean(),
+});
+
+export const ProxyDebugSourceFetchedStepSchema = z.object({
+  type: z.literal("source-fetched"),
+  data: ProxyDebugSourceFetchDataSchema.extend({ parsedNodeCount: z.number(), error: z.null() }),
+});
+
+export const ProxyDebugSourceFailedStepSchema = z.object({
+  type: z.literal("source-failed"),
+  data: ProxyDebugSourceFetchDataSchema.extend({ error: z.string() }),
+});
+
 /** Step: 远程订阅源获取完成 */
 export const ProxyDebugSourceResultStepSchema = z.object({
   type: z.literal("source-result"),
@@ -126,7 +145,7 @@ export const ProxyDebugSourceResultStepSchema = z.object({
     sourceIndex: z.number(),
     url: z.string(),
     httpStatus: z.number().nullable(),
-    httpHeaders: z.record(z.string(), z.string()),
+    httpHeaders: z.record(z.string(), z.string()).nullable(),
     rawText: z.string(),
     decodedText: z.string().nullable().optional(),
     format: z.enum(["base64", "yaml", "unknown"]),
@@ -135,7 +154,7 @@ export const ProxyDebugSourceResultStepSchema = z.object({
     nodesAfterFilter: z.array(ProxyPreviewNodeSchema),
     filteredNodes: z.array(ProxyDebugFilteredNodeSchema),
     error: z.string().nullable(),
-    fetchDurationMs: z.number(),
+    fetchDurationMs: z.number().nullable(),
     /** 是否命中缓存 */
     cached: z.boolean(),
   }),
@@ -205,13 +224,13 @@ export const ProxyDebugRuleSetItemSchema = z.object({
   /** 所属代理分组 */
   group: z.string(),
   /** 拉取状态 */
-  status: z.enum(["ok", "error", "skipped"]),
+  status: z.enum(["snapshot", "remote", "error"]),
   /** 错误信息 */
-  error: z.string().optional(),
+  error: z.string().nullable(),
   /** HTTP 状态码 */
   httpStatus: z.number().optional(),
   /** 规则条数 */
-  ruleCount: z.number(),
+  ruleCount: z.number().nullable(),
   /** 规则样本（截断） */
   sampleRules: z.array(z.string()).optional(),
   /** 规则是否被截断 */
@@ -228,21 +247,28 @@ export const ProxyDebugRuleSetsStepSchema = z.object({
   type: z.literal("rule-sets"),
   data: z.object({
     totalCount: z.number(),
-    totalRules: z.number(),
+    totalRules: z.number().nullable(),
     errorCount: z.number(),
     items: z.array(ProxyDebugRuleSetItemSchema),
   }),
 });
+
+export const ProxyDebugRuleSetsStartStepSchema = z.object({ type: z.literal("rule-sets-start"), data: z.object({}) });
+export const ProxyDebugCompileStartStepSchema = z.object({ type: z.literal("compile-start"), data: z.object({}) });
 
 /** 调试步骤联合类型 */
 export const ProxyDebugStepSchema = z.discriminatedUnion("type", [
   ProxyDebugConfigStepSchema,
   ProxyDebugManualServersStepSchema,
   ProxyDebugSourceStartStepSchema,
+  ProxyDebugSourceFetchedStepSchema,
+  ProxyDebugSourceFailedStepSchema,
   ProxyDebugSourceResultStepSchema,
   ProxyDebugMergeStepSchema,
   ProxyDebugOutputStepSchema,
   ProxyDebugRuleSetsStepSchema,
+  ProxyDebugRuleSetsStartStepSchema,
+  ProxyDebugCompileStartStepSchema,
   ProxyDebugValidateStepSchema,
   ProxyDebugDoneStepSchema,
 ]);

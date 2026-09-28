@@ -46,7 +46,13 @@ export function useProxySubscribeEditor({
 		const supportsLocalProxy = features.has("inbound.local_proxy");
 		const supportsManagement = features.has("management.external_api");
 		const supportsDNS = configurationContext.capabilities.features.some((feature) => feature.startsWith("dns."));
-		const runtimeVisible = supportsLocalProxy || supportsTransparent || supportsManagement;
+		const savedTransparentMode = profile.transparent_proxy?.mode;
+		const unsupportedTransparentMode = savedTransparentMode && savedTransparentMode !== "disabled" && !(
+			savedTransparentMode === "tun-router" && features.has("transparent.tun") ||
+			savedTransparentMode === "tproxy" && features.has("transparent.tproxy") ||
+			savedTransparentMode === "ebpf-router" && features.has("transparent.ebpf")
+		);
+		const runtimeVisible = supportsLocalProxy || supportsTransparent || supportsManagement || Boolean(unsupportedTransparentMode);
 		const availableTabs = useMemo(() => [
 				...BASE_TABS,
 				...(features.has("routing.rule_providers") ? [{ label: "ruleList", value: "ruleList" }] : []),
@@ -58,7 +64,7 @@ export function useProxySubscribeEditor({
 				...(configurationContext.capabilities.protocols.length > 0 ? [{ label: "servers", value: "servers" }] : []),
 				{ label: "diagnostics", value: "diagnostics" },
 			], [configurationContext.capabilities.protocols.length, features, runtimeVisible, supportsDNS]);
-		const [form] = Form.useForm(profileFormValues(profile, configurationContext));
+		const [form] = Form.useForm(profileFormValues(profile));
     const manualServers = Form.useWatch("servers", form) as string | undefined;
 		const transparentMode = Form.useWatch("transparentMode", form) as string | undefined;
 		const tunInterfaceMode = Form.useWatch("tunInterfaceMode", form) as string | undefined;
@@ -142,8 +148,8 @@ export function useProxySubscribeEditor({
 			local_proxy: {
 				socks_port: values.localProxySOCKSPort ?? 20580,
 				http_port: values.localProxyHTTPPort ?? 20581,
-				username: values.localProxyUsername || "sempre",
-				password: values.localProxyPassword || profileRef.current.local_proxy?.password || "",
+				username: values.localProxyUsername ?? profileRef.current.local_proxy?.username ?? "sempre",
+				password: values.localProxyPassword ?? profileRef.current.local_proxy?.password ?? "",
 			},
 			transparent_proxy: {
 				mode: values.transparentMode ?? "tun-router",

@@ -37,6 +37,29 @@ export const SourceStartStepContent = ({
   );
 };
 
+export const SourceFetchStepContent = ({
+  step,
+}: {
+  step: Extract<ProxyDebugStep, { type: "source-fetched" | "source-failed" }>;
+}) => {
+  const { t } = useTranslation();
+  const { data } = step;
+  return <div className="space-y-2 text-sm">
+    <p className="break-all text-xs text-slate-500">{data.url}</p>
+    <div className="flex flex-wrap items-center gap-2">
+      <Tag color={step.type === "source-failed" ? "error" : "green"}>{t(step.type === "source-failed" ? "proxy.debug.sourceFailed" : "proxy.debug.sourceFetched")}</Tag>
+      <span>{t("proxy.debug.httpStatus")}: {data.httpStatus === null ? data.cached ? t("proxy.debug.cached") : "—" : data.httpStatus}</span>
+      <span>{t("proxy.debug.fetchDuration")}: {data.fetchDurationMs === null ? "—" : `${data.fetchDurationMs} ms`}</span>
+      {step.type === "source-fetched" ? <span>{t("proxy.debug.parsedNodes")}: {step.data.parsedNodeCount}</span> : null}
+    </div>
+    {step.type === "source-failed" ? <p className="text-xs text-red-500">{data.error}</p> : null}
+    {data.httpHeaders && Object.keys(data.httpHeaders).length > 0 ? <Collapse size="small" items={[{
+      key: "headers", label: t("proxy.sourceDebug.responseHeaders"),
+      children: <SmartCodeBlock content={JSON.stringify(data.httpHeaders, null, 2)} maxHeight={200} />,
+    }]} /> : null}
+  </div>;
+};
+
 /** 订阅源获取结果 */
 export const SourceResultStepContent = ({
   step,
@@ -63,14 +86,12 @@ export const SourceResultStepContent = ({
           },
           {
             label: t("proxy.debug.httpStatus"),
-            children: data.error ? (
-              <Tag icon={<CloseCircleOutlined />} color="error">
-                {t("proxy.debug.error")}
-              </Tag>
+            children: data.httpStatus === null ? (
+              <span>{data.cached ? t("proxy.debug.cached") : "—"}</span>
             ) : (
               <Tag
-                icon={<CheckCircleOutlined />}
-                color={data.httpStatus === 200 ? "success" : "warning"}
+                icon={data.httpStatus >= 200 && data.httpStatus < 300 ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                color={data.httpStatus >= 200 && data.httpStatus < 300 ? "success" : "warning"}
               >
                 {data.httpStatus}
               </Tag>
@@ -90,7 +111,7 @@ export const SourceResultStepContent = ({
           },
           {
             label: t("proxy.debug.fetchDuration"),
-            children: <>{data.fetchDurationMs}ms</>,
+            children: data.fetchDurationMs === null ? "—" : <>{data.fetchDurationMs}ms</>,
           },
           {
             label: t("proxy.debug.parsedNodes"),
@@ -118,6 +139,11 @@ export const SourceResultStepContent = ({
       <Collapse
         size="small"
         items={[
+          ...(data.httpHeaders && Object.keys(data.httpHeaders).length > 0 ? [{
+            key: "headers",
+            label: t("proxy.sourceDebug.responseHeaders"),
+            children: <SmartCodeBlock content={JSON.stringify(data.httpHeaders, null, 2)} maxHeight={300} />,
+          }] : []),
           {
             key: "raw",
             label: (

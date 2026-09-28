@@ -72,7 +72,9 @@ const SourceDebugModal = ({ open, item, onClose }: Props) => {
           fetchMode: item.fetchMode ?? "auto",
         },
         (step) => {
+          if (controller.signal.aborted) return;
           setSteps((previous) => {
+            if (controller.signal.aborted) return previous;
             if (step.type === "attempt-result") {
               return [
                 ...previous.filter(
@@ -80,7 +82,7 @@ const SourceDebugModal = ({ open, item, onClose }: Props) => {
                     !(
                       existing.type === "attempt-start" &&
                       existing.data.attempt === step.data.attempt
-                    ),
+                    ) && !(existing.type === "cache" && existing.data.status === "checking"),
                 ),
                 step,
               ];
@@ -151,6 +153,7 @@ const SourceDebugModal = ({ open, item, onClose }: Props) => {
   const stepStatus = (
     step: ProxySourceDebugStep,
   ): "process" | "finish" | "error" | "warning" => {
+    if (step.type === "cache" && step.data.status === "checking") return "process";
     if (step.type === "attempt-start") return "process";
     if (step.type === "attempt-result" && !step.data.success) return "error";
     if (

@@ -27,16 +27,6 @@ const RuleSetItemContent = ({ item }: { item: RuleSetItem }) => {
     );
   }
 
-  if (item.status === "skipped") {
-    return (
-      <div className="text-xs text-slate-500">
-        {item.format === "binary"
-          ? t("proxy.debug.ruleSetBuiltinHint")
-          : "skipped"}
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-2">
       <div className="text-xs text-slate-400 break-all">{item.url}</div>
@@ -65,16 +55,13 @@ const RuleSetItemLabel = ({ item }: { item: RuleSetItem }) => {
       {item.builtin && (
         <Tag className="!text-xs">{t("proxy.debug.ruleSetBuiltinTag")}</Tag>
       )}
-      {item.status === "ok" && (
+      {item.ruleCount !== null && (
         <Tag color="green" className="!text-xs">
           {item.ruleCount} {t("proxy.debug.ruleSetRulesUnit")}
         </Tag>
       )}
-      {item.status === "skipped" && (
-        <Tag className="!text-xs">
-          {item.format === "binary" ? "binary" : "skipped"}
-        </Tag>
-      )}
+      {item.status === "snapshot" ? <Tag color="green" className="!text-xs">{t("proxy.debug.ruleSetSnapshot")}</Tag> : null}
+      {item.status === "remote" ? <Tag className="!text-xs">{t("proxy.debug.ruleSetRemote")}</Tag> : null}
       {item.status === "error" && (
         <Tag color="error" className="!text-xs">
           {item.error ?? t("proxy.debug.error")}
@@ -116,9 +103,7 @@ export const RuleSetsStepContent = ({ step }: { step: RuleSetsStep }) => {
                 <Tag className="!text-xs">
                   {data.totalCount} {t("proxy.debug.ruleSetSetsUnit")}
                 </Tag>
-                <Tag color="cyan" className="!text-xs">
-                  {data.totalRules} {t("proxy.debug.ruleSetRulesUnit")}
-                </Tag>
+                {data.totalRules !== null ? <Tag color="cyan" className="!text-xs">{data.totalRules} {t("proxy.debug.ruleSetRulesUnit")}</Tag> : null}
                 {data.errorCount > 0 && (
                   <Tag color="error" className="!text-xs">
                     {data.errorCount} {t("proxy.debug.error")}
@@ -131,10 +116,8 @@ export const RuleSetsStepContent = ({ step }: { step: RuleSetsStep }) => {
                 size="small"
                 items={Array.from(grouped.entries()).map(
                   ([groupName, items]) => {
-                    const groupRuleCount = items.reduce(
-                      (sum, item) => sum + item.ruleCount,
-                      0,
-                    );
+                    const groupRuleCount = items.every((item) => item.ruleCount !== null)
+                      ? items.reduce((sum, item) => sum + (item.ruleCount ?? 0), 0) : null;
                     const groupErrorCount = items.filter(
                       (item) => item.status === "error",
                     ).length;
@@ -147,9 +130,7 @@ export const RuleSetsStepContent = ({ step }: { step: RuleSetsStep }) => {
                           <Tag className="!text-xs">
                             {items.length} {t("proxy.debug.ruleSetSetsUnit")}
                           </Tag>
-                          <Tag color="cyan" className="!text-xs">
-                            {groupRuleCount} {t("proxy.debug.ruleSetRulesUnit")}
-                          </Tag>
+                          {groupRuleCount !== null ? <Tag color="cyan" className="!text-xs">{groupRuleCount} {t("proxy.debug.ruleSetRulesUnit")}</Tag> : null}
                           {groupErrorCount > 0 && (
                             <Tag color="error" className="!text-xs">
                               {groupErrorCount} {t("proxy.debug.error")}

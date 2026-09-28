@@ -18,7 +18,7 @@ export const PayloadDetails = ({
   headers,
 }: {
   payload: ProxySourceDebugPayload;
-  headers?: Record<string, string>;
+  headers?: Record<string, string> | null;
 }) => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -36,7 +36,7 @@ export const PayloadDetails = ({
           },
           {
             label: t("proxy.sourceDebug.bodySize"),
-            children: <>{payload.bodyBytes} B</>,
+            children: payload.bodyBytes === null ? "—" : <>{payload.bodyBytes} B</>,
           },
           {
             label: t("proxy.sourceDebug.parsedNodes"),
@@ -94,7 +94,7 @@ export const PayloadDetails = ({
             label: (
               <div className="flex items-center gap-2">
                 <span>{t("proxy.sourceDebug.rawResponse")}</span>
-                <Tag>{payload.rawText.length}</Tag>
+                <Tag>{payload.rawText.length}{payload.rawTruncated ? ` · ${t("proxy.sourceDebug.truncated")}` : ""}</Tag>
               </div>
             ),
             children: (

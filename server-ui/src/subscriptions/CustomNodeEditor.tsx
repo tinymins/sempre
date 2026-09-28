@@ -7,13 +7,17 @@ import { useI18n } from '../i18n/provider'
 interface Props {
   nodeId: string | null
   currentUserId: string
-  users: UserBrief[]
-  subscriptions: Subscription[]
+  users: UserBrief[] | null
+  subscriptions: Subscription[] | null
+  usersError: string
+  subscriptionsError: string
+  retryUsers: () => Promise<void>
+  retrySubscriptions: () => Promise<void>
   onClose: () => void
   onSaved: () => void
 }
 
-export function CustomNodeEditor({ nodeId, currentUserId, users, subscriptions, onClose, onSaved }: Props) {
+export function CustomNodeEditor({ nodeId, currentUserId, users, subscriptions, usersError, subscriptionsError, retryUsers, retrySubscriptions, onClose, onSaved }: Props) {
   const { t } = useI18n()
   const [node, setNode] = useState<CustomNode | null>(null)
   const [content, setContent] = useState('{\n  "name": "",\n  "type": "vless",\n  "server": "",\n  "port": 443\n}')
@@ -79,11 +83,13 @@ export function CustomNodeEditor({ nodeId, currentUserId, users, subscriptions, 
         <TextArea rows={14} required value={content} disabled={loading || (Boolean(nodeId) && !node)} onChange={(event) => setContent(event.target.value)} className="font-mono text-xs" />
       </label>
       <label className="block space-y-1 text-sm">{t('nodes.authorized')}
-        <Select mode="multiple" value={authorizedUserIds} disabled={loading || !canManage} options={users.filter((user) => user.id !== currentUserId).map((user) => ({ value: user.id, label: `${user.name} (${user.email})` }))} onChange={(next) => setAuthorizedUserIds(next as string[])} showSearch className="w-full" />
+        <Select mode="multiple" value={authorizedUserIds} disabled={loading || !canManage || users === null} options={users?.filter((user) => user.id !== currentUserId).map((user) => ({ value: user.id, label: `${user.name} (${user.email})` })) ?? []} onChange={(next) => setAuthorizedUserIds(next as string[])} showSearch className="w-full" />
       </label>
+      {usersError ? <p role="alert" className="text-sm text-red-600">{usersError} <Button size="small" onClick={() => void retryUsers()}>{t('common.retry')}</Button></p> : null}
       <label className="block space-y-1 text-sm">{t('nodes.assignments')}
-        <Select mode="multiple" value={assignedSubscribeIds} disabled={loading || !canManage} options={subscriptions.map((item) => ({ value: item.id, label: item.remark || item.id }))} onChange={(next) => setAssignedSubscribeIds(next as string[])} showSearch className="w-full" />
+        <Select mode="multiple" value={assignedSubscribeIds} disabled={loading || !canManage || subscriptions === null} options={subscriptions?.map((item) => ({ value: item.id, label: item.remark || item.id })) ?? []} onChange={(next) => setAssignedSubscribeIds(next as string[])} showSearch className="w-full" />
       </label>
+      {subscriptionsError ? <p role="alert" className="text-sm text-red-600">{subscriptionsError} <Button size="small" onClick={() => void retrySubscriptions()}>{t('common.retry')}</Button></p> : null}
     </div>
   </Modal>
 }

@@ -23,8 +23,9 @@ export type ProxySourceDebugInput = z.infer<typeof ProxySourceDebugInputSchema>;
 export const ProxySourceDebugPayloadSchema = z.object({
   format: z.enum(["base64", "yaml", "unknown"]),
   rawText: z.string(),
+  rawTruncated: z.boolean().optional(),
   decodedText: z.string().nullable(),
-  bodyBytes: z.number(),
+  bodyBytes: z.number().nullable(),
   parsedNodeCount: z.number(),
   nodes: z.array(ProxyPreviewNodeSchema),
   discardedPlaceholderNodes: z.array(ProxyPreviewNodeSchema),
@@ -53,7 +54,7 @@ export const ProxySourceDebugConfigStepSchema = z.object({
 export const ProxySourceDebugCacheStepSchema = z.object({
   type: z.literal("cache"),
   data: z.object({
-    status: z.enum(["skipped", "miss", "expired", "hit", "unusable"]),
+    status: z.enum(["checking", "skipped", "miss", "expired", "hit", "unusable"]),
     cacheTtlMinutes: z.number(),
     payload: ProxySourceDebugPayloadSchema.nullable(),
   }),
@@ -71,14 +72,14 @@ export const ProxySourceDebugNetworkStepSchema = z.object({
   type: z.literal("network"),
   data: z.object({
     fetchMode: ProxySourceFetchModeSchema,
-    connectionKind: z.enum(["origin", "proxy"]),
+    connectionKind: z.enum(["origin", "proxy"]).nullable(),
     proxyEndpoint: z.string().nullable(),
     scheme: z.string().nullable(),
     host: z.string().nullable(),
     port: z.number().nullable(),
     resolverConfig: z.array(z.string()),
     proxyEnvironmentVariables: z.array(z.string()),
-    dnsDurationMs: z.number(),
+    dnsDurationMs: z.number().nullable(),
     resolvedAddresses: z.array(z.string()),
     dnsError: z.string().nullable(),
     tcpProbes: z.array(
@@ -91,6 +92,7 @@ export const ProxySourceDebugNetworkStepSchema = z.object({
         error: z.string().nullable(),
       }),
     ),
+    note: z.string().optional(),
   }),
 });
 
@@ -98,11 +100,11 @@ export const ProxySourceDebugRequestErrorSchema = z.object({
   message: z.string(),
   debug: z.string(),
   chain: z.array(z.string()),
-  isTimeout: z.boolean(),
-  isConnect: z.boolean(),
-  isRequest: z.boolean(),
-  isBody: z.boolean(),
-  isDecode: z.boolean(),
+  isTimeout: z.boolean().nullable(),
+  isConnect: z.boolean().nullable(),
+  isRequest: z.boolean().nullable(),
+  isBody: z.boolean().nullable(),
+  isDecode: z.boolean().nullable(),
   status: z.number().nullable(),
   url: z.string().nullable(),
 });
@@ -115,8 +117,8 @@ export const ProxySourceDebugAttemptResultStepSchema = z.object({
     success: z.boolean(),
     httpStatus: z.number().nullable(),
     finalUrl: z.string().nullable(),
-    httpHeaders: z.record(z.string(), z.string()),
-    fetchDurationMs: z.number(),
+    httpHeaders: z.record(z.string(), z.string()).nullable(),
+    fetchDurationMs: z.number().nullable(),
     error: z.string().nullable(),
     requestError: ProxySourceDebugRequestErrorSchema.nullable(),
     remoteAddress: z.string().nullable(),

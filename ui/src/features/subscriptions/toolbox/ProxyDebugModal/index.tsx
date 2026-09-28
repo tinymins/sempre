@@ -28,6 +28,7 @@ import {
   MergeStepContent,
   OutputStepContent,
   SourceResultStepContent,
+  SourceFetchStepContent,
   SourceStartStepContent,
   ValidateStepContent,
 } from "./DebugStepContent";
@@ -49,6 +50,9 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
   const [steps, setSteps] = useState<ProxyDebugStep[]>([]);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runRevision, setRunRevision] = useState(0);
+  const controllerRef = useRef<AbortController | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const traceModalRef = useRef<NodeTraceModalRef>(null);
   const globalSearchRef = useRef<GlobalSearchModalRef>(null);
@@ -61,8 +65,12 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
 
   useImperativeHandle(ref, () => ({
     open: (id: string, fmt: ProxyDebugFormat) => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+      controllerRef.current?.abort();
       setSubscribeId(id);
       setFormat(fmt);
+      setRunRevision((current) => current + 1);
       setSteps([]);
       setDone(false);
       setError(null);
@@ -70,26 +78,40 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
     },
   }));
 
+  useEffect(() => () => {
+    controllerRef.current?.abort();
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+  }, []);
+
   // Subscribe to debug stream via SSE
   useEffect(() => {
     if (!subscribeId || !visible) return;
 
     const controller = new AbortController();
+    controllerRef.current = controller;
     proxyApi.debugSubscription
       .stream(
         { id: subscribeId, format },
         (chunk: unknown) => {
+          if (controller.signal.aborted) return;
           const step = chunk as ProxyDebugStep;
           setSteps((prev) => {
-            if (step.type === "source-result") {
-              const filtered = prev.filter(
-                (s) =>
-                  !(
-                    s.type === "source-start" &&
-                    s.data.sourceIndex === step.data.sourceIndex
-                  ),
-              );
-              return [...filtered, step];
+            if (step.type === "source-start" || step.type === "source-fetched" || step.type === "source-failed" || step.type === "source-result") {
+              const index = prev.findIndex((item) =>
+                (item.type === "source-start" || item.type === "source-fetched" || item.type === "source-failed" || item.type === "source-result") &&
+                item.data.sourceIndex === step.data.sourceIndex);
+              if (index < 0) return [...prev, step];
+              const next = [...prev];
+              next[index] = step;
+              return next;
+            }
+            if (step.type === "rule-sets" || step.type === "merge") {
+              const pending = prev.findIndex((item) => item.type === (step.type === "rule-sets" ? "rule-sets-start" : "compile-start"));
+              if (pending >= 0) {
+                const next = [...prev];
+                next[pending] = step;
+                return next;
+              }
             }
             return [...prev, step];
           });
@@ -101,13 +123,16 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
         controller.signal,
       )
       .catch((err) => {
-        if (err.name !== "AbortError") {
+        if (!controller.signal.aborted && err.name !== "AbortError") {
           setError(err.message);
         }
       });
 
-    return () => controller.abort();
-  }, [subscribeId, format, visible, scrollToBottom]);
+    return () => {
+      controller.abort();
+      if (controllerRef.current === controller) controllerRef.current = null;
+    };
+  }, [subscribeId, format, visible, runRevision, scrollToBottom]);
 
   // 收集所有节点名称（有效节点 + 被过滤节点）
   const allNodeNames = useMemo(() => {
@@ -163,9 +188,11 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
   }, []);
 
   const handleClose = () => {
+    controllerRef.current?.abort();
     setVisible(false);
-    // Delay clearing subscribeId to allow cleanup
-    setTimeout(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
       setSubscribeId(null);
       setSteps([]);
       setDone(false);
@@ -181,7 +208,8 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
       case "manual-servers":
         return t("proxy.debug.localServers");
       case "source-start":
-        return `${t("proxy.debug.remoteSources")} #${step.data.sourceIndex}`;
+      case "source-fetched":
+      case "source-failed":
       case "source-result":
         return `${t("proxy.debug.remoteSources")} #${step.data.sourceIndex}`;
       case "merge":
@@ -189,7 +217,10 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
       case "output":
         return t("proxy.debug.configBuild");
       case "rule-sets":
+      case "rule-sets-start":
         return t("proxy.debug.ruleSets");
+      case "compile-start":
+        return t("proxy.debug.configBuild");
       case "validate":
         return t("proxy.debug.validate");
       case "done":
@@ -203,7 +234,8 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
   const getStepStatus = (
     step: ProxyDebugStep,
   ): "process" | "finish" | "error" => {
-    if (step.type === "source-start") return "process";
+    if (step.type === "source-start" || step.type === "rule-sets-start" || step.type === "compile-start") return "process";
+    if (step.type === "source-failed") return "error";
     if (step.type === "source-result" && step.data.error) return "error";
     if (
       step.type === "validate" &&
@@ -251,6 +283,9 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
         );
       case "source-start":
         return <SourceStartStepContent step={step} />;
+      case "source-fetched":
+      case "source-failed":
+        return <SourceFetchStepContent step={step} />;
       case "source-result":
         return (
           <SourceResultStepContent
@@ -269,6 +304,10 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
         return <OutputStepContent step={step} />;
       case "rule-sets":
         return <RuleSetsStepContent step={step} />;
+      case "rule-sets-start":
+        return <span className="flex items-center gap-2 text-sm text-slate-500"><LoadingOutlined spin />{t("proxy.debug.loadingRuleSets")}</span>;
+      case "compile-start":
+        return <span className="flex items-center gap-2 text-sm text-slate-500"><LoadingOutlined spin />{t("proxy.debug.compiling")}</span>;
       case "validate":
         return <ValidateStepContent step={step} />;
       case "done":
@@ -327,8 +366,8 @@ const ProxyDebugModal = forwardRef<ProxyDebugModalRef>((_, ref) => {
                     ? "#3b82f6"
                     : "#22c55e";
             const stepKey =
-              step.type === "source-start" || step.type === "source-result"
-                ? `${step.type}-${step.data.sourceIndex}`
+              step.type === "source-start" || step.type === "source-fetched" || step.type === "source-failed" || step.type === "source-result"
+                ? `source-${step.data.sourceIndex}`
                 : step.type;
 
             return (

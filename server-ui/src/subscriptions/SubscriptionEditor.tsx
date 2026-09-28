@@ -37,11 +37,13 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   const [draft, setDraft] = useState<SubscriptionDraft | null>(null)
   const [saved, setSaved] = useState<Subscription | null>(null)
   const [defaults, setDefaults] = useState<SubscriptionDefaults | null>(null)
-  const [users, setUsers] = useState<UserBrief[]>([])
+  const [users, setUsers] = useState<UserBrief[] | null>(null)
   const [tab, setTab] = useState('basic')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [defaultsError, setDefaultsError] = useState('')
+  const [usersError, setUsersError] = useState('')
   const [conflict, setConflict] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [sourceDebug, setSourceDebug] = useState<{ source: SubscriptionSource; index: number } | null>(null)
@@ -50,18 +52,31 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   useEffect(() => {
     if (!open) return
     let active = true
-    void Promise.all([id ? subscriptionApi.get(id) : Promise.resolve(null), subscriptionApi.defaults(), subscriptionApi.users()])
-      .then(([subscription, nextDefaults, nextUsers]) => {
+    void (id ? subscriptionApi.get(id) : Promise.resolve(null))
+      .then((subscription) => {
         if (!active) return
         setSaved(subscription)
         setDraft(subscription ? draftFromSubscription(subscription) : emptyDraft())
-        setDefaults(nextDefaults)
-        setUsers(nextUsers)
       })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)) })
       .finally(() => { if (active) setLoading(false) })
+    void subscriptionApi.defaults().then((next) => { if (active) setDefaults(next) })
+      .catch((reason) => { if (active) setDefaultsError(reason instanceof Error ? reason.message : String(reason)) })
+    void subscriptionApi.users().then((next) => { if (active) setUsers(next) })
+      .catch((reason) => { if (active) setUsersError(reason instanceof Error ? reason.message : String(reason)) })
     return () => { active = false }
   }, [open, id])
+
+  const retryDefaults = async () => {
+    setDefaultsError('')
+    try { setDefaults(await subscriptionApi.defaults()) }
+    catch (reason) { setDefaultsError(reason instanceof Error ? reason.message : String(reason)) }
+  }
+  const retryUsers = async () => {
+    setUsersError('')
+    try { setUsers(await subscriptionApi.users()) }
+    catch (reason) { setUsersError(reason instanceof Error ? reason.message : String(reason)) }
+  }
 
   const update = (patch: Partial<SubscriptionDraft>) => {
     setDraft((current) => current ? { ...current, ...patch } : current)
@@ -69,8 +84,9 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   }
   const save = (): undefined => {
     if (!draft) return undefined
-    if (dnsInvalid) { setError(t('editor.invalidDns')); setTab('dnsConfig'); return undefined }
-    const invalidField = invalidJsoncField(draft)
+    const dnsChanged = !saved || draft.dnsConfig !== saved.dnsConfig || draft.useSystemDnsConfig !== saved.useSystemDnsConfig
+    if (dnsInvalid && !draft.useSystemDnsConfig && dnsChanged) { setError(t('editor.invalidDns')); setTab('dnsConfig'); return undefined }
+    const invalidField = invalidJsoncField(draft, saved)
     if (invalidField) { setError(t('editor.invalidJsonc', { field: t(invalidField.labelKey) })); setTab(invalidField.tab); return undefined }
     const newlyAuthorized = saved?.canManageAuthorization
       ? draft.authorizedUserIds.filter((id) => !saved.authorizedUserIds.includes(id))
@@ -141,10 +157,13 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
     </div>}>
       {loading ? <div className="grid min-h-48 place-items-center"><Spin size="large" /></div> : null}
       {error ? <p role="alert" className="mb-3 text-sm text-red-600">{error}</p> : null}
+      {id && !draft && !loading ? <Button size="small" onClick={() => void reload()}>{t('common.retry')}</Button> : null}
+      {defaultsError ? <p role="alert" className="mb-3 text-sm text-red-600">{t('editor.inherit')}: {defaultsError} <Button size="small" onClick={() => void retryDefaults()}>{t('common.retry')}</Button></p> : null}
+      {usersError ? <p role="alert" className="mb-3 text-sm text-red-600">{t('editor.authorizedUsers')}: {usersError} <Button size="small" onClick={() => void retryUsers()}>{t('common.retry')}</Button></p> : null}
       {conflict ? <Popconfirm title={t('editor.reloadTitle')} description={t('editor.reloadWarning')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={reload}><Button className="mb-3" size="small">{t('editor.reloadLatest')}</Button></Popconfirm> : null}
       {draft ? (
         <div className="space-y-5">
-          <Tabs items={tabs.map((item) => ({ key: item.key, label: t(item.labelKey) }))} activeKey={tab} onChange={(next) => { if (!dnsInvalid) setTab(next) }} type="segment" />
+          <Tabs items={tabs.map((item) => ({ key: item.key, label: t(item.labelKey) }))} activeKey={tab} onChange={setTab} type="segment" />
           {tab === 'basic' ? <BasicConfig draft={draft} users={users} canManageAuthorization={!id || Boolean(saved?.canManageAuthorization)} update={update} /> : null}
           {tab === 'sources' ? (
             <div className="space-y-4">
@@ -158,13 +177,13 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
           {tab === 'ruleList' ? <InheritedConfig field="ruleList" draft={draft} defaults={defaults} update={update} /> : null}
           {tab === 'group' ? <InheritedConfig field="group" draft={draft} defaults={defaults} update={update} /> : null}
           {tab === 'customConfig' ? <InheritedConfig field="customConfig" draft={draft} defaults={defaults} update={update} /> : null}
-          {tab === 'dnsConfig' ? <InheritedConfig field="dnsConfig" draft={draft} defaults={defaults} update={update} dnsInvalid={dnsInvalid} onDnsInvalidChange={setDnsInvalid} /> : null}
+          {tab === 'dnsConfig' ? <InheritedConfig field="dnsConfig" draft={draft} defaults={defaults} update={update} onDnsInvalidChange={setDnsInvalid} /> : null}
           {tab === 'privateAccess' ? <PrivateAccessEditor value={draft.privateAccessConfig} onChange={(next) => update({ privateAccessConfig: next })} /> : null}
           {tab === 'servers' ? <ExtraConfig draft={draft} assignedNodes={saved?.assignedCustomNodes ?? []} update={update} /> : null}
         </div>
       ) : null}
       {draft && debugOpen ? <SubscriptionDebug draft={draft} targets={targets} subscriptionId={saved?.id} onClose={() => setDebugOpen(false)} /> : null}
-      {sourceDebug ? <SourceDebug source={sourceDebug.source} saved={savedSource(saved, sourceDebug.source)} onClose={() => setSourceDebug(null)} /> : null}
+      {sourceDebug ? <SourceDebug source={sourceDebug.source} saved={savedSource(saved, sourceDebug.source, sourceDebug.index)} onClose={() => setSourceDebug(null)} /> : null}
     </Modal>
   )
 }
@@ -175,27 +194,28 @@ function omitAuthorization(draft: SubscriptionDraft): Partial<SubscriptionDraft>
   return rest
 }
 
-function savedSource(saved: Subscription | null, source: SubscriptionSource) {
+function savedSource(saved: Subscription | null, source: SubscriptionSource, draftIndex: number) {
   if (!saved?.subscribeItems) return undefined
-  const index = saved.subscribeItems.findIndex((item) =>
+  const sameSource = (item: SubscriptionSource) =>
     item.enabled === source.enabled && item.url === source.url && item.prefix === source.prefix &&
-    item.remark === source.remark && item.cacheTtlMinutes === source.cacheTtlMinutes &&
-    item.fetchUa === source.fetchUa && item.fetchMode === source.fetchMode)
+    item.cacheTtlMinutes === source.cacheTtlMinutes && item.fetchUa === source.fetchUa && item.fetchMode === source.fetchMode
+  const index = saved.subscribeItems[draftIndex] && sameSource(saved.subscribeItems[draftIndex])
+    ? draftIndex : saved.subscribeItems.findIndex(sameSource)
   return index < 0 ? undefined : { id: saved.id, index, source: saved.subscribeItems[index] }
 }
 
-function invalidJsoncField(draft: SubscriptionDraft): { labelKey: MessageKey; tab: string } | null {
+function invalidJsoncField(draft: SubscriptionDraft, saved: Subscription | null): { labelKey: MessageKey; tab: string } | null {
   const fields = [
-    { value: draft.filter, enabled: !draft.useSystemFilter, labelKey: 'editor.filter', tab: 'sources' },
-    { value: draft.ruleList, enabled: !draft.useSystemRuleList, labelKey: 'editor.tabRules', tab: 'ruleList' },
-    { value: draft.group, enabled: !draft.useSystemGroup, labelKey: 'editor.tabGroup', tab: 'group' },
-    { value: draft.customConfig, enabled: !draft.useSystemCustomConfig, labelKey: 'editor.tabCustom', tab: 'customConfig' },
-    { value: draft.dnsConfig, enabled: !draft.useSystemDnsConfig, labelKey: 'editor.tabDns', tab: 'dnsConfig' },
-    { value: draft.privateAccessConfig, enabled: true, labelKey: 'editor.tabPrivate', tab: 'privateAccess' },
-    { value: draft.servers, enabled: true, labelKey: 'editor.tabServers', tab: 'servers' },
+    { value: draft.filter, enabled: !draft.useSystemFilter, changed: !saved || draft.filter !== saved.filter || draft.useSystemFilter !== saved.useSystemFilter, labelKey: 'editor.filter', tab: 'sources' },
+    { value: draft.ruleList, enabled: !draft.useSystemRuleList, changed: !saved || draft.ruleList !== saved.ruleList || draft.useSystemRuleList !== saved.useSystemRuleList, labelKey: 'editor.tabRules', tab: 'ruleList' },
+    { value: draft.group, enabled: !draft.useSystemGroup, changed: !saved || draft.group !== saved.group || draft.useSystemGroup !== saved.useSystemGroup, labelKey: 'editor.tabGroup', tab: 'group' },
+    { value: draft.customConfig, enabled: !draft.useSystemCustomConfig, changed: !saved || draft.customConfig !== saved.customConfig || draft.useSystemCustomConfig !== saved.useSystemCustomConfig, labelKey: 'editor.tabCustom', tab: 'customConfig' },
+    { value: draft.dnsConfig, enabled: !draft.useSystemDnsConfig, changed: !saved || draft.dnsConfig !== saved.dnsConfig || draft.useSystemDnsConfig !== saved.useSystemDnsConfig, labelKey: 'editor.tabDns', tab: 'dnsConfig' },
+    { value: draft.privateAccessConfig, enabled: true, changed: !saved || draft.privateAccessConfig !== saved.privateAccessConfig, labelKey: 'editor.tabPrivate', tab: 'privateAccess' },
+    { value: draft.servers, enabled: true, changed: !saved || draft.servers !== saved.servers, labelKey: 'editor.tabServers', tab: 'servers' },
   ]
   for (const field of fields) {
-    if (!field.enabled || !field.value?.trim()) continue
+    if (!field.enabled || !field.changed || !field.value?.trim()) continue
     const errors: ParseError[] = []
     parse(field.value, errors, { allowTrailingComma: true })
     if (errors.length) return { labelKey: field.labelKey as MessageKey, tab: field.tab }

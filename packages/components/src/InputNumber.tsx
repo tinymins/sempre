@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { forwardRef, type InputHTMLAttributes } from "react";
+import { forwardRef, useState, type InputHTMLAttributes } from "react";
 import { cn } from "./utils";
 
 export interface InputNumberProps
@@ -59,10 +59,18 @@ export const InputNumber = forwardRef<HTMLInputElement, InputNumberProps>(
       status,
       className,
       style,
+      onBlur: onInputBlur,
+      onKeyDown: onInputKeyDown,
       ...rest
     },
     ref,
   ) => {
+    const [uncontrolledValue, setUncontrolledValue] = useState<number | null>(defaultValue ?? null);
+    const [edit, setEdit] = useState<{ raw: string; external: number | null | undefined; emitted: number | null | undefined } | null>(null);
+    const current = value === undefined ? uncontrolledValue : value;
+    const editing = edit !== null && (value === undefined || value === edit.external || value === edit.emitted);
+    const displayed = editing ? edit.raw : String(current ?? "");
+    const parsed = (raw: string) => /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw.trim()) ? Number(raw) : null;
     const clamp = (v: number) => {
       let val = v;
       if (min !== undefined) val = Math.max(min, val);
@@ -72,26 +80,43 @@ export const InputNumber = forwardRef<HTMLInputElement, InputNumberProps>(
       return val;
     };
 
+    const emit = (next: number | null) => {
+      if (value === undefined) setUncontrolledValue(next);
+      onChange?.(next);
+    };
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value;
-      if (raw === "" || raw === "-") {
-        onChange?.(null);
-        return;
+      const num = parsed(raw);
+      const inRange = num !== null && Number.isFinite(num) &&
+        (min === undefined || num >= min) && (max === undefined || num <= max);
+      const emitted = raw === "" ? null : inRange && num !== null ? clamp(num) : undefined;
+      setEdit({ raw, external: value, emitted });
+      if (emitted !== undefined) emit(emitted);
+    };
+
+    const commit = () => {
+      if (!editing) { setEdit(null); return; }
+      if (edit.raw.trim() === "") emit(null);
+      else {
+        const num = parsed(edit.raw);
+        if (num !== null && Number.isFinite(num)) emit(clamp(num));
       }
-      const num = Number.parseFloat(raw);
-      if (!Number.isNaN(num)) {
-        onChange?.(clamp(num));
-      }
+      setEdit(null);
     };
 
     const increment = () => {
-      const current = value ?? defaultValue ?? 0;
-      onChange?.(clamp(current + step));
+      const base = parsed(displayed) ?? current ?? 0;
+      const next = clamp(base + step);
+      setEdit({ raw: String(next), external: value, emitted: next });
+      emit(next);
     };
 
     const decrement = () => {
-      const current = value ?? defaultValue ?? 0;
-      onChange?.(clamp(current - step));
+      const base = parsed(displayed) ?? current ?? 0;
+      const next = clamp(base - step);
+      setEdit({ raw: String(next), external: value, emitted: next });
+      emit(next);
     };
 
     return (
@@ -115,21 +140,30 @@ export const InputNumber = forwardRef<HTMLInputElement, InputNumberProps>(
           </span>
         ) : null}
         <input
+          {...rest}
           ref={ref}
           type="text"
           inputMode="decimal"
           disabled={disabled}
-          value={value ?? ""}
+          value={displayed}
           onChange={handleChange}
+          onBlur={(event) => { commit(); onInputBlur?.(event); }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+              event.preventDefault();
+              if (event.key === "ArrowUp") increment(); else decrement();
+            }
+            onInputKeyDown?.(event);
+          }}
           className="w-full min-w-[3em] bg-transparent outline-none text-left px-2"
-          {...rest}
         />
         {controls ? (
           <div className="flex flex-col border-l border-black/[0.08] dark:border-white/[0.1] shrink-0">
             <button
               type="button"
               tabIndex={-1}
-              disabled={disabled || (max !== undefined && (value ?? 0) >= max)}
+              disabled={disabled || (max !== undefined && (current ?? 0) >= max)}
+              onMouseDown={(event) => event.preventDefault()}
               className="px-1 hover:bg-black/[0.05] dark:hover:bg-white/[0.07] disabled:opacity-30 flex-1"
               onClick={increment}
             >
@@ -138,7 +172,8 @@ export const InputNumber = forwardRef<HTMLInputElement, InputNumberProps>(
             <button
               type="button"
               tabIndex={-1}
-              disabled={disabled || (min !== undefined && (value ?? 0) <= min)}
+              disabled={disabled || (min !== undefined && (current ?? 0) <= min)}
+              onMouseDown={(event) => event.preventDefault()}
               className="px-1 hover:bg-black/[0.05] dark:hover:bg-white/[0.07] disabled:opacity-30 flex-1 border-t border-black/[0.08] dark:border-white/[0.1]"
               onClick={decrement}
             >

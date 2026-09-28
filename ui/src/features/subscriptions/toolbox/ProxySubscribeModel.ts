@@ -43,7 +43,7 @@ export function recommendedEditorDefaults(defaults: Props["defaults"], configura
 	return defaults.by_core?.[configurationContext.target?.core ?? ""] ?? defaults;
 }
 
-export function profileFormValues(profile: SubscriptionProfile, configurationContext: SubscriptionConfigurationContext): FormFieldValues {
+export function profileFormValues(profile: SubscriptionProfile): FormFieldValues {
 	const transparent = profile.transparent_proxy ?? {
 			mode: "tun-router" as const,
 			capture_host: false,
@@ -61,13 +61,6 @@ export function profileFormValues(profile: SubscriptionProfile, configurationCon
 		};
 	const localProxy = profile.local_proxy ?? { socks_port: 20580, http_port: 20581, username: "sempre", password: "" };
 	const managementAPI = profile.management_api ?? { external_controller: "0.0.0.0:9090", secret: "", allow_origins: [], allow_private_network: false };
-	const features = new Set(configurationContext.capabilities.features);
-	const transparentMode = (
-		transparent.mode === "tun-router" && features.has("transparent.tun") ||
-		transparent.mode === "tproxy" && features.has("transparent.tproxy") ||
-		transparent.mode === "ebpf-router" && features.has("transparent.ebpf") ||
-		transparent.mode === "disabled"
-	) ? transparent.mode : "disabled";
   const items: SubscribeItem[] = profile.sources
     .filter((source) => source.type === "url")
     .map((source) => ({
@@ -97,7 +90,7 @@ export function profileFormValues(profile: SubscriptionProfile, configurationCon
     privateAccessConfig: profile.editor.private_access_config ?? "",
     servers: profile.editor.servers || "[]",
     selectedCustomNodeIds: profile.custom_node_ids ?? [],
-		transparentMode,
+		transparentMode: transparent.mode,
 		tunInterfaceName: transparent.tun.interface_name,
 		tunAddress: transparent.tun.address ?? "",
 		tunRouteExclusions: transparent.route_exclusions.join("\n"),

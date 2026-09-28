@@ -21,14 +21,14 @@ const overrideTabs = [
 
 type OverrideKey = typeof overrideTabs[number]['key']
 
-function OverrideEditor({ name, value, onChange, onInvalidChange }: { name: OverrideKey; value: string | null; onChange: Props['onChange']; onInvalidChange?: Props['onInvalidChange'] }) {
+function OverrideEditor({ name, value, onChange, onInvalidChange, readOnly }: { name: OverrideKey; value: string | null; onChange: Props['onChange']; onInvalidChange?: Props['onInvalidChange']; readOnly: boolean }) {
   const { t } = useI18n()
-  const [activeRange, setActiveRange] = useState<{ offset: number; length: number } | null>(null)
+  const [activeRange, setActiveRange] = useState<{ source: string; offset: number; length: number } | null>(null)
   const [error, setError] = useState('')
   const source = value?.trim() ? value : '{}'
   const tree = parseTree(source)
   const node = tree ? findNodeAtLocation(tree, ['overrides', name]) : undefined
-  const range = activeRange ?? (node ? { offset: node.offset, length: node.length } : null)
+  const range = activeRange?.source === source ? activeRange : node ? { offset: node.offset, length: node.length } : null
   const text = range ? source.slice(range.offset, range.offset + range.length) : ''
   const update = (next: string) => {
     if (!next.trim()) {
@@ -47,8 +47,9 @@ function OverrideEditor({ name, value, onChange, onInvalidChange }: { name: Over
       if (!inserted) return
       target = { offset: inserted.offset, length: inserted.length }
     }
-    onChange(base.slice(0, target.offset) + next + base.slice(target.offset + target.length))
-    setActiveRange({ offset: target.offset, length: next.length })
+    const nextSource = base.slice(0, target.offset) + next + base.slice(target.offset + target.length)
+    onChange(nextSource)
+    setActiveRange({ source: nextSource, offset: target.offset, length: next.length })
     const errors: ParseError[] = []
     const parsed: unknown = parse(next, errors, { allowTrailingComma: true })
     if (errors.length || !parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
@@ -62,7 +63,7 @@ function OverrideEditor({ name, value, onChange, onInvalidChange }: { name: Over
   return <div className="space-y-2">
     <p className="text-xs text-[var(--muted)]">{t('dns.overrideHint')}</p>
     {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
-    <TextArea aria-label={`${overrideTabs.find((tab) => tab.key === name)?.label} DNS`} rows={18} value={text} onChange={(event) => update(event.target.value)} className="font-mono text-xs" />
+    <TextArea aria-label={`${overrideTabs.find((tab) => tab.key === name)?.label} DNS`} rows={18} value={text} readOnly={readOnly} onChange={(event) => update(event.target.value)} className="font-mono text-xs" />
   </div>
 }
 
@@ -94,7 +95,7 @@ export function DnsConfigEditor({ value, onChange, readOnly = false, onInvalidCh
     { value: 'false', label: t('dns.disabled') },
   ]
   const [tab, setTab] = useState<string>('shared')
-  const [invalidOverride, setInvalidOverride] = useState(false)
+  const [invalidOverrideTab, setInvalidOverrideTab] = useState<OverrideKey | null>(null)
   const [advancedInvalid, setAdvancedInvalid] = useState(false)
   const [advancedRevision, setAdvancedRevision] = useState(0)
   const { object, error } = readJsoncObject(value)
@@ -111,9 +112,12 @@ export function DnsConfigEditor({ value, onChange, readOnly = false, onInvalidCh
     <div className="space-y-4">
       <p className="text-xs text-[var(--muted)]">{t('dns.intro')}</p>
       {issue ? <p role="alert" className="text-sm text-red-600">{issue}</p> : null}
-      <Tabs type="segment" activeKey={tab} onChange={(next) => { if (!invalidOverride && !advancedInvalid) setTab(next) }} items={[{ key: 'shared', label: t('dns.shared') }, ...overrideTabs]} />
-      {invalidOverride ? <p role="alert" className="text-xs text-red-600">{t('dns.fixOverride')}</p> : null}
-      {tab !== 'shared' && !advancedInvalid && !shapeError ? <OverrideEditor key={`${tab}-${advancedRevision}`} name={tab as OverrideKey} value={value} onChange={onChange} onInvalidChange={(invalid) => { setInvalidOverride(invalid); onInvalidChange?.(invalid) }} /> : tab === 'shared' ? <div className="grid gap-3 md:grid-cols-2">
+      <Tabs type="segment" activeKey={tab} onChange={setTab} items={[{ key: 'shared', label: t('dns.shared') }, ...overrideTabs]} />
+      {invalidOverrideTab ? <p role="alert" className="text-xs text-red-600">{t('dns.fixOverride')}</p> : null}
+      {!advancedInvalid && !shapeError ? overrideTabs.map(({ key }) => <div key={key} className={tab === key ? '' : 'hidden'}>
+        <OverrideEditor key={advancedRevision} name={key} value={value} onChange={onChange} readOnly={readOnly || Boolean(issue) && invalidOverrideTab !== key} onInvalidChange={(invalid) => { setInvalidOverrideTab(invalid ? key : null); onInvalidChange?.(invalid) }} />
+      </div>) : null}
+      {tab === 'shared' ? <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1 text-sm">{t('dns.transport')}
           <Select value={typeof shared.localDnsTransport === 'string' ? shared.localDnsTransport : 'unset'} disabled={readOnly || Boolean(issue)} options={[{ value: 'unset', label: t('dns.unset') }, { value: 'udp', label: 'UDP' }, { value: 'tls', label: 'TLS' }, { value: 'system', label: t('dns.system') }]} onChange={(next) => set('localDnsTransport', next === 'unset' ? undefined : next)} className="w-full" />
         </label>
@@ -128,9 +132,10 @@ export function DnsConfigEditor({ value, onChange, readOnly = false, onInvalidCh
         </label>)}
       </div> : null}
       <label className="block space-y-1 text-sm">{t('filter.advanced')}
-        <TextArea rows={12} value={value ?? ''} readOnly={readOnly || invalidOverride} onChange={(event) => {
+        <TextArea rows={12} value={value ?? ''} readOnly={readOnly} onChange={(event) => {
           const next = event.target.value || null
           const invalid = Boolean(readJsoncObject(next).error)
+          setInvalidOverrideTab(null)
           setAdvancedInvalid(invalid)
           setAdvancedRevision((current) => current + 1)
           onInvalidChange?.(invalid)

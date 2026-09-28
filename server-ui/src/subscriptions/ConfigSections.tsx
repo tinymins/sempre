@@ -8,7 +8,7 @@ import { useI18n } from '../i18n/provider'
 interface Props {
   draft: SubscriptionDraft
   defaults: SubscriptionDefaults | null
-  users: UserBrief[]
+  users: UserBrief[] | null
   canManageAuthorization: boolean
   update: (patch: Partial<SubscriptionDraft>) => void
 }
@@ -24,7 +24,7 @@ const fields: Record<InheritedField, { labelKey: 'editor.tabRules' | 'editor.tab
   dnsConfig: { labelKey: 'editor.tabDns', flag: 'useSystemDnsConfig' },
 }
 
-export function InheritedConfig({ field, draft, defaults, update, dnsInvalid = false, onDnsInvalidChange }: Pick<Props, 'draft' | 'defaults' | 'update'> & { field: InheritedField; dnsInvalid?: boolean; onDnsInvalidChange?: (invalid: boolean) => void }) {
+export function InheritedConfig({ field, draft, defaults, update, onDnsInvalidChange }: Pick<Props, 'draft' | 'defaults' | 'update'> & { field: InheritedField; onDnsInvalidChange?: (invalid: boolean) => void }) {
   const { t } = useI18n()
   const { labelKey, flag } = fields[field]
   const useSystem = draft[flag]
@@ -32,12 +32,12 @@ export function InheritedConfig({ field, draft, defaults, update, dnsInvalid = f
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <label className="text-sm font-medium" htmlFor={`config-${field}`}>{t(labelKey)}</label>
-        <Checkbox checked={useSystem} disabled={field === 'dnsConfig' && dnsInvalid} onChange={(event) => update({ [flag]: event.target.checked })}>{t('editor.inherit')}</Checkbox>
+        <Checkbox checked={useSystem} onChange={(event) => update({ [flag]: event.target.checked })}>{t('editor.inherit')}</Checkbox>
       </div>
       {useSystem ? (
         <>
           <p className="text-xs text-[var(--muted)]">{t('editor.inheritHint')}</p>
-          {field === 'filter' ? <FilterConfig value={defaults?.filter ?? '[]'} readOnly /> : <TextArea id={`config-${field}`} value={defaults?.[field] ?? ''} readOnly rows={14} className="font-mono text-xs" />}
+          {defaults === null ? <p className="text-sm text-[var(--muted)]">{t('common.unavailable')}</p> : field === 'filter' ? <FilterConfig value={defaults.filter} readOnly /> : <TextArea id={`config-${field}`} value={defaults[field]} readOnly rows={14} className="font-mono text-xs" />}
         </>
       ) : field === 'dnsConfig' ? (
         <DnsConfigEditor value={draft.dnsConfig} onChange={(next) => update({ dnsConfig: next })} onInvalidChange={onDnsInvalidChange} />
@@ -61,7 +61,7 @@ export function BasicConfig({ draft, users, canManageAuthorization, update }: Om
         <Select value={draft.logLevel} options={['off', 'error', 'warn', 'info', 'debug'].map((level) => ({ value: level, label: level }))} onChange={(next) => update({ logLevel: next as SubscriptionDraft['logLevel'] })} className="w-full" />
       </label>
       <label className="block space-y-1 text-sm">{t('editor.authorizedUsers')}
-        <Select mode="multiple" value={draft.authorizedUserIds} disabled={!canManageAuthorization} options={users.map((user) => ({ value: user.id, label: `${user.name} (${user.email})` }))} onChange={(next) => update({ authorizedUserIds: next as string[] })} showSearch placeholder={t('editor.authorizedUsers')} className="w-full" />
+        <Select mode="multiple" value={draft.authorizedUserIds} disabled={!canManageAuthorization || users === null} options={users?.map((user) => ({ value: user.id, label: `${user.name} (${user.email})` })) ?? []} onChange={(next) => update({ authorizedUserIds: next as string[] })} showSearch placeholder={t('editor.authorizedUsers')} className="w-full" />
       </label>
       {!canManageAuthorization ? <p className="text-xs text-[var(--muted)]">{t('editor.ownerOnly')}</p> : null}
     </div>

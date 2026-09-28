@@ -157,7 +157,7 @@ export function useSourceDebugStepRenderer() {
                 },
                 {
                   label: t("proxy.sourceDebug.duration"),
-                  children: `${step.data.fetchDurationMs} ms`,
+                  children: step.data.fetchDurationMs === null ? "—" : `${step.data.fetchDurationMs} ms`,
                 },
                 {
                   label: t("proxy.sourceDebug.finalUrl"),
@@ -269,9 +269,7 @@ export function useSourceDebugStepRenderer() {
                 },
                 {
                   label: t("proxy.sourceDebug.connectionKind"),
-                  children: t(
-                    `proxy.sourceDebug.connectionKindValue.${step.data.connectionKind}`,
-                  ),
+                  children: step.data.connectionKind === null ? "—" : t(`proxy.sourceDebug.connectionKindValue.${step.data.connectionKind}`),
                 },
                 {
                   label: t("proxy.sourceDebug.proxyEndpoint"),
@@ -288,7 +286,7 @@ export function useSourceDebugStepRenderer() {
                 },
                 {
                   label: t("proxy.sourceDebug.dnsDuration"),
-                  children: `${step.data.dnsDurationMs} ms`,
+                  children: step.data.dnsDurationMs === null ? "—" : `${step.data.dnsDurationMs} ms`,
                 },
                 {
                   label: t("proxy.sourceDebug.resolvedAddresses"),
@@ -316,6 +314,7 @@ export function useSourceDebugStepRenderer() {
                 },
               ]}
             />
+            {step.data.note ? <p className="text-xs text-slate-500">{step.data.note}</p> : null}
             {step.data.dnsError && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
                 {t("proxy.sourceDebug.dnsError")}: {step.data.dnsError}

@@ -24,7 +24,13 @@ export function ProxyRuntimeFields({
   networkInventory,
 }: Props) {
   const { t } = useTranslation();
+  const unsupportedMode = transparentMode && transparentMode !== "disabled" && !(
+    transparentMode === "tun-router" && features.has("transparent.tun") ||
+    transparentMode === "tproxy" && features.has("transparent.tproxy") ||
+    transparentMode === "ebpf-router" && features.has("transparent.ebpf")
+  );
   return 			<div className="space-y-5">
+				{unsupportedMode ? <Alert type="warning" showIcon message={t("proxy.form.transparentModeUnsupported", { mode: transparentMode })} /> : null}
 				{supportsLocalProxy ? <section className="space-y-4">
 					<div className="grid gap-4 md:grid-cols-2">
 						<Form.Item label={t("proxy.form.localProxySOCKSPort")} name="localProxySOCKSPort">
@@ -48,6 +54,7 @@ export function ProxyRuntimeFields({
 								...(features.has("transparent.tun") ? [{ value: "tun-router", label: t("proxy.form.transparentModeTun") }] : []),
 								...(features.has("transparent.tproxy") ? [{ value: "tproxy", label: t("proxy.form.transparentModeTProxy") }] : []),
 								...(features.has("transparent.ebpf") ? [{ value: "ebpf-router", label: t("proxy.form.transparentModeEBPF") }] : []),
+								...(unsupportedMode ? [{ value: transparentMode, label: transparentMode }] : []),
 								{ value: "disabled", label: t("proxy.form.transparentModeDisabled") },
 							]}
 							onChange={(value) => {
