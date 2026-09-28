@@ -4,6 +4,8 @@ import { subscriptionApi } from './api'
 import type { NodeTraceResult, PreviewNode, Target } from './diagnostic-types'
 import type { Subscription } from './types'
 import { useI18n } from '../i18n/provider'
+import { DiagnosticValue } from './DiagnosticValue'
+import { TraceSteps } from './DiagnosticTrace'
 
 interface Props {
   subscription: Subscription
@@ -102,8 +104,8 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
       {detail ? <section className="rounded-lg border border-[var(--border)] p-3 space-y-3">
         <div className="flex items-center justify-between gap-2"><h3 className="font-medium">{detail.name}</h3><Button size="small" loading={traceLoading} onClick={() => void traceNode(detail)}>{t('preview.trace')}</Button></div>
         <p className="text-xs text-[var(--muted)]">{detail.type} · {detail.server}:{detail.port} · {detail.sourceUrl || `${t('common.source')} ${number(detail.sourceIndex)}`}</p>
-        <Collapse size="small" items={[{ key: 'raw', label: t('preview.raw'), children: <pre className="max-h-60 overflow-auto rounded bg-[var(--surface)] p-3 text-xs">{JSON.stringify(detail.raw, null, 2)}</pre> }]} />
-        {trace ? <div className="space-y-2"><h4 className="text-sm font-medium">{t('preview.traceSteps', { name: trace.nodeName })}</h4>{trace.steps.map((step, index) => <div key={index} className="rounded border border-[var(--border)] p-2"><strong className="text-xs">{step.type}</strong><pre className="mt-1 max-h-40 overflow-auto text-xs">{JSON.stringify(step.data, null, 2)}</pre></div>)}</div> : null}
+        <Collapse size="small" items={[{ key: 'raw', label: t('preview.raw'), children: <DiagnosticValue value={detail.raw} /> }]} />
+        {trace ? <div className="space-y-2"><h4 className="text-sm font-medium">{t('preview.traceSteps', { name: trace.nodeName })}</h4><TraceSteps trace={trace} /></div> : null}
       </section> : null}
     </div>
   </Modal>

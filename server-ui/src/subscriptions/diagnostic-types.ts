@@ -39,9 +39,26 @@ export interface AccessStats {
 export interface DebugStage {
   type: string
   status: 'running' | 'ok' | 'skipped' | 'error'
+  sourceIndex?: number
+  sourceRemark?: string
+  sourceLabel?: string
   sourceId?: string
   cached?: boolean
-  cacheState?: 'fresh' | 'stale' | 'miss' | 'bypass'
+  cacheState?: string
+  fetchMode?: string
+  cacheTtlMinutes?: number
+  format?: string
+  parsedNodeCount?: number
+  nodesBeforeFilter?: number
+  nodesAfterFilter?: number
+  filteredNodes?: number
+  filteredCount?: number
+  nodeNames?: string[]
+  fetchDurationMs?: number
+  httpStatus?: number | null
+  attempt?: number
+  maxAttempts?: number
+  [detail: string]: unknown
   message?: string
 }
 
@@ -56,6 +73,9 @@ export interface DraftDebugResult {
   nodeOrigins?: unknown
   stages: DebugStage[]
   elapsedMs: number
+  runtimeValidated?: boolean
+  ruleSamples?: { section: string; lines: string[] }[]
+  nodeTraces?: NodeTraceResult[]
 }
 
 export interface SourceDebugResult {
@@ -80,7 +100,10 @@ export interface SourceDebugResult {
 }
 
 export interface NodeTraceResult {
+  traceId?: string
   nodeName: string
+  sourceId?: string
+  sourceIndex?: number
   steps: { type: string; data: unknown }[]
 }
 
