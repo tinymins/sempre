@@ -2,7 +2,10 @@ use std::{path::Path, time::Duration};
 
 use tokio::time::{Instant, sleep, timeout_at};
 
-use crate::{DESCRIPTION, DISPLAY_NAME, NAME, ServiceError, State, checked, command};
+use crate::{
+    DESCRIPTION, DISPLAY_NAME, NAME, ServiceError, State, checked, command,
+    windows_failure_flag_arguments,
+};
 
 pub async fn status() -> Result<State, ServiceError> {
     let output = command("sc.exe", &["query", NAME]).await?;
@@ -59,7 +62,9 @@ pub async fn install(executable: &Path, _: &Path) -> Result<(), ServiceError> {
             "restart/5000/restart/15000/restart/60000",
         ],
     )
-    .await
+    .await?;
+    let failure_flag = windows_failure_flag_arguments(NAME);
+    checked("sc.exe", &failure_flag).await
 }
 
 pub async fn uninstall() -> Result<(), ServiceError> {

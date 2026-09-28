@@ -93,7 +93,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 Err(error) => {
                     self.log_supervisor(&format!(
                         "resolve subscription update schedule failed: {error}"
-                    ))?;
+                    ));
                     if matches!(
                         wait_for_update(self, &mut shutdown, ERROR_RETRY).await,
                         SchedulerEvent::Shutdown
@@ -110,14 +110,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             match self.update_active_subscription().await {
                 Ok(true) => {
-                    self.log_supervisor("scheduled subscription update staged; restarting core")?;
+                    self.log_supervisor("scheduled subscription update staged; restarting core");
                     self.request_runtime_reload();
                 }
                 Ok(false) => {
-                    self.log_supervisor("scheduled subscription update completed")?;
+                    self.log_supervisor("scheduled subscription update completed");
                 }
                 Err(error) => {
-                    self.log_supervisor(&format!("scheduled subscription update failed: {error}"))?;
+                    self.log_supervisor(&format!("scheduled subscription update failed: {error}"));
                 }
             }
         }

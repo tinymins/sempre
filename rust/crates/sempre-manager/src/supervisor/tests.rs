@@ -121,6 +121,13 @@ fn transparent_cleanup_requires_owned_runtime_evidence() {
     assert!(transparent_cleanup_required(&document));
 }
 
+#[test]
+fn manager_log_failure_is_non_fatal() {
+    let (_root, manager) = fixture("#!/bin/sh\nexit 0\n");
+    fs::create_dir_all(&manager.store.layout().manager_log).expect("blocked manager log path");
+    manager.log_supervisor("diagnostic output must be best effort");
+}
+
 #[tokio::test]
 async fn async_restart_tracks_real_process_output_until_healthy() {
     let (_root, manager) = fixture(

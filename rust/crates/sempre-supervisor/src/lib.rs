@@ -35,8 +35,6 @@ pub enum SupervisorError {
     Wait(#[source] io::Error),
     #[error("signal managed core: {0}")]
     Signal(#[source] io::Error),
-    #[error("managed core output task failed: {0}")]
-    OutputTask(#[source] tokio::task::JoinError),
     #[error("write managed core output: {0}")]
     Output(#[source] io::Error),
 }
@@ -135,7 +133,7 @@ impl ManagedProcess {
 
     pub async fn wait(&mut self) -> Result<ExitStatus, SupervisorError> {
         let status = self.child.wait().await.map_err(SupervisorError::Wait)?;
-        self.finish_output().await?;
+        self.finish_output().await;
         Ok(status)
     }
 
@@ -164,7 +162,7 @@ impl ManagedProcess {
             self.force_terminate().await?;
             self.child.wait().await.map_err(SupervisorError::Wait)?
         };
-        self.finish_output().await?;
+        self.finish_output().await;
         Ok(status)
     }
 
@@ -181,14 +179,11 @@ impl ManagedProcess {
         Ok(())
     }
 
-    async fn finish_output(&mut self) -> Result<(), SupervisorError> {
+    async fn finish_output(&mut self) {
         for task in self.output.drain(..) {
-            task.handle
-                .await
-                .map_err(SupervisorError::OutputTask)?
-                .map_err(SupervisorError::Output)?;
+            // Diagnostic output is ancillary and must not change the process result.
+            let _ = task.handle.await;
         }
-        Ok(())
     }
 }
 

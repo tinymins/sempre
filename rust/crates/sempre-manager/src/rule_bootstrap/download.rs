@@ -16,17 +16,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             let failed = result.is_err();
             match result {
                 Ok(true) if plan.rules.pending_count() > 0 => {
-                    let _ = self.log_supervisor(
+                    self.log_supervisor(
                         "online rules validated; switching from basic to complete configuration",
                     );
                     return;
                 }
                 Ok(true) => {
-                    let _ = self.log_supervisor("online rule snapshots refreshed");
+                    self.log_supervisor("online rule snapshots refreshed");
                 }
                 Ok(false) => {}
                 Err(error) => {
-                    let _ = self.log_supervisor(&format!(
+                    self.log_supervisor(&format!(
                         "online rule update failed; keeping running configuration: {error}"
                     ));
                 }

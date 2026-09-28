@@ -101,6 +101,50 @@ async fn rolling_output_keeps_bounded_backups() {
     );
 }
 
+#[tokio::test]
+async fn output_logging_recovers_after_storage_becomes_writable() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let path = root.path().join("core.log");
+    fs::create_dir(&path).expect("blocked log path");
+    let (mut input, output) = tokio::io::duplex(64);
+    let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = lines.clone();
+    let task = tokio::spawn(log::copy_rolling(
+        output,
+        path.clone(),
+        1024,
+        2,
+        Some(std::sync::Arc::new(move |_, line| {
+            observed.lock().unwrap().push(line.to_owned());
+        })),
+        "stdout",
+        None,
+    ));
+
+    input
+        .write_all(b"while-full\n")
+        .await
+        .expect("first output");
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while lines.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("observer output");
+    fs::remove_dir(&path).expect("restore writable path");
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    input
+        .write_all(b"after-recovery\n")
+        .await
+        .expect("recovered output");
+    input.shutdown().await.expect("shutdown");
+
+    task.await.expect("task").expect("copy");
+    assert_eq!(*lines.lock().unwrap(), ["while-full", "after-recovery"]);
+    assert_eq!(fs::read(path).expect("recovered log"), b"after-recovery\n");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn terminates_the_managed_process_group() {
@@ -124,6 +168,27 @@ async fn terminates_the_managed_process_group() {
         .expect("terminate");
     assert!(status.success());
     assert!(String::from_utf8_lossy(&fs::read(stdout).expect("stdout")).contains("started"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn output_log_failure_preserves_the_managed_process_exit_status() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let stdout = root.path().join("stdout.log");
+    let stderr = root.path().join("stderr.log");
+    fs::create_dir(&stdout).expect("blocked stdout path");
+    fs::create_dir(&stderr).expect("blocked stderr path");
+    let spec = CommandSpec {
+        program: "/bin/sh".into(),
+        arguments: vec!["-c".into(), "echo output; echo error >&2; exit 7".into()],
+        ..CommandSpec::default()
+    };
+    let status = ManagedProcess::spawn(&spec, stdout, stderr)
+        .expect("spawn")
+        .wait()
+        .await
+        .expect("wait for process");
+    assert_eq!(status.code(), Some(7));
 }
 
 #[cfg(unix)]

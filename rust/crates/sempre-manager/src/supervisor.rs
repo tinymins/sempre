@@ -96,12 +96,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 Err(error) => {
                     let error =
                         with_cleanup_failure(&error, self.cleanup_after_core_failure().await);
-                    self.log_supervisor(&format!("resolve deployment failed: {error}"))?;
+                    self.log_supervisor(&format!("resolve deployment failed: {error}"));
                     state::record_failure(self, "resolve failed", &error, false)?;
                     match wait_retry(self, &mut shutdown, RETRY_INTERVAL).await {
                         RetryEvent::Timer => {}
                         RetryEvent::NetworkChanged => {
-                            self.log_supervisor("network changed; retrying core immediately")?;
+                            self.log_supervisor("network changed; retrying core immediately");
                         }
                         RetryEvent::Reload => self.cleanup_after_core_failure().await?,
                         RetryEvent::Shutdown => {
@@ -126,7 +126,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     match wait_retry(self, &mut shutdown, RETRY_INTERVAL).await {
                         RetryEvent::Timer => {}
                         RetryEvent::NetworkChanged => {
-                            self.log_supervisor("network changed; retrying core immediately")?;
+                            self.log_supervisor("network changed; retrying core immediately");
                         }
                         RetryEvent::Reload => self.cleanup_retained_frontend().await?,
                         RetryEvent::Shutdown => {
@@ -146,7 +146,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         shutdown: &mut watch::Receiver<bool>,
         startup_grace: Duration,
     ) -> Result<CycleResult, ManagerError> {
-        self.log_supervisor(&format!("starting {}", deployment_label(&plan.deployment)))?;
+        self.log_supervisor(&format!("starting {}", deployment_label(&plan.deployment)));
         self.restart_tasks
             .runtime_log("starting", &deployment_label(&plan.deployment));
         if let Err(error) = self.start_gateway().await {
@@ -174,7 +174,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         if let Err(error) = setup {
             let _ = process.terminate(STOP_GRACE).await;
             if let Err(cleanup) = self.cleanup_after_core_failure().await {
-                self.log_supervisor(&format!("transparent proxy cleanup failed: {cleanup}"))?;
+                self.log_supervisor(&format!("transparent proxy cleanup failed: {cleanup}"));
             }
             self.remove_control();
             return Err(error);
@@ -188,7 +188,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     if let Err(cleanup) = self.cleanup_after_core_failure().await {
                         self.log_supervisor(&format!(
                             "transparent proxy cleanup failed: {cleanup}"
-                        ))?;
+                        ));
                     }
                     self.remove_control();
                     return Err(error);
@@ -353,13 +353,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 
     fn mark_runtime_healthy(&self, plan: &RuntimePlan) -> Result<(), ManagerError> {
-        state::mark_healthy(self, plan).and_then(|()| {
-            self.log_supervisor(&format!(
-                "healthy {}; pending online rule sets: {}",
-                deployment_label(&plan.deployment),
-                plan.rules.pending_count()
-            ))
-        })?;
+        state::mark_healthy(self, plan)?;
+        self.log_supervisor(&format!(
+            "healthy {}; pending online rule sets: {}",
+            deployment_label(&plan.deployment),
+            plan.rules.pending_count()
+        ));
         self.restart_tasks.healthy();
         Ok(())
     }
@@ -370,13 +369,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             &format!("{} · PID {pid}", deployment_label(&plan.deployment)),
         );
         state::mark_started(self, plan, pid)
-            .and_then(|()| self.write_control(plan.control.as_ref()))
-            .and_then(|()| {
-                self.log_supervisor(&format!(
-                    "started {} with PID {pid}",
-                    deployment_label(&plan.deployment)
-                ))
-            })
+            .and_then(|()| self.write_control(plan.control.as_ref()))?;
+        self.log_supervisor(&format!(
+            "started {} with PID {pid}",
+            deployment_label(&plan.deployment)
+        ));
+        Ok(())
     }
 
     async fn fail_transparent_startup(
@@ -402,7 +400,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         self.log_supervisor(&format!(
             "{stage} for {}: {message}",
             deployment_label(&plan.deployment)
-        ))?;
+        ));
         state::record_failure(self, stage, &message, true)
     }
 
@@ -427,11 +425,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let _ = fs::remove_file(&self.store.layout().core_control);
     }
 
-    pub(crate) fn log_supervisor(&self, message: &str) -> Result<(), ManagerError> {
+    pub(crate) fn log_supervisor(&self, message: &str) {
         self.restart_tasks.runtime_log("supervisor", message);
         let line = format!("{} {message}\n", Utc::now().to_rfc3339());
-        append_log(&self.store.layout().manager_log, &line)?;
-        Ok(())
+        // Disk-backed diagnostics must not affect the managed runtime lifecycle.
+        let _ = append_log(&self.store.layout().manager_log, &line);
     }
 }
 

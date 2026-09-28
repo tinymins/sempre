@@ -93,7 +93,7 @@ impl<R: VersionRunner> Manager<R> {
             if (enabled || last_enabled != Some(false))
                 && let Err(error) = self.sync_network_mode().await
             {
-                let _ = self.log_supervisor(&format!("network automation probe failed: {error}"));
+                self.log_supervisor(&format!("network automation probe failed: {error}"));
             }
             last_enabled = Some(enabled);
             sleep(POLL_INTERVAL).await;

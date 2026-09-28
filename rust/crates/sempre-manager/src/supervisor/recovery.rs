@@ -32,7 +32,7 @@ pub(super) async fn recover_stale_process<R: VersionRunner + ValidationRunner>(
     if owned {
         manager.log_supervisor(&format!(
             "terminating stale managed core PID {pid} after service restart"
-        ))?;
+        ));
         sempre_supervisor::terminate_tree(pid, true)
             .await
             .map_err(|error| ManagerError::io("terminate stale managed core", error))?;
@@ -40,7 +40,7 @@ pub(super) async fn recover_stale_process<R: VersionRunner + ValidationRunner>(
     } else if process.is_some() {
         manager.log_supervisor(&format!(
             "discarding stale runtime PID {pid}; executable does not match the active core"
-        ))?;
+        ));
     }
     manager.store.update(|document| {
         if document.runtime.pid == Some(pid) {

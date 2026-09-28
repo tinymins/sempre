@@ -3,10 +3,16 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 use tokio::io::{AsyncRead, AsyncReadExt as _};
 use tokio::sync::{mpsc, oneshot};
+
+#[cfg(not(test))]
+const REOPEN_INTERVAL: Duration = Duration::from_secs(1);
+#[cfg(test)]
+const REOPEN_INTERVAL: Duration = Duration::from_millis(10);
 
 pub async fn copy_rolling(
     mut reader: impl AsyncRead + Unpin,
@@ -17,7 +23,7 @@ pub async fn copy_rolling(
     stream: &'static str,
     mut synchronization: Option<mpsc::UnboundedReceiver<oneshot::Sender<()>>>,
 ) -> io::Result<()> {
-    let mut writer = RollingWriter::open(&path, limit, backups)?;
+    let mut writer = BestEffortRollingWriter::new(path, limit, backups);
     let mut buffer = vec![0_u8; 16 << 10];
     let mut pending = Vec::new();
     loop {
@@ -43,10 +49,10 @@ pub async fn copy_rolling(
             {
                 observer(stream, &String::from_utf8_lossy(&pending));
             }
-            writer.flush()?;
+            writer.flush();
             return Ok(());
         }
-        writer.write_all(&buffer[..count])?;
+        writer.write(&buffer[..count]);
         if let Some(observer) = &observer {
             pending.extend_from_slice(&buffer[..count]);
             while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
@@ -57,6 +63,52 @@ pub async fn copy_rolling(
                 observer(stream, &String::from_utf8_lossy(&pending));
                 pending.clear();
             }
+        }
+    }
+}
+
+struct BestEffortRollingWriter {
+    path: PathBuf,
+    limit: u64,
+    backups: usize,
+    writer: Option<RollingWriter>,
+    reopen_at: Instant,
+}
+
+impl BestEffortRollingWriter {
+    fn new(path: PathBuf, limit: u64, backups: usize) -> Self {
+        let writer = RollingWriter::open(&path, limit, backups).ok();
+        Self {
+            path,
+            limit,
+            backups,
+            reopen_at: Instant::now() + REOPEN_INTERVAL,
+            writer,
+        }
+    }
+
+    fn write(&mut self, content: &[u8]) {
+        if self.writer.is_none() && Instant::now() >= self.reopen_at {
+            self.writer = RollingWriter::open(&self.path, self.limit, self.backups).ok();
+            self.reopen_at = Instant::now() + REOPEN_INTERVAL;
+        }
+        if self
+            .writer
+            .as_mut()
+            .is_some_and(|writer| writer.write_all(content).is_err())
+        {
+            self.writer = None;
+            self.reopen_at = Instant::now() + REOPEN_INTERVAL;
+        }
+    }
+
+    fn flush(&mut self) {
+        if self
+            .writer
+            .as_mut()
+            .is_some_and(|writer| writer.flush().is_err())
+        {
+            self.writer = None;
         }
     }
 }
