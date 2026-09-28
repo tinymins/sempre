@@ -1,5 +1,7 @@
-import { Button, Checkbox, Select, TextArea } from '@acme/components'
+import { Button, Checkbox, CodeEditor, Modal, Select, TextArea } from '@acme/components'
 import { ArrowDown, ArrowUp } from 'lucide-react'
+import { parse, type ParseError } from 'jsonc-parser'
+import { useState } from 'react'
 import { DnsConfigEditor } from './DnsConfigEditor'
 import { FilterConfig } from './FilterConfig'
 import type { Subscription, SubscriptionDefaults, SubscriptionDraft, UserBrief } from './types'
@@ -37,14 +39,14 @@ export function InheritedConfig({ field, draft, defaults, update, onDnsInvalidCh
       {useSystem ? (
         <>
           <p className="text-xs text-[var(--muted)]">{t('editor.inheritHint')}</p>
-          {defaults === null ? <p className="text-sm text-[var(--muted)]">{t('common.unavailable')}</p> : field === 'filter' ? <FilterConfig value={defaults.filter} readOnly /> : <TextArea id={`config-${field}`} value={defaults[field]} readOnly rows={14} className="font-mono text-xs" />}
+          {defaults === null ? <p className="text-sm text-[var(--muted)]">{t('common.unavailable')}</p> : field === 'filter' ? <FilterConfig value={defaults.filter} readOnly /> : field === 'dnsConfig' ? <DnsConfigEditor value={defaults.dnsConfig} onChange={() => undefined} readOnly /> : <CodeEditor value={defaults[field]} readOnly ariaLabel={t(labelKey)} />}
         </>
       ) : field === 'dnsConfig' ? (
         <DnsConfigEditor value={draft.dnsConfig} onChange={(next) => update({ dnsConfig: next })} onInvalidChange={onDnsInvalidChange} />
       ) : field === 'filter' ? (
         <FilterConfig value={draft.filter ?? '[]'} onChange={(next) => update({ filter: next || null })} />
       ) : (
-        <TextArea id={`config-${field}`} value={draft[field] ?? ''} onChange={(event) => update({ [field]: event.target.value || null })} rows={14} className="font-mono text-xs" />
+        <CodeEditor value={draft[field] ?? ''} onChange={(next) => update({ [field]: next || null })} ariaLabel={t(labelKey)} />
       )}
     </div>
   )
@@ -70,6 +72,20 @@ export function BasicConfig({ draft, users, canManageAuthorization, update }: Om
 
 export function ExtraConfig({ draft, assignedNodes, update }: Pick<Props, 'draft' | 'update'> & { assignedNodes: Subscription['assignedCustomNodes'] }) {
   const { t, number } = useI18n()
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manualDraft, setManualDraft] = useState('')
+  const [manualError, setManualError] = useState(false)
+  const parsed = parse(draft.servers || '[]') as unknown
+  const manualCount = Array.isArray(parsed) ? parsed.length : 0
+  const openManual = () => { setManualDraft(draft.servers || '[]'); setManualError(false); setManualOpen(true) }
+  const saveManual = (): undefined => {
+    const errors: ParseError[] = []
+    const next: unknown = parse(manualDraft, errors, { allowTrailingComma: true })
+    if (errors.length || !Array.isArray(next)) { setManualError(true); return undefined }
+    update({ servers: manualDraft || null })
+    setManualOpen(false)
+    return undefined
+  }
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction
     if (target < 0 || target >= draft.selectedCustomNodeIds.length) return
@@ -79,9 +95,6 @@ export function ExtraConfig({ draft, assignedNodes, update }: Pick<Props, 'draft
   }
   return (
     <div className="space-y-4">
-      <label className="block space-y-1 text-sm">{t('editor.manualServers')}
-        <TextArea rows={10} value={draft.servers ?? ''} onChange={(event) => update({ servers: event.target.value || null })} className="font-mono text-xs" />
-      </label>
       <label className="block space-y-1 text-sm">{t('editor.selectedNodes')}
         <Select mode="multiple" value={draft.selectedCustomNodeIds} options={assignedNodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.proxyType} · ${node.server}:${node.port}` }))} onChange={(next) => update({ selectedCustomNodeIds: next as string[] })} showSearch className="w-full" />
       </label>
@@ -91,6 +104,15 @@ export function ExtraConfig({ draft, assignedNodes, update }: Pick<Props, 'draft
           <span>{node?.name ?? id}</span><span className="flex gap-1"><Button size="small" icon={<ArrowUp size={14} />} aria-label={t('editor.moveNodeUp', { index: number(index + 1) })} disabled={index === 0} onClick={() => move(index, -1)} /><Button size="small" icon={<ArrowDown size={14} />} aria-label={t('editor.moveNodeDown', { index: number(index + 1) })} disabled={index === draft.selectedCustomNodeIds.length - 1} onClick={() => move(index, 1)} /></span>
         </div>
       })}
+      <div className="flex items-center gap-2 border-t border-[var(--border)] pt-4 text-sm">
+        <span>{t('editor.manualServers')}</span>
+        <span className="rounded bg-[var(--surface)] px-2 py-0.5">{number(manualCount)}</span>
+        <Button size="small" variant="link" onClick={openManual}>{t('common.edit')}</Button>
+      </div>
+      <Modal open={manualOpen} title={t('editor.manualServers')} onCancel={() => setManualOpen(false)} onOk={saveManual} okText={t('common.save')} cancelText={t('common.cancel')} size="large" destroyOnClose>
+        <CodeEditor value={manualDraft} onChange={(next) => { setManualDraft(next); setManualError(false) }} ariaLabel={t('editor.manualServers')} height={440} />
+        {manualError ? <p role="alert" className="mt-2 text-sm text-red-600">{t('editor.invalidJsonc', { field: t('editor.manualServers') })}</p> : null}
+      </Modal>
     </div>
   )
 }

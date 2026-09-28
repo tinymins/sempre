@@ -25,6 +25,8 @@ export type { CardProps } from "./Card";
 export { Card } from "./Card";
 export type { CheckboxProps } from "./Checkbox";
 export { Checkbox } from "./Checkbox";
+export type { CodeEditorProps } from "./CodeEditor";
+export { CodeEditor } from "./CodeEditor";
 export type { CollapseItem, CollapseProps } from "./Collapse";
 export { Collapse } from "./Collapse";
 export type {
