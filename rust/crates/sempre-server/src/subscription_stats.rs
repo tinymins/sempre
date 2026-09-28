@@ -31,15 +31,16 @@ async fn clear_cache(
     CurrentUser(user): CurrentUser,
     Json(input): Json<ClearCacheInput>,
 ) -> Result<Json<Value>, ApiError> {
-    let owner: Option<Uuid> =
-        sqlx::query_scalar("SELECT user_id FROM proxy_subscribes WHERE id=$1")
+    let editable: Option<bool> =
+        sqlx::query_scalar("SELECT user_id=$2 OR authorized_user_ids @> jsonb_build_array($2::text) FROM proxy_subscribes WHERE id=$1")
             .bind(input.id)
+            .bind(user.id)
             .fetch_optional(&state.pool)
             .await?;
-    match owner {
+    match editable {
         None => return Err(ApiError::not_found("subscription")),
-        Some(owner) if owner != user.id => {
-            return Err(ApiError::forbidden("only the owner can clear cache"));
+        Some(false) => {
+            return Err(ApiError::forbidden("subscription is not editable"));
         }
         _ => {}
     }
@@ -65,7 +66,7 @@ async fn stats(
     Query(query): Query<StatsQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let row = sqlx::query(
-        "SELECT cached_node_count,last_access_at FROM proxy_subscribes WHERE id=$1 AND (user_id=$2 OR authorized_user_ids @> jsonb_build_array($2::text))",
+        "SELECT cached_node_count,last_access_at,access_total FROM proxy_subscribes WHERE id=$1 AND (user_id=$2 OR authorized_user_ids @> jsonb_build_array($2::text))",
     )
     .bind(id)
     .bind(user.id)
@@ -74,7 +75,7 @@ async fn stats(
     .ok_or_else(|| ApiError::not_found("subscription"))?;
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(20).clamp(1, 100);
-    let total: i64 =
+    let recent_total: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM proxy_access_logs WHERE subscribe_id=$1")
             .bind(id)
             .fetch_one(&state.pool)
@@ -107,12 +108,12 @@ async fn stats(
         }))
     }).collect::<Result<Vec<_>, _>>()?;
     Ok(Json(json!({
-        "totalAccesses": total,
+        "totalAccesses": row.try_get::<i64, _>("access_total").map_err(ApiError::internal)?,
         "todayAccess": today,
         "cachedNodeCount": row.try_get::<Option<i32>, _>("cached_node_count").map_err(ApiError::internal)?.unwrap_or(0),
         "lastAccessAt": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_access_at").map_err(ApiError::internal)?,
         "accessByType": by_type,
-        "recentAccessTotal": total,
+        "recentAccessTotal": recent_total,
         "recentAccesses": recent,
     })))
 }

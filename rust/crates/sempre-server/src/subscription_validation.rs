@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use sempre_converter::{EditorConfig, Profile, parse_jsonc_value, profile_from_editor};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -8,25 +10,30 @@ pub(crate) async fn validate(
     pool: &PgPool,
     fields: &SubscriptionFields,
     selected: &[Uuid],
+    changed: Option<&HashSet<String>>,
 ) -> Result<(), ApiError> {
-    validate_editor_fields(fields)?;
-    if !matches!(
-        fields.log_level.as_str(),
-        "off" | "error" | "warn" | "info" | "debug"
-    ) {
+    validate_editor_fields(fields, changed)?;
+    let includes = |name: &str| changed.is_none_or(|changed| changed.contains(name));
+    if includes("logLevel")
+        && !matches!(
+            fields.log_level.as_str(),
+            "off" | "error" | "warn" | "info" | "debug"
+        )
+    {
         return Err(ApiError::bad_request("invalid logLevel"));
     }
-    if fields.cache_ttl_minutes.is_some_and(|value| value < 0) {
+    if includes("cacheTtlMinutes") && fields.cache_ttl_minutes.is_some_and(|value| value < 0) {
         return Err(ApiError::bad_request("cacheTtlMinutes must be nonnegative"));
     }
-    if fields
-        .subscribe_items
-        .as_ref()
-        .is_some_and(|value| !value.is_array())
+    if includes("subscribeItems")
+        && fields
+            .subscribe_items
+            .as_ref()
+            .is_some_and(|value| !value.is_array())
     {
         return Err(ApiError::bad_request("subscribeItems must be an array"));
     }
-    if !fields.authorized_user_ids.is_empty() {
+    if includes("authorizedUserIds") && !fields.authorized_user_ids.is_empty() {
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = ANY($1)")
             .bind(&fields.authorized_user_ids)
             .fetch_one(pool)
@@ -44,22 +51,72 @@ pub(crate) async fn validate(
     Ok(())
 }
 
-fn validate_editor_fields(fields: &SubscriptionFields) -> Result<(), ApiError> {
+fn validate_editor_fields(
+    fields: &SubscriptionFields,
+    changed: Option<&HashSet<String>>,
+) -> Result<(), ApiError> {
+    let includes = |names: &[&str]| {
+        changed.is_none_or(|changed| names.iter().any(|name| changed.contains(*name)))
+    };
+    if changed.is_some_and(|changed| {
+        ![
+            "ruleList",
+            "useSystemRuleList",
+            "group",
+            "useSystemGroup",
+            "filter",
+            "useSystemFilter",
+            "customConfig",
+            "useSystemCustomConfig",
+            "dnsConfig",
+            "useSystemDnsConfig",
+            "privateAccessConfig",
+            "servers",
+        ]
+        .iter()
+        .any(|name| changed.contains(*name))
+    }) {
+        return Ok(());
+    }
     let editor = EditorConfig {
-        rule_list: effective_default_on_empty(
-            fields.use_system_rule_list,
-            fields.rule_list.as_ref(),
-            "",
-        )?,
-        group: effective_default_on_empty(fields.use_system_group, fields.group.as_ref(), "")?,
-        filter: active(fields.use_system_filter, fields.filter.as_ref()),
-        custom_config: active(
-            fields.use_system_custom_config,
-            fields.custom_config.as_ref(),
-        ),
-        dns_config: active(fields.use_system_dns_config, fields.dns_config.as_ref()),
-        private_access_config: fields.private_access_config.clone().unwrap_or_default(),
-        servers: fields.servers.clone().unwrap_or_default(),
+        rule_list: if includes(&["ruleList", "useSystemRuleList"]) {
+            effective_default_on_empty(fields.use_system_rule_list, fields.rule_list.as_ref(), "")?
+        } else {
+            String::new()
+        },
+        group: if includes(&["group", "useSystemGroup"]) {
+            effective_default_on_empty(fields.use_system_group, fields.group.as_ref(), "")?
+        } else {
+            String::new()
+        },
+        filter: if includes(&["filter", "useSystemFilter"]) {
+            active(fields.use_system_filter, fields.filter.as_ref())
+        } else {
+            String::new()
+        },
+        custom_config: if includes(&["customConfig", "useSystemCustomConfig"]) {
+            active(
+                fields.use_system_custom_config,
+                fields.custom_config.as_ref(),
+            )
+        } else {
+            String::new()
+        },
+        dns_config: if includes(&["dnsConfig", "useSystemDnsConfig"]) {
+            active(fields.use_system_dns_config, fields.dns_config.as_ref())
+        } else {
+            String::new()
+        },
+        private_access_config: if includes(&["privateAccessConfig"]) {
+            fields.private_access_config.clone().unwrap_or_default()
+        } else {
+            String::new()
+        },
+        servers: if includes(&["servers"]) {
+            fields.servers.clone().unwrap_or_default()
+        } else {
+            String::new()
+        },
     };
     profile_from_editor(&Profile {
         editor,

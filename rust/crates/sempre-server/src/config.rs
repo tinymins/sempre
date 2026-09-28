@@ -1,4 +1,8 @@
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{
+    env,
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+};
 
 use thiserror::Error;
 use url::Url;
@@ -11,6 +15,7 @@ pub(crate) struct Config {
     pub access_log_retention_days: i64,
     pub web_root: PathBuf,
     pub direct_proxy_url: Option<String>,
+    pub trusted_proxy_ips: Vec<IpAddr>,
 }
 
 #[derive(Debug, Error)]
@@ -58,6 +63,17 @@ impl Config {
                 return Err(invalid("DIRECT_PROXY_URL", &"must be an HTTP(S) proxy URL"));
             }
         }
+        let trusted_proxy_ips = env::var("SEMPRE_TRUSTED_PROXY_IPS")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                value
+                    .parse()
+                    .map_err(|error| invalid("SEMPRE_TRUSTED_PROXY_IPS", &error))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             database_url,
             bind_address,
@@ -66,6 +82,7 @@ impl Config {
             web_root: env::var("SEMPRE_WEB_ROOT")
                 .map_or_else(|_| PathBuf::from("server-ui/dist"), PathBuf::from),
             direct_proxy_url,
+            trusted_proxy_ips,
         })
     }
 }

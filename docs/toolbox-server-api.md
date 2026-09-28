@@ -106,7 +106,7 @@ client-chosen public `url`.
 | `POST` | `/api/v1/subscriptions/debug` | Stream compilation of an unsaved complete draft for a target; no persistence. |
 | `POST` | `/api/v1/subscriptions/{id}/debug` | Stream compilation of the saved subscription for `{target}` with its saved node assignments and source identity. |
 | `POST` | `/api/v1/subscriptions/debug-source` | Stream source inspection; production mode requires saved `subscriptionId` and zero-based `sourceIndex`. |
-| `POST` | `/api/v1/subscriptions/clear-cache` | Explicitly clear saved source snapshots; owner only. |
+| `POST` | `/api/v1/subscriptions/clear-cache` | Explicitly clear one editable subscription's saved source snapshots. |
 | `GET, POST` | `/api/v1/custom-nodes` | List available reusable nodes or create one. |
 | `GET, PATCH, DELETE` | `/api/v1/custom-nodes/{id}` | Read/edit/delete a reusable node according to ownership. |
 
@@ -216,7 +216,8 @@ snapshot. Its URL must retrieve those exact bytes so a later save or source
 refresh cannot change the SHA-256 before the client fetches it. A stable
 direct public URL renders the latest saved input. A successful public compile
 persists the same immutable artifact internally. Failed public compilation
-serves the most recently successful artifact for that subscription and target
+serves the most recently successful artifact for the same subscription,
+target, saved configuration revision, and enabled node contents
 with `x-sempre-stale: true`; stale source-cache fallback or successful partial
 output that omitted a failed source also sets this header. The boolean header
 does not distinguish these cases; authenticated debug stage events and
@@ -229,7 +230,8 @@ saves; a seconds-resolution timestamp alone is insufficient.
 Artifact identity includes both the input snapshot hash and output content
 hash. A content match reuses immutable bytes and ID, while a separate
 `last_success_at` pointer tracks the most recently successful result for
-last-known-good fallback. The saved subscription row and selected assignments
+last-known-good fallback within the same saved revision. Older immutable
+artifact URLs still retrieve their original bytes. The saved subscription row and selected assignments
 are read from one repeatable-read snapshot. Draft debug returns actual
 fetch/rule-provider/compile stage evidence and never writes persistent source
 snapshots or artifacts. Node preview and trace do not fetch rule providers.
@@ -239,13 +241,14 @@ enabled sources, nodes, and filters when proxy nodes were expected.
 When an enabled source fails, its fetch event and diagnostic retain the
 `sourceId` while healthy sources, manual nodes, and assigned nodes continue.
 If all enabled sources fail and no usable nodes remain, compilation fails;
-public output uses the last successful artifact if one exists. An invalid
+public output uses the last successful artifact for the current saved revision
+if one exists. An invalid
 editor JSONC field still fails explicitly. With `useSystemRuleList` or
 `useSystemGroup` false, an empty/null custom value falls back to the system
 default, whereas an invalid nonempty JSONC value fails. An empty custom filter
 intentionally stays empty. Rule-provider fetching races automatic and configured
-domestic-direct routes when `DIRECT_PROXY_URL` exists, using the first
-successful safe response.
+domestic-direct routes when `DIRECT_PROXY_URL` exists, preferring a fresh
+successful response over an older cached fallback.
 
 ## Known migration differences
 
@@ -254,30 +257,32 @@ successful safe response.
 | Duplicate node names | Sempre adds ` (2)` suffixes; Toolbox could emit duplicate names. | Preserve this safety improvement; compare real reference output before claiming byte equality. |
 | Remote Clash rules for sing-box | Rule-provider content is fetched through bounded cache and compiled into a fixed snapshot. | Valid sing-box output has precedence over preserving the old remote conversion URL byte-for-byte. |
 | Password writes | New registrations and changes currently validate `String::len()`, so the 12–1024 limit is measured in UTF-8 bytes, despite the API error saying "characters". Existing shorter Toolbox passwords still verify. | Confirm policy and align the error wording before production data migration. |
-| Access statistics | Access logs are retained for the configured window (90 days by default), so `totalAccesses` is the count of retained logs, not a lifetime total. Recent logs are paginated at at most 100 per page. "Today" starts at UTC midnight. | Confirm the long-term retention and lifetime-total policy before production migration; no historical counter was invented. |
+| Access statistics | Access log details are retained for the configured window (90 days by default). `totalAccesses` is a durable cumulative count initialized from available logs during migration; `recentAccessTotal` counts retained details. Recent logs are paginated at at most 100 per page. "Today" starts at UTC midnight. | Logs deleted before migration cannot be inferred from the database. Import known historical log IDs separately when a verified source snapshot is available. |
 | Existing Toolbox database | Fresh schema and local browser/public flows are implemented. | In-place migration and real production-row equivalence remain unaccepted. |
 
 ## Current network acceptance boundary
 
-All remote subscription sources and default rule providers use the server's
-safe fetch path. It rejects loopback, private, reserved, and FakeIP DNS answers
-before making a request, including on every redirect. The current macOS QA
-host resolves `raw.githubusercontent.com` through a local FakeIP resolver to
-`198.18.0.68` and `fc00::52`. As a result, a first fetch of the Toolbox default
-AppleApns rule provider fails with `FORBIDDEN` and a newly saved sing-box
-subscription using all system defaults cannot yet render there. This is a
-runtime acceptance failure, not evidence that the default rule URL is private.
-The SSRF check remains enabled.
+Remote subscription sources and rule providers use the selected HTTP client
+route for DNS resolution and connections. The server validates HTTP(S) URLs,
+rejects embedded URL credentials, and bounds redirects, time, and response
+size; it does not perform a separate system-DNS public-IP check or pin the
+destination IP. The `auto` route retains reqwest's system proxy behavior.
+`domestic-direct` uses the configured `DIRECT_PROXY_URL` HTTP(S) proxy. In
+either route, the deployment's DNS and egress policy is responsible for
+blocking access to internal destinations. In particular, an HTTP CONNECT
+proxy resolves the destination independently of the server process. A local
+FakeIP DNS answer therefore does not by itself reject a source before the
+configured proxy is contacted.
+The operator reports that upstream dnsmasq already blocks internal-domain
+mappings; this has not been verified by the server or this migration.
 
-Independent public DNS verification followed by a pinned connection would
-preserve the SSRF boundary, but direct connections to the verified GitHub IPs
-timed out from that host. A reachable, explicitly configured SOCKS5 egress
-that accepts a locally resolved and pinned IP is a possible design; neither
-that egress nor the independent resolver is implemented yet. The existing
-`DIRECT_PROXY_URL` supports HTTP(S) proxy URLs, whose CONNECT destination may
-be resolved again by the proxy, so it must not be described as end-to-end
-DNS-rebinding protection. Ordinary subscription sources share this pending
-network boundary with default rules.
+Public access logs use the socket peer IP by default. Set
+`SEMPRE_TRUSTED_PROXY_IPS` to a comma-separated list of reverse-proxy IP
+addresses to inspect `X-Forwarded-For` from right to left, skipping listed
+trusted hops and using the first untrusted address. If that header is absent,
+`X-Real-IP` is used instead, only from a listed peer. The reverse proxy must
+overwrite or append these headers from its observed client connection.
+Unlisted peers cannot choose their logged IP through request headers.
 
 ## Independent acceptance slices
 

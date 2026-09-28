@@ -51,21 +51,28 @@ pub(crate) async fn load_rule_source(
             },
         );
         tokio::pin!(direct, automatic);
-        return tokio::select! {
-            result = &mut direct => match result {
-                Ok(loaded) => Ok(loaded),
-                Err(error) => {
-                    tracing::warn!(reason = %error.message(), "configured rule fetch route failed");
-                    automatic.await
-                }
-            },
-            result = &mut automatic => match result {
-                Ok(loaded) => Ok(loaded),
-                Err(error) => {
-                    tracing::warn!(reason = %error.message(), "automatic rule fetch route failed");
-                    direct.await
-                }
-            },
+        let (first, direct_first) = tokio::select! {
+            result = &mut direct => (result, true),
+            result = &mut automatic => (result, false),
+        };
+        if first
+            .as_ref()
+            .is_ok_and(|loaded| loaded.cache_state != "stale")
+        {
+            return first;
+        }
+        let second = if direct_first {
+            automatic.await
+        } else {
+            direct.await
+        };
+        return match (first, second) {
+            (_, Ok(loaded)) if loaded.cache_state != "stale" => Ok(loaded),
+            (Ok(cached), _) | (Err(_), Ok(cached)) => Ok(cached),
+            (Err(first), Err(second)) => {
+                tracing::warn!(first = %first.message(), second = %second.message(), "both rule fetch routes failed");
+                Err(second)
+            }
         };
     }
     source_cache::load(

@@ -20,6 +20,7 @@ mod toolbox_nodes;
 mod toolbox_overview;
 mod toolbox_public;
 mod toolbox_rules;
+mod trusted_proxy;
 
 use std::sync::Arc;
 

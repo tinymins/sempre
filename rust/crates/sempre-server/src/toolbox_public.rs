@@ -21,8 +21,9 @@ use crate::{
     AppState,
     error::ApiError,
     source_cache::CacheMode,
-    subscription_compile::{PrepareOptions, prepare},
+    subscription_compile::{PrepareOptions, PreparedInput, prepare_local, prepare_with_local},
     subscriptions::{SubscriptionFields, row_fields},
+    trusted_proxy::client_ip,
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -52,6 +53,7 @@ struct Subscription {
 
 struct Generated {
     subscription: Subscription,
+    revision_hash: String,
     target: Target,
     content: String,
     hash: String,
@@ -208,12 +210,28 @@ async fn resolve_current(
 ) -> Result<(StoredArtifact, bool), ApiError> {
     let id = subscription.id;
     let target_name = target.format.clone();
-    match generate(state, subscription, target).await {
+    let mut stages = crate::debug_stream::StageLog::default();
+    let local = prepare_local(
+        state,
+        &subscription.fields,
+        &subscription.selected,
+        target,
+        &PrepareOptions {
+            viewer: subscription.owner,
+            cache_mode: CacheMode::Subscription(id),
+            node_scope: Some(id),
+            include_rule_snapshots: true,
+        },
+        &mut stages,
+    )
+    .await?;
+    let revision = revision_hash(&subscription, &local)?;
+    match generate(state, subscription, local, revision.clone(), stages).await {
         Ok(generated) => match persist_artifact(state, &generated).await {
             Ok(stored) => Ok((stored, generated.stale_source)),
-            Err(error) => last_good(state, id, &target_name, error).await,
+            Err(error) => last_good(state, id, &target_name, &revision, error).await,
         },
-        Err(error) => last_good(state, id, &target_name, error).await,
+        Err(error) => last_good(state, id, &target_name, &revision, error).await,
     }
 }
 
@@ -221,10 +239,11 @@ async fn last_good(
     state: &AppState,
     id: Uuid,
     target: &str,
+    revision: &str,
     error: ApiError,
 ) -> Result<(StoredArtifact, bool), ApiError> {
-    let row = sqlx::query("SELECT * FROM subscription_artifacts WHERE subscribe_id=$1 AND target=$2 ORDER BY last_success_at DESC LIMIT 1")
-        .bind(id).bind(target).fetch_optional(&state.pool).await?;
+    let row = sqlx::query("SELECT * FROM subscription_artifacts WHERE subscribe_id=$1 AND target=$2 AND revision_hash=$3 ORDER BY last_success_at DESC LIMIT 1")
+        .bind(id).bind(target).bind(revision).fetch_optional(&state.pool).await?;
     if let Some(row) = row {
         tracing::warn!(subscribe_id=%id, target, reason=%error.message(), "serving last known good subscription artifact");
         Ok((StoredArtifact::from_row(&row)?, true))
@@ -272,23 +291,33 @@ async fn find_subscription(state: &AppState, url: &str) -> Result<Subscription, 
     })
 }
 
+fn revision_hash(subscription: &Subscription, local: &PreparedInput) -> Result<String, ApiError> {
+    let input = serde_json::to_vec(&(
+        subscription.updated_at.timestamp_micros(),
+        &local.profile,
+        &local.custom_nodes,
+    ))
+    .map_err(ApiError::internal)?;
+    Ok(format!("{:x}", Sha256::digest(input)))
+}
+
 async fn generate(
     state: &AppState,
     subscription: Subscription,
-    target: Target,
+    local: PreparedInput,
+    revision_hash: String,
+    mut stages: crate::debug_stream::StageLog,
 ) -> Result<Generated, ApiError> {
-    let mut stages = crate::debug_stream::StageLog::default();
-    let (request, _) = prepare(
+    let (request, _) = prepare_with_local(
         state,
         &subscription.fields,
-        &subscription.selected,
-        target,
         PrepareOptions {
             viewer: subscription.owner,
             cache_mode: CacheMode::Subscription(subscription.id),
             node_scope: Some(subscription.id),
             include_rule_snapshots: true,
         },
+        local,
         &mut stages,
     )
     .await?;
@@ -314,6 +343,7 @@ async fn generate(
     });
     Ok(Generated {
         subscription,
+        revision_hash,
         target: request.target,
         content: result.content,
         hash,
@@ -329,12 +359,12 @@ async fn persist_artifact(
     generated: &Generated,
 ) -> Result<StoredArtifact, ApiError> {
     let id = Uuid::new_v4();
-    let row = sqlx::query("INSERT INTO subscription_artifacts (id,subscribe_id,target,input_hash,content,content_hash,node_count,profile_name,profile_revision,profile_updated_at,runtime) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (subscribe_id,target,input_hash,content_hash) DO UPDATE SET last_success_at=GREATEST(clock_timestamp(),subscription_artifacts.last_success_at + INTERVAL '1 microsecond') RETURNING *")
+    let row = sqlx::query("INSERT INTO subscription_artifacts (id,subscribe_id,target,input_hash,content,content_hash,node_count,profile_name,profile_revision,profile_updated_at,runtime,revision_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (subscribe_id,target,input_hash,content_hash) DO UPDATE SET last_success_at=GREATEST(clock_timestamp(),subscription_artifacts.last_success_at + INTERVAL '1 microsecond'),revision_hash=EXCLUDED.revision_hash RETURNING *")
         .bind(id).bind(generated.subscription.id).bind(&generated.target.format)
         .bind(&generated.input_hash).bind(&generated.content).bind(&generated.hash)
         .bind(generated.node_count).bind(&generated.subscription.name)
         .bind(generated.subscription.updated_at.timestamp_micros())
-        .bind(generated.subscription.updated_at).bind(&generated.runtime)
+        .bind(generated.subscription.updated_at).bind(&generated.runtime).bind(&generated.revision_hash)
         .fetch_one(&state.pool).await?;
     StoredArtifact::from_row(&row)
 }
@@ -362,10 +392,10 @@ async fn record_access(
         }
     };
     let write = sqlx::query("INSERT INTO proxy_access_logs (id,subscribe_id,access_type,ip,user_agent,node_count) VALUES ($1,$2,$3,$4,$5,$6)")
-        .bind(Uuid::new_v4()).bind(id).bind(target).bind(peer.ip().to_string()).bind(&user_agent).bind(node_count)
+        .bind(Uuid::new_v4()).bind(id).bind(target).bind(client_ip(state, peer, headers).to_string()).bind(&user_agent).bind(node_count)
         .execute(&mut *transaction).await;
     let update = sqlx::query(
-        "UPDATE proxy_subscribes SET cached_node_count=$1,last_access_at=NOW() WHERE id=$2",
+        "UPDATE proxy_subscribes SET cached_node_count=$1,last_access_at=NOW(),access_total=access_total+1 WHERE id=$2",
     )
     .bind(node_count)
     .bind(id)

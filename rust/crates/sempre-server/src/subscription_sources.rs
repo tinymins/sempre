@@ -68,21 +68,27 @@ pub(crate) async fn load_sources(
         );
     }
     for item in enabled_items {
-        if item.url.trim().is_empty() {
-            return Err(ApiError::bad_request("enabled source URL is empty"));
-        }
         let ua = item.effective_ua().to_owned();
         let mode = item.fetch_mode.unwrap_or_else(|| "auto".into());
-        let proxy = source_proxy(state, &mode)?;
         let source_id = source_id(&item.url, &ua, &mode);
         stages.push(json!({"type":"fetch","status":"running","sourceId":source_id}));
         let ttl = item
             .cache_ttl_minutes
             .or(fields.cache_ttl_minutes)
             .unwrap_or(60);
-        if ttl < 0 {
-            return Err(ApiError::bad_request("cache TTL must be nonnegative"));
+        if let Some(error) = source_input_error(&item.url, ttl) {
+            summary.failed += 1;
+            record_fetch_error(&source_id, &error, stages, diagnostics);
+            continue;
         }
+        let proxy = match source_proxy(state, &mode) {
+            Ok(proxy) => proxy,
+            Err(error) => {
+                summary.failed += 1;
+                record_fetch_error(&source_id, &error, stages, diagnostics);
+                continue;
+            }
+        };
         let loaded = source_cache::load(
             state,
             SourceRequest {
@@ -102,12 +108,7 @@ pub(crate) async fn load_sources(
             Ok(loaded) => loaded,
             Err(error) => {
                 summary.failed += 1;
-                stages.push(json!({"type":"fetch","status":"error","sourceId":source_id,"message":error.message()}));
-                diagnostics.push(Diagnostic {
-                    level: "error".into(),
-                    source_id: Some(source_id),
-                    message: error.message().into(),
-                });
+                record_fetch_error(&source_id, &error, stages, diagnostics);
                 continue;
             }
         };
@@ -149,6 +150,32 @@ pub(crate) async fn load_sources(
         });
     }
     Ok(summary)
+}
+
+fn source_input_error(url: &str, ttl: i32) -> Option<ApiError> {
+    if url.trim().is_empty() {
+        Some(ApiError::bad_request("enabled source URL is empty"))
+    } else if ttl < 0 {
+        Some(ApiError::bad_request("cache TTL must be nonnegative"))
+    } else {
+        None
+    }
+}
+
+fn record_fetch_error(
+    source_id: &str,
+    error: &ApiError,
+    stages: &mut StageLog,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    stages.push(
+        json!({"type":"fetch","status":"error","sourceId":source_id,"message":error.message()}),
+    );
+    diagnostics.push(Diagnostic {
+        level: "error".into(),
+        source_id: Some(source_id.into()),
+        message: error.message().into(),
+    });
 }
 
 fn record_unusable(

@@ -62,6 +62,12 @@ pub(crate) struct PrepareOptions {
     pub include_rule_snapshots: bool,
 }
 
+pub(crate) struct PreparedInput {
+    pub profile: Profile,
+    pub custom_nodes: Vec<CustomNode>,
+    pub target: Target,
+}
+
 async fn debug(
     State(state): State<Arc<AppState>>,
     CurrentUser(user): CurrentUser,
@@ -237,10 +243,22 @@ pub(crate) async fn prepare(
     options: PrepareOptions,
     stages: &mut StageLog,
 ) -> Result<(CompileRequest, Vec<Diagnostic>), ApiError> {
+    let local = prepare_local(state, fields, selected, target, &options, stages).await?;
+    prepare_with_local(state, fields, options, local, stages).await
+}
+
+pub(crate) async fn prepare_local(
+    state: &AppState,
+    fields: &SubscriptionFields,
+    selected: &[Uuid],
+    target: Target,
+    options: &PrepareOptions,
+    stages: &mut StageLog,
+) -> Result<PreparedInput, ApiError> {
     let mut target =
         Target::parse(&target.format).map_err(|error| ApiError::bad_request(error.to_string()))?;
     target.standalone = true;
-    let mut profile = Profile {
+    let profile = Profile {
         name: fields
             .remark
             .clone()
@@ -277,6 +295,31 @@ pub(crate) async fn prepare(
         },
         ..Profile::default()
     };
+    let custom_nodes = load_custom_nodes(state, selected, options.viewer, options.node_scope)
+        .await
+        .inspect_err(|error| {
+            stages.push(json!({"type":"custom-nodes","status":"error","message":error.message()}));
+        })?;
+    stages.push(json!({"type":"custom-nodes","status":if selected.is_empty() { "skipped" } else { "ok" },"count":custom_nodes.len()}));
+    Ok(PreparedInput {
+        profile,
+        custom_nodes,
+        target,
+    })
+}
+
+pub(crate) async fn prepare_with_local(
+    state: &AppState,
+    fields: &SubscriptionFields,
+    options: PrepareOptions,
+    local: PreparedInput,
+    stages: &mut StageLog,
+) -> Result<(CompileRequest, Vec<Diagnostic>), ApiError> {
+    let PreparedInput {
+        mut profile,
+        custom_nodes,
+        target,
+    } = local;
     let mut snapshots = Vec::new();
     let mut diagnostics = Vec::new();
     let source_summary = load_sources(
@@ -289,12 +332,6 @@ pub(crate) async fn prepare(
         &mut diagnostics,
     )
     .await?;
-    let custom_nodes = load_custom_nodes(state, selected, options.viewer, options.node_scope)
-        .await
-        .inspect_err(|error| {
-            stages.push(json!({"type":"custom-nodes","status":"error","message":error.message()}));
-        })?;
-    stages.push(json!({"type":"custom-nodes","status":if selected.is_empty() { "skipped" } else { "ok" },"count":custom_nodes.len()}));
     if source_summary.enabled > 0 && source_summary.failed == source_summary.enabled {
         let manual_count = if profile.editor.servers.trim().is_empty() {
             0

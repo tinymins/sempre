@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    time::Duration,
-};
+use std::{collections::BTreeMap, time::Duration};
 
 use futures_util::StreamExt as _;
 use reqwest::{Client, header};
@@ -51,7 +47,7 @@ async fn fetch_text(
         .parse()
         .map_err(|_| ApiError::bad_request("source URL is invalid"))?;
     for redirect in 0..=MAX_REDIRECTS {
-        let client = safe_client(&url, proxy).await?;
+        let client = safe_client(&url, proxy)?;
         let response = client
             .get(url.clone())
             .header(header::USER_AGENT, user_agent)
@@ -123,7 +119,7 @@ async fn fetch_text(
     Err(ApiError::unavailable("source redirect failed"))
 }
 
-async fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError> {
+fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError> {
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
@@ -132,61 +128,15 @@ async fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError>
             "source URL must be HTTP(S) without credentials",
         ));
     }
-    let host = url
-        .host_str()
-        .ok_or_else(|| ApiError::bad_request("source URL has no host"))?;
-    let port = url
-        .port_or_known_default()
-        .ok_or_else(|| ApiError::bad_request("source URL has no port"))?;
-    let addresses: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
-        .await
-        .map_err(|error| ApiError::unavailable(format!("source DNS lookup failed: {error}")))?
-        .collect();
-    if addresses.is_empty() || addresses.iter().any(|address| !public_ip(address.ip())) {
-        return Err(ApiError::forbidden(
-            "source URL resolves to a non-public address",
-        ));
+    if url.host_str().is_none() {
+        return Err(ApiError::bad_request("source URL has no host"));
     }
     let mut builder = Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(20))
-        .resolve_to_addrs(host, &addresses);
+        .timeout(Duration::from_secs(20));
     if let Some(proxy) = proxy {
         builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(ApiError::internal)?);
     }
     builder.build().map_err(ApiError::internal)
-}
-
-fn public_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => public_ipv4(ip),
-        IpAddr::V6(ip) => public_ipv6(ip),
-    }
-}
-
-fn public_ipv4(ip: Ipv4Addr) -> bool {
-    !(ip.is_private()
-        || ip.is_loopback()
-        || ip.is_link_local()
-        || ip.is_multicast()
-        || ip.is_broadcast()
-        || ip.is_documentation()
-        || ip.is_unspecified()
-        || ip.octets()[0] == 0
-        || ip.octets()[0] >= 240
-        || matches!(
-            ip.octets(),
-            [100, 64..=127, _, _] | [192, 0, 0, _] | [198, 18..=19, _, _]
-        ))
-}
-
-fn public_ipv6(ip: Ipv6Addr) -> bool {
-    let segments = ip.segments();
-    !(ip.is_loopback()
-        || ip.is_multicast()
-        || ip.is_unspecified()
-        || (segments[0] & 0xfe00) == 0xfc00
-        || (segments[0] & 0xffc0) == 0xfe80
-        || (segments[0] == 0x2001 && segments[1] == 0x0db8))
 }

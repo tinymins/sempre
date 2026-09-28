@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::{
@@ -110,7 +111,7 @@ struct SubscriptionOutput {
     can_manage_authorization: bool,
 }
 
-const SELECT_SUBSCRIPTION: &str = "SELECT s.*, u.name AS creator_name, u.email AS creator_email, (SELECT COUNT(*) FROM proxy_access_logs l WHERE l.subscribe_id = s.id) AS access_count FROM proxy_subscribes s JOIN users u ON u.id = s.user_id";
+const SELECT_SUBSCRIPTION: &str = "SELECT s.*, u.name AS creator_name, u.email AS creator_email, s.access_total AS access_count FROM proxy_subscribes s JOIN users u ON u.id = s.user_id";
 
 async fn list(
     State(state): State<Arc<AppState>>,
@@ -145,7 +146,7 @@ async fn create(
     Json(value): Json<Value>,
 ) -> Result<(StatusCode, Json<SubscriptionOutput>), ApiError> {
     let (fields, selected) = parse_input(&value)?;
-    validate(&state.pool, &fields, &selected).await?;
+    validate(&state.pool, &fields, &selected, None).await?;
     let id = Uuid::new_v4();
     let url = Uuid::new_v4().to_string();
     let mut transaction = state.pool.begin().await?;
@@ -219,21 +220,14 @@ async fn update(
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
     let current = row_fields(&row)?;
     let old_authorized = current.authorized_user_ids.clone();
-    let mut merged = serde_json::to_value(current).map_err(ApiError::internal)?;
-    let object = merged
-        .as_object_mut()
-        .ok_or_else(|| ApiError::internal("subscription fields"))?;
-    for (key, value) in changes {
-        if !object.contains_key(&key) {
-            return Err(ApiError::bad_request(format!(
-                "unknown subscription field: {key}"
-            )));
-        }
-        object.insert(key, value);
-    }
-    let fields: SubscriptionFields =
-        serde_json::from_value(merged).map_err(|error| ApiError::bad_request(error.to_string()))?;
-    validate(&state.pool, &fields, selected.as_deref().unwrap_or(&[])).await?;
+    let (fields, edited_fields) = merge_patch(current, changes)?;
+    validate(
+        &state.pool,
+        &fields,
+        selected.as_deref().unwrap_or(&[]),
+        Some(&edited_fields),
+    )
+    .await?;
     let new_users = fields
         .authorized_user_ids
         .iter()
@@ -268,6 +262,31 @@ async fn update(
     transaction.commit().await?;
     let row = visible_row(&state.pool, id, user.id).await?;
     row_output(&state.pool, &row, user.id).await.map(Json)
+}
+
+fn merge_patch(
+    current: SubscriptionFields,
+    changes: serde_json::Map<String, Value>,
+) -> Result<(SubscriptionFields, HashSet<String>), ApiError> {
+    let mut merged = serde_json::to_value(current).map_err(ApiError::internal)?;
+    let object = merged
+        .as_object_mut()
+        .ok_or_else(|| ApiError::internal("subscription fields"))?;
+    let mut edited_fields = HashSet::new();
+    for (key, value) in changes {
+        if !object.contains_key(&key) {
+            return Err(ApiError::bad_request(format!(
+                "unknown subscription field: {key}"
+            )));
+        }
+        if object.get(&key) != Some(&value) {
+            edited_fields.insert(key.clone());
+        }
+        object.insert(key, value);
+    }
+    let fields =
+        serde_json::from_value(merged).map_err(|error| ApiError::bad_request(error.to_string()))?;
+    Ok((fields, edited_fields))
 }
 
 async fn remove(
