@@ -5,6 +5,7 @@ mod inventory;
 mod probe;
 mod public_ip;
 mod route_probe;
+mod routes;
 
 pub use default_interface::{DefaultInterface, default_interface, normalize_mac};
 pub use diagnostics::{
@@ -17,6 +18,7 @@ pub use probe::{NetworkTestReport, NetworkTestResult, run_network_test};
 pub use public_ip::{
     DOMESTIC_IP_PROBE, FOREIGN_IP_PROBE, IpMetadata, PublicIpProbe, lookup_ip_metadata,
 };
+pub use routes::route_prefixes;
 
 use std::io;
 

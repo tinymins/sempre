@@ -15,6 +15,7 @@ mod dns_routing;
 mod dns_runtime;
 mod dns_settings;
 mod error;
+mod fakeip_routes;
 mod gateway;
 mod install;
 mod inventory;

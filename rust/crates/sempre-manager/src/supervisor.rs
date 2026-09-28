@@ -284,6 +284,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .map_err(|error| ManagerError::io("reset core control directory", error))?;
         }
         let runtime = adapter.prepare_runtime(&config, &control_directory)?;
+        if deployment.core == "sing-box" {
+            for message in crate::fakeip_routes::adapt_runtime_config(&runtime.config) {
+                self.log_supervisor(&message);
+                self.restart_tasks.runtime_log("network", &message);
+            }
+        }
         let rules = if deployment.core == "sing-box" {
             crate::rule_bootstrap::RuleBootstrap::prepare(&self.fetcher, &runtime.config)?
         } else {
