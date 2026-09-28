@@ -6,8 +6,8 @@ use axum::{
     response::{IntoResponse, Response, Sse, sse::Event},
     routing::post,
 };
-use sempre_converter::{FieldDiff, RuleProvider};
-use sempre_manager::ProfileDebugResult;
+use sempre_converter::{FieldDiff, Profile, RuleProvider};
+use sempre_manager::{ProfileDebugProgress, ProfileDebugResult};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
@@ -56,7 +56,30 @@ async fn run_profile_debug(
     sender: mpsc::Sender<DebugEvent>,
 ) {
     let started = Instant::now();
-    let result = match state.manager.debug_subscription_profile(&id, &format).await {
+    let (progress_sender, mut progress_receiver) = mpsc::channel(32);
+    let work = state
+        .manager
+        .debug_subscription_profile(&id, &format, progress_sender);
+    tokio::pin!(work);
+    let result = loop {
+        tokio::select! {
+            () = sender.closed() => return,
+            progress = progress_receiver.recv() => {
+                if let Some(progress) = progress
+                    && sender.send(progress_event(progress)).await.is_err()
+                {
+                    return;
+                }
+            }
+            result = &mut work => break result,
+        }
+    };
+    while let Ok(progress) = progress_receiver.try_recv() {
+        if sender.send(progress_event(progress)).await.is_err() {
+            return;
+        }
+    }
+    let result = match result {
         Ok(result) => result,
         Err(error) => {
             send_error(&sender, error.to_string()).await;
@@ -71,7 +94,7 @@ async fn run_profile_debug(
 }
 
 fn debug_events(result: &ProfileDebugResult, total_duration_ms: u128) -> Vec<DebugEvent> {
-    let mut events = vec![step("config", profile_config(result))];
+    let mut events = Vec::new();
     let manual_nodes: Vec<_> = result
         .nodes
         .iter()
@@ -81,23 +104,6 @@ fn debug_events(result: &ProfileDebugResult, total_duration_ms: u128) -> Vec<Deb
         "manual-servers",
         json!({ "count": manual_nodes.len(), "nodes": manual_nodes }),
     ));
-    for source in result
-        .profile
-        .sources
-        .iter()
-        .filter(|source| source.enabled)
-    {
-        let source_index = result
-            .profile
-            .sources
-            .iter()
-            .position(|candidate| candidate.id == source.id)
-            .map_or(0, |index| index + 1);
-        events.push(step(
-            "source-start",
-            json!({ "sourceIndex": source_index, "url": source.url }),
-        ));
-    }
     for source in &result.sources {
         let before: Vec<_> = result
             .nodes
@@ -121,12 +127,15 @@ fn debug_events(result: &ProfileDebugResult, total_duration_ms: u128) -> Vec<Deb
             "source-result",
             json!({
                 "sourceIndex": source.source_index, "url": source.source.url,
-                "httpStatus": 200, "httpHeaders": {}, "rawText": source.raw_text,
+                "httpStatus": source.observation.http_status,
+                "httpHeaders": source.observation.http_headers,
+                "rawText": source.raw_text,
                 "decodedText": nonempty(&source.parse.decoded_text),
                 "format": debug_format(&source.parse.format),
                 "parsedNodeCount": source.parse.nodes.len(), "nodesBeforeFilter": before,
                 "nodesAfterFilter": after, "filteredNodes": filtered, "error": null,
-                "fetchDurationMs": 0, "cached": source.from_cache
+                "fetchDurationMs": source.observation.fetch_duration_ms,
+                "cached": source.from_cache
             }),
         ));
     }
@@ -134,23 +143,69 @@ fn debug_events(result: &ProfileDebugResult, total_duration_ms: u128) -> Vec<Deb
     events
 }
 
-fn profile_config(result: &ProfileDebugResult) -> Value {
+fn progress_event(progress: ProfileDebugProgress) -> DebugEvent {
+    match progress {
+        ProfileDebugProgress::Configured { profile, effective } => {
+            step("config", profile_config(&profile, &effective))
+        }
+        ProfileDebugProgress::SourceStarted {
+            source_index,
+            source,
+        } => step(
+            "source-start",
+            json!({ "sourceIndex": source_index, "url": source.url }),
+        ),
+        ProfileDebugProgress::SourceFetched(source) => step(
+            "source-fetched",
+            json!({
+                "sourceIndex": source.source_index, "url": source.source.url,
+                "httpStatus": source.observation.http_status,
+                "httpHeaders": source.observation.http_headers,
+                "fetchDurationMs": source.observation.fetch_duration_ms,
+                "parsedNodeCount": source.parse.nodes.len(),
+                "cached": source.from_cache, "error": null
+            }),
+        ),
+        ProfileDebugProgress::SourceFailed {
+            source_index,
+            source,
+            error,
+            observation,
+        } => step(
+            "source-failed",
+            json!({
+                "sourceIndex": source_index, "url": source.url,
+                "httpStatus": observation.http_status,
+                "httpHeaders": observation.http_headers,
+                "fetchDurationMs": observation.fetch_duration_ms,
+                "cached": false, "error": error
+            }),
+        ),
+        ProfileDebugProgress::RulesStarted => step("rule-sets-start", json!({})),
+        ProfileDebugProgress::RulesFinished {
+            providers,
+            snapshot_ids,
+            warnings,
+        } => step("rule-sets", rule_sets(&providers, &snapshot_ids, &warnings)),
+        ProfileDebugProgress::Compiling => step("compile-start", json!({})),
+    }
+}
+
+fn profile_config(profile: &Profile, effective: &Profile) -> Value {
     let mut providers: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
-    for provider in &result.effective.rule_providers {
+    for provider in &effective.rule_providers {
         providers
             .entry(&provider.outbound)
             .or_default()
             .push(json!({ "name": provider.tag, "url": provider.url, "type": provider.behavior }));
     }
-    let urls: Vec<_> = result
-        .profile
+    let urls: Vec<_> = profile
         .sources
         .iter()
         .filter(|source| source.enabled && source.kind == "url")
         .map(|source| &source.url)
         .collect();
-    let groups: Vec<_> = result
-        .effective
+    let groups: Vec<_> = effective
         .groups
         .iter()
         .map(|group| {
@@ -159,12 +214,12 @@ fn profile_config(result: &ProfileDebugResult) -> Value {
         })
         .collect();
     json!({
-        "subscribeUrls": urls, "filters": result.effective.filters,
+        "subscribeUrls": urls, "filters": effective.filters,
         "groups": groups, "ruleProviders": providers,
-        "customConfig": result.effective.rules, "servers": result.effective.manual_servers,
-        "privateAccessConfig": nonempty_object(&result.effective.private_access),
+        "customConfig": effective.rules, "servers": effective.manual_servers,
+        "privateAccessConfig": nonempty_object(&effective.private_access),
         "dnsConfig": {
-            "shared": nested_object(&result.effective.dns, "shared")
+            "shared": nested_object(&effective.dns, "shared")
         }
     })
 }
@@ -200,7 +255,6 @@ fn output_events(result: &ProfileDebugResult, total_duration_ms: u128) -> Vec<De
                 "configOutput": result.render.content
             }),
         ),
-        step("rule-sets", rule_sets(&result.effective.rule_providers)),
         step(
             "validate",
             json!({
@@ -213,18 +267,26 @@ fn output_events(result: &ProfileDebugResult, total_duration_ms: u128) -> Vec<De
     ]
 }
 
-fn rule_sets(providers: &[RuleProvider]) -> Value {
+fn rule_sets(providers: &[RuleProvider], snapshot_ids: &[String], warnings: &[String]) -> Value {
     let items: Vec<_> = providers
         .iter()
         .map(|provider| {
+            let snapshot_id = sempre_converter::rule_provider_snapshot_id(&provider.tag);
+            let available = snapshot_ids.contains(&snapshot_id);
+            let error = warnings
+                .iter()
+                .find(|message| message.contains(&format!("{:?}", provider.tag)));
             json!({
                 "tag": provider.tag, "url": provider.url, "effectiveUrl": provider.url,
-                "group": provider.outbound, "status": "ok", "ruleCount": 0,
-                "sampleRules": [], "builtin": false, "format": provider.format
+                "group": provider.outbound,
+                "status": if available { "snapshot" } else if error.is_some() { "error" } else { "remote" },
+                "ruleCount": null, "sampleRules": [], "builtin": false,
+                "format": provider.format, "error": error
             })
         })
         .collect();
-    json!({ "totalCount": items.len(), "totalRules": 0, "errorCount": 0, "items": items })
+    json!({ "totalCount": items.len(), "totalRules": null,
+        "errorCount": warnings.len(), "items": items })
 }
 
 fn diff_names<F>(diffs: &[FieldDiff], predicate: F) -> Vec<&str>
@@ -324,6 +386,7 @@ mod tests {
                 parse,
                 raw_text: fixture.snapshots[0].content.clone(),
                 from_cache: false,
+                observation: sempre_subscription::FetchObservation::default(),
             }],
             nodes,
             render: sempre_manager::SubscriptionRender {
@@ -340,7 +403,27 @@ mod tests {
                 runtime_validated: compiled.runtime_validated,
             },
         };
-        let events = debug_events(&result, 7);
+        let mut events = vec![
+            progress_event(ProfileDebugProgress::Configured {
+                profile: Box::new(result.profile.clone()),
+                effective: Box::new(result.effective.clone()),
+            }),
+            progress_event(ProfileDebugProgress::SourceStarted {
+                source_index: 1,
+                source: Box::new(result.sources[0].source.clone()),
+            }),
+            progress_event(ProfileDebugProgress::SourceFetched(Box::new(
+                result.sources[0].clone(),
+            ))),
+            progress_event(ProfileDebugProgress::RulesStarted),
+            progress_event(ProfileDebugProgress::RulesFinished {
+                providers: result.effective.rule_providers.clone(),
+                snapshot_ids: Vec::new(),
+                warnings: Vec::new(),
+            }),
+            progress_event(ProfileDebugProgress::Compiling),
+        ];
+        events.extend(debug_events(&result, 7));
         let types: Vec<_> = events
             .iter()
             .filter_map(|event| event.payload["type"].as_str())
@@ -349,17 +432,21 @@ mod tests {
             types,
             [
                 "config",
-                "manual-servers",
                 "source-start",
+                "source-fetched",
+                "rule-sets-start",
+                "rule-sets",
+                "compile-start",
+                "manual-servers",
                 "source-result",
                 "merge",
                 "output",
-                "rule-sets",
                 "validate",
                 "done"
             ]
         );
-        assert_eq!(events[3].payload["data"]["parsedNodeCount"], 1);
-        assert_eq!(events[8].payload["data"]["totalDurationMs"], 7);
+        assert_eq!(events[2].payload["data"]["parsedNodeCount"], 1);
+        assert_eq!(events[7].payload["data"]["parsedNodeCount"], 1);
+        assert_eq!(events[11].payload["data"]["totalDurationMs"], 7);
     }
 }

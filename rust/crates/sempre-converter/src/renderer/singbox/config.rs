@@ -154,7 +154,15 @@ fn append_rule_providers<'a>(
             rule_sets.push(json!({ "type": "inline", "tag": provider.tag, "rules": inline }));
         } else {
             let format = if provider.format.is_empty() {
-                "source"
+                if url::Url::parse(&provider.url).ok().is_some_and(|url| {
+                    std::path::Path::new(url.path())
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("srs"))
+                }) {
+                    "binary"
+                } else {
+                    "source"
+                }
             } else {
                 &provider.format
             };

@@ -1,4 +1,5 @@
 use sempre_converter::{Profile, Source};
+use sempre_state::{Document, PendingConfigField, StateError};
 use sempre_subscription::SubscriptionError;
 use serde_json::{Map, json};
 use url::Url;
@@ -106,6 +107,7 @@ impl<R: VersionRunner> Manager<R> {
             .into());
         }
         let profile_id = profile.id.clone();
+        let previous_profile = profile.clone();
         let append = has_pending_profile_revision(&document, profile);
         let sources = if value.is_empty() {
             Vec::new()
@@ -128,6 +130,9 @@ impl<R: VersionRunner> Manager<R> {
                 ..CoreChange::default()
             });
         }
+        let mut candidate_document = document.clone();
+        apply_source_state(&mut candidate_document, &profile_id, value, append);
+        candidate_document.validate().map_err(StateError::from)?;
         self.subscriptions.update(|catalog| {
             let profile = catalog
                 .profiles
@@ -145,25 +150,31 @@ impl<R: VersionRunner> Manager<R> {
                 .insert("last_runtime_validated".into(), json!(false));
             Ok(())
         })?;
-        self.store.update(|document| {
-            if document.active_profile_id.is_none() {
-                document.active_profile_id = Some(profile_id);
-            }
-            if value.is_empty() {
-                document.subscription.url = None;
-                document.subscription.last_check = None;
-                document.subscription.last_change = None;
-                document.subscription.last_result = None;
-            } else {
-                document.subscription.url = Some(value.into());
-                record_pending_fields(
-                    document,
-                    &[sempre_state::PendingConfigField::Sources],
-                    append,
-                );
-            }
+        if let Err(state_error) = self.store.update(|document| {
+            apply_source_state(document, &profile_id, value, append);
             Ok(())
-        })?;
+        }) {
+            let rollback = self.subscriptions.update(|catalog| {
+                let profile = catalog
+                    .profiles
+                    .iter_mut()
+                    .find(|profile| profile.id == profile_id)
+                    .ok_or_else(|| SubscriptionError::Invalid("profile was not found".into()))?;
+                if profile.revision != previous_profile.revision + 1 {
+                    return Err(SubscriptionError::Invalid(
+                        "subscription profile changed before source rollback".into(),
+                    ));
+                }
+                profile.clone_from(&previous_profile);
+                Ok(())
+            });
+            return match rollback {
+                Ok(_) => Err(state_error.into()),
+                Err(rollback_error) => Err(ManagerError::InvalidOperation(format!(
+                    "source state update failed ({state_error}); catalog rollback also failed ({rollback_error}); sources may be inconsistent"
+                ))),
+            };
+        }
         Ok(CoreChange {
             changed: true,
             needs_restart: !value.is_empty() && document.selected.is_some(),
@@ -175,6 +186,21 @@ impl<R: VersionRunner> Manager<R> {
             },
             ..CoreChange::default()
         })
+    }
+}
+
+fn apply_source_state(document: &mut Document, profile_id: &str, value: &str, append: bool) {
+    if document.active_profile_id.is_none() {
+        document.active_profile_id = Some(profile_id.into());
+    }
+    if value.is_empty() {
+        document.subscription.url = None;
+        document.subscription.last_check = None;
+        document.subscription.last_change = None;
+        document.subscription.last_result = None;
+    } else {
+        document.subscription.url = Some(value.into());
+        record_pending_fields(document, &[PendingConfigField::Sources], append);
     }
 }
 

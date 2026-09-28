@@ -30,6 +30,11 @@ impl<'a> RuntimeModel<'a> {
         let mut groups = Vec::new();
 
         if profile.groups.is_empty() {
+            if ordered_names.is_empty() {
+                return Err(CompileError::Render(format!(
+                    "{core} default proxy group has no represented members"
+                )));
+            }
             let members = ordered_names
                 .iter()
                 .filter(|name| represented.contains(**name))
@@ -48,7 +53,7 @@ impl<'a> RuntimeModel<'a> {
                     return Err(CompileError::Render("proxy group name is required".into()));
                 }
                 let mut members = configured.proxies.clone();
-                if !configured.readonly || configured.include_all || members.is_empty() {
+                if !configured.readonly || configured.include_all {
                     append_unique(&mut members, &ordered_names);
                 }
                 if members.is_empty() {

@@ -1,15 +1,18 @@
 use std::{env, time::Duration};
 
 use chrono::{DateTime, Utc};
-use futures_util::StreamExt as _;
 use reqwest::{Client, Proxy, redirect::Policy};
 use sempre_converter::{Source, SourceSnapshot};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
-use crate::{MAX_SOURCE_SIZE, SubscriptionError, SubscriptionStore};
+use crate::{SubscriptionError, SubscriptionStore};
 
+mod observation;
 mod rule_sets;
+pub use observation::FetchObservation;
+use observation::download_once;
 pub use rule_sets::RuleSetSnapshot;
 
 const DEFAULT_USER_AGENT: &str = "clash.meta";
@@ -21,6 +24,11 @@ pub struct FetchResult {
     pub source: Source,
     pub from_cache: bool,
     pub bytes: usize,
+}
+
+pub struct FetchInspection {
+    pub result: Result<FetchResult, SubscriptionError>,
+    pub observation: FetchObservation,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -52,8 +60,54 @@ impl Fetcher {
         force: bool,
         validate: impl Fn(&str) -> Result<(), SubscriptionError>,
     ) -> Result<FetchResult, SubscriptionError> {
+        self.load_inner(source, force, validate, true).await.result
+    }
+
+    pub async fn inspect(
+        &self,
+        source: Source,
+        force: bool,
+        validate: impl Fn(&str) -> Result<(), SubscriptionError>,
+    ) -> Result<FetchResult, SubscriptionError> {
+        self.load_inner(source, force, validate, false).await.result
+    }
+
+    pub async fn inspect_observed(
+        &self,
+        source: Source,
+        force: bool,
+        validate: impl Fn(&str) -> Result<(), SubscriptionError>,
+    ) -> FetchInspection {
+        self.load_inner(source, force, validate, false).await
+    }
+
+    async fn load_inner(
+        &self,
+        source: Source,
+        force: bool,
+        validate: impl Fn(&str) -> Result<(), SubscriptionError>,
+        persist: bool,
+    ) -> FetchInspection {
+        let mut observation = FetchObservation::default();
+        let result = self
+            .load_inner_observed(source, force, validate, persist, &mut observation)
+            .await;
+        FetchInspection {
+            result,
+            observation,
+        }
+    }
+
+    async fn load_inner_observed(
+        &self,
+        source: Source,
+        force: bool,
+        validate: impl Fn(&str) -> Result<(), SubscriptionError>,
+        persist: bool,
+        observation: &mut FetchObservation,
+    ) -> Result<FetchResult, SubscriptionError> {
         if source.kind == "raw" {
-            return self.raw(source, validate);
+            return self.raw(source, validate, persist);
         }
         let mut source = source;
         let user_agent = defaulted(&source.user_agent, DEFAULT_USER_AGENT).to_owned();
@@ -73,14 +127,44 @@ impl Fetcher {
             return Ok(result(source, text, &entry.snapshot_hash, true));
         }
 
-        match self.download(&source, &user_agent, &fetch_mode).await {
-            Ok(content) => {
-                let text = std::str::from_utf8(&content)
-                    .map_err(|_| SubscriptionError::Fetch("response is not UTF-8".into()))?;
-                validate(text).map_err(|error| {
+        let downloaded = self
+            .download_observed(&source, &user_agent, &fetch_mode)
+            .await;
+        let downloaded = match downloaded {
+            Ok((content, observed)) => {
+                *observation = observed;
+                Ok(content)
+            }
+            Err((error, observed)) => {
+                *observation = observed;
+                Err(error)
+            }
+        };
+        let validated = downloaded.and_then(|content| {
+            let checked = match std::str::from_utf8(&content) {
+                Ok(text) => validate(text).map_err(|error| {
                     SubscriptionError::Fetch(format!("downloaded content is unusable: {error}"))
-                })?;
-                let hash = self.store.save_blob(&content)?;
+                }),
+                Err(_) => Err(SubscriptionError::Fetch("response is not UTF-8".into())),
+            };
+            if checked.is_err() {
+                observation.body_bytes = Some(content.len());
+                observation.body_truncated = content.len() > 16_384;
+                observation.body_preview = Some(
+                    String::from_utf8_lossy(&content[..content.len().min(16_384)]).into_owned(),
+                );
+            }
+            checked?;
+            Ok(content)
+        });
+        match validated {
+            Ok(content) => {
+                let text = std::str::from_utf8(&content).expect("validated UTF-8 response");
+                let hash = if persist {
+                    self.store.save_blob(&content)?
+                } else {
+                    format!("{:x}", Sha256::digest(&content))
+                };
                 let entry = CacheEntry {
                     url: source.url.clone(),
                     user_agent,
@@ -88,7 +172,9 @@ impl Fetcher {
                     snapshot_hash: hash.clone(),
                     fetched_at: Utc::now(),
                 };
-                self.write_cache(&key, &entry)?;
+                if persist {
+                    self.write_cache(&key, &entry)?;
+                }
                 set_metadata(&mut source, &entry, "downloaded", None);
                 Ok(result(source, text, &hash, false))
             }
@@ -117,7 +203,7 @@ impl Fetcher {
         validate: impl Fn(&str) -> Result<(), SubscriptionError>,
     ) -> Result<FetchResult, SubscriptionError> {
         if source.kind == "raw" {
-            return self.raw(source, validate);
+            return self.raw(source, validate, false);
         }
         let hash = extra_string(&source, "snapshot_hash", "").to_owned();
         if hash.is_empty() {
@@ -144,9 +230,14 @@ impl Fetcher {
         &self,
         mut source: Source,
         validate: impl Fn(&str) -> Result<(), SubscriptionError>,
+        persist: bool,
     ) -> Result<FetchResult, SubscriptionError> {
         validate(&source.content)?;
-        let hash = self.store.save_blob(source.content.as_bytes())?;
+        let hash = if persist {
+            self.store.save_blob(source.content.as_bytes())?
+        } else {
+            format!("{:x}", Sha256::digest(source.content.as_bytes()))
+        };
         let entry = CacheEntry {
             url: String::new(),
             user_agent: String::new(),
@@ -164,28 +255,55 @@ impl Fetcher {
         user_agent: &str,
         mode: &str,
     ) -> Result<Vec<u8>, SubscriptionError> {
+        self.download_observed(source, user_agent, mode)
+            .await
+            .map(|(content, _)| content)
+            .map_err(|(error, _)| error)
+    }
+
+    async fn download_observed(
+        &self,
+        source: &Source,
+        user_agent: &str,
+        mode: &str,
+    ) -> Result<(Vec<u8>, FetchObservation), (SubscriptionError, FetchObservation)> {
         let dynamic;
         let http = if mode == "domestic-direct" {
-            dynamic = client(Some(domestic_proxy()?))?;
+            dynamic = client(Some(
+                domestic_proxy().map_err(|error| (error, FetchObservation::default()))?,
+            ))
+            .map_err(|error| (error, FetchObservation::default()))?;
             &dynamic
         } else if mode == DEFAULT_FETCH_MODE {
             &self.standard
         } else {
-            return Err(SubscriptionError::Fetch(format!(
-                "unsupported fetch mode {mode:?}"
-            )));
+            return Err((
+                SubscriptionError::Fetch(format!("unsupported fetch mode {mode:?}")),
+                FetchObservation::default(),
+            ));
         };
         let mut failures = Vec::new();
+        let mut last_observation = FetchObservation::default();
         for attempt in 1..=3 {
             match download_once(http, &source.url, user_agent).await {
-                Ok(content) => return Ok(content),
-                Err(error) => failures.push(format!("attempt {attempt}: {error}")),
+                Ok((content, mut observation)) => {
+                    observation.attempts = attempt;
+                    return Ok((content, observation));
+                }
+                Err((error, mut observation)) => {
+                    observation.attempts = attempt;
+                    last_observation = observation;
+                    failures.push(format!("attempt {attempt}: {error}"));
+                }
             }
         }
-        Err(SubscriptionError::Fetch(format!(
-            "download failed after 3 attempts: {}",
-            failures.join("; ")
-        )))
+        Err((
+            SubscriptionError::Fetch(format!(
+                "download failed after 3 attempts: {}",
+                failures.join("; ")
+            )),
+            last_observation,
+        ))
     }
 
     fn read_cache(&self, key: &str) -> Result<CacheEntry, SubscriptionError> {
@@ -200,40 +318,6 @@ impl Fetcher {
         sempre_state::write_atomic(&self.store.cache_path(key), &data, 0o600)
             .map_err(SubscriptionError::WriteCache)
     }
-}
-
-async fn download_once(
-    client: &Client,
-    url: &str,
-    user_agent: &str,
-) -> Result<Vec<u8>, SubscriptionError> {
-    let response = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, user_agent)
-        .send()
-        .await
-        .map_err(|error| SubscriptionError::Fetch(error.to_string()))?;
-    if response.status() != reqwest::StatusCode::OK {
-        return Err(SubscriptionError::Fetch(format!(
-            "HTTP {}",
-            response.status()
-        )));
-    }
-    let mut content = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| SubscriptionError::Fetch(error.to_string()))?;
-        if content.len().saturating_add(chunk.len()) > MAX_SOURCE_SIZE {
-            return Err(SubscriptionError::SourceTooLarge {
-                limit: MAX_SOURCE_SIZE,
-            });
-        }
-        content.extend_from_slice(&chunk);
-    }
-    if content.iter().all(u8::is_ascii_whitespace) {
-        return Err(SubscriptionError::Fetch("response is empty".into()));
-    }
-    Ok(content)
 }
 
 fn client(proxy: Option<Proxy>) -> Result<Client, SubscriptionError> {

@@ -162,9 +162,9 @@ fn selector_outbounds(groups: &[ProxyGroup], names: &[String]) -> Result<Vec<Val
             .iter()
             .map(|value| normalize(value))
             .collect::<Vec<_>>();
-        if names.is_empty() {
+        if names.is_empty() && !group.readonly {
             members = vec!["direct".into()];
-        } else if !group.readonly || group.include_all || members.is_empty() {
+        } else if !group.readonly || group.include_all {
             append_unique(&mut members, names);
         }
         if members.is_empty() {

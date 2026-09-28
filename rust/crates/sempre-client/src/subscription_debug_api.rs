@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc, time::Duration, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use axum::{
     Json, Router,
@@ -8,7 +8,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::{net::TcpStream, sync::mpsc};
+use tokio::sync::mpsc;
 use url::Url;
 
 use crate::api::AppState;
@@ -71,39 +71,38 @@ async fn run_source_debug(
     if !send_source_prelude(&sender, &input).await {
         return;
     }
-    let fetch_started = Instant::now();
     let source = serde_json::from_value(json!({
         "id": "", "type": "url", "enabled": true, "url": input.url,
         "prefix": input.prefix, "user_agent": input.ua,
         "fetch_mode": input.fetch_mode, "cache_ttl_minutes": input.cache_ttl_minutes
     }));
-    let result = match source {
+    let inspection = match source {
         Ok(source) => {
-            state
-                .manager
-                .test_subscription_source(source, input.mode != "production")
-                .await
+            tokio::select! {
+                () = sender.closed() => return,
+                inspection = state.manager.inspect_subscription_source(source, input.mode != "production") => inspection,
+            }
         }
         Err(error) => {
             send_error_result(
                 &sender,
                 &input.url,
                 &error.to_string(),
-                fetch_started,
+                &sempre_subscription::FetchObservation::default(),
                 started,
             )
             .await;
             return;
         }
     };
-    let result = match result {
+    let result = match inspection.result {
         Ok(result) => result,
         Err(error) => {
             send_error_result(
                 &sender,
                 &input.url,
                 &error.to_string(),
-                fetch_started,
+                &inspection.observation,
                 started,
             )
             .await;
@@ -116,10 +115,13 @@ async fn run_source_debug(
         step(
             "attempt-result",
             json!({
-                "attempt": 1, "maxAttempts": 3, "success": true, "httpStatus": 200,
-                "finalUrl": input.url, "httpHeaders": {},
-                "fetchDurationMs": millis(fetch_started), "error": null, "requestError": null,
-                "remoteAddress": null, "httpVersion": "HTTP", "tlsPeerCertificateBytes": null,
+                "attempt": result.observation.attempts, "maxAttempts": 3,
+                "success": true, "httpStatus": result.observation.http_status,
+                "finalUrl": result.observation.final_url,
+                "httpHeaders": result.observation.http_headers,
+                "fetchDurationMs": result.observation.fetch_duration_ms,
+                "error": null, "requestError": null,
+                "remoteAddress": null, "httpVersion": null, "tlsPeerCertificateBytes": null,
                 "payload": payload
             }),
         ),
@@ -166,7 +168,7 @@ async fn send_source_prelude(sender: &mpsc::Sender<DebugEvent>, input: &SourceDe
         return false;
     }
     let cache_status = if input.mode == "production" {
-        "miss"
+        "checking"
     } else {
         "skipped"
     };
@@ -186,10 +188,7 @@ async fn send_source_prelude(sender: &mpsc::Sender<DebugEvent>, input: &SourceDe
     }
     if !send(
         sender,
-        step(
-            "network",
-            network_diagnostics(&input.url, &input.fetch_mode).await,
-        ),
+        step("network", network_context(&input.url, &input.fetch_mode)),
     )
     .await
         || !send(
@@ -207,7 +206,7 @@ async fn send_error_result(
     sender: &mpsc::Sender<DebugEvent>,
     url: &str,
     message: &str,
-    fetch_started: Instant,
+    observation: &sempre_subscription::FetchObservation,
     started: Instant,
 ) {
     if !send(
@@ -215,15 +214,18 @@ async fn send_error_result(
         step(
             "attempt-result",
             json!({
-                "attempt": 1, "maxAttempts": 3, "success": false, "httpStatus": null,
-                "finalUrl": url, "httpHeaders": {}, "fetchDurationMs": millis(fetch_started),
+                "attempt": observation.attempts, "maxAttempts": 3,
+                "success": false, "httpStatus": observation.http_status,
+                "finalUrl": observation.final_url, "httpHeaders": observation.http_headers,
+                "fetchDurationMs": observation.fetch_duration_ms,
                 "error": message, "requestError": {
                     "message": message, "debug": message, "chain": [message],
-                    "isTimeout": false, "isConnect": true, "isRequest": true,
-                    "isBody": false, "isDecode": false, "status": null, "url": url
+                    "isTimeout": null, "isConnect": null, "isRequest": null,
+                    "isBody": null, "isDecode": null,
+                    "status": observation.http_status, "url": url
                 },
                 "remoteAddress": null, "httpVersion": null, "tlsPeerCertificateBytes": null,
-                "payload": empty_payload()
+                "payload": error_payload(observation)
             }),
         ),
     )
@@ -276,58 +278,18 @@ fn source_payload(result: &sempre_manager::SourceTestResult) -> Value {
     })
 }
 
-async fn network_diagnostics(raw_url: &str, fetch_mode: &str) -> Value {
-    let started = Instant::now();
+fn network_context(raw_url: &str, fetch_mode: &str) -> Value {
     let parsed = Url::parse(raw_url).ok();
     let scheme = parsed.as_ref().map(Url::scheme);
     let host = parsed.as_ref().and_then(Url::host_str);
     let port = parsed.as_ref().and_then(Url::port_or_known_default);
-    let mut addresses = Vec::new();
-    let mut dns_error = None;
-    if let (Some(host), Some(port)) = (host, port) {
-        match tokio::net::lookup_host((host, port)).await {
-            Ok(values) => {
-                let mut seen = HashSet::new();
-                addresses.extend(values.filter(|value| seen.insert(value.ip())).take(3));
-            }
-            Err(error) => dns_error = Some(error.to_string()),
-        }
-    }
-    let mut probes = Vec::new();
-    for address in &addresses {
-        let probe_started = Instant::now();
-        let connected =
-            tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(address)).await;
-        match connected {
-            Ok(Ok(stream)) => probes.push(json!({
-                "address": address.ip(), "success": true, "durationMs": millis(probe_started),
-                "localAddress": stream.local_addr().ok().map(|value| value.to_string()),
-                "remoteAddress": stream.peer_addr().ok().map(|value| value.to_string()), "error": null
-            })),
-            Ok(Err(error)) => probes.push(failed_probe(
-                &address.ip().to_string(),
-                millis(probe_started),
-                &error.to_string(),
-            )),
-            Err(_) => probes.push(failed_probe(
-                &address.ip().to_string(),
-                millis(probe_started),
-                "connection timed out",
-            )),
-        }
-    }
     json!({
-        "fetchMode": fetch_mode, "connectionKind": "origin", "proxyEndpoint": null,
+        "fetchMode": fetch_mode, "connectionKind": null, "proxyEndpoint": null,
         "scheme": scheme, "host": host, "port": port, "resolverConfig": [],
-        "proxyEnvironmentVariables": [], "dnsDurationMs": millis(started),
-        "resolvedAddresses": addresses.iter().map(|value| value.ip().to_string()).collect::<Vec<_>>(),
-        "dnsError": dns_error, "tcpProbes": probes
+        "proxyEnvironmentVariables": [], "dnsDurationMs": null,
+        "resolvedAddresses": [], "dnsError": null, "tcpProbes": [],
+        "note": "network path was not separately probed; HTTP evidence comes from the fetch"
     })
-}
-
-fn failed_probe(address: &str, duration: u128, error: &str) -> Value {
-    json!({ "address": address, "success": false, "durationMs": duration,
-        "localAddress": null, "remoteAddress": null, "error": error })
 }
 
 fn step(kind: &'static str, data: Value) -> DebugEvent {
@@ -345,10 +307,17 @@ async fn send(sender: &mpsc::Sender<DebugEvent>, event: DebugEvent) -> bool {
     sender.send(event).await.is_ok()
 }
 
-fn empty_payload() -> Value {
-    json!({ "format": "unknown", "rawText": "", "decodedText": null,
-        "bodyBytes": 0, "parsedNodeCount": 0, "nodes": [],
-        "discardedPlaceholderNodes": [], "diagnostics": [] })
+fn error_payload(observation: &sempre_subscription::FetchObservation) -> Value {
+    let raw = observation.body_preview.as_deref().unwrap_or_default();
+    let parsed = sempre_converter::parse_subscription(raw);
+    json!({
+        "format": debug_format(&parsed.format),
+        "rawText": raw, "rawTruncated": observation.body_truncated,
+        "decodedText": nonempty(&parsed.decoded_text),
+        "bodyBytes": observation.body_bytes,
+        "parsedNodeCount": parsed.nodes.len(), "nodes": [],
+        "discardedPlaceholderNodes": [], "diagnostics": parsed.diagnostics
+    })
 }
 
 fn debug_format(value: &str) -> &str {

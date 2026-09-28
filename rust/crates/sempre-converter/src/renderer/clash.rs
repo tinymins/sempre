@@ -16,6 +16,14 @@ pub(super) fn render(
         .and_then(|value| value["name"].as_str())
         .unwrap_or("proxy");
     let mut warnings = Vec::new();
+    for group in &profile.groups {
+        if group.readonly && group.proxies.is_empty() {
+            warnings.push(format!(
+                "read-only proxy group {:?} has no members; its empty member list was preserved",
+                group.name
+            ));
+        }
+    }
     let mut rules = profile
         .rules
         .iter()
@@ -131,9 +139,6 @@ fn groups(configured: &[ProxyGroup], names: &[String]) -> Vec<Value> {
                         members.push(name.clone());
                     }
                 }
-            }
-            if members.is_empty() {
-                members.clone_from_slice(names);
             }
             if !group.default.is_empty() && members.contains(&group.default) {
                 members.retain(|member| member != &group.default);

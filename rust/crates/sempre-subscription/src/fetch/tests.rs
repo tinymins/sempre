@@ -40,6 +40,7 @@ fn raw_sources_are_snapshotted_without_network_access() {
         .raw(
             source("raw", "", "ss://secret@server.example:443#node"),
             validate,
+            true,
         )
         .expect("raw source");
     assert!(!result.from_cache);

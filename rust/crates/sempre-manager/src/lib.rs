@@ -33,6 +33,7 @@ mod runtime_ports;
 mod scheduler;
 mod selection_config;
 mod service_deploy;
+mod source_loading;
 mod subscription;
 mod subscription_mutation;
 mod subscription_tools;
@@ -74,7 +75,10 @@ pub use sempre_bundle::DeployComponent;
 pub use sempre_bundle::Export as BundleExport;
 pub use service_deploy::uninstall_system_service;
 pub use subscription::SubscriptionRender;
-pub use subscription_tools::{ProfileDebugResult, ProfileDebugSource, SourceTestResult};
+pub use subscription_tools::{
+    ProfileDebugProgress, ProfileDebugResult, ProfileDebugSource, SourceInspection,
+    SourceTestResult,
+};
 
 const USER_AGENT: &str = concat!("Sempre/", env!("CARGO_PKG_VERSION"));
 

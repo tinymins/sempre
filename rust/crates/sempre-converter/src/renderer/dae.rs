@@ -96,6 +96,7 @@ fn groups(
 ) -> Result<(String, HashMap<String, String>, String), CompileError> {
     let mut tags = HashMap::new();
     let mut blocks = Vec::new();
+    let mut omitted = Vec::new();
     let groups = if profile.groups.is_empty() {
         vec![crate::ProxyGroup {
             name: "proxy".into(),
@@ -107,7 +108,6 @@ fn groups(
     };
     for (index, group) in groups.iter().enumerate() {
         let tag = format!("sempre_group_{}", index + 1);
-        tags.insert(group.name.clone(), tag.clone());
         let mut members = group.proxies.clone();
         if !group.readonly {
             for name in represented {
@@ -118,8 +118,10 @@ fn groups(
         }
         members.retain(|name| represented.contains(name));
         if members.is_empty() {
+            omitted.push(group.name.as_str());
             continue;
         }
+        tags.insert(group.name.clone(), tag.clone());
         let default_index = members
             .iter()
             .position(|name| name == &group.default)
@@ -139,6 +141,18 @@ fn groups(
         ));
     }
     let final_name = groups.first().map_or("proxy", |group| group.name.as_str());
+    for name in omitted {
+        let referenced = profile.rules.iter().filter_map(Value::as_str).any(|rule| {
+            rule.split(',')
+                .next_back()
+                .is_some_and(|target| target.trim() == name)
+        });
+        if name == final_name || referenced {
+            return Err(CompileError::Render(format!(
+                "dae proxy group {name:?} is referenced but has no represented members"
+            )));
+        }
+    }
     let final_group = tags.get(final_name).cloned().ok_or_else(|| {
         CompileError::Render(format!(
             "dae final proxy group {final_name:?} has no represented members"

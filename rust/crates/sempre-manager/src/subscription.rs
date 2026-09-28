@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use sempre_converter::{
-    CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, SourceSnapshot, Target,
-    compile_with_overlay, dns_frontend_policy, parse_subscription,
+    CompileRequest, CompileResult, Diagnostic, FieldDiff, Profile, Target, compile_with_overlay,
+    dns_frontend_policy, parse_subscription,
 };
 use sempre_state::{Document, PendingConfigField};
 use sempre_subscription::{Catalog, SubscriptionError};
@@ -350,28 +350,21 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 
         validate_runtime_profile(profile)?;
         let mut updated = profile.clone();
-        let mut snapshots = Vec::<SourceSnapshot>::new();
-        for source in updated.sources.iter_mut().filter(|source| source.enabled) {
-            let result = if refresh {
-                self.fetcher
-                    .load(source.clone(), true, validate_source_content)
-                    .await?
-            } else {
-                self.fetcher
-                    .load_cached(source.clone(), validate_source_content)?
-            };
-            *source = result.source;
-            snapshots.push(result.snapshot);
-        }
+        let loaded = self
+            .load_profile_sources(&mut updated, refresh, !refresh, true)
+            .await?;
+        let mut snapshots = loaded.snapshots.clone();
+        adapter_warnings.extend(loaded.warnings.iter().cloned());
         let (provider_snapshots, provider_warnings) = self
-            .load_rule_provider_snapshots(&updated, &target, refresh)
+            .load_runtime_rule_provider_snapshots(&updated, &target, refresh)
             .await?;
         snapshots.extend(provider_snapshots);
         adapter_warnings.extend(provider_warnings);
         let dns_settings = self.dns_settings.read();
         let network_profile = self.apply_network_settings(&updated)?;
-        let compile_profile =
+        let mut compile_profile =
             self.apply_dns_frontend_settings(&network_profile, &target, dns_settings.enabled)?;
+        loaded.for_compile(&mut compile_profile, &target, &catalog.custom_nodes)?;
         let overlay = if dns_settings.enabled && target.core == "sing-box" {
             dns_settings.routing_overlay(&mut snapshots)
         } else {
@@ -389,6 +382,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             },
             &overlay,
         )?;
+        if !loaded.failed_ids.is_empty() && compiled.node_count == 0 {
+            return Err(SubscriptionError::Fetch(format!(
+                "enabled sources failed and no usable nodes remain: {}",
+                loaded.warnings.join("; ")
+            ))
+            .into());
+        }
         Ok(RenderedProfile {
             render: local_render(compiled, std::mem::take(adapter_warnings)),
             updated,
