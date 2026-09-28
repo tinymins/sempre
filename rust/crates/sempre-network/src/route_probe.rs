@@ -71,6 +71,7 @@ fn route_for(_address: IpAddr) -> Option<RouteDecision> {
     None
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn field(output: &str, key: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let (candidate, value) = line.trim().split_once(':')?;
