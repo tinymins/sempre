@@ -115,7 +115,8 @@ async fn debug_source(
     let fetch_mode = fetch_mode.to_owned();
     Ok(debug_stream::response(move |mut stages| async move {
         stages.push(json!({"type":"source","status":"running","cacheMode":if matches!(cache_mode, CacheMode::Bypass) { "bypass" } else { "production" }}));
-        let loaded = source_cache::load(
+        stages.push(json!({"type":"request","status":"ok","ua":ua,"fetchMode":fetch_mode,"cacheTtlMinutes":ttl,"prefix":prefix}));
+        let loaded = source_cache::load_observed(
             &state,
             SourceRequest {
                 url: &url,
@@ -128,6 +129,7 @@ async fn debug_source(
                 kind: SourceKind::Nodes,
                 inspect_unusable: true,
             },
+            &mut stages,
         )
         .await;
         match loaded {
@@ -158,8 +160,9 @@ fn error_result(
     ttl: i32,
     prefix: &str,
     production: bool,
-    stages: StageLog,
+    mut stages: StageLog,
 ) -> Value {
+    stages.push(json!({"type":"complete","status":"error","resultSource":null,"nodeCount":0,"message":error.message()}));
     json!({
         "ok": false,
         "message": error.message(),
@@ -193,6 +196,9 @@ fn debug_result(
     stages: StageLog,
 ) -> Value {
     let parsed = parse_subscription(&loaded.content);
+    let mut stages = stages;
+    stages.push(json!({"type":"parse","status":if parsed.nodes.is_empty() { "error" } else { "ok" },"format":parsed.format,"parsedNodeCount":parsed.nodes.len(),"diagnostics":parsed.diagnostics,"bodyBytes":loaded.content.len()}));
+    stages.push(json!({"type":"complete","status":if loaded.usable { "ok" } else { "error" },"resultSource":match loaded.cache_state { "fresh" => "cache", "stale" => "stale-cache", _ => "live" },"nodeCount":parsed.nodes.len()}));
     let mut diagnostics = parsed
         .diagnostics
         .iter()

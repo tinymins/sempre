@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 use futures_util::StreamExt as _;
 use reqwest::{Client, header};
@@ -15,15 +18,50 @@ pub(crate) struct FetchedText {
     pub headers: BTreeMap<String, String>,
 }
 
+pub(crate) struct FetchAttempt {
+    pub number: usize,
+    pub status: &'static str,
+    pub duration_ms: Option<u128>,
+    pub http_status: Option<u16>,
+    pub error: Option<String>,
+}
+
 pub(crate) async fn fetch_source_text(
     input: &str,
     user_agent: &str,
     proxy: Option<&str>,
+    mut observe: impl FnMut(FetchAttempt),
 ) -> Result<FetchedText, ApiError> {
     let mut last_error = None;
     let mut last_response = None;
     for attempt in 1..=3 {
-        match fetch_text(input, user_agent, MAX_SOURCE_SIZE, proxy).await {
+        observe(FetchAttempt {
+            number: attempt,
+            status: "running",
+            duration_ms: None,
+            http_status: None,
+            error: None,
+        });
+        let started = Instant::now();
+        let fetched = fetch_text(input, user_agent, MAX_SOURCE_SIZE, proxy).await;
+        observe(FetchAttempt {
+            number: attempt,
+            status: if fetched
+                .as_ref()
+                .is_ok_and(|response| response.status == 200)
+            {
+                "ok"
+            } else {
+                "error"
+            },
+            duration_ms: Some(started.elapsed().as_millis()),
+            http_status: fetched.as_ref().ok().map(|response| response.status),
+            error: fetched
+                .as_ref()
+                .err()
+                .map(|error| error.message().to_owned()),
+        });
+        match fetched {
             Ok(content) if content.status == 200 => return Ok(content),
             Ok(content) => last_response = Some(content),
             Err(error) => {
@@ -31,7 +69,7 @@ pub(crate) async fn fetch_source_text(
             }
         }
         if attempt < 3 {
-            tokio::time::sleep(Duration::from_millis(200 * attempt)).await;
+            tokio::time::sleep(Duration::from_millis(200 * attempt as u64)).await;
         }
     }
     last_response.ok_or_else(|| last_error.expect("three attempts always produce an error"))

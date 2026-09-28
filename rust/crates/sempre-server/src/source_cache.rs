@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::Row as _;
 use uuid::Uuid;
 
 use sempre_converter::{parse_subscription, rule_provider_has_rules};
 
-use crate::{AppState, error::ApiError, fetch};
+use crate::{AppState, debug_stream::StageLog, error::ApiError, fetch};
 
 #[derive(Clone, Copy)]
 pub(crate) enum CacheMode {
@@ -61,28 +62,35 @@ pub(crate) async fn load(
     state: &AppState,
     request: SourceRequest<'_>,
 ) -> Result<LoadedSource, ApiError> {
+    load_inner(state, request, None).await
+}
+
+pub(crate) async fn load_observed(
+    state: &AppState,
+    request: SourceRequest<'_>,
+    stages: &mut StageLog,
+) -> Result<LoadedSource, ApiError> {
+    load_inner(state, request, Some(stages)).await
+}
+
+async fn load_inner(
+    state: &AppState,
+    request: SourceRequest<'_>,
+    mut stages: Option<&mut StageLog>,
+) -> Result<LoadedSource, ApiError> {
     if request.ttl_minutes < 0 {
         return Err(ApiError::bad_request("cache TTL must be nonnegative"));
     }
     let cache_key = cache_key(&request);
-    let cached = match request.mode {
-        CacheMode::Subscription(id) | CacheMode::ReadOnlySubscription(id) => {
-            sqlx::query("SELECT content,fetched_at >= NOW() - ($3 * INTERVAL '1 minute') AS fresh FROM subscription_source_snapshots WHERE subscribe_id=$1 AND source_id=$2")
-                .bind(id).bind(&cache_key).bind(request.ttl_minutes)
-                .fetch_optional(&state.pool).await?
-        }
-        CacheMode::Global | CacheMode::ReadOnlyGlobal => {
-            sqlx::query("SELECT content,fetched_at >= NOW() - ($2 * INTERVAL '1 minute') AS fresh FROM source_debug_cache WHERE cache_key=$1")
-                .bind(&cache_key).bind(request.ttl_minutes)
-                .fetch_optional(&state.pool).await?
-        }
-        CacheMode::Bypass => None,
-    };
+    let cached = cached_row(state, &request, &cache_key).await?;
     if request.ttl_minutes > 0
         && let Some(row) = &cached
     {
         let fresh: bool = row.try_get("fresh").map_err(ApiError::internal)?;
         if fresh {
+            if let Some(stages) = &mut stages {
+                stages.push(json!({"type":"cache","status":"ok","cacheState":"fresh","message":"fresh snapshot used"}));
+            }
             return Ok(LoadedSource {
                 content: row.try_get("content").map_err(ApiError::internal)?,
                 usable: true,
@@ -93,7 +101,15 @@ pub(crate) async fn load(
             });
         }
     }
-    let fetched = fetch::fetch_source_text(request.url, request.ua, request.proxy).await;
+    if let Some(stages) = &mut stages {
+        stages.push(json!({"type":"cache","status":"ok","cacheState":if cached.is_some() { "stale-candidate" } else { "miss" }}));
+        stages.push(json!({"type":"network","status":"skipped","connectionKind":if request.proxy.is_some() { "proxy" } else { "origin" },"fetchMode":request.fetch_mode,"dnsTcpProbed":false,"message":"independent DNS and TCP probes were not run"}));
+    }
+    let fetched = fetch::fetch_source_text(request.url, request.ua, request.proxy, |attempt| {
+        if let Some(stages) = &mut stages {
+            stages.push(json!({"type":"attempt","status":attempt.status,"attempt":attempt.number,"durationMs":attempt.duration_ms,"httpStatus":attempt.http_status,"message":attempt.error}));
+        }
+    }).await;
     let usable = fetched.as_ref().is_ok_and(|fetched| {
         fetched.status == 200
             && match request.kind {
@@ -142,6 +158,11 @@ pub(crate) async fn load(
             sqlx::query("UPDATE subscription_source_snapshots SET last_status='error',last_error=$3 WHERE subscribe_id=$1 AND source_id=$2")
                 .bind(id).bind(&cache_key).bind(&warning).execute(&state.pool).await?;
         }
+        if let Some(stages) = &mut stages {
+            stages.push(
+                json!({"type":"fallback","status":"ok","cacheState":"stale","message":warning}),
+            );
+        }
         return Ok(LoadedSource {
             content: row.try_get("content").map_err(ApiError::internal)?,
             usable: true,
@@ -152,6 +173,26 @@ pub(crate) async fn load(
         });
     }
     unusable_result(&request, fetched)
+}
+
+async fn cached_row(
+    state: &AppState,
+    request: &SourceRequest<'_>,
+    cache_key: &str,
+) -> Result<Option<sqlx::postgres::PgRow>, ApiError> {
+    Ok(match request.mode {
+        CacheMode::Subscription(id) | CacheMode::ReadOnlySubscription(id) => {
+            sqlx::query("SELECT content,fetched_at >= NOW() - ($3 * INTERVAL '1 minute') AS fresh FROM subscription_source_snapshots WHERE subscribe_id=$1 AND source_id=$2")
+                .bind(id).bind(cache_key).bind(request.ttl_minutes)
+                .fetch_optional(&state.pool).await?
+        }
+        CacheMode::Global | CacheMode::ReadOnlyGlobal => {
+            sqlx::query("SELECT content,fetched_at >= NOW() - ($2 * INTERVAL '1 minute') AS fresh FROM source_debug_cache WHERE cache_key=$1")
+                .bind(cache_key).bind(request.ttl_minutes)
+                .fetch_optional(&state.pool).await?
+        }
+        CacheMode::Bypass => None,
+    })
 }
 
 fn unusable_result(

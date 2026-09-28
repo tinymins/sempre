@@ -20,6 +20,7 @@ use crate::{
     AppState,
     auth::CurrentUser,
     debug_stream::{self, StageLog},
+    diagnostic_projection,
     error::ApiError,
     source_cache::CacheMode,
     subscription_rules::load_rule_snapshots,
@@ -163,7 +164,8 @@ async fn run_debug(
     } else {
         stages.push(json!({"type":"compile","status":"ok","nodeCount":result.node_count}));
     }
-    result_output(&result, stages)
+    let (node_traces, rule_samples) = diagnostic_projection::project(&request, &result, stages);
+    result_output(&result, stages, &node_traces, &rule_samples)
 }
 
 async fn preview(
@@ -431,7 +433,12 @@ fn debug_failure(mut stages: StageLog, stage: &str, message: &str) -> Value {
     json!({"ok":false,"message":message,"diagnostics":diagnostics,"stages":stages.into_events()})
 }
 
-fn result_output(result: &CompileResult, stages: &StageLog) -> Value {
+fn result_output(
+    result: &CompileResult,
+    stages: &StageLog,
+    node_traces: &[Value],
+    rule_samples: &[Value],
+) -> Value {
     let decoded = serde_yaml::from_str::<Value>(&result.content).ok();
     json!({
         "ok": true,
@@ -443,6 +450,8 @@ fn result_output(result: &CompileResult, stages: &StageLog) -> Value {
         "nodeCount": result.node_count,
         "diagnostics": result.diagnostics,
         "fieldDiffs": result.field_diffs,
+        "nodeTraces": node_traces,
+        "ruleSamples": rule_samples,
         "stages": &**stages
     })
 }

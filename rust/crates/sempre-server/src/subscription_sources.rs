@@ -2,6 +2,7 @@ use sempre_converter::{Diagnostic, Profile, Source, SourceSnapshot, parse_subscr
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use std::time::Instant;
 
 use crate::{
     AppState,
@@ -56,7 +57,8 @@ pub(crate) async fn load_sources(
     let items = source_items(fields)?;
     let enabled_items = items
         .into_iter()
-        .filter(|item| item.enabled)
+        .enumerate()
+        .filter(|(_, item)| item.enabled)
         .collect::<Vec<_>>();
     let mut summary = SourceLoadSummary {
         enabled: enabled_items.len(),
@@ -67,58 +69,56 @@ pub(crate) async fn load_sources(
             json!({"type":"fetch","status":"skipped","message":"no enabled subscription sources"}),
         );
     }
-    for item in enabled_items {
+    for (source_index, item) in enabled_items {
         let ua = item.effective_ua().to_owned();
-        let mode = item.fetch_mode.unwrap_or_else(|| "auto".into());
+        let mode = item.fetch_mode.clone().unwrap_or_else(|| "auto".into());
         let source_id = source_id(&item.url, &ua, &mode);
-        stages.push(json!({"type":"fetch","status":"running","sourceId":source_id}));
+        let source_label = source_label(&item, source_index);
+        stages.push(json!({"type":"fetch","status":"running","sourceId":source_id,"sourceIndex":source_index,"sourceLabel":source_label,"fetchMode":mode}));
+        let fetch_started = Instant::now();
         let ttl = item
             .cache_ttl_minutes
             .or(fields.cache_ttl_minutes)
             .unwrap_or(60);
-        if let Some(error) = source_input_error(&item.url, ttl) {
-            summary.failed += 1;
-            record_fetch_error(&source_id, &error, stages, diagnostics);
-            continue;
-        }
-        let proxy = match source_proxy(state, &mode) {
-            Ok(proxy) => proxy,
-            Err(error) => {
-                summary.failed += 1;
-                record_fetch_error(&source_id, &error, stages, diagnostics);
-                continue;
-            }
-        };
-        let loaded = source_cache::load(
-            state,
-            SourceRequest {
-                url: &item.url,
-                ua: &ua,
-                fetch_mode: &mode,
-                proxy,
-                source_id: &source_id,
-                ttl_minutes: ttl,
-                mode: cache_mode,
-                kind: SourceKind::Nodes,
-                inspect_unusable: true,
-            },
-        )
-        .await;
-        let loaded = match loaded {
+        let loaded = match load_source(state, &item, &ua, &mode, &source_id, ttl, cache_mode).await
+        {
             Ok(loaded) => loaded,
             Err(error) => {
                 summary.failed += 1;
-                record_fetch_error(&source_id, &error, stages, diagnostics);
+                record_fetch_error(
+                    &source_id,
+                    source_index,
+                    &source_label,
+                    &error,
+                    stages,
+                    diagnostics,
+                );
                 continue;
             }
         };
         if !loaded.usable {
             summary.failed += 1;
-            record_unusable(loaded, &source_id, stages, diagnostics);
+            record_unusable(
+                loaded,
+                &source_id,
+                source_index,
+                &source_label,
+                stages,
+                diagnostics,
+            );
             continue;
         }
+        let parsed = parse_subscription(&loaded.content);
+        let raw_text = loaded.content.chars().take(65536).collect::<String>();
+        let decoded_text = parsed.decoded_text.chars().take(65536).collect::<String>();
         stages.push(json!({
-            "type":"fetch","status":"ok","sourceId":source_id,
+            "type":"fetch","status":"ok","sourceId":source_id,"sourceIndex":source_index,"sourceLabel":source_label,
+            "format":parsed.format,"parsedNodeCount":parsed.nodes.len(),"bodyBytes":loaded.content.len(),
+            "nodeNames":parsed.nodes.iter().map(|node| node.name.as_str()).collect::<Vec<_>>(),
+            "rawText":raw_text,"rawTruncated":loaded.content.chars().count() > 65536,
+            "decodedText":decoded_text,"decodedTextTruncated":parsed.decoded_text.chars().count() > 65536,
+            "diagnostics":parsed.diagnostics,"httpStatus":loaded.http_status,
+            "fetchDurationMs":fetch_started.elapsed().as_millis(),
             "cached":matches!(loaded.cache_state, "fresh" | "stale"),
             "cacheState":loaded.cache_state,"message":loaded.warning.clone(),
         }));
@@ -152,6 +152,47 @@ pub(crate) async fn load_sources(
     Ok(summary)
 }
 
+fn source_label(item: &SourceItem, index: usize) -> String {
+    if item.remark.trim().is_empty() {
+        url::Url::parse(&item.url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned))
+            .unwrap_or_else(|| format!("Source {}", index + 1))
+    } else {
+        item.remark.clone()
+    }
+}
+
+async fn load_source(
+    state: &AppState,
+    item: &SourceItem,
+    ua: &str,
+    mode: &str,
+    source_id: &str,
+    ttl: i32,
+    cache_mode: CacheMode,
+) -> Result<source_cache::LoadedSource, ApiError> {
+    if let Some(error) = source_input_error(&item.url, ttl) {
+        return Err(error);
+    }
+    let proxy = source_proxy(state, mode)?;
+    source_cache::load(
+        state,
+        SourceRequest {
+            url: &item.url,
+            ua,
+            fetch_mode: mode,
+            proxy,
+            source_id,
+            ttl_minutes: ttl,
+            mode: cache_mode,
+            kind: SourceKind::Nodes,
+            inspect_unusable: true,
+        },
+    )
+    .await
+}
+
 fn source_input_error(url: &str, ttl: i32) -> Option<ApiError> {
     if url.trim().is_empty() {
         Some(ApiError::bad_request("enabled source URL is empty"))
@@ -164,12 +205,14 @@ fn source_input_error(url: &str, ttl: i32) -> Option<ApiError> {
 
 fn record_fetch_error(
     source_id: &str,
+    source_index: usize,
+    source_label: &str,
     error: &ApiError,
     stages: &mut StageLog,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     stages.push(
-        json!({"type":"fetch","status":"error","sourceId":source_id,"message":error.message()}),
+        json!({"type":"fetch","status":"error","sourceId":source_id,"sourceIndex":source_index,"sourceLabel":source_label,"message":error.message()}),
     );
     diagnostics.push(Diagnostic {
         level: "error".into(),
@@ -181,13 +224,16 @@ fn record_fetch_error(
 fn record_unusable(
     loaded: source_cache::LoadedSource,
     source_id: &str,
+    source_index: usize,
+    source_label: &str,
     stages: &mut StageLog,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let message = loaded
         .warning
         .unwrap_or_else(|| "source has no usable nodes".into());
-    stages.push(json!({"type":"fetch","status":"error","sourceId":source_id,"httpStatus":loaded.http_status,"message":message.clone()}));
+    let parsed = parse_subscription(&loaded.content);
+    stages.push(json!({"type":"fetch","status":"error","sourceId":source_id,"sourceIndex":source_index,"sourceLabel":source_label,"httpStatus":loaded.http_status,"cacheState":loaded.cache_state,"format":parsed.format,"parsedNodeCount":parsed.nodes.len(),"diagnostics":parsed.diagnostics,"message":message.clone()}));
     diagnostics.push(Diagnostic {
         level: "error".into(),
         source_id: Some(source_id.into()),
