@@ -109,7 +109,14 @@ export function NetworkDiagnostics() {
 }
 
 function DiagnosticTimeline({ steps, zh }: { steps: DiagnosticStep[]; zh: boolean }) {
-  return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem 1rem 0' }}><section aria-label={zh ? '分层诊断进度' : 'Layered diagnostic progress'}>{steps.map((step, index) => <div key={step.id} className="flex gap-3"><div className="flex flex-col items-center"><StepIcon step={step} index={index} />{index < steps.length - 1 ? <div className={`my-1 w-0.5 flex-1 ${step.phase === 'completed' ? 'bg-emerald-500/40' : 'bg-[var(--border)]'}`} /> : null}</div><div className="min-w-0 flex-1 pb-5"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{index + 1}. {layerName(step.id, zh)}</h2><StepStatus step={step} zh={zh} /></div><p className="mt-1 text-sm text-[var(--muted)]">{step.result ? layerSummary(step.result, zh) : step.phase === 'running' ? (zh ? '正在检查这一层…' : 'Checking this layer…') : (zh ? '等待前一层完成' : 'Waiting for the previous layer')}</p>{step.result?.evidence?.length ? <ul className="mt-3 space-y-1 rounded-md bg-[var(--surface-hover)] px-3 py-2 font-mono text-xs"><li className="font-sans font-medium text-[var(--muted)]">{zh ? '证据' : 'Evidence'}</li>{step.result.evidence.map((item) => <li key={item} className="break-all">{item}</li>)}</ul> : null}</div></div>)}</section></Card>
+  const stepRefs = useRef<Partial<Record<NetworkDiagnosticLayerID, HTMLDivElement | null>>>({})
+  const runningStep = steps.find((step) => step.phase === 'running')?.id
+
+  useEffect(() => {
+    if (runningStep) stepRefs.current[runningStep]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [runningStep])
+
+  return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem 1rem 0' }}><section aria-label={zh ? '分层诊断进度' : 'Layered diagnostic progress'}>{steps.map((step, index) => <div key={step.id} ref={(element) => { stepRefs.current[step.id] = element }} className="flex gap-3"><div className="flex flex-col items-center"><StepIcon step={step} index={index} />{index < steps.length - 1 ? <div className={`my-1 w-0.5 flex-1 ${step.phase === 'completed' ? 'bg-emerald-500/40' : 'bg-[var(--border)]'}`} /> : null}</div><div className="min-w-0 flex-1 pb-5"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{index + 1}. {layerName(step.id, zh)}</h2><StepStatus step={step} zh={zh} /></div><p className="mt-1 text-sm text-[var(--muted)]">{step.result ? layerSummary(step.result, zh) : step.phase === 'running' ? (zh ? '正在检查这一层…' : 'Checking this layer…') : (zh ? '等待前一层完成' : 'Waiting for the previous layer')}</p>{step.result?.evidence?.length ? <ul className="mt-3 space-y-1 rounded-md bg-[var(--surface-hover)] px-3 py-2 font-mono text-xs"><li className="font-sans font-medium text-[var(--muted)]">{zh ? '证据' : 'Evidence'}</li>{step.result.evidence.map((item) => <li key={item} className="break-all">{item}</li>)}</ul> : null}</div></div>)}</section></Card>
 }
 
 function StepIcon({ step, index }: { step: DiagnosticStep; index: number }) {
