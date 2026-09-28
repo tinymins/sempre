@@ -46,16 +46,16 @@ export function DiagnosticSearch({ result, open, onClose }: { result: DraftDebug
     if (open && matches.length) activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }, [open, active, matches])
   const selected = matches[active]
-  return <Modal open={open} title={diagnosticText(locale, 'searchTitle')} size="large" footer={null} onCancel={onClose}>
-    <div className="space-y-4">
-        <Input value={query} onChange={(event) => { setQuery(event.target.value); setActive(0) }} placeholder={diagnosticText(locale, 'searchHint')} />
+  return <Modal open={open} title={diagnosticText(locale, 'searchTitle')} size="large" footer={null} onCancel={onClose} style={{ height: 'min(800px, calc(100dvh - 32px))' }} bodyStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <Input value={query} onChange={(event) => { setQuery(event.target.value); setActive(0) }} placeholder={diagnosticText(locale, 'searchHint')} />
       <div className="flex items-center gap-2 text-sm">
         <span>{number(matches.length)} {diagnosticText(locale, 'searchCount')}</span>
         <Button size="small" disabled={!matches.length} onClick={() => setActive((index) => (index - 1 + matches.length) % matches.length)}>{diagnosticText(locale, 'prev')}</Button>
         <Button size="small" disabled={!matches.length} onClick={() => setActive((index) => (index + 1) % matches.length)}>{diagnosticText(locale, 'next')}</Button>
         {selected ? <span>{number(active + 1)} / {number(matches.length)}</span> : null}
       </div>
-      {matches.length ? <div className="max-h-[60vh] space-y-4 overflow-auto">
+      {matches.length ? <div className="min-h-0 flex-1 space-y-4 overflow-auto">
         {sections.map((section, sectionIndex) => {
           const lines = new Set<number>()
           matches.filter((match) => match.section === sectionIndex).forEach(({ line }) => {
@@ -63,7 +63,7 @@ export function DiagnosticSearch({ result, open, onClose }: { result: DraftDebug
           })
           if (!lines.size) return null
           return <section key={`${section.title}-${sectionIndex}`}>
-            <CodePanel title={section.title} language={sectionIndex === 0 ? result.format?.startsWith('sing-box') ? 'JSON' : 'YAML' : 'TEXT'} maxHeight={360} bodyClassName="font-mono text-xs leading-5">
+            <CodePanel title={section.title} language={sectionIndex === 0 ? result.format?.startsWith('sing-box') ? 'JSON' : 'YAML' : 'TEXT'} bodyClassName="font-mono text-xs leading-5">
               {[...lines].sort((a, b) => a - b).map((line) => {
                 const matchIndex = matches.findIndex((item) => item.section === sectionIndex && item.line === line)
                 const focused = matchIndex === active

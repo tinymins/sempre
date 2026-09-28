@@ -208,8 +208,6 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
       styles={{
         body: {
           padding: isMobile ? "12px 8px" : "16px 0",
-          overflowY: "auto",
-          overflowX: "hidden",
         },
       }}
     >

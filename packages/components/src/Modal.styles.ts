@@ -34,7 +34,6 @@ export const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
     containerStyle: {
       display: "flex",
       flexDirection: "column",
-      height: "100%",
     },
   },
   "almost-full": {
@@ -54,14 +53,12 @@ export const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
     containerStyle: {
       display: "flex",
       flexDirection: "column",
-      height: "100%",
     },
   },
   large: {
     width: "90%",
     dialogStyle: { maxWidth: 1400 },
     bodyStyle: {
-      maxHeight: "calc(100% - 200px)",
       overflowY: "auto",
       overflowX: "hidden",
       ...THIN_SCROLLBAR,
@@ -83,7 +80,6 @@ export const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
     containerStyle: {
       display: "flex",
       flexDirection: "column",
-      height: "100%",
     },
   },
   /** 15% margin top/bottom — 90% × at-most 70%, centered; left-right grid forms pass style={{ height: "70%" }} */
@@ -103,7 +99,6 @@ export const SIZE_CONFIG: Record<ScaledModalSize, SizeConfig> = {
     containerStyle: {
       display: "flex",
       flexDirection: "column",
-      height: "100%",
     },
   },
   default: {

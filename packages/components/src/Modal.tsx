@@ -183,18 +183,18 @@ export function Modal({
           ? "absolute inset-0 flex justify-center transition-colors duration-200"
           : "fixed inset-0 flex justify-center transition-colors duration-200",
         isInline
-          ? "items-start overflow-y-auto"
+          ? "items-start overflow-hidden"
           : size === "inset" ||
               size === "form" ||
               size === "almost-full" ||
               centered
             ? "items-center overflow-hidden"
-            : "items-start overflow-y-auto",
+            : "items-start overflow-hidden",
         animClass ? "bg-black/35 backdrop-blur-sm" : "bg-black/0",
         size === "full" && "items-stretch",
         wrapClassName,
       )}
-      style={{ zIndex, ...THIN_SCROLLBAR }}
+      style={{ zIndex }}
       role="presentation"
       onMouseDown={(e) => {
         mouseDownOnMask.current = e.target === e.currentTarget;
@@ -214,14 +214,14 @@ export function Modal({
       <div
         ref={contentRef}
         className={cn(
-          "relative rounded-lg shadow-2xl flex flex-col shrink-0 transition-all duration-200",
+          "relative min-h-0 overflow-hidden rounded-lg shadow-2xl flex flex-col shrink-0 transition-all duration-200",
           "bg-[var(--surface)] text-[var(--text-primary)] border border-[var(--border)] shadow-[0_8px_32px_rgba(0,0,0,0.3)]",
           animClass
             ? "opacity-100 scale-100 translate-y-0"
             : "opacity-0 scale-95 translate-y-4",
           size === "full" && "!rounded-none",
           isInline
-            ? size !== "full" && "mt-[5%] mb-[5%]"
+            ? size !== "full" && "mt-4 mb-4"
             : !centered &&
                 size !== "full" &&
                 size !== "almost-full" &&
@@ -234,7 +234,9 @@ export function Modal({
           width: resolvedWidth,
           maxHeight: isInline
             ? "calc(100% - 32px)"
-            : "calc(100dvh - 32px)",
+            : !centered && (size === "default" || size === "large")
+              ? "calc(80dvh - 16px)"
+              : "calc(100dvh - 32px)",
           maxWidth:
             size === "default"
               ? isInline
@@ -280,6 +282,7 @@ export function Modal({
         <div
           className="px-6 py-4"
           style={{
+            flex: "1 1 auto",
             minHeight: 0,
             overflowY: "auto",
             overflowX: "hidden",

@@ -237,7 +237,7 @@ const GlobalSearchModal = forwardRef<GlobalSearchModalRef, Props>(
         }
 
         return (
-          <CodePanel maxHeight={400} bodyClassName="flex flex-col gap-0.5">
+          <CodePanel bodyClassName="flex flex-col gap-0.5">
             {uniqueIndices.map((matchIdx) => {
               const m = matches[matchIdx];
               const isCurrent = matchIdx === currentIndex;
@@ -297,8 +297,10 @@ const GlobalSearchModal = forwardRef<GlobalSearchModalRef, Props>(
         footer={null}
         size="large"
         destroyOnClose
+        style={{ height: "min(800px, calc(100dvh - 32px))" }}
+        bodyStyle={{ display: "flex", flexDirection: "column", overflow: "hidden" }}
       >
-        <div className="flex flex-col gap-3" onKeyDown={handleKeyDown}>
+        <div className="flex min-h-0 flex-1 flex-col gap-3" onKeyDown={handleKeyDown}>
           {/* Search input + navigation */}
           <div className="flex items-center gap-2">
             <SearchInput
@@ -346,14 +348,14 @@ const GlobalSearchModal = forwardRef<GlobalSearchModalRef, Props>(
 
           {/* Results grouped by section */}
           {collapseItems.length > 0 && (
-            <Collapse
+            <div className="min-h-0 flex-1 overflow-auto"><Collapse
               size="small"
               activeKey={expandedKeys}
               onChange={(keys) =>
                 setExpandedKeys(Array.isArray(keys) ? keys : [keys])
               }
               items={collapseItems}
-            />
+            /></div>
           )}
         </div>
       </Modal>
