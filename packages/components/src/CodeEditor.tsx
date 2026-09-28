@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { CodePanel } from './CodePanel'
 
 const CodeEditorRuntime = lazy(() => import('./CodeEditorRuntime'))
 
@@ -12,7 +13,7 @@ export interface CodeEditorProps {
 }
 
 export function CodeEditor({ value, onChange, readOnly = false, height = 320, language = 'json', ariaLabel }: CodeEditorProps) {
-  return <Suspense fallback={<div className="rounded border border-[var(--border)]" style={{ height }} />}>
+  return <Suspense fallback={<CodePanel language={language} padded={false}><div style={{ height }} /></CodePanel>}>
     <CodeEditorRuntime value={value} onChange={onChange} readOnly={readOnly} height={height} language={language} ariaLabel={ariaLabel} />
   </Suspense>
 }

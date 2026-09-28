@@ -25,8 +25,13 @@ export type { CardProps } from "./Card";
 export { Card } from "./Card";
 export type { CheckboxProps } from "./Checkbox";
 export { Checkbox } from "./Checkbox";
+export type { CodeBlockProps } from "./CodeBlock";
+export { CodeBlock } from "./CodeBlock";
 export type { CodeEditorProps } from "./CodeEditor";
 export { CodeEditor } from "./CodeEditor";
+export { defineCodeEditorThemes, useCodeEditorTheme } from "./CodeEditorTheme";
+export type { CodePanelProps } from "./CodePanel";
+export { CodePanel } from "./CodePanel";
 export type { CollapseItem, CollapseProps } from "./Collapse";
 export { Collapse } from "./Collapse";
 export type {
