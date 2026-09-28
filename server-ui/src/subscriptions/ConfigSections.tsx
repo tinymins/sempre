@@ -61,7 +61,7 @@ export function BasicConfig({ draft, users, canManageAuthorization, update }: Om
         <Select value={draft.logLevel} options={['off', 'error', 'warn', 'info', 'debug'].map((level) => ({ value: level, label: level }))} onChange={(next) => update({ logLevel: next as SubscriptionDraft['logLevel'] })} className="w-full" />
       </label>
       <label className="block space-y-1 text-sm">{t('editor.authorizedUsers')}
-        <Select mode="multiple" value={draft.authorizedUserIds} disabled={!canManageAuthorization} options={users.map((user) => ({ value: user.id, label: `${user.name} (${user.email})` }))} onChange={(next) => update({ authorizedUserIds: next as string[] })} showSearch className="w-full" />
+        <Select mode="multiple" value={draft.authorizedUserIds} disabled={!canManageAuthorization} options={users.map((user) => ({ value: user.id, label: `${user.name} (${user.email})` }))} onChange={(next) => update({ authorizedUserIds: next as string[] })} showSearch placeholder={t('editor.authorizedUsers')} className="w-full" />
       </label>
       {!canManageAuthorization ? <p className="text-xs text-[var(--muted)]">{t('editor.ownerOnly')}</p> : null}
     </div>

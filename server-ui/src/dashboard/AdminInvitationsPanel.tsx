@@ -51,9 +51,15 @@ export function AdminInvitationsPanel() {
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
-  return <Card className="space-y-3">
+  return <Card><div className="space-y-4">
     <h2 className="font-semibold">{t('admin.invites')}</h2>
-    <div className="flex flex-wrap items-end gap-2"><label className="space-y-1 text-sm">{t('admin.inviteHours')}<InputNumber value={hours} min={1} max={8760} onChange={setHours} className="w-48" /></label><Button variant="primary" loading={busy} onClick={() => void create()}>{t('admin.generateInvite')}</Button></div>
+    <div className="space-y-2">
+      <label htmlFor="invitation-hours" className="block text-sm">{t('admin.inviteHours')}</label>
+      <div className="flex flex-wrap items-center gap-3">
+        <InputNumber id="invitation-hours" value={hours} min={1} max={8760} onChange={setHours} className="w-48 max-w-full" />
+        <Button variant="primary" loading={busy} className="h-auto! min-h-8 max-w-full whitespace-normal py-2! text-center" onClick={() => void create()}>{t('admin.generateInvite')}</Button>
+      </div>
+    </div>
     {loading ? <Spin /> : null}
     {error ? <p role="alert" className="text-sm text-red-600">{error} <Button size="small" onClick={() => void load()}>{t('common.retry')}</Button></p> : null}
     {notice ? <p role="status" className="text-sm text-emerald-600">{notice}</p> : null}
@@ -62,6 +68,6 @@ export function AdminInvitationsPanel() {
       { title: t('common.status'), render: (_, item) => item.usedAt ? t('admin.inviteUsed') : item.expiresAt && new Date(item.expiresAt).getTime() <= Date.now() ? t('admin.inviteExpired') : t('admin.inviteAvailable') },
       { title: t('admin.expiresAt'), render: (_, item) => item.expiresAt ? date(item.expiresAt) : t('common.unlimited') },
       { title: t('common.actions'), render: (_, item) => <div className="flex gap-1"><Button size="small" disabled={busy} onClick={() => void copy(item.code)}>{t('admin.copyInvite')}</Button><Popconfirm title={t('admin.deleteInvite')} okText={t('common.delete')} cancelText={t('common.cancel')} onConfirm={() => void remove(item.id)} okType="danger"><Button size="small" danger disabled={busy}>{t('common.delete')}</Button></Popconfirm></div> },
-    ]} locale={{ emptyText: t('common.noData') }} />
-  </Card>
+    ]} locale={{ emptyText: <div className="px-4 py-6 text-left text-sm text-[var(--muted)]">{t('common.noData')}</div> }} />
+  </div></Card>
 }

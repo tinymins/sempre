@@ -132,7 +132,13 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   }
 
   return (
-    <Modal open={open} title={id ? t('configs.edit') : t('configs.new')} extra={<Button size="small" disabled={!draft || targets.length === 0 || saving} onClick={() => setDebugOpen(true)}>{t('editor.debugDraft')}</Button>} size="almost-full" okText={t('common.save')} cancelText={t('common.cancel')} onOk={save} onCancel={() => { if (!saving) onClose() }} confirmLoading={saving} okButtonProps={{ disabled: loading || !draft || (saved !== null && !saved.canEdit) }} cancelButtonProps={{ disabled: saving }} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose>
+    <Modal open={open} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" onCancel={() => { if (!saving) onClose() }} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
+      <Button className="h-auto! min-h-8 min-w-0 max-w-full justify-self-start whitespace-normal text-left" disabled={!draft || targets.length === 0 || saving} onClick={() => setDebugOpen(true)}><span className="min-w-0 break-words">{t('editor.debugDraft')}</span></Button>
+      <div className="flex shrink-0 gap-2">
+        <Button disabled={saving} onClick={() => { if (!saving) onClose() }}>{t('common.cancel')}</Button>
+        <Button variant="primary" loading={saving} disabled={loading || !draft || (saved !== null && !saved.canEdit)} onClick={save}>{t('common.save')}</Button>
+      </div>
+    </div>}>
       {loading ? <div className="grid min-h-48 place-items-center"><Spin size="large" /></div> : null}
       {error ? <p role="alert" className="mb-3 text-sm text-red-600">{error}</p> : null}
       {conflict ? <Popconfirm title={t('editor.reloadTitle')} description={t('editor.reloadWarning')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={reload}><Button className="mb-3" size="small">{t('editor.reloadLatest')}</Button></Popconfirm> : null}

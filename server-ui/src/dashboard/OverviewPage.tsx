@@ -39,14 +39,19 @@ export function OverviewPage({ user }: { user: ServerUser }) {
           [t('overview.totalConfigs'), overview.totalSubscriptions, <Rss size={19} />],
           [t('overview.activeNodes'), overview.totalNodes, <Network size={19} />],
           [t('overview.todayRequests'), overview.todayRequests, <BarChart3 size={19} />],
-        ] as const).map(([label, value, icon]) => <Card key={label} className="flex items-center gap-3"><span className="text-emerald-600">{icon}</span><div><p className="text-xs text-[var(--muted)]">{label}</p><strong className="text-2xl">{number(value)}</strong></div></Card>)}
+        ] as const).map(([label, value, icon]) => <Card key={label}><div className="flex items-center gap-3"><span className="text-emerald-600">{icon}</span><div><p className="text-xs text-[var(--muted)]">{label}</p><strong className="text-2xl">{number(value)}</strong></div></div></Card>)}
       </div>
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="space-y-3 lg:col-span-3">
+        <Card className="lg:col-span-3"><div className="space-y-3">
           <div className="flex items-center justify-between"><div><h2 className="font-semibold">{t('overview.summary')}</h2><p className="text-xs text-[var(--muted)]">{t('overview.recentFive')}</p></div><Button size="small" variant="text" icon={<ArrowRight size={14} />} onClick={() => go('/subscriptions')}>{t('overview.viewAll')}</Button></div>
           {overview.topSubscriptions.length === 0 ? <p className="text-sm text-[var(--muted)]">{t('overview.noConfigs')}</p> : overview.topSubscriptions.slice(0, 5).map((item) => <Button key={item.id} block variant="text" className="justify-start border-t border-[var(--border)] text-left" onClick={() => go(`/subscriptions/${item.id}`)}><span className="min-w-0 flex-1 truncate">{item.remark || t('configs.unnamed')}<small className="ml-2 text-[var(--muted)]">{item.creator.name}</small></span><span className="shrink-0 text-xs text-[var(--muted)]">{item.lastAccessAt ? date(item.lastAccessAt, { dateStyle: 'short' }) : t('common.never')}</span></Button>)}
-        </Card>
-        <Card className="space-y-3 lg:col-span-2"><div><h2 className="font-semibold">{t('overview.quickActions')}</h2><p className="text-xs text-[var(--muted)]">{t('overview.quickHint')}</p></div><Button block icon={<Plus size={15} />} onClick={() => go('/subscriptions', true)}>{t('overview.createConfig')}</Button><Button block icon={<Rss size={15} />} onClick={() => go('/subscriptions')}>{t('overview.manageConfigs')}</Button><Button block icon={<Network size={15} />} onClick={() => go('/network')}>{t('overview.networkAction')}</Button></Card>
+        </div></Card>
+        <Card className="lg:col-span-2"><div className="space-y-3">
+          <div><h2 className="font-semibold">{t('overview.quickActions')}</h2><p className="text-xs text-[var(--muted)]">{t('overview.quickHint')}</p></div>
+          <Button block icon={<Plus size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left" onClick={() => go('/subscriptions', true)}><span className="min-w-0 flex-1 break-words">{t('overview.createConfig')}</span></Button>
+          <Button block icon={<Rss size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left" onClick={() => go('/subscriptions')}><span className="min-w-0 flex-1 break-words">{t('overview.manageConfigs')}</span></Button>
+          <Button block icon={<Network size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left" onClick={() => go('/network')}><span className="min-w-0 flex-1 break-words">{t('overview.networkAction')}</span></Button>
+        </div></Card>
       </div>
     </> : null}
   </section>
