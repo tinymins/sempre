@@ -9,8 +9,8 @@ mod routes;
 
 pub use default_interface::{DefaultInterface, default_interface, normalize_mac};
 pub use diagnostics::{
-    DiagnosticFinding, DiagnosticLayer, DiagnosticStatus, NetworkDiagnosticReport,
-    run_network_diagnostics,
+    DiagnosticFinding, DiagnosticLayer, DiagnosticProgress, DiagnosticStatus,
+    NetworkDiagnosticReport, run_network_diagnostics, run_network_diagnostics_with_progress,
 };
 pub use dns_probe::DnsAnswer;
 pub use inventory::{Interface, Inventory, inventory};

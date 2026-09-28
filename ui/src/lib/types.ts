@@ -193,7 +193,7 @@ export interface Connection {
 export interface ConnectionSnapshot { download_total: number; upload_total: number; connections: Connection[] }
 
 export type { NetworkTestResult, IpMetadata, NetworkTestReport } from './networkTestTypes'
-export type { NetworkDiagnosticFinding, NetworkDiagnosticLayer, NetworkDiagnosticReport, NetworkDiagnosticStatus } from './networkDiagnosticsTypes'
+export type { NetworkDiagnosticFinding, NetworkDiagnosticLayer, NetworkDiagnosticLayerID, NetworkDiagnosticReport, NetworkDiagnosticStatus } from './networkDiagnosticsTypes'
 
 export interface CoreInstallation {
   core: string

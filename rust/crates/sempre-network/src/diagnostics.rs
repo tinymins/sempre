@@ -1,6 +1,5 @@
 use std::{
-    net::SocketAddr,
-    sync::{Arc, OnceLock},
+    net::{IpAddr, SocketAddr},
     time::Duration,
 };
 
@@ -8,21 +7,23 @@ use chrono::{DateTime, Utc};
 use futures_util::future::join_all;
 use serde::Serialize;
 use tokio::{net::TcpStream, time::timeout};
-use tokio_rustls::{
-    TlsConnector,
-    rustls::{ClientConfig, RootCertStore, pki_types::ServerName},
-};
+use tokio_rustls::{TlsConnector, rustls::pki_types::ServerName};
 use url::Url;
 
 use crate::{NetworkError, dns_probe, route_probe};
 
 mod findings;
+mod progress;
 #[cfg(test)]
 mod tests;
+mod tls;
 
 use findings::{
     dns_finding, fake_ip_conflict_finding, http_finding, runtime_finding, tcp_finding, tls_finding,
 };
+use progress::DiagnosticLog;
+pub use progress::DiagnosticProgress;
+use tls::tls_config;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(4);
 const TLS_TIMEOUT: Duration = Duration::from_secs(6);
@@ -77,28 +78,42 @@ pub async fn run_network_diagnostics(
     target: &str,
     runtime_running: bool,
 ) -> Result<NetworkDiagnosticReport, NetworkError> {
+    run_network_diagnostics_with_progress(target, runtime_running, |_| {}).await
+}
+
+pub async fn run_network_diagnostics_with_progress<F>(
+    target: &str,
+    runtime_running: bool,
+    on_progress: F,
+) -> Result<NetworkDiagnosticReport, NetworkError>
+where
+    F: FnMut(DiagnosticProgress),
+{
     let (url, host, port) = parse_target(target)?;
-    let mut layers = vec![runtime_layer(runtime_running)];
-    let mut findings = Vec::new();
+    let mut log = DiagnosticLog::new(on_progress);
+    log.start("runtime");
+    log.complete(runtime_layer(runtime_running));
     if !runtime_running {
-        findings.push(runtime_finding());
+        log.findings.push(runtime_finding());
     }
 
+    log.start("dns");
     let dns = dns_probe::resolve(&host).await;
     let addresses = dns
         .answers
         .iter()
         .map(|answer| answer.address)
         .collect::<Vec<_>>();
-    layers.push(dns_layer(&dns));
+    log.complete(dns_layer(&dns));
     if addresses.is_empty() {
-        findings.push(dns_finding(
+        log.findings.push(dns_finding(
             dns.error.as_deref().unwrap_or("no addresses returned"),
         ));
-        layers.extend(skipped_transport_layers());
-        return Ok(report(&url, host, port, layers, findings));
+        log.complete_all(skipped_transport_layers());
+        return Ok(report(&url, host, port, log.layers, log.findings));
     }
 
+    log.start("route");
     let (routes, fake_ip_samples) = route_probe::inspect(&addresses);
     let fake_addresses = dns
         .answers
@@ -113,11 +128,26 @@ pub async fn run_network_diagnostics(
         .collect::<Vec<_>>();
     fake_ip_routes.extend(fake_ip_samples);
     let route_conflict = route_probe::fake_ip_routes_conflict(&fake_ip_routes);
-    layers.push(route_layer(&routes, &fake_ip_routes, route_conflict));
+    log.complete(route_layer(&routes, &fake_ip_routes, route_conflict));
     if route_conflict {
-        findings.push(fake_ip_conflict_finding(&fake_ip_routes));
+        log.findings.push(fake_ip_conflict_finding(&fake_ip_routes));
     }
+    run_transport_layers(&url, &host, port, addresses, route_conflict, &mut log).await?;
+    Ok(report(&url, host, port, log.layers, log.findings))
+}
 
+async fn run_transport_layers<F>(
+    url: &Url,
+    host: &str,
+    port: u16,
+    addresses: Vec<IpAddr>,
+    route_conflict: bool,
+    log: &mut DiagnosticLog<F>,
+) -> Result<(), NetworkError>
+where
+    F: FnMut(DiagnosticProgress),
+{
+    log.start("tcp");
     let sockets = addresses
         .into_iter()
         .take(4)
@@ -125,55 +155,59 @@ pub async fn run_network_diagnostics(
         .collect::<Vec<_>>();
     let tcp = join_all(sockets.iter().copied().map(tcp_attempt)).await;
     let tcp_ok = tcp.iter().any(|attempt| attempt.ok);
-    layers.push(attempt_layer("tcp", &tcp, tcp_ok));
+    log.complete(attempt_layer("tcp", &tcp, tcp_ok));
     if !tcp_ok {
-        findings.push(tcp_finding());
-        layers.extend(skipped_secure_layers(url.scheme()));
-        return Ok(report(&url, host, port, layers, findings));
+        log.findings.push(tcp_finding());
+        log.complete_all(skipped_secure_layers(url.scheme()));
+        return Ok(());
     }
 
     if url.scheme() == "https" {
+        log.start("tls");
         let tls = join_all(
             sockets
                 .iter()
                 .copied()
-                .map(|address| tls_attempt(address, &host)),
+                .map(|address| tls_attempt(address, host)),
         )
         .await;
         let tls_ok = tls.iter().any(|attempt| attempt.ok);
-        layers.push(attempt_layer("tls", &tls, tls_ok));
+        log.complete(attempt_layer("tls", &tls, tls_ok));
         if !tls_ok {
-            findings.push(tls_finding(route_conflict));
-            layers.push(skipped_layer("http", "TLS did not complete"));
-            return Ok(report(&url, host, port, layers, findings));
+            log.findings.push(tls_finding(route_conflict));
+            log.complete(skipped_layer("http", "TLS did not complete"));
+            return Ok(());
         }
     } else {
-        layers.push(skipped_layer("tls", "Target uses plain HTTP"));
+        log.complete(skipped_layer("tls", "Target uses plain HTTP"));
     }
 
+    log.start("http");
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(HTTP_TIMEOUT)
         .user_agent(concat!("Sempre diagnostics/", env!("CARGO_PKG_VERSION")))
         .build()?;
-    match client.get(url.clone()).send().await {
-        Ok(response) => layers.push(DiagnosticLayer {
+    let http_layer = match client.get(url.clone()).send().await {
+        Ok(response) => DiagnosticLayer {
             id: "http",
             status: DiagnosticStatus::Passed,
             summary: format!("HTTP {}", response.status().as_u16()),
             evidence: vec![format!("{:?} {}", response.version(), response.status())],
-        }),
+        },
         Err(error) => {
-            layers.push(DiagnosticLayer {
+            let layer = DiagnosticLayer {
                 id: "http",
                 status: DiagnosticStatus::Failed,
                 summary: "No HTTP response".into(),
                 evidence: vec![error.to_string()],
-            });
-            findings.push(http_finding(&error.to_string()));
+            };
+            log.findings.push(http_finding(&error.to_string()));
+            layer
         }
-    }
-    Ok(report(&url, host, port, layers, findings))
+    };
+    log.complete(http_layer);
+    Ok(())
 }
 
 fn parse_target(target: &str) -> Result<(Url, String, u16), NetworkError> {
@@ -384,25 +418,6 @@ async fn tls_attempt(address: SocketAddr, host: &str) -> Attempt {
             detail: "handshake timed out".into(),
         },
     }
-}
-
-fn tls_config() -> Arc<ClientConfig> {
-    static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
-    Arc::clone(CONFIG.get_or_init(|| {
-        let roots = webpki_roots::TLS_SERVER_ROOTS
-            .iter()
-            .cloned()
-            .collect::<RootCertStore>();
-        Arc::new(
-            ClientConfig::builder_with_provider(Arc::new(
-                tokio_rustls::rustls::crypto::ring::default_provider(),
-            ))
-            .with_safe_default_protocol_versions()
-            .expect("TLS protocol versions")
-            .with_root_certificates(roots)
-            .with_no_client_auth(),
-        )
-    }))
 }
 
 fn attempt_layer(id: &'static str, attempts: &[Attempt], ok: bool) -> DiagnosticLayer {

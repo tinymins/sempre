@@ -1,7 +1,8 @@
 export type NetworkDiagnosticStatus = 'passed' | 'failed' | 'warning' | 'skipped'
+export type NetworkDiagnosticLayerID = 'runtime' | 'dns' | 'route' | 'tcp' | 'tls' | 'http'
 
 export interface NetworkDiagnosticLayer {
-  id: 'runtime' | 'dns' | 'route' | 'tcp' | 'tls' | 'http'
+  id: NetworkDiagnosticLayerID
   status: NetworkDiagnosticStatus
   summary: string
   evidence?: string[]
