@@ -22,6 +22,12 @@ export SEMPRE_PUBLIC_URL=http://127.0.0.1:5174/
 export SEMPRE_WEB_ROOT=../server-ui/dist
 export SEMPRE_SERVER_API_TARGET=http://127.0.0.1:8788
 
+proxy_env_file="$dev_dir/direct-proxy.env"
+if [[ -f "$proxy_env_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$proxy_env_file"
+fi
+
 echo "Sempre server development: API http://127.0.0.1:8788, UI http://127.0.0.1:5174"
 case "${1:-}" in
   '') exec bun run --parallel "server:dev:api" "server:dev:ui" ;;
