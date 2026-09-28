@@ -141,3 +141,11 @@ The dedicated ordinary-admin account remains confirmed by API (`GET /auth/me` an
 After the frontend owner froze the final route and private-access form edits, root `bun run lint` and `bun run tsc` each exited 0 on this code state. The new connector defaults, list parsing and first-DNS preservation have focused source checks but remain **browser-unverified**. The page comparison document and this appendix are documentation-only; their content and whitespace are checked separately with `git diff --check`.
 
 The frontend correction reviewed in this page comparison is commit `c28bad5ff04af43bcbd4794b2751406e1083b90e`; the user-facing Chrome extension block and fresh-network limits remain open after that commit.
+
+## Screenshot layout follow-up (2026-09-28)
+
+The independent Chrome QA tab connected to the current source-backed 5174 UI and 8788 API. The three user-reported layouts were visually checked in representative English desktop and 390 px English/Chinese views: Invitation Codes now separates its label, input, action and table, with the empty text visible inside the initially scrolled mobile table; the configuration editor keeps draft debug on the footer left and Cancel/Save together on the right; Overview quick actions wrap long English labels without overlapping. A temporary unsaved QA remark remained after opening and closing draft debug, then Cancel discarded it and reopening showed the original remark. No debug run, invitation generation or configuration Save was performed. The QA language was restored to Follow system and the temporary viewport override was reset.
+
+Safe screenshots are in the ignored `.cache/sempre-toolbox-dev/screenshots/` directory: `layout-invitations-390-zh.png`, `layout-invitations-desktop-en.png`, `layout-editor-footer-390-zh.png` and `layout-overview-desktop-en.png`. On this final frontend state, root `bun run lint` and `bun run tsc` both exited 0; `git diff --check` passed. This narrow browser recovery verifies these layouts and the draft-dialog cancellation behavior only. Ordinary-admin and SSE browser interactions were not revisited in this layout-only round; genuine fresh upstream HTTP/default-rule generation remains limited by the host network as recorded above.
+
+The corresponding frontend layout implementation is commit `95f197ac07a1d720666235c17ca85063147d01c5`.
