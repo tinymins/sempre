@@ -1,4 +1,4 @@
-import { Button, Modal, Popconfirm, Select, Spin, TextArea } from '@acme/components'
+import { Button, CodeEditor, Modal, Popconfirm, Select, Spin } from '@acme/components'
 import { useCallback, useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { CustomNode, Subscription, UserBrief } from './types'
@@ -79,9 +79,9 @@ export function CustomNodeEditor({ nodeId, currentUserId, users, subscriptions, 
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       {loading ? <Spin size="small" /> : null}
       {nodeId && !node && !loading ? <Button size="small" onClick={() => { setLoading(true); setError(''); void load() }}>{t('editor.reload')}</Button> : null}
-      <label className="block space-y-1 text-sm"><span className="text-red-600" aria-hidden="true">* </span>{t('nodes.content')}
-        <TextArea rows={14} required value={content} disabled={loading || (Boolean(nodeId) && !node)} onChange={(event) => setContent(event.target.value)} className="font-mono text-xs" />
-      </label>
+      <div className="space-y-1 text-sm"><span className="text-red-600" aria-hidden="true">* </span>{t('nodes.content')}
+        <CodeEditor value={content} height={320} ariaLabel={t('nodes.content')} readOnly={loading || (Boolean(nodeId) && !node)} onChange={(next) => { if (!loading && (!nodeId || node)) setContent(next) }} />
+      </div>
       <label className="block space-y-1 text-sm">{t('nodes.authorized')}
         <Select mode="multiple" value={authorizedUserIds} disabled={loading || !canManage || users === null} options={users?.filter((user) => user.id !== currentUserId).map((user) => ({ value: user.id, label: `${user.name} (${user.email})` })) ?? []} onChange={(next) => setAuthorizedUserIds(next as string[])} showSearch className="w-full" />
       </label>

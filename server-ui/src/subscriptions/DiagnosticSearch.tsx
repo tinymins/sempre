@@ -1,4 +1,4 @@
-import { Button, Input, Modal } from '@acme/components'
+import { Button, CodePanel, Input, Modal } from '@acme/components'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DraftDebugResult } from './diagnostic-types'
 import { diagnosticText } from './diagnostic-locale'
@@ -62,9 +62,8 @@ export function DiagnosticSearch({ result, open, onClose }: { result: DraftDebug
             for (let index = Math.max(0, line - 2); index <= Math.min(section.lines.length - 1, line + 2); index++) lines.add(index)
           })
           if (!lines.size) return null
-          return <section key={`${section.title}-${sectionIndex}`} className="space-y-2">
-            <h3 className="text-sm font-semibold">{section.title}</h3>
-            <div className="overflow-x-auto rounded border border-[var(--border)] bg-[var(--surface)] p-2 font-mono text-xs">
+          return <section key={`${section.title}-${sectionIndex}`}>
+            <CodePanel title={section.title} language={sectionIndex === 0 ? result.format?.startsWith('sing-box') ? 'JSON' : 'YAML' : 'TEXT'} maxHeight={360} bodyClassName="font-mono text-xs leading-5">
               {[...lines].sort((a, b) => a - b).map((line) => {
                 const matchIndex = matches.findIndex((item) => item.section === sectionIndex && item.line === line)
                 const focused = matchIndex === active
@@ -72,7 +71,7 @@ export function DiagnosticSearch({ result, open, onClose }: { result: DraftDebug
                   <span className="select-none text-[var(--muted)]">{number(line + 1)}</span><span>{highlight(section.lines[line], query.trim())}</span>
                 </div>
               })}
-            </div>
+            </CodePanel>
           </section>
         })}
       </div> : query.trim().length >= 2 ? <p className="text-sm text-[var(--muted)]">{diagnosticText(locale, 'searchEmpty')}</p> : null}

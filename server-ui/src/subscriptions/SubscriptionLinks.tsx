@@ -1,4 +1,4 @@
-import { Button, Modal, Popconfirm } from '@acme/components'
+import { Button, CodePanel, Modal, Popconfirm } from '@acme/components'
 import { Bug, Copy, ExternalLink } from 'lucide-react'
 import { useState } from 'react'
 import { targetSuffix, type Target } from './diagnostic-types'
@@ -37,7 +37,7 @@ export function SubscriptionLinks({ subscription, targets, onClose }: { subscrip
       {error ? <p role="alert" className="mb-3 text-sm text-red-600">{error}</p> : null}
       {notice ? <p role="status" className="mb-3 text-sm text-emerald-600">{notice}</p> : null}
       <p className="mb-4 text-sm text-[var(--muted)]">{t('links.stableHint')}</p>
-      {manifestUrl ? <div className="mb-4 space-y-2 rounded-lg border border-[var(--border)] p-3"><strong className="text-sm">{t('links.manifest')}</strong><p className="text-xs text-[var(--muted)]">{t('links.manifestHint')}</p><div className="flex items-center gap-2"><code className="min-w-0 flex-1 truncate text-xs" title={manifestUrl}>{manifestUrl}</code><Button size="small" icon={<Copy size={14} />} aria-label={t('links.copyManifest')} onClick={() => void copy(manifestUrl)} /><Button size="small" icon={<ExternalLink size={14} />} aria-label={t('links.openManifest')} onClick={() => window.open(manifestUrl, '_blank', 'noopener,noreferrer')} /></div></div> : null}
+      {manifestUrl ? <div className="mb-4 space-y-2"><p className="text-xs text-[var(--muted)]">{t('links.manifestHint')}</p><CodePanel title={t('links.manifest')} language="URL" maxHeight={140} bodyClassName="break-all whitespace-pre-wrap font-mono text-xs" actions={<><Button size="small" icon={<Copy size={14} />} aria-label={t('links.copyManifest')} onClick={() => void copy(manifestUrl)} /><Button size="small" icon={<ExternalLink size={14} />} aria-label={t('links.openManifest')} onClick={() => window.open(manifestUrl, '_blank', 'noopener,noreferrer')} /></>}>{manifestUrl}</CodePanel></div> : null}
       {subscription?.canDelete ? <Popconfirm title={t('links.clearTitle')} description={t('links.clearDetail')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={() => void clearCache()}><Button size="small" loading={clearing} className="mb-4">{t('links.clear')}</Button></Popconfirm> : null}
       <h3 className="mb-2 text-sm font-semibold">{t('links.rawFormats')}</h3>
       <div className="space-y-2">
@@ -46,13 +46,11 @@ export function SubscriptionLinks({ subscription, targets, onClose }: { subscrip
           const suffix = targetSuffix(target.format)
           if (!suffix) return null
           const url = `${base}/${suffix}`
-          return <div key={target.format} className="flex items-center gap-2 rounded-lg border border-[var(--border)] p-2">
-            <span className="w-40 shrink-0 text-sm">{label}</span>
-            <code className="min-w-0 flex-1 truncate text-xs" title={url}>{url}</code>
+          return <CodePanel key={target.format} title={label} language="URL" maxHeight={140} bodyClassName="break-all whitespace-pre-wrap font-mono text-xs" actions={<>
             <Button size="small" icon={<Copy size={14} />} aria-label={t('links.copyFormat', { format: label })} onClick={() => void copy(url)} />
             <Button size="small" icon={<ExternalLink size={14} />} aria-label={t('links.openFormat', { format: label })} onClick={() => window.open(url, '_blank', 'noopener,noreferrer')} />
             <Button size="small" icon={<Bug size={14} />} aria-label={t('links.debugFormat', { format: label })} title={t('links.debugFormat', { format: label })} onClick={() => setDebugTarget(target)} />
-          </div>
+          </>}>{url}</CodePanel>
         })}
         {targets.length === 0 ? <p className="text-sm text-[var(--muted)]">{t('links.loadingFormats')}</p> : null}
       </div>

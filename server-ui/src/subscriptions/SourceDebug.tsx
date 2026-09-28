@@ -7,6 +7,7 @@ import { useI18n } from '../i18n/provider'
 import { DiagnosticTimeline } from './DiagnosticTimeline'
 import { DiagnosticValue } from './DiagnosticValue'
 import { diagnosticText } from './diagnostic-locale'
+import { ServerCodeBlock } from '../ServerCodeBlock'
 
 export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSource; saved?: { id: string; index: number; source: SubscriptionSource }; onClose: () => void }) {
   const { t, number, locale } = useI18n()
@@ -80,8 +81,8 @@ export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSo
         <Collapse size="small" items={[
           { key: 'diagnostics', label: t('sourceDebug.diagnostics'), children: <DiagnosticValue value={result.diagnostics} /> },
           ...(Object.keys(result.responseHeaders).length ? [{ key: 'headers', label: t('sourceDebug.headers'), children: <DiagnosticValue value={result.responseHeaders} /> }] : []),
-          ...(result.raw ? [{ key: 'raw', label: `${t('sourceDebug.raw')}${result.rawTruncated ? t('sourceDebug.truncated') : ''}`, children: <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{result.raw}</pre> }] : []),
-          ...(result.decodedText ? [{ key: 'decodedText', label: `${t('sourceDebug.decodedText')}${result.decodedTextTruncated ? t('sourceDebug.truncated') : ''}`, children: <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{result.decodedText}</pre> }] : []),
+          ...(result.raw ? [{ key: 'raw', label: `${t('sourceDebug.raw')}${result.rawTruncated ? t('sourceDebug.truncated') : ''}`, children: <ServerCodeBlock value={result.raw} language="TEXT" maxHeight={280} wrap /> }] : []),
+          ...(result.decodedText ? [{ key: 'decodedText', label: `${t('sourceDebug.decodedText')}${result.decodedTextTruncated ? t('sourceDebug.truncated') : ''}`, children: <ServerCodeBlock value={result.decodedText} language="TEXT" maxHeight={280} wrap /> }] : []),
           ...(result.decoded.length ? [{ key: 'decoded', label: t('sourceDebug.decoded', { count: number(result.decoded.length) }), children: <DiagnosticValue value={result.decoded} /> }] : []),
         ]} />
         <Table rowKey={(_, index) => String(index)} dataSource={result.nodes} pagination={false} size="small" scroll={{ x: 500 }} columns={[

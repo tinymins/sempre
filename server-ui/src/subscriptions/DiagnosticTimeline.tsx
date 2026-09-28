@@ -3,7 +3,8 @@ import { CheckCircle2, CircleMinus, CircleX, LoaderCircle } from 'lucide-react'
 import type { DebugStage, NodeTraceResult } from './diagnostic-types'
 import { diagnosticText } from './diagnostic-locale'
 import { useI18n } from '../i18n/provider'
-import { DiagnosticValue } from './DiagnosticValue'
+import { DiagnosticValue, hasStructuredCode } from './DiagnosticValue'
+import { ServerCodeBlock } from '../ServerCodeBlock'
 
 function stageKey(stage: DebugStage): string {
   return [stage.type, stage.sourceIndex ?? stage.sourceId ?? '', stage.attempt ?? ''].join(':')
@@ -89,10 +90,10 @@ export function DiagnosticTimeline({ stages, search = '', traces = [], onTrace }
             {metrics.filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => <Tag key={key} color={key === 'filteredCount' ? 'orange' : key === 'cacheState' ? 'blue' : 'default'}>{diagnosticText(locale, key)}: {typeof value === 'number' ? number(value) : String(value)}</Tag>)}
           </div>
           {remaining.length || stageTraces.length || stage.rawText || stage.decodedText ? <Collapse size="small" items={[{ key: 'detail', label: diagnosticText(locale, 'details'), children: <div className="space-y-2"><dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-xs sm:grid-cols-2">
-            {remaining.map((key) => <div key={key} className="min-w-0"><dt className="text-[var(--muted)]">{diagnosticText(locale, key)}</dt><dd className="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono">{stage[key] && typeof stage[key] === 'object' ? <DiagnosticValue value={stage[key]} /> : detailValue(stage[key])}</dd></div>)}
+            {remaining.map((key) => <div key={key} className={`min-w-0 ${hasStructuredCode(stage[key]) ? 'sm:col-span-2' : ''}`}><dt className="text-[var(--muted)]">{diagnosticText(locale, key)}</dt><dd className={`break-all font-mono ${hasStructuredCode(stage[key]) ? '' : 'max-h-40 overflow-auto whitespace-pre-wrap'}`}>{stage[key] && typeof stage[key] === 'object' ? <DiagnosticValue value={stage[key]} /> : detailValue(stage[key])}</dd></div>)}
             {stage.type === 'network' ? <p className="text-[var(--muted)] sm:col-span-2">{diagnosticText(locale, 'networkUnknown')}</p> : null}
-          </dl>{stage.rawText ? <Collapse size="small" items={[{ key: 'raw', label: diagnosticText(locale, 'rawText'), children: <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">{String(stage.rawText)}</pre> }]} /> : null}
-          {stage.decodedText ? <Collapse size="small" items={[{ key: 'decoded', label: diagnosticText(locale, 'decodedText'), children: <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">{String(stage.decodedText)}</pre> }]} /> : null}
+          </dl>{stage.rawText ? <Collapse size="small" items={[{ key: 'raw', label: diagnosticText(locale, 'rawText'), children: <ServerCodeBlock value={String(stage.rawText)} language="TEXT" maxHeight={240} wrap /> }]} /> : null}
+          {stage.decodedText ? <Collapse size="small" items={[{ key: 'decoded', label: diagnosticText(locale, 'decodedText'), children: <ServerCodeBlock value={String(stage.decodedText)} language="TEXT" maxHeight={240} wrap /> }]} /> : null}
           {stageTraces.length && onTrace ? <div className="flex max-h-32 flex-wrap gap-1 overflow-auto">{stageTraces.map(({ trace, traceIndex }) => <Button key={trace.traceId ?? traceIndex} size="small" variant="text" onClick={() => onTrace(trace.traceId ?? String(traceIndex))}>{trace.nodeName}</Button>)}</div> : null}</div> }]}/> : null}
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { Button, Card, Input, Spin } from '@acme/components'
+import { Button, Card, CodePanel, Input, Spin } from '@acme/components'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { dashboardApi, type NetworkList } from './api'
@@ -44,7 +44,7 @@ function NetworkListCard({ title, load }: { title: string; load: () => Promise<N
       {copyError ? <p role="alert" className="text-xs text-red-600">{copyError}</p> : null}
       {copyNotice ? <p role="status" className="text-xs text-emerald-600">{copyNotice}</p> : null}
       <p className="text-xs text-[var(--muted)]">{t('network.shown', { shown: number(Math.min(shown, matches.length)), total: number(matches.length) })}</p>
-      {matches.length ? <pre className="max-h-80 overflow-auto rounded border border-[var(--border)] p-3 text-xs leading-5">{matches.slice(0, shown).join('\n')}</pre> : <p className="text-sm text-[var(--muted)]">{t('network.noMatches')}</p>}
+      {matches.length ? <CodePanel language="TEXT" maxHeight={320} bodyClassName="whitespace-pre font-mono text-xs leading-5">{matches.slice(0, shown).join('\n')}</CodePanel> : <p className="text-sm text-[var(--muted)]">{t('network.noMatches')}</p>}
       {shown < matches.length ? <Button block onClick={() => setShown((current) => current + 200)}>{t('network.more')}</Button> : null}
     </> : null}
   </Card>

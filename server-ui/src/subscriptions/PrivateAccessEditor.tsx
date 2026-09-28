@@ -1,4 +1,4 @@
-import { Button, Input, InputNumber, Select, TextArea } from '@acme/components'
+import { Button, CodeEditor, Input, InputNumber, Select, TextArea } from '@acme/components'
 import { useState } from 'react'
 import { editJsonc, objectAt, readJsoncObject, type JsonObject } from './jsonc-edit'
 import { useI18n } from '../i18n/provider'
@@ -118,9 +118,9 @@ export function PrivateAccessEditor({ value, onChange }: Props) {
         </section>
       })}
       <Button disabled={Boolean(issue)} onClick={add}>{t('private.add')}</Button>
-      <label className="block space-y-1 text-sm">{t('filter.advanced')}
-        <TextArea rows={14} value={value ?? ''} onChange={(event) => onChange(event.target.value || null)} className="font-mono text-xs" />
-      </label>
+      <div className="space-y-1 text-sm">{t('filter.advanced')}
+        <CodeEditor value={value ?? ''} height={320} ariaLabel={t('filter.advanced')} onChange={(next) => onChange(next || null)} />
+      </div>
     </div>
   )
 }

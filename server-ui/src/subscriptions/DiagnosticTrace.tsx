@@ -4,7 +4,16 @@ import { useState } from 'react'
 import type { NodeTraceResult } from './diagnostic-types'
 import { diagnosticText } from './diagnostic-locale'
 import { useI18n } from '../i18n/provider'
-import { DiagnosticValue } from './DiagnosticValue'
+import { DiagnosticValue, hasStructuredCode } from './DiagnosticValue'
+import { ServerCodeBlock } from '../ServerCodeBlock'
+
+function traceText(value: string): { text: string; language: string } {
+  try {
+    return { text: JSON.stringify(JSON.parse(value), null, 2), language: 'json' }
+  } catch {
+    return { text: value, language: 'text' }
+  }
+}
 
 export function TraceSteps({ trace }: { trace: NodeTraceResult }) {
   const { locale } = useI18n()
@@ -23,10 +32,13 @@ export function TraceSteps({ trace }: { trace: NodeTraceResult }) {
         <section className="min-w-0 flex-1 pb-4 text-sm">
           <h4 className="font-semibold">{diagnosticText(locale, step.type)}</h4>
           <dl className="mt-2 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
-            {Object.entries(data).map(([key, value]) => <div key={key} className="min-w-0">
+            {Object.entries(data).map(([key, value]) => {
+              const code = typeof value === 'string' && (key === 'configFragment' || value.length > 120 || value.includes('\n')) ? traceText(value) : null
+              return <div key={key} className={`min-w-0 ${code || hasStructuredCode(value) ? 'sm:col-span-2' : ''}`}>
               <dt className="text-[var(--muted)]">{diagnosticText(locale, key)}</dt>
-              <dd className="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono">{value && typeof value === 'object' ? <DiagnosticValue value={value} /> : String(value ?? '—')}</dd>
-            </div>)}
+              <dd className="min-w-0 break-all font-mono">{value && typeof value === 'object' ? <DiagnosticValue value={value} /> : code ? <ServerCodeBlock value={code.text} language={code.language.toUpperCase()} maxHeight={280} /> : String(value ?? '—')}</dd>
+            </div>
+            })}
           </dl>
         </section>
       </div>

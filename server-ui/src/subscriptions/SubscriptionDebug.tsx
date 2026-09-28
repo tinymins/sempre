@@ -9,6 +9,7 @@ import { DiagnosticSearch } from './DiagnosticSearch'
 import { DiagnosticTrace } from './DiagnosticTrace'
 import { DiagnosticValue } from './DiagnosticValue'
 import { diagnosticText } from './diagnostic-locale'
+import { ServerCodeBlock } from '../ServerCodeBlock'
 
 export function SubscriptionDebug({ draft, savedSubscription, targets, subscriptionId, initialTarget, onClose }: { draft?: SubscriptionDraft; savedSubscription?: Subscription; targets: Target[]; subscriptionId?: string; initialTarget?: Target; onClose: () => void }) {
   const { t, number, locale } = useI18n()
@@ -131,7 +132,7 @@ export function SubscriptionDebug({ draft, savedSubscription, targets, subscript
           {diagnostics.length ? diagnostics.map((item, index) => <p key={index} className="rounded border border-[var(--border)] p-2 text-xs">{item.level}{item.sourceId ? ` · ${item.sourceId}` : ''}: {item.message}</p>) : <p className="text-xs text-[var(--muted)]">{t('debug.noDiagnostics')}</p>}
         </section>
         {result.content !== undefined ? <section className="space-y-2"><h3 className="text-sm font-semibold">{t('debug.output')}</h3>
-          <pre className="max-h-96 overflow-auto rounded bg-[var(--surface)] p-3 text-xs">{result.content}</pre>
+          <ServerCodeBlock value={result.content} language={result.format?.startsWith('sing-box') ? 'JSON' : 'YAML'} maxHeight={420} />
         </section> : null}
         <Collapse size="small" items={[
           ...(result.decoded != null ? [{ key: 'decoded', label: t('debug.decoded'), children: <DiagnosticValue value={result.decoded} /> }] : []),
