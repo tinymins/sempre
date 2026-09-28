@@ -25,7 +25,7 @@ export function SubscriptionStats({ subscription, onClose }: { subscription: Sub
     {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
     {stats ? <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label={t('stats.retainedAccess')} value={number(stats.totalAccesses)} />
+        <Metric label={t('stats.totalAccess')} value={number(stats.totalAccesses)} />
         <Metric label={t('stats.todayAccess')} value={number(stats.todayAccess)} />
         <Metric label={t('stats.cachedNodes')} value={number(stats.cachedNodeCount)} />
         <Metric label={t('stats.lastAccess')} value={stats.lastAccessAt ? date(stats.lastAccessAt) : '—'} />
