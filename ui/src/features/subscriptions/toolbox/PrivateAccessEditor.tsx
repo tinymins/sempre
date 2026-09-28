@@ -1,5 +1,6 @@
 import {
   Button,
+  CodePanel,
   Checkbox,
   DeleteOutlined,
   ImportOutlined,
@@ -325,7 +326,7 @@ const PrivateAccessEditor = ({ value, onChange, profileId, variant = "default" }
                 </label>
                 <label className="space-y-1 md:col-span-4">
                   <FieldLabel>{t("proxy.form.privateOutboundExtra")}</FieldLabel>
-                  <TextArea
+                  <CodePanel padded={false}><TextArea
                     rows={3}
                     size="small"
                     value={connector.extraOutboundJson}
@@ -335,7 +336,8 @@ const PrivateAccessEditor = ({ value, onChange, profileId, variant = "default" }
                         extraOutboundJson: event.target.value,
                       })
                     }
-                  />
+                    className="!rounded-none !border-0 font-mono"
+                  /></CodePanel>
                 </label>
               </div>
             )}

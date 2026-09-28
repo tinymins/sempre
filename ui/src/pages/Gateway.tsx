@@ -1,3 +1,4 @@
+import { I18nCodeBlock as CodeBlock } from '../components/I18nCodeBlock'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Network, Play, RefreshCw, Save, Terminal, Trash2 } from 'lucide-react'
@@ -125,8 +126,8 @@ export function Gateway() {
             {applyPlan.isError ? <Alert type="error" showIcon message={applyPlan.error instanceof Error ? applyPlan.error.message : t('operationFailed')} /> : null}
             {plan ? <div className="space-y-3">
               <Alert type="info" showIcon message={plan.summary} description={plan.warnings.join(' ')} />
-              <TextArea rows={Math.min(12, Math.max(4, plan.commands.length + plan.persistent_commands.length + 1))} value={[...plan.commands, ...plan.persistent_commands].join('\n')} readOnly />
-              {plan.output?.length ? <TextArea rows={Math.min(10, Math.max(3, plan.output.length + 1))} value={plan.output.join('\n')} readOnly /> : null}
+              <CodeBlock value={[...plan.commands, ...plan.persistent_commands].join('\n')} language="shell" maxHeight={320} wrap copyable={false} />
+              {plan.output?.length ? <CodeBlock value={plan.output.join('\n')} maxHeight={260} wrap /> : null}
             </div> : null}
           </Section>
         </div>

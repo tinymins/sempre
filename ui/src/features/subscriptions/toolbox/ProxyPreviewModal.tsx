@@ -1,3 +1,4 @@
+import { I18nCodeBlock as CodeBlock } from "../../../components/I18nCodeBlock";
 import type { DescriptionsItem, TableColumnsType } from "@acme/components";
 import {
   Descriptions,
@@ -305,9 +306,7 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
                         label: f.label,
                         children:
                           typeof f.value === "object" ? (
-                            <pre className="m-0 text-xs font-mono whitespace-pre-wrap break-all">
-                              {formatValue(f.value)}
-                            </pre>
+                            <CodeBlock value={formatValue(f.value)} language="json" maxHeight={220} wrap />
                           ) : (
                             <span className="font-mono break-all">
                               {formatValue(f.value)}

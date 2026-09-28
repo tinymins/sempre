@@ -1,3 +1,4 @@
+import { I18nCodeBlock as CodeBlock } from '../../components/I18nCodeBlock'
 import { ExternalLink, FileJson, LockKeyhole } from 'lucide-react'
 import { useState } from 'react'
 import { Modal } from '@acme/components'
@@ -60,7 +61,7 @@ export function RemoteSubscriptionPanel({ profile }: { profile: SubscriptionProf
       {profile.last_result ? <p className="border-t border-[var(--border)] pt-4 text-sm text-[var(--muted)]">{profile.last_result}</p> : null}
       </Card>
       <Modal open={previewOpen} title={t('preview')} footer={null} size="almost-full" onCancel={() => setPreviewOpen(false)} destroyOnClose>
-        {previewLoading ? <div className="grid min-h-40 place-items-center"><Spinner /></div> : previewError ? <p role="alert" className="text-sm text-red-600 dark:text-red-400">{previewError}</p> : <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words text-xs">{previewContent}</pre>}
+        {previewLoading ? <div className="grid min-h-40 place-items-center"><Spinner /></div> : previewError ? <p role="alert" className="text-sm text-red-600 dark:text-red-400">{previewError}</p> : <CodeBlock value={previewContent} maxHeight="70vh" wrap />}
       </Modal>
     </>
   )

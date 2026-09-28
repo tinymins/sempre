@@ -1,3 +1,4 @@
+import { I18nCodeBlock as CodeBlock } from "../../../../components/I18nCodeBlock";
 import { Collapse, Tag } from "@acme/components";
 import type { ProxyDebugStep } from "@acme/types";
 import { useTranslation } from "react-i18next";
@@ -6,11 +7,7 @@ type RuleSetsStep = Extract<ProxyDebugStep, { type: "rule-sets" }>;
 type RuleSetItem = RuleSetsStep["data"]["items"][number];
 
 /** 规则内容代码块 */
-const RuleCodeBlock = ({ rules }: { rules: string[] }) => (
-  <pre className="!m-0 !p-3 !text-xs !bg-gray-50 dark:!bg-gray-900 !rounded-md !overflow-auto !whitespace-pre-wrap !break-all !font-mono max-h-[300px]">
-    {rules.join("\n")}
-  </pre>
-);
+const RuleCodeBlock = ({ rules }: { rules: string[] }) => <CodeBlock value={rules.join("\n")} maxHeight={300} wrap />;
 
 /** 单个规则集项 */
 const RuleSetItemContent = ({ item }: { item: RuleSetItem }) => {

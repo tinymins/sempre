@@ -1,4 +1,4 @@
-import { Modal, TextArea } from "@acme/components";
+import { CodePanel, Modal, TextArea } from "@acme/components";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PrivateConnectorForm } from "./PrivateAccessConfig";
@@ -47,7 +47,7 @@ export function WireGuardImportModal({ open, onCancel, onImport }: Props) {
       onCancel={cancel}
       destroyOnClose
     >
-      <TextArea
+      <CodePanel padded={false}><TextArea
         rows={12}
         value={value}
         aria-label={t("proxy.form.privateWgImportInput")}
@@ -56,8 +56,8 @@ export function WireGuardImportModal({ open, onCancel, onImport }: Props) {
           setValue(event.target.value);
           setError("");
         }}
-        className="font-mono"
-      />
+        className="!rounded-none !border-0 font-mono"
+      /></CodePanel>
       {error ? <p role="alert" className="mt-2 text-sm text-red-500">{error}</p> : null}
     </Modal>
   );

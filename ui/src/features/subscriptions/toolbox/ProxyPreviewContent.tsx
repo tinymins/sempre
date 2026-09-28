@@ -1,3 +1,4 @@
+import { I18nCodeBlock as CodeBlock } from "../../../components/I18nCodeBlock";
 import { Tag } from "@acme/components";
 import { Copy } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -246,9 +247,7 @@ export const MobileNodeCard = ({ node }: { node: ProxyNode }) => {
                         {field.label}:
                       </span>
                       {typeof value === "object" ? (
-                        <pre className="m-0 text-xs font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded max-w-[65%] overflow-x-auto whitespace-pre-wrap">
-                          {formatValue(value)}
-                        </pre>
+                        <CodeBlock className="max-w-[65%]" value={formatValue(value)} language="json" maxHeight={220} wrap />
                       ) : (
                         <div className="flex items-center gap-1.5 max-w-[65%]">
                           <span className="font-mono text-xs text-right break-all">
@@ -281,9 +280,7 @@ export const MobileNodeCard = ({ node }: { node: ProxyNode }) => {
                         {key}:
                       </span>
                       {typeof value === "object" ? (
-                        <pre className="m-0 text-xs font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded max-w-[65%] overflow-x-auto whitespace-pre-wrap">
-                          {formatValue(value)}
-                        </pre>
+                        <CodeBlock className="max-w-[65%]" value={formatValue(value)} language="json" maxHeight={220} wrap />
                       ) : (
                         <span className="font-mono text-xs text-right max-w-[65%] break-all">
                           {formatValue(value)}

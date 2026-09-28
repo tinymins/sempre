@@ -1,4 +1,5 @@
 import type { FieldOrigin } from "@acme/types";
+import { CodePanel } from "@acme/components";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -13,12 +14,9 @@ export function SyntaxJsonViewer({
   maxHeight?: number;
 }) {
   return (
-    <div
-      className="!p-3 !text-xs !bg-gray-50 dark:!bg-gray-900 !rounded-md !overflow-auto !font-mono leading-5"
-      style={{ maxHeight: maxHeight ?? 400 }}
-    >
+    <CodePanel maxHeight={maxHeight ?? 400} bodyClassName="font-mono text-xs leading-5">
       <JsonNode value={data} indent={0} isLast />
-    </div>
+    </CodePanel>
   );
 }
 

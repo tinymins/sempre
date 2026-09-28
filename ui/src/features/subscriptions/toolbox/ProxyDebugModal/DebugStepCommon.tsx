@@ -1,3 +1,4 @@
+import { I18nCodeBlock as SharedCodeBlock } from "../../../../components/I18nCodeBlock";
 import {
   AimOutlined,
   Button,
@@ -22,14 +23,7 @@ const CodeBlock = ({
 }: {
   content: string;
   maxHeight?: number;
-}) => (
-  <pre
-    className="!m-0 !p-3 !text-xs !bg-gray-50 dark:!bg-gray-900 !rounded-md !overflow-auto !whitespace-pre-wrap !break-all !font-mono"
-    style={{ maxHeight: maxHeight ?? 400 }}
-  >
-    {content}
-  </pre>
-);
+}) => <SharedCodeBlock value={content} maxHeight={maxHeight ?? 400} wrap />;
 
 /** Try JSON parse → SyntaxJsonViewer, fallback to plain CodeBlock */
 export const SmartCodeBlock = ({

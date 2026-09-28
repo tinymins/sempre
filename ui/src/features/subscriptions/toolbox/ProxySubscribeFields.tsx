@@ -1,4 +1,4 @@
-import { Form } from "@acme/components";
+import { CodePanel, Form, defineCodeEditorThemes, useCodeEditorTheme } from "@acme/components";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { parse as parseJsonc } from "jsonc-parser";
 import { useMemo } from "react";
@@ -18,19 +18,14 @@ interface JsoncEditorProps {
 }
 
 export const JsoncEditor = ({ value, onChange, readOnly }: JsoncEditorProps) => {
+  const theme = useCodeEditorTheme();
   return (
-    <div
-      className={`border rounded overflow-hidden ${
-        readOnly
-          ? "border-gray-500 dark:border-gray-500 opacity-60"
-          : "border-gray-300 dark:border-gray-600"
-      }`}
-    >
+    <CodePanel padded={false}>
       <Editor
         height="calc(100vh - 280px)"
         language="json"
         value={value || ""}
-        theme="vs-dark"
+        theme={theme}
         onChange={(val: string | undefined) => {
           if (!readOnly) onChange?.(val || "");
         }}
@@ -54,17 +49,10 @@ export const JsoncEditor = ({ value, onChange, readOnly }: JsoncEditorProps) => 
             allowComments: true,
             trailingCommas: "ignore",
           });
-          monaco.editor.defineTheme("vs-dark", {
-            base: "vs-dark",
-            inherit: true,
-            rules: [],
-            colors: {
-              "editor.background": "#141414",
-            },
-          });
+          defineCodeEditorThemes(monaco);
         }}
       />
-    </div>
+    </CodePanel>
   );
 };
 

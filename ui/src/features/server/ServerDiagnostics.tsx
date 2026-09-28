@@ -1,3 +1,4 @@
+import { I18nCodeBlock as CodeBlock } from '../../components/I18nCodeBlock'
 import { useState } from 'react'
 import { Select } from '@acme/components'
 import { Button, Card, Field, Spinner } from '../../components/ui'
@@ -77,6 +78,6 @@ export function ServerDiagnostics({ session, profileId, sources, target, targets
       {nodes.length ? <Button disabled={!nodeName || Boolean(pending)} onClick={traceNode}>{pending === 'trace' ? <Spinner /> : null}{t('traceNode')}</Button> : null}
     </div>
     {nodes.length ? <div className="max-h-56 space-y-1 overflow-auto rounded border border-[var(--border)] p-2">{nodes.map((node) => <div key={`${node.sourceIndex}-${node.name}`} className={`grid gap-1 rounded px-2 py-1 text-xs sm:grid-cols-[minmax(10rem,1fr)_7rem_minmax(10rem,1fr)_4rem] ${node.filtered ? 'text-[var(--muted)] line-through' : ''}`}><strong>{node.name}</strong><span>{node.type}</span><span>{node.server}:{node.port}</span><span>#{node.sourceIndex}</span></div>)}</div> : null}
-    {trace ? <pre aria-label="Node trace" className="max-h-72 overflow-auto whitespace-pre-wrap rounded border border-[var(--border)] p-3 text-xs">{JSON.stringify(trace, null, 2)}</pre> : null}
+    {trace ? <CodeBlock value={JSON.stringify(trace, null, 2)} language="json" maxHeight={288} wrap title="Node trace" /> : null}
   </Card>
 }

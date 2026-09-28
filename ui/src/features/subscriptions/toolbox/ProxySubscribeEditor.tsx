@@ -2,6 +2,7 @@ import {
 	Alert,
   Button,
   Checkbox,
+  CodePanel,
   Form,
   Input,
   Modal,
@@ -199,7 +200,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                       {t("proxy.actions.delete")}
                     </Button>
                   </div>
-                  <TextArea
+                  <CodePanel padded={false}><TextArea
                     rows={8}
                     value={source.content ?? ""}
                     placeholder="proxies:"
@@ -209,7 +210,8 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
                       setRawSources(next);
                       queueAutosave();
                     }}
-                  />
+                    className="!rounded-none !border-0 font-mono"
+                  /></CodePanel>
                 </div>
               ))}
               <Button

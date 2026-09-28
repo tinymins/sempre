@@ -1,3 +1,4 @@
+import { I18nCodeBlock as CodeBlock } from './I18nCodeBlock'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, Button, Modal } from '@acme/components'
@@ -86,7 +87,7 @@ function RestartConfigModal({ task, onClose }: { task: RestartTask; onClose: () 
     staleTime: Infinity,
   })
   return <Modal open centered width="min(1100px, calc(100vw - 32px))" zIndex={1100} title={locale === 'zh-CN' ? '本次重启的完整配置（含敏感信息）' : 'Configuration for this restart (contains sensitive values)'} footer={null} onCancel={onClose}>
-    {config.isPending ? <LoaderCircle className="animate-spin" /> : config.error ? <Alert type="error" message={config.error.message} /> : <pre aria-label={locale === 'zh-CN' ? '完整配置' : 'Full configuration'} tabIndex={0} onKeyDown={selectAllContents} className="max-h-[65vh] overflow-auto rounded-md bg-slate-950 p-4 text-xs leading-5 text-slate-200">{config.data.content}</pre>}
+    {config.isPending ? <LoaderCircle className="animate-spin" /> : config.error ? <Alert type="error" message={config.error.message} /> : <div aria-label={locale === 'zh-CN' ? '完整配置' : 'Full configuration'} tabIndex={0} onKeyDown={selectAllContents}><CodeBlock value={config.data.content} maxHeight="65vh" /></div>}
   </Modal>
 }
 
@@ -96,7 +97,7 @@ function selectAllContents(event: KeyboardEvent<HTMLElement>) {
   const selection = window.getSelection()
   if (!selection) return
   const range = document.createRange()
-  range.selectNodeContents(event.currentTarget)
+  range.selectNodeContents(event.currentTarget.querySelector('pre') ?? event.currentTarget)
   selection.removeAllRanges()
   selection.addRange(range)
 }

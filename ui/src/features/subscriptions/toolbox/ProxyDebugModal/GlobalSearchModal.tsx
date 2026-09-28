@@ -1,4 +1,4 @@
-import { Collapse, Modal, SearchInput, Tag } from "@acme/components";
+import { CodePanel, Collapse, Modal, SearchInput, Tag } from "@acme/components";
 import type { ProxyDebugStep } from "@acme/types";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import {
@@ -237,7 +237,7 @@ const GlobalSearchModal = forwardRef<GlobalSearchModalRef, Props>(
         }
 
         return (
-          <div className="flex flex-col gap-0.5 max-h-[400px] overflow-auto">
+          <CodePanel maxHeight={400} bodyClassName="flex flex-col gap-0.5">
             {uniqueIndices.map((matchIdx) => {
               const m = matches[matchIdx];
               const isCurrent = matchIdx === currentIndex;
@@ -261,7 +261,7 @@ const GlobalSearchModal = forwardRef<GlobalSearchModalRef, Props>(
                 </div>
               );
             })}
-          </div>
+          </CodePanel>
         );
       },
       [matchesBySection, matches, currentIndex, query, t],

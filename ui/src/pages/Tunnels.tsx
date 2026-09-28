@@ -1,7 +1,8 @@
+import { I18nCodeBlock as CodeBlock } from '../components/I18nCodeBlock'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CirclePlus, Download, FileText, Play, RefreshCw, RotateCw, Save, Square, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Collapse, Empty, Input, InputNumber, Select, Switch, TextArea } from '@acme/components'
+import { Alert, Button, Card, Collapse, Empty, Input, InputNumber, Select, Switch } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { randomUuid } from '../lib/randomUuid'
@@ -90,7 +91,7 @@ export function Tunnels() {
         <div className="mt-2 space-y-2">{instance.forwards.map((forward, forwardIndex) => <ForwardRow key={forward.id} forward={forward} copy={copy} onChange={(change) => updateInstance(config, index, { forwards: instance.forwards.map((item, itemIndex) => itemIndex === forwardIndex ? { ...item, ...change } : item) }, update)} onRemove={() => updateInstance(config, index, { forwards: instance.forwards.filter((_, itemIndex) => itemIndex !== forwardIndex) }, update)} />)}</div>
       </Card>
     })}
-    {log ? <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold">{log.name} {copy.log}</h2><Button size="small" onClick={() => setLog(null)}>{copy.close}</Button></div><TextArea rows={14} value={log.content || copy.noLog} readOnly /></Card> : null}
+    {log ? <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold">{log.name} {copy.log}</h2><Button size="small" onClick={() => setLog(null)}>{copy.close}</Button></div><CodeBlock value={log.content || copy.noLog} maxHeight={360} wrap /></Card> : null}
   </div>
 }
 

@@ -1,9 +1,11 @@
+import { I18nCodeBlock as CodeBlock } from '../../components/I18nCodeBlock'
 import type { ReactNode } from 'react'
 
 type Block =
   | { kind: 'heading'; text: string }
   | { kind: 'paragraph'; text: string }
   | { kind: 'list'; ordered: boolean; items: string[] }
+  | { kind: 'code'; language: string; text: string }
 
 type Release = { version: string; published_at: string; notes: string }
 
@@ -25,6 +27,7 @@ function MarkdownBlocks({ markdown }: { markdown: string }) {
     {blocks.map((block, index) => {
       if (block.kind === 'heading') return <h5 key={index} className="font-semibold text-[var(--text)]">{renderInline(block.text)}</h5>
       if (block.kind === 'paragraph') return <p key={index}>{renderInline(block.text)}</p>
+      if (block.kind === 'code') return <CodeBlock key={index} value={block.text} language={block.language || undefined} maxHeight={280} />
       const List = block.ordered ? 'ol' : 'ul'
       return <List key={index} className={`${block.ordered ? 'list-decimal' : 'list-disc'} space-y-1 pl-5`}>
         {block.items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item)}</li>)}
@@ -48,6 +51,15 @@ function parseBlocks(markdown: string): Block[] {
   for (let index = 0; index < lines.length;) {
     const line = lines[index].trim()
     if (!line) { index += 1; continue }
+    if (line.startsWith('```')) {
+      const language = line.slice(3).trim()
+      const code: string[] = []
+      index += 1
+      while (index < lines.length && !lines[index].trim().startsWith('```')) { code.push(lines[index]); index += 1 }
+      if (index < lines.length) index += 1
+      blocks.push({ kind: 'code', language, text: code.join('\n') })
+      continue
+    }
     const heading = line.match(/^#{1,6}\s+(.+)$/)
     if (heading) { blocks.push({ kind: 'heading', text: heading[1] }); index += 1; continue }
     const unordered = line.match(/^[-*]\s+(.+)$/)
@@ -76,7 +88,7 @@ function parseBlocks(markdown: string): Block[] {
 }
 
 function isBlockStart(line: string) {
-  return /^#{1,6}\s+|^[-*]\s+|^\d+\.\s+/.test(line)
+  return /^#{1,6}\s+|^[-*]\s+|^\d+\.\s+|^```/.test(line)
 }
 
 function renderInline(text: string): ReactNode[] {
