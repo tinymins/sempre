@@ -185,7 +185,7 @@ describe('Shell sidebar', () => {
     expect(analysis).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(analysis)
     expect(analysis).toHaveAttribute('aria-expanded', 'true')
-    expect(within(navigation).getAllByRole('link').slice(-8).map((link) => link.getAttribute('aria-label'))).toEqual(['Core Status', 'Network Test', 'Node Test', 'Connections', 'Traffic', 'Effective Rules', 'Logs', 'Management'])
+    expect(within(navigation).getAllByRole('link').slice(-9).map((link) => link.getAttribute('aria-label'))).toEqual(['Core Status', 'Network Diagnostics', 'Network Test', 'Node Test', 'Connections', 'Traffic', 'Effective Rules', 'Logs', 'Management'])
   })
 
   it('hides advanced network navigation and status in simple mode', async () => {

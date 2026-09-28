@@ -1,10 +1,16 @@
 mod default_interface;
+mod diagnostics;
 mod dns_probe;
 mod inventory;
 mod probe;
 mod public_ip;
+mod route_probe;
 
 pub use default_interface::{DefaultInterface, default_interface, normalize_mac};
+pub use diagnostics::{
+    DiagnosticFinding, DiagnosticLayer, DiagnosticStatus, NetworkDiagnosticReport,
+    run_network_diagnostics,
+};
 pub use dns_probe::DnsAnswer;
 pub use inventory::{Interface, Inventory, inventory};
 pub use probe::{NetworkTestReport, NetworkTestResult, run_network_test};
@@ -22,4 +28,6 @@ pub enum NetworkError {
     Io(#[from] io::Error),
     #[error("build network diagnostic client: {0}")]
     Client(#[from] reqwest::Error),
+    #[error("invalid diagnostic target: {0}")]
+    InvalidTarget(String),
 }
