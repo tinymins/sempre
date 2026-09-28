@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 
 use chrono::{DateTime, Utc};
 use futures_util::future::join_all;
@@ -13,6 +17,8 @@ use url::Url;
 use crate::{NetworkError, dns_probe, route_probe};
 
 mod findings;
+#[cfg(test)]
+mod tests;
 
 use findings::{
     dns_finding, fake_ip_conflict_finding, http_finding, runtime_finding, tcp_finding, tls_finding,
@@ -349,13 +355,6 @@ async fn tls_attempt(address: SocketAddr, host: &str) -> Attempt {
             };
         }
     };
-    let roots = webpki_roots::TLS_SERVER_ROOTS
-        .iter()
-        .cloned()
-        .collect::<RootCertStore>();
-    let config = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
     let Ok(server_name) = ServerName::try_from(host.to_owned()) else {
         return Attempt {
             address,
@@ -365,7 +364,7 @@ async fn tls_attempt(address: SocketAddr, host: &str) -> Attempt {
     };
     match timeout(
         TLS_TIMEOUT,
-        TlsConnector::from(Arc::new(config)).connect(server_name, stream),
+        TlsConnector::from(tls_config()).connect(server_name, stream),
     )
     .await
     {
@@ -385,6 +384,25 @@ async fn tls_attempt(address: SocketAddr, host: &str) -> Attempt {
             detail: "handshake timed out".into(),
         },
     }
+}
+
+fn tls_config() -> Arc<ClientConfig> {
+    static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
+    Arc::clone(CONFIG.get_or_init(|| {
+        let roots = webpki_roots::TLS_SERVER_ROOTS
+            .iter()
+            .cloned()
+            .collect::<RootCertStore>();
+        Arc::new(
+            ClientConfig::builder_with_provider(Arc::new(
+                tokio_rustls::rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .expect("TLS protocol versions")
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+        )
+    }))
 }
 
 fn attempt_layer(id: &'static str, attempts: &[Attempt], ok: bool) -> DiagnosticLayer {
