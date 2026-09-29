@@ -30,6 +30,8 @@ interface ToastItem {
   type: ToastType;
   content: ReactNode;
   duration: number;
+  closing: boolean;
+  collapsing: boolean;
 }
 
 interface ToastAPI {
@@ -46,9 +48,10 @@ const ToastContext = createContext<ToastAPI | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const exitTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const remove = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) => prev.map((t) => t.id === id ? { ...t, closing: true } : t));
     const timer = timers.current.get(id);
     if (timer) {
       clearTimeout(timer);
@@ -65,6 +68,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         normalized.key ??
         `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+      const exitTimer = exitTimers.current.get(id);
+      if (exitTimer) clearTimeout(exitTimer);
+      exitTimers.current.delete(id);
+
       setToasts((prev) => {
         // Dedup by key — replace existing
         if (normalized.key) {
@@ -72,7 +79,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           if (existing) {
             return prev.map((t) =>
               t.key === normalized.key
-                ? { ...t, id, type, content: normalized.content, duration }
+                ? { ...t, id, type, content: normalized.content, duration, closing: false, collapsing: false }
                 : t,
             );
           }
@@ -85,14 +92,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             type,
             content: normalized.content,
             duration,
+            closing: false,
+            collapsing: false,
           },
         ];
       });
 
-      // Only set a timer if one isn't already running for this id.
-      // This prevents rapid duplicate errors from indefinitely extending
-      // the toast lifetime by repeatedly resetting the countdown.
-      if (duration > 0 && !timers.current.has(id)) {
+      // Keep an existing countdown unless the update disables auto-dismiss.
+      if (duration === 0) {
+        const timer = timers.current.get(id);
+        if (timer) clearTimeout(timer);
+        timers.current.delete(id);
+      } else if (!timers.current.has(id)) {
         const timer = setTimeout(() => remove(id), duration * 1000);
         timers.current.set(id, timer);
       }
@@ -102,22 +113,46 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const destroy = useCallback((key?: string) => {
     if (key) {
-      setToasts((prev) => prev.filter((t) => t.key !== key));
+      setToasts((prev) => prev.map((t) => t.key === key ? { ...t, closing: true } : t));
       const timer = timers.current.get(key);
       if (timer) clearTimeout(timer);
       timers.current.delete(key);
     } else {
-      setToasts([]);
+      setToasts((prev) => prev.map((t) => ({ ...t, closing: true })));
       timers.current.forEach(clearTimeout);
       timers.current.clear();
     }
   }, []);
 
   useEffect(() => {
+    for (const toast of toasts) {
+      if (!toast.closing || exitTimers.current.has(toast.id)) continue;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const timer = setTimeout(() => {
+        if (reducedMotion) {
+          exitTimers.current.delete(toast.id);
+          setToasts((prev) => prev.filter((item) => item.id !== toast.id || !item.closing));
+          return;
+        }
+        setToasts((prev) => prev.map((item) => item.id === toast.id && item.closing ? { ...item, collapsing: true } : item));
+        const collapseTimer = setTimeout(() => {
+          exitTimers.current.delete(toast.id);
+          setToasts((prev) => prev.filter((item) => item.id !== toast.id || !item.closing));
+        }, 150);
+        exitTimers.current.set(toast.id, collapseTimer);
+      }, reducedMotion ? 0 : 150);
+      exitTimers.current.set(toast.id, timer);
+    }
+  }, [toasts]);
+
+  useEffect(() => {
     const activeTimers = timers.current;
+    const activeExitTimers = exitTimers.current;
     return () => {
       activeTimers.forEach(clearTimeout);
       activeTimers.clear();
+      activeExitTimers.forEach(clearTimeout);
+      activeExitTimers.clear();
     };
   }, []);
 
@@ -140,13 +175,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {mounted &&
         createPortal(
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] flex flex-col items-center gap-2 pointer-events-none">
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] flex flex-col items-center pointer-events-none">
             {toasts.map((toast) => (
-              <ToastItem
-                key={toast.id}
-                toast={toast}
-                onClose={() => remove(toast.id)}
-              />
+              <div key={toast.id} className={cn('acme-toast-slot', toast.closing && 'acme-toast-slot--closing', toast.collapsing && 'acme-toast-slot--collapsing')}>
+                <div className="acme-toast-slot-inner">
+                  <ToastItem toast={toast} onClose={() => remove(toast.id)} />
+                </div>
+              </div>
             ))}
           </div>,
           document.body,
@@ -176,7 +211,7 @@ function ToastItem({
       aria-live={toast.type === "error" || toast.type === "warning" ? "assertive" : "polite"}
       aria-atomic="true"
       className={cn(
-        "pointer-events-auto flex items-center gap-2 max-w-[min(90vw,560px)] rounded-lg bg-white/95 dark:bg-[rgba(15,15,25,0.95)] backdrop-blur-xl border border-black/[0.1] dark:border-white/[0.16] shadow-lg px-4 py-3 text-sm text-[var(--text-primary)] animate-[toastIn_0.2s_ease-out]",
+        "acme-toast-item pointer-events-auto flex items-center gap-2 max-w-[min(90vw,560px)] rounded-lg bg-white/95 dark:bg-[rgba(15,15,25,0.95)] backdrop-blur-xl border border-black/[0.1] dark:border-white/[0.16] shadow-lg px-4 py-3 text-sm text-[var(--text-primary)]",
       )}
     >
       <span aria-hidden="true">{iconMap[toast.type]}</span>
