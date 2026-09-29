@@ -32,6 +32,7 @@ export function Select({
   defaultValue,
   onChange,
   placeholder = "请选择",
+  addonBefore,
   "aria-label": ariaLabel,
   allowClear = false,
   mode,
@@ -283,6 +284,7 @@ export function Select({
           disabled &&
             "opacity-50 cursor-not-allowed bg-black/[0.02] dark:bg-white/[0.02]",
           selectSizeMap[size],
+          addonBefore != null ? "py-0 pl-0" : undefined,
           className,
         )}
         style={{
@@ -291,6 +293,7 @@ export function Select({
         aria-label={ariaLabel}
         {...getReferenceProps()}
       >
+        {addonBefore != null && <span className="self-stretch flex shrink-0 items-center whitespace-nowrap rounded-l-md border-r border-black/[0.08] bg-black/[0.03] px-2.5 text-[var(--text-muted)] dark:border-white/[0.1] dark:bg-white/[0.05]">{addonBefore}</span>}
         <div className="flex-1 flex items-center gap-1 overflow-hidden min-w-0">
           {isMultiple ? (
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">

@@ -20,6 +20,8 @@ export interface SelectProps {
   onChange?: (value: any, option?: any) => void;
   /** Placeholder */
   placeholder?: string;
+  /** Label shown inside the trigger before the selected value */
+  addonBefore?: ReactNode;
   /** Accessible label when no native label is associated */
   "aria-label"?: string;
   /** Allow clear */

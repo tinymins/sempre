@@ -85,9 +85,7 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
         {nodes ? <p className="min-w-0 flex-1 basis-64 break-words text-sm">{t('preview.summary', { total: number(nodes.length), active: number(activeCount), filtered: number(filteredCount) })}{typeCounts.length ? ` · ${typeCounts.map(([type, count]) => `${type} ${number(count)}`).join(' / ')}` : ''}</p> : <div className="min-w-0 flex-1 basis-64" />}
         <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
           {nodes ? <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('preview.search')} className="w-full min-w-0 sm:w-60" /> : null}
-          <label className="inline-flex min-w-0 items-center gap-2 text-sm"><span className="shrink-0 whitespace-nowrap">{t('preview.target')}</span>
-            <Select value={format} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(next) => { requestId.current += 1; preparePreview(); setFormat(String(next)) }} className="w-36 shrink-0" />
-          </label>
+          <Select value={format} addonBefore={t('preview.target')} aria-label={t('preview.target')} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(next) => { requestId.current += 1; preparePreview(); setFormat(String(next)) }} className="w-56 shrink-0 sm:w-60" />
           <Button variant="primary" onClick={() => { if (target) { preparePreview(); void preview(target) } }} loading={loading} disabled={!target}>{t('preview.generate')}</Button>
         </div>
       </div>
