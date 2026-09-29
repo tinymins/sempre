@@ -104,17 +104,18 @@ export function SubscriptionDebug({ draft, savedSubscription, targets, subscript
   return <Modal open title={savedSubscription ? t('debug.savedTitle', { name: savedSubscription.remark || t('configs.unnamed') }) : t('debug.draftTitle')} size="almost-full" footer={null} onCancel={() => { stop(); onClose() }}>
     <div className="space-y-4">
       <p className="text-sm text-[var(--muted)]">{savedSubscription ? t('debug.savedHint') : t('debug.draftHint')}</p>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="min-w-48 flex-1 space-y-1 text-sm">{t('preview.target')}
-          <Select value={format} disabled={loading} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(next) => { stop(); setFormat(String(next)); setResult(null); setProgress([]); setError('') }} className="w-full" />
-        </label>
-        <Button variant="primary" loading={loading} disabled={!target} onClick={run}>{t('debug.run')}</Button>
-        {loading ? <Button onClick={stop}>{t('debug.cancel')}</Button> : null}
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        {result ? <p className="min-w-0 flex-1 basis-64 break-words text-sm">{t('debug.summary', { status: result.ok ? t('common.completed') : t('common.failed'), format: result.format ?? '', count: number(result.nodeCount ?? 0) })}</p> : <div className="min-w-0 flex-1 basis-64" />}
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+          {result ? <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('debug.search')} className="w-full min-w-0 sm:w-60" /> : null}
+          <Select value={format} addonBefore={t('preview.target')} aria-label={t('preview.target')} disabled={loading} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(next) => { stop(); setFormat(String(next)); setResult(null); setProgress([]); setError('') }} className="w-56 shrink-0 sm:w-60" />
+          <Button variant="primary" loading={loading} disabled={!target} onClick={run}>{t('debug.run')}</Button>
+          {loading ? <Button onClick={stop}>{t('debug.cancel')}</Button> : null}
+        </div>
       </div>
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       {loading ? <Spin /> : null}
       {result ? <>
-        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm">{t('debug.summary', { status: result.ok ? t('common.completed') : t('common.failed'), format: result.format ?? '', count: number(result.nodeCount ?? 0) })}</p><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('debug.search')} className="max-w-xs" /></div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Tag color={result.runtimeValidated ? 'green' : 'blue'}>{diagnosticText(locale, result.runtimeValidated ? 'runtime' : 'structural')}</Tag>
           <Tag>{diagnosticText(locale, 'elapsedMs')}: {number(result.elapsedMs)} ms</Tag>
