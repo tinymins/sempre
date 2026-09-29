@@ -1,3 +1,4 @@
+import { ToastProvider } from '@acme/components'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -221,5 +222,5 @@ describe('ConfirmDialog', () => {
 
 function renderRuntimePanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><MemoryRouter><RuntimeControlPanel /></MemoryRouter></SessionProvider></I18nProvider></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><MemoryRouter><RuntimeControlPanel /></MemoryRouter></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 }

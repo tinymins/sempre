@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, Download, KeyRound, MonitorCog, Package, RefreshCw, Router, ServerCog, Upload } from 'lucide-react'
-import { Select } from '@acme/components'
+import { Select, useToast } from '@acme/components'
 import { api, downloadBundle, uploadUI } from '../lib/api'
 import { compactHash } from '../lib/format'
 import { useI18n } from '../lib/i18n'
@@ -26,6 +26,7 @@ export function Management() {
 
 function ServiceRolePanel() {
   const { locale } = useI18n()
+  const toast = useToast()
   const { session } = useSession()
   const queryClient = useQueryClient()
   const { mode: uiMode, setMode: setUIMode } = useLocalUIMode()
@@ -39,7 +40,9 @@ function ServiceRolePanel() {
     onSuccess: (result) => {
       queryClient.setQueryData(['network', 'settings'], result)
       queryClient.invalidateQueries({ queryKey: ['system'] })
+      toast.success(zh ? '已保存，点击顶部重启按钮应用改动。' : 'Saved. Use the restart button at the top to apply the changes.')
     },
+    onError: (error) => toast.error(error.message),
   })
   const mode = network.data?.settings.mode ?? 'local'
   const selectedMode = mode === 'gateway' ? 'gateway' : `local-${uiMode}`
@@ -60,25 +63,24 @@ function ServiceRolePanel() {
       <Field label={zh ? '当前模式' : 'Current mode'}><Select className="w-full" popupMatchSelectWidth value={selectedMode} loading={network.isLoading || update.isPending} options={[{ value: 'local-simple', label: zh ? '本机模式（简易）' : 'Local mode (simple)' }, { value: 'local-advanced', label: zh ? '本机模式（专业）' : 'Local mode (advanced)' }, { value: 'gateway', label: gatewayAvailable ? gatewayLabel : <span className="flex w-full min-w-0 items-center gap-3"><span className="shrink-0">{gatewayLabel}</span><span className="ml-auto truncate text-xs font-normal text-[var(--text-muted)]">{gatewayReason}</span></span>, disabled: !gatewayAvailable }]} onChange={(value) => changeMode(String(value))} /></Field>
       <p className="self-end py-1.5 text-sm leading-5 text-[var(--muted)]">{mode === 'gateway' ? (zh ? '默认代理内网设备；本机代理可在网关页单独开启。' : 'LAN clients are proxied by default; host proxying is optional on the Gateway page.') : uiMode === 'simple' ? (zh ? '仅显示订阅 URL、常用分流和节点选择。' : 'Shows subscription URLs, common routing, and node selection.') : (zh ? '显示本机模式的完整配置。' : 'Shows all local-mode settings.')}</p>
     </div>
-    {update.isError ? <p className="mt-3 text-sm text-red-600">{update.error instanceof Error ? update.error.message : String(update.error)}</p> : null}
   </Section>
 }
 
 function ConsolePanel() {
   const { t } = useI18n()
+  const toast = useToast()
   const { session, setSession } = useSession()
   const queryClient = useQueryClient()
   const [listenDraft, setListen] = useState<string | null>(null)
   const [password, setPassword] = useState('')
-  const [notice, setNotice] = useState('')
   const web = useQuery({ queryKey: ['web'], queryFn: () => api<{ listen: string; local_url: string; password_set: boolean; password_warning: boolean }>(session!, '/web') })
   const listen = listenDraft ?? web.data?.listen ?? '127.0.0.1:33211'
   const webMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => api<{ local_url: string; reauthenticate?: boolean }>(session!, '/web', { method: 'PATCH', body: JSON.stringify(body) }),
-    onSuccess: (result) => { setNotice(t('operationDone')); setListen(null); queryClient.invalidateQueries({ queryKey: ['web'] }); if (result.reauthenticate) setSession(null); else if (result.local_url && result.local_url !== session?.baseURL) window.location.assign(result.local_url) }, onError: (error) => setNotice(error.message),
+    onSuccess: (result) => { toast.success(t('operationDone')); setListen(null); queryClient.invalidateQueries({ queryKey: ['web'] }); if (result.reauthenticate) setSession(null); else if (result.local_url && result.local_url !== session?.baseURL) window.location.assign(result.local_url) }, onError: (error) => toast.error(error.message),
   })
   return <div className="space-y-5">
-    <Section title="Web" icon={<ServerCog size={18} />} notice={notice}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div></div></Section>
+    <Section title="Web" icon={<ServerCog size={18} />}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div></div></Section>
     <ServiceRolePanel />
     <ServiceActionsPanel />
   </div>
@@ -86,33 +88,32 @@ function ConsolePanel() {
 
 function BackupAndUpdatePanel() {
   const { locale, t } = useI18n()
+  const toast = useToast()
   const { session } = useSession()
   const queryClient = useQueryClient()
   const [uiProposal, setUIProposal] = useState<UiUpdateProposal | null>(null)
   const [source, setSource] = useState('')
-  const [notice, setNotice] = useState('')
   const ui = useQuery({ queryKey: ['ui'], queryFn: () => api<{ installed: boolean; metadata?: UIMetadata; proposal?: UiUpdateProposal }>(session!, '/ui') })
   const activeUIProposal = uiProposal || ui.data?.proposal
   const uiMutation = useMutation({
     mutationFn: ({ operation, body }: { operation: 'install' | 'update'; body?: unknown }) => api<{ proposal?: UiUpdateProposal }>(session!, `/ui/${operation}`, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
-    onSuccess: (result) => { if (result?.proposal) setUIProposal(result.proposal); else { setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) } }, onError: (error) => setNotice(error.message),
+    onSuccess: (result) => { if (result?.proposal) setUIProposal(result.proposal); else { toast.success(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) } }, onError: (error) => toast.error(error.message),
   })
   const uiConfirm = useMutation({
     mutationFn: ({ proposal, confirmed }: { proposal: UiUpdateProposal; confirmed: boolean }) => api(session!, '/ui/confirm', { method: 'POST', body: JSON.stringify({ id: proposal.id, confirmed }) }),
-    onSuccess: (_result, { confirmed }) => { setUIProposal(null); if (confirmed) setNotice(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) },
-    onError: (error) => setNotice(error.message),
+    onSuccess: (_result, { confirmed }) => { setUIProposal(null); if (confirmed) toast.success(t('operationDone')); queryClient.invalidateQueries({ queryKey: ['ui'] }) },
+    onError: (error) => toast.error(error.message),
   })
   const bundleMutation = useMutation({
     mutationFn: () => downloadBundle(session!),
-    onSuccess: () => setNotice(t('operationDone')),
-    onError: (error) => setNotice(error.message),
+    onSuccess: () => toast.success(t('operationDone')),
+    onError: (error) => toast.error(error.message),
   })
   async function upload(file?: File) {
     if (!file) return
-    try { const result = await uploadUI<{ proposal: UiUpdateProposal }>(session!, file); setUIProposal(result.proposal) } catch (error) { setNotice(error instanceof Error ? error.message : String(error)) }
+    try { const result = await uploadUI<{ proposal: UiUpdateProposal }>(session!, file); setUIProposal(result.proposal) } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }
   return <div className="space-y-5">
-    {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     <Section title={t('deploymentBackup')} icon={<Archive size={18} />}><Button disabled={bundleMutation.isPending} onClick={() => bundleMutation.mutate()}>{bundleMutation.isPending ? <Spinner /> : <Download size={16} />}{t('exportBundle')}</Button><p className="mt-2 text-xs leading-5 text-[var(--muted)]">{t('exportBundleDetail')}</p></Section>
     <ServicePanel />
     <Section title={locale === 'zh-CN' ? 'UI 更新' : 'UI update'} icon={<Package size={18} />}><div className="mb-5 rounded-lg bg-[var(--surface-hover)] p-4"><p className="text-sm font-semibold">{ui.data?.metadata?.manifest.name || t('noData')}</p><p className="mt-1 break-all text-xs text-[var(--muted)]">{ui.data?.metadata ? `${ui.data.metadata.manifest.version} · ${ui.data.metadata.source_type} · ${compactHash(ui.data.metadata.sha256)}` : t('noDataDetail')}</p></div><div className="grid gap-4"><Button className="justify-self-start" variant="primary" disabled={uiMutation.isPending || uiConfirm.isPending} onClick={() => uiMutation.mutate({ operation: 'install', body: { source: 'official' } })}><Download size={16} />{t('officialUI')}</Button><Field label={t('customURL')}><div className="flex gap-2"><Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="https://example.com/sempre-ui.zip" /><Button disabled={!source || uiMutation.isPending || uiConfirm.isPending} onClick={() => uiMutation.mutate({ operation: 'install', body: { source } })}>{t('install')}</Button></div></Field><label className="flex h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"><Upload size={17} />{t('uploadZIP')}<input className="sr-only" type="file" accept=".zip,application/zip" disabled={uiMutation.isPending || uiConfirm.isPending} onChange={(event) => void upload(event.target.files?.[0])} /></label><Button className="justify-self-start" disabled={!ui.data?.installed || uiMutation.isPending || uiConfirm.isPending} onClick={() => uiMutation.mutate({ operation: 'update' })}><RefreshCw size={16} />{t('update')}</Button></div></Section>
@@ -122,6 +123,6 @@ function BackupAndUpdatePanel() {
 
 interface UiUpdateProposal { id: string; current_version?: string; target_version: string; name: string }
 
-function Section({ title, icon, notice, children }: { title: string; icon: ReactNode; notice?: string; children: ReactNode }) {
-  return <Card className="min-w-0 p-4 md:p-5"><div className="mb-5 flex items-center gap-2"><span className="text-emerald-600">{icon}</span><h2 className="text-sm font-semibold">{title}</h2></div>{notice ? <div className="mb-4 border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}{children}</Card>
+function Section({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
+  return <Card className="min-w-0 p-4 md:p-5"><div className="mb-5 flex items-center gap-2"><span className="text-emerald-600">{icon}</span><h2 className="text-sm font-semibold">{title}</h2></div>{children}</Card>
 }

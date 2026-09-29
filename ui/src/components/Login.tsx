@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, Server } from 'lucide-react'
+import { ArrowRight, Server } from 'lucide-react'
+import { useToast } from '@acme/components'
 import { login } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -8,19 +9,18 @@ import { Button, Field, Input, Spinner } from './ui'
 export function Login() {
   const { t } = useI18n()
   const { setSession } = useSession()
+  const toast = useToast()
   const [address, setAddress] = useState(() => window.location.origin)
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
-    setError('')
     try {
       setSession(await login(address, password))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setBusy(false)
     }
@@ -42,7 +42,6 @@ export function Login() {
           <Field label={t('password')}>
             <Input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" />
           </Field>
-          {error ? <div role="alert" className="flex gap-2 border-l-2 border-red-500 bg-red-500/8 px-3 py-2 text-sm text-red-600"><AlertTriangle className="mt-0.5 shrink-0" size={16} />{error}</div> : null}
           <Button className="w-full" variant="primary" disabled={busy}>
             {busy ? <Spinner /> : <ArrowRight size={16} />}{busy ? t('connecting') : t('connect')}
           </Button>

@@ -3,7 +3,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Form, Modal, Select, Table, type TableColumn } from '@acme/components'
+import { Form, Modal, Select, Table, useToast, type TableColumn } from '@acme/components'
 import { api } from '../lib/api'
 import { useIsMobile } from '../hooks'
 import { useI18n } from '../lib/i18n'
@@ -26,10 +26,10 @@ export function CustomNodes() {
   const { t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
+  const toast = useToast()
   const [editorTarget, setEditorTarget] = useState<CustomNode | 'new' | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorGeneration, setEditorGeneration] = useState(0)
-  const [notice, setNotice] = useState('')
   const nodes = useQuery({ queryKey: ['custom-nodes'], queryFn: () => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes') })
   const catalog = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<SubscriptionCatalogResponse>(session!, '/subscriptions') })
   const invalidate = () => Promise.all([
@@ -40,8 +40,8 @@ export function CustomNodes() {
   ])
   const remove = useMutation({
     mutationFn: (id: string) => api(session!, `/custom-nodes/${id}`, { method: 'DELETE' }),
-    onSuccess: () => { setNotice(t('operationDone')); void invalidate() },
-    onError: (error) => setNotice(error.message),
+    onSuccess: () => { toast.success(t('operationDone')); void invalidate() },
+    onError: (error) => toast.error(error.message),
   })
   const reorder = useMutation({
     mutationFn: (reordered: CustomNode[]) => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes/order', { method: 'PUT', body: JSON.stringify({ node_ids: reordered.map((node) => node.id) }) }),
@@ -54,7 +54,7 @@ export function CustomNodes() {
     onSuccess: (data) => queryClient.setQueryData(['custom-nodes'], data),
     onError: (error, _reordered, previous) => {
       if (previous) queryClient.setQueryData(['custom-nodes'], previous)
-      setNotice(error.message)
+      toast.error(error.message)
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['custom-nodes'] }),
   })
@@ -77,16 +77,16 @@ export function CustomNodes() {
   return <div className="space-y-5">
     <PageTitle title={t('customNodes')}><Button variant="primary" disabled={!catalog.data || catalog.isError} onClick={() => openEditor('new')}><Plus size={16} />{t('addNode')}</Button></PageTitle>
     {catalog.error ? <p role="alert" className="text-sm text-red-600">{catalog.error.message}</p> : null}
-    {notice ? <div className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     <Card className="overflow-hidden">
       <Table<CustomNode> rowKey="id" loading={nodes.isLoading || catalog.isLoading} pagination={false} columns={columns} dataSource={nodes.data?.nodes || []} onReorder={(reordered) => reorder.mutate(reordered)} sortDisabled={reorder.isPending} scroll={{ x: 840 }} locale={{ emptyText: <EmptyState title={t('noData')} detail={t('noDataDetail')} action={<Button disabled={!catalog.data || catalog.isError} onClick={() => openEditor('new')}><Plus size={16} />{t('addNode')}</Button>} /> }} />
     </Card>
-    {editorTarget ? <NodeEditor key={editorGeneration} open={editorOpen} node={editorTarget === 'new' ? undefined : editorTarget} profiles={catalog.data?.profiles ?? []} onClose={() => setEditorOpen(false)} afterOpenChange={finishEditorClose} onSettled={invalidate} onSaved={() => { setEditorOpen(false); setNotice(t('operationDone')) }} /> : null}
+    {editorTarget ? <NodeEditor key={editorGeneration} open={editorOpen} node={editorTarget === 'new' ? undefined : editorTarget} profiles={catalog.data?.profiles ?? []} onClose={() => setEditorOpen(false)} afterOpenChange={finishEditorClose} onSettled={invalidate} onSaved={() => { setEditorOpen(false); toast.success(t('operationDone')) }} /> : null}
   </div>
 }
 
 function NodeEditor({ open, node, profiles, onClose, onSaved, onSettled, afterOpenChange }: { open: boolean; node?: CustomNode; profiles: SubscriptionProfile[]; onClose: () => void; onSaved: () => void; onSettled: () => Promise<unknown>; afterOpenChange: (open: boolean) => void }) {
   const { t } = useI18n()
+  const toast = useToast()
   const { session } = useSession()
   const isMobile = useIsMobile()
   const [name, setName] = useState(node?.name || '')
@@ -101,7 +101,7 @@ function NodeEditor({ open, node, profiles, onClose, onSaved, onSettled, afterOp
       return api<CustomNode>(session!, node ? `/custom-nodes/${node.id}` : '/custom-nodes', { method: node ? 'PUT' : 'POST', body: JSON.stringify(body) })
     },
     onSuccess: onSaved,
-    onError: (cause) => setError(cause.message),
+    onError: (cause) => toast.error(cause.message),
     onSettled,
   })
   const handleSave = () => {

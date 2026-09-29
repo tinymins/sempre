@@ -1,8 +1,9 @@
 import { I18nCodeBlock as CodeBlock } from '../../components/I18nCodeBlock'
 import { Copy, Save, Share2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Checkbox, Modal, Select } from '@acme/components'
+import { Checkbox, Modal, Select, useToast } from '@acme/components'
 import { Badge, Button, Field, Input, PageTitle, Spinner } from '../../components/ui'
+import { useI18n } from '../../lib/i18n'
 import type { SubscriptionConfigurationContext, SubscriptionEditorConfig, SubscriptionProfile, SubscriptionTarget } from '../../lib/types'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../subscriptions/toolbox/ProxySubscribeEditor'
 import { ServerDiagnostics } from './ServerDiagnostics'
@@ -28,6 +29,7 @@ const configurationContext: SubscriptionConfigurationContext = {
 
 export function ServerSubscriptionEditor({ session, profileId: id, onProfileChange }: { session: ServerSession; profileId: string; onProfileChange?: (profile: ServerProfile) => void }) {
   const t = useServerT()
+  const toast = useToast()
   const editorRef = useRef<ProxySubscribeEditorRef>(null)
   const [profile, setProfile] = useState<ServerProfile | null>(null)
   const [targets, setTargets] = useState<SubscriptionTarget[]>([])
@@ -40,7 +42,7 @@ export function ServerSubscriptionEditor({ session, profileId: id, onProfileChan
   const [compileResult, setCompileResult] = useState<ServerCompileResult | null>(null)
   const [newShareURL, setNewShareURL] = useState('')
   const [pending, setPending] = useState('')
-  const [notice, setNotice] = useState<{ tone: 'error' | 'success'; message: string } | null>(null)
+  const [loadError, setLoadError] = useState('')
 
   const loadOwnerData = useCallback(async (value: ServerProfile) => {
     if (value.role !== 'owner') return
@@ -61,7 +63,7 @@ export function ServerSubscriptionEditor({ session, profileId: id, onProfileChan
         if (nextTargets.length) setTarget(nextRefreshSettings.targets.find((format) => nextTargets.some((item) => item.format === format)) ?? nextTargets[0].format)
         await loadOwnerData(value)
       })
-      .catch((reason: Error) => setNotice({ tone: 'error', message: reason.message }))
+      .catch((reason: Error) => setLoadError(reason.message))
     return () => { cancelled = true }
   }, [id, loadOwnerData, session])
 
@@ -74,13 +76,12 @@ export function ServerSubscriptionEditor({ session, profileId: id, onProfileChan
     updated.document = normalizeDocument(updated)
     setProfile(updated)
     onProfileChange?.(updated)
-    setNotice({ tone: 'success', message: t('savedRevision', { revision: updated.revision }) })
+    toast.success(t('savedRevision', { revision: updated.revision }))
   }
 
   const compile = async () => {
     if (!profile || !refreshSettings) return
     setPending('compile')
-    setNotice(null)
     try {
       const settings = await serverAPI<ServerRefreshSettings>(session, `/profiles/${profile.id}/refresh`, {
         method: 'PUT', body: JSON.stringify({ enabled: refreshSettings.enabled, interval_minutes: refreshSettings.interval_minutes, targets: [target] }),
@@ -89,9 +90,9 @@ export function ServerSubscriptionEditor({ session, profileId: id, onProfileChan
       const [result] = await serverAPI<ServerCompileResult[]>(session, `/profiles/${profile.id}/refresh`, { method: 'POST' })
       setCompileResult(result)
       setRefreshSettings(await serverAPI<ServerRefreshSettings>(session, `/profiles/${profile.id}/refresh`))
-      setNotice({ tone: 'success', message: t('published', { nodes: result.node_count, hash: result.artifact_hash }) })
+      toast.success(t('published', { nodes: result.node_count, hash: result.artifact_hash }))
     } catch (reason) {
-      setNotice({ tone: 'error', message: reason instanceof Error ? reason.message : String(reason) })
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending('')
     }
@@ -117,11 +118,11 @@ export function ServerSubscriptionEditor({ session, profileId: id, onProfileChan
 
   const changeTarget = (value: string) => {
     setTarget(value)
-    void saveRefreshSettings({ targets: [value] }).catch((reason: Error) => setNotice({ tone: 'error', message: reason.message }))
+    void saveRefreshSettings({ targets: [value] }).catch((reason: Error) => toast.error(reason.message))
   }
 
   const setRefreshEnabled = (enabled: boolean) => {
-    void saveRefreshSettings({ enabled, targets: [target] }).catch((reason: Error) => setNotice({ tone: 'error', message: reason.message }))
+    void saveRefreshSettings({ enabled, targets: [target] }).catch((reason: Error) => toast.error(reason.message))
   }
 
   const createShare = async () => {
@@ -131,20 +132,19 @@ export function ServerSubscriptionEditor({ session, profileId: id, onProfileChan
       const result = await serverAPI<ServerShare>(session, `/profiles/${profile.id}/shares`, { method: 'POST' })
       setShares((current) => [result, ...current])
       setNewShareURL(result.url ?? '')
-      setNotice({ tone: 'success', message: t('shareCreated') })
+      toast.success(t('shareCreated'))
     } catch (reason) {
-      setNotice({ tone: 'error', message: reason instanceof Error ? reason.message : String(reason) })
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending('')
     }
   }
 
-  if (!profile) return <main className="grid min-h-screen place-items-center"><Spinner /></main>
+  if (!profile) return <main className="grid min-h-screen place-items-center">{loadError ? <p role="alert" className="text-sm text-red-600">{loadError}</p> : <Spinner />}</main>
   const canWrite = profile.role !== 'viewer'
   return (
     <div className="space-y-5">
       <PageTitle title={profile.name} detail={`${t('revision')} ${profile.revision} · ${session.user.email}`}><div className="flex items-center gap-2"><Badge tone={canWrite ? 'info' : 'neutral'}>{profile.role}</Badge>{canWrite ? <Button variant="primary" disabled={!saveState.dirty || saveState.saving} onClick={() => editorRef.current?.saveNow()}>{saveState.saving ? <Spinner /> : <Save size={16} />}{t('save')}</Button> : null}</div></PageTitle>
-      {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`border-l-2 px-3 py-2 text-sm ${notice.tone === 'error' ? 'border-red-500 text-red-700 dark:text-red-300' : 'border-emerald-500 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}
       <ProxySubscribeEditor
           ref={editorRef}
           key={profile.id}
@@ -168,8 +168,10 @@ export function ServerSubscriptionEditor({ session, profileId: id, onProfileChan
 
 function ServerPublishing({ target, targets, pending, newShareURL, shares, stats, result, refreshSettings, onTarget, onCompile, onRefreshEnabled, onShare }: { target: string; targets: SubscriptionTarget[]; pending: string; newShareURL: string; shares: ServerShare[]; stats: ServerProfileStats | null; result: ServerCompileResult | null; refreshSettings: ServerRefreshSettings | null; onTarget: (value: string) => void; onCompile?: () => void; onRefreshEnabled?: (enabled: boolean) => void; onShare?: () => void }) {
   const t = useServerT()
+  const { locale } = useI18n()
+  const toast = useToast()
   const [preview, setPreview] = useState(false)
-  return <div className="space-y-4"><div className="flex flex-wrap items-end gap-2"><Field label={t('outputTarget')}><Select className="min-w-56" value={target} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(value) => onTarget(String(value))} /></Field>{onCompile ? <Button disabled={Boolean(pending)} onClick={onCompile}>{pending === 'compile' ? <Spinner /> : null}{t('refreshNow')}</Button> : null}{result ? <Button onClick={() => setPreview(true)}>{t('previewResult')}</Button> : null}{onShare ? <Button disabled={Boolean(pending)} onClick={onShare}>{pending === 'share' ? <Spinner /> : <Share2 size={16} />}{t('createShare')}</Button> : null}</div>{onRefreshEnabled ? <label className="flex items-center gap-2 text-sm"><Checkbox checked={refreshSettings?.enabled ?? false} onChange={(event) => onRefreshEnabled(event.target.checked)} /><span>{t('autoRefresh')}</span></label> : null}{refreshSettings ? <p className="text-xs text-[var(--muted)]">{t('lastRefresh')}: {refreshSettings.last_refresh_status}{refreshSettings.last_refresh_at ? ` · ${new Date(refreshSettings.last_refresh_at).toLocaleString()}` : ''}{refreshSettings.next_refresh_at ? ` · ${t('nextRefresh')} ${new Date(refreshSettings.next_refresh_at).toLocaleString()}` : ''}</p> : null}{refreshSettings?.last_refresh_error ? <p role="alert" className="text-xs text-red-700 dark:text-red-300">{refreshSettings.last_refresh_error}</p> : null}{newShareURL ? <div className="flex gap-2"><Input readOnly value={newShareURL} /><Button aria-label="Copy share link" onClick={() => void navigator.clipboard.writeText(newShareURL)}><Copy size={16} /></Button></div> : null}<p className="text-xs text-[var(--muted)]">{t('shareStats', { shares: shares.length, total: stats?.total_accesses ?? 0, today: stats?.today_accesses ?? 0 })}</p><Modal open={preview} title={t('compiledTitle')} footer={null} size="almost-full" onCancel={() => setPreview(false)} destroyOnClose>{result ? <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"><CodeBlock value={result.content} maxHeight="70vh" wrap /><div className="max-h-[70vh] space-y-3 overflow-auto text-xs"><p>{t('represented', { nodes: result.node_count, omitted: result.field_diffs.filter((item) => !item.represented).length })}</p>{result.diagnostics.map((item, index) => <p key={`${item.source_id}-${index}`} className="border-l-2 border-amber-500 pl-2">{item.message}</p>)}{result.field_diffs.filter((item) => item.dropped?.length || item.warnings?.length).map((item) => <div key={item.node} className="border-t border-[var(--border)] pt-2"><strong>{item.node}</strong><p>{item.warnings?.join('; ') || `Dropped: ${item.dropped?.join(', ')}`}</p></div>)}</div></div> : null}</Modal></div>
+  return <div className="space-y-4"><div className="flex flex-wrap items-end gap-2"><Field label={t('outputTarget')}><Select className="min-w-56" value={target} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(value) => onTarget(String(value))} /></Field>{onCompile ? <Button disabled={Boolean(pending)} onClick={onCompile}>{pending === 'compile' ? <Spinner /> : null}{t('refreshNow')}</Button> : null}{result ? <Button onClick={() => setPreview(true)}>{t('previewResult')}</Button> : null}{onShare ? <Button disabled={Boolean(pending)} onClick={onShare}>{pending === 'share' ? <Spinner /> : <Share2 size={16} />}{t('createShare')}</Button> : null}</div>{onRefreshEnabled ? <label className="flex items-center gap-2 text-sm"><Checkbox checked={refreshSettings?.enabled ?? false} onChange={(event) => onRefreshEnabled(event.target.checked)} /><span>{t('autoRefresh')}</span></label> : null}{refreshSettings ? <p className="text-xs text-[var(--muted)]">{t('lastRefresh')}: {refreshSettings.last_refresh_status}{refreshSettings.last_refresh_at ? ` · ${new Date(refreshSettings.last_refresh_at).toLocaleString()}` : ''}{refreshSettings.next_refresh_at ? ` · ${t('nextRefresh')} ${new Date(refreshSettings.next_refresh_at).toLocaleString()}` : ''}</p> : null}{refreshSettings?.last_refresh_error ? <p role="alert" className="text-xs text-red-700 dark:text-red-300">{refreshSettings.last_refresh_error}</p> : null}{newShareURL ? <div className="flex gap-2"><Input readOnly value={newShareURL} /><Button aria-label="Copy share link" onClick={() => void navigator.clipboard.writeText(newShareURL).then(() => toast.success(locale === 'zh-CN' ? '已复制' : 'Copied')).catch((reason: unknown) => toast.error(reason instanceof Error ? reason.message : String(reason)))}><Copy size={16} /></Button></div> : null}<p className="text-xs text-[var(--muted)]">{t('shareStats', { shares: shares.length, total: stats?.total_accesses ?? 0, today: stats?.today_accesses ?? 0 })}</p><Modal open={preview} title={t('compiledTitle')} footer={null} size="almost-full" onCancel={() => setPreview(false)} destroyOnClose>{result ? <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"><CodeBlock value={result.content} maxHeight="70vh" wrap /><div className="max-h-[70vh] space-y-3 overflow-auto text-xs"><p>{t('represented', { nodes: result.node_count, omitted: result.field_diffs.filter((item) => !item.represented).length })}</p>{result.diagnostics.map((item, index) => <p key={`${item.source_id}-${index}`} className="border-l-2 border-amber-500 pl-2">{item.message}</p>)}{result.field_diffs.filter((item) => item.dropped?.length || item.warnings?.length).map((item) => <div key={item.node} className="border-t border-[var(--border)] pt-2"><strong>{item.node}</strong><p>{item.warnings?.join('; ') || `Dropped: ${item.dropped?.join(', ')}`}</p></div>)}</div></div> : null}</Modal></div>
 }
 
 function normalizeDocument(profile: ServerProfile): SubscriptionProfile {

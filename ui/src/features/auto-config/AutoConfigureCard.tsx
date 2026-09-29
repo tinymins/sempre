@@ -1,3 +1,4 @@
+import { useToast } from '@acme/components'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@acme/components'
@@ -9,23 +10,24 @@ import { useSession } from '../../lib/session'
 import type { AutoConfigApplyResult, AutoConfigCandidate, AutoConfigCheck, AutoConfigReport } from './types'
 
 export function AutoConfigureCard() {
+  const message = useToast()
   const { t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [notice, setNotice] = useState('')
   const diagnose = useMutation({
     mutationFn: () => api<AutoConfigReport>(session!, '/cores/auto/diagnose', { method: 'POST' }),
-    onSuccess: () => { setNotice(''); setOpen(true) },
-    onError: (error) => setNotice(error.message),
+    onSuccess: () => { setOpen(true) },
+    onError: (error) => message.error(error.message),
   })
   const apply = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: (candidateID: string) => api<AutoConfigApplyResult>(session!, '/cores/auto/apply', {
       method: 'POST', body: JSON.stringify({ candidate_id: candidateID }),
     }),
     onSuccess: async (result) => {
       setOpen(false)
-      setNotice(`${t('autoConfigApplied')}: ${result.recommendation.reference}`)
+      message.success(`${t('autoConfigApplied')}: ${result.recommendation.reference}`)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['cores'] }),
         queryClient.invalidateQueries({ queryKey: ['system'] }),
@@ -46,7 +48,6 @@ export function AutoConfigureCard() {
         </div>
         <Button variant="primary" disabled={diagnose.isPending || apply.isPending} onClick={() => diagnose.mutate()}>{diagnose.isPending ? <Spinner /> : <WandSparkles size={16} />}{diagnose.isPending ? t('diagnosing') : t('autoConfigAction')}</Button>
       </div>
-      {notice ? <div className={`border-t border-[var(--border)] px-4 py-2 text-sm md:px-5 ${diagnose.isError ? 'bg-red-500/8 text-red-700 dark:text-red-300' : 'bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice}</div> : null}
     </Card>
     <Modal
       open={open}
@@ -65,7 +66,6 @@ export function AutoConfigureCard() {
       centered
     >
       {report ? <DiagnosisResult report={report} /> : null}
-      {apply.error ? <div className="mt-4 rounded-md border border-red-500/35 bg-red-500/8 px-3 py-2 text-sm text-red-700 dark:text-red-300">{apply.error.message}</div> : null}
     </Modal>
   </>
 }

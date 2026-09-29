@@ -1,3 +1,4 @@
+import { ToastProvider } from '@acme/components'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -53,7 +54,7 @@ describe('DNS page', () => {
 
   it('shows independent query, rewrite, and settings workspaces', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 
     expect(await screen.findByText('设备级前置 DNS；核心 DNS 仍由当前订阅配置。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '查询日志' })).toBeInTheDocument()
@@ -104,7 +105,7 @@ describe('DNS page', () => {
       return Response.json({}, { status: 404 })
     })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 
     fireEvent.click(await screen.findByRole('button', { name: '设置与状态' }))
     expect(screen.getByText('未接管')).toBeInTheDocument()
@@ -114,7 +115,7 @@ describe('DNS page', () => {
 
   it('keeps comma entry editable and saves protocol upstreams with a warning', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><Dns /></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: '设置与状态' }))
     const input = screen.getByRole('textbox', { name: '前置 DNS 上游' })
     expect(input).toHaveValue(settings.settings.direct_upstreams[0])

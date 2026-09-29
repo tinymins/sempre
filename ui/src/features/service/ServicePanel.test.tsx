@@ -1,3 +1,4 @@
+import { ToastProvider } from '@acme/components'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -39,7 +40,7 @@ it.each(['2.0.12', '2.0.13'])('allows an available %s upgrade after a historical
     return Response.json({}, { status: 404 })
   }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><ServiceUpdateFlow><ServicePanel /></ServiceUpdateFlow></SessionProvider></I18nProvider></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><ServiceUpdateFlow><ServicePanel /></ServiceUpdateFlow></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
   await waitFor(() => expect(client.getQueryData(['service', 'update-task'])).toEqual({ task }))
   fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
   const upgrade = await screen.findByRole('button', { name: 'Upgrade now' })
@@ -75,7 +76,7 @@ it('requires confirmation before enabling preview updates and saves the choice',
     return Response.json({}, { status: 404 })
   }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><ServiceUpdateFlow><ServicePanel /></ServiceUpdateFlow></SessionProvider></I18nProvider></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><ServiceUpdateFlow><ServicePanel /></ServiceUpdateFlow></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 
   const preview = await screen.findByRole('switch', { name: 'Allow preview updates' })
   const checkForUpdates = screen.getByRole('button', { name: 'Check for updates' })
@@ -123,7 +124,7 @@ it('keeps one-click update and reports an invalid uploaded package in the existi
     return Response.json({}, { status: 404 })
   }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><ServiceUpdateFlow><ServicePanel /></ServiceUpdateFlow></SessionProvider></I18nProvider></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><ServiceUpdateFlow><ServicePanel /></ServiceUpdateFlow></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 
   await waitFor(() => expect(screen.getByRole('button', { name: 'Upload update package' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))

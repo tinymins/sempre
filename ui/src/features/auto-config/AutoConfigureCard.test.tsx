@@ -1,3 +1,4 @@
+import { ToastProvider } from '@acme/components'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -94,7 +95,7 @@ describe('AutoConfigureCard', () => {
 function renderCard() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
-      <I18nProvider><SessionProvider><AutoConfigureCard /></SessionProvider></I18nProvider>
+      <ToastProvider><I18nProvider><SessionProvider><AutoConfigureCard /></SessionProvider></I18nProvider></ToastProvider>
     </QueryClientProvider>,
   )
 }

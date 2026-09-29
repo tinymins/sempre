@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, Save as SaveIcon, Trash2 } from 'lucide-react'
-import { Dropdown, Select } from '@acme/components'
+import { Dropdown, Select, useToast } from '@acme/components'
 import type { ProxyDebugFormat } from '@acme/types'
 import { Button, Card, ConfirmDialog, Field, PageTitle, Spinner } from '../components/ui'
 import { api } from '../lib/api'
@@ -19,13 +19,13 @@ import { useLocalUIMode } from '../lib/uiMode'
 
 type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; profile?: SubscriptionProfile; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
-type Notice = { message: string; tone: 'success' | 'error' }
 
 export function Subscriptions() {
   const { t, locale } = useI18n()
   const { session } = useSession()
   const { mode: uiMode } = useLocalUIMode()
   const queryClient = useQueryClient()
+  const toast = useToast()
   const [selectedID, setSelectedID] = useState('')
   const [drafts, setDrafts] = useState<Record<string, SubscriptionProfile>>({})
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null)
@@ -37,7 +37,6 @@ export function Subscriptions() {
   const [deleteProfile, setDeleteProfile] = useState<SubscriptionProfile | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [refreshConfirmationOpen, setRefreshConfirmationOpen] = useState(false)
-  const [notice, setNotice] = useState<Notice | null>(null)
   const [format, setFormat] = useState<ProxyDebugFormat>('sing-box-v13')
   const previewRef = useRef<ProxyPreviewModalRef>(null)
   const debugRef = useRef<ProxyDebugModalRef>(null)
@@ -96,7 +95,7 @@ export function Subscriptions() {
       setSelectedID(profile.id)
       setNameDialogOpen(false)
     },
-    onError: (error) => setNameError(error.message),
+    onError: (error) => toast.error(error.message),
   })
 
   const rename = useMutation({
@@ -110,7 +109,7 @@ export function Subscriptions() {
       setNameDialogOpen(false)
       await invalidate()
     },
-    onError: (error) => setNameError(error.message),
+    onError: (error) => toast.error(error.message),
   })
 
   const remove = useMutation({
@@ -125,17 +124,17 @@ export function Subscriptions() {
       })
       await invalidate()
     },
-    onError: (error) => setNotice({ message: error.message, tone: 'error' }),
+    onError: (error) => toast.error(error.message),
   })
 
   const action = useMutation({
     mutationFn: ({ id, operation }: { id: string; operation: 'activate' | 'refresh' }) => api<SaveResponse>(session!, `/subscriptions/${id}/${operation}`, { method: 'POST' }),
     onSuccess: async (result, variables) => {
       if (variables.operation === 'refresh') setRefreshConfirmationOpen(false)
-      setNotice({ message: result.change.Message, tone: 'success' })
+      toast.success(result.change.Message)
       await invalidate()
     },
-    onError: (error) => setNotice({ message: error.message, tone: 'error' }),
+    onError: (error) => toast.error(error.message),
   })
 
   const firstProfileID = profiles[0]?.id || ''
@@ -209,7 +208,6 @@ export function Subscriptions() {
   if (uiMode === 'simple') {
     return <div className="space-y-5">
       <PageTitle title={t('navigationSubscriptions')} detail={locale === 'zh-CN' ? '添加一个或多个订阅 URL，系统会自动使用第一组配置。' : 'Add one or more subscription URLs. The first profile is used automatically.'} />
-      {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`whitespace-pre-line border-l-2 px-3 py-2 text-sm break-words ${notice.tone === 'error' ? 'border-red-500 bg-red-500/8 text-red-700 dark:text-red-300' : 'border-emerald-500 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}
       {currentProfile ? <SimpleSubscriptionEditor key={`${currentProfile.id}:${currentProfile.revision}`} profile={currentProfile} saving={save.isPending} supportsPrivateAccess={catalog.data?.configuration_context.capabilities.features.includes('private_access') ?? false} onSave={async (candidate) => { await save.mutateAsync({ candidate, contextKey: catalog.data?.configuration_context.key ?? 'common' }) }} /> : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
     </div>
   }
@@ -266,7 +264,6 @@ export function Subscriptions() {
         </button>
       </div>
 
-      {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`whitespace-pre-line border-l-2 px-3 py-2 text-sm break-words ${notice.tone === 'error' ? 'border-red-500 bg-red-500/8 text-red-700 dark:text-red-300' : 'border-emerald-500 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}
 
       {currentProfile ? (
         <>
@@ -307,7 +304,7 @@ export function Subscriptions() {
                   </Field>
                   <Button type="button" onClick={() => previewRef.current?.open(currentProfile.id, currentProfile.remark || currentProfile.name)}><FileJson size={16} />{t('preview')}</Button>
                   <Button type="button" onClick={() => debugRef.current?.open(currentProfile.id, format)}><Activity size={16} />{t('diagnostics')}</Button>
-                  <Button type="button" onClick={() => api(session!, '/subscriptions/cache/clear', { method: 'POST' }).then(() => setNotice({ message: t('operationDone'), tone: 'success' })).catch((error: Error) => setNotice({ message: error.message, tone: 'error' }))}><Trash2 size={16} />{t('clearCache')}</Button>
+                  <Button type="button" onClick={() => api(session!, '/subscriptions/cache/clear', { method: 'POST' }).then(() => toast.success(t('operationDone'))).catch((error: Error) => toast.error(error.message))}><Trash2 size={16} />{t('clearCache')}</Button>
                 </div>
                 <div className="grid grid-cols-2 gap-4 border-t border-[var(--border)] pt-4 text-sm">
                   <Info label={t('compilerTarget')} value={currentProfile.last_compiler_target || '-'} />

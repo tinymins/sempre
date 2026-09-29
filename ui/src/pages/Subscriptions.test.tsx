@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
 import { SessionProvider } from '../lib/session'
+import { AcmeContentBoundary } from '../components/AcmeContentBoundary'
 import type { SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
 import { Subscriptions } from './Subscriptions'
 
@@ -75,7 +76,7 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <I18nProvider><SessionProvider><Subscriptions /></SessionProvider></I18nProvider>
+      <I18nProvider><SessionProvider><AcmeContentBoundary><Subscriptions /></AcmeContentBoundary></SessionProvider></I18nProvider>
     </QueryClientProvider>,
   )
 }

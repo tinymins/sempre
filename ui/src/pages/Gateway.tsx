@@ -1,3 +1,4 @@
+import { useToast } from '@acme/components'
 import { I18nCodeBlock as CodeBlock } from '../components/I18nCodeBlock'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -24,6 +25,7 @@ const emptyStatus: GatewayStatus = {
 }
 
 export function Gateway() {
+  const message = useToast()
   const { locale, t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
@@ -50,21 +52,26 @@ export function Gateway() {
     ? { ...config, lan: { ...config.lan, wan_interface: inventory.default_interface } }
     : config
   const save = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: (next: GatewayConfig) => api<{ config: GatewayConfig; reload_requested: boolean }>(session!, '/gateway', { method: 'PUT', body: JSON.stringify(next) }),
     onSuccess: (result) => {
+      message.success(t('operationDone'))
       setDraft(result.config)
       queryClient.invalidateQueries({ queryKey: ['gateway'] })
     },
   })
   const buildPlan = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: (next: GatewayConfig) => api<GatewayHostPlan>(session!, '/gateway/host-plan', { method: 'POST', body: JSON.stringify({ config: next }) }),
     onSuccess: setPlan,
   })
   const applyPlan = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: (next: GatewayConfig) => api<GatewayHostPlan>(session!, '/gateway/host-apply', { method: 'POST', body: JSON.stringify({ config: next, confirm: true, private_key: sshKey }) }),
     onSuccess: setPlan,
   })
   const captureHost = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: (gateway_capture_host: boolean) => {
       const current = network.data?.settings
       if (!current) throw new Error('Network settings are not loaded')
@@ -74,6 +81,7 @@ export function Gateway() {
     onSuccess: (result) => queryClient.setQueryData(['network', 'settings'], result),
   })
   const revokeLease = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: (mac: string) => api(session!, '/gateway/dhcp/leases/revoke', { method: 'POST', body: JSON.stringify({ mac }) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gateway'] }),
   })
@@ -112,18 +120,15 @@ export function Gateway() {
         </Section>
 
         <Alert type="info" showIcon message="LAN DNS entry is automatic" description="LAN clients use the gateway on TCP/UDP port 53. Sempre forwards those queries to the DNS frontend configured on the DNS page." />
-        {captureHost.isError ? <Alert type="error" showIcon message={captureHost.error instanceof Error ? captureHost.error.message : t('operationFailed')} /> : null}
 
         <div className="border-t border-[var(--border)] pt-5">
           <Section title="PVE host preparation">
             {config.topology === 'remote-pve' ? <div className="mb-3"><Field label="One-time SSH private key"><TextArea rows={3} value={sshKey} placeholder="Optional when SSH key path is configured on the Sempre host" onChange={(event) => setSSHKey(event.target.value)} /></Field></div> : null}
             <div className="mb-3 flex gap-2">
               <Button icon={<Terminal size={16} />} loading={buildPlan.isPending} onClick={() => buildPlan.mutate(localConfig)}>Generate commands</Button>
-              <Button icon={<Copy size={16} />} disabled={!plan} onClick={() => plan && navigator.clipboard.writeText([...plan.commands, ...plan.persistent_commands].join('\n'))}>Copy</Button>
+              <Button icon={<Copy size={16} />} disabled={!plan} onClick={() => plan && navigator.clipboard.writeText([...plan.commands, ...plan.persistent_commands].join('\n')).then(() => message.success(locale === 'zh-CN' ? '已复制' : 'Copied')).catch((error: Error) => message.error(error.message))}>Copy</Button>
               <Button variant="primary" icon={<Play size={16} />} loading={applyPlan.isPending} onClick={() => window.confirm('Apply these commands to the host now?') && applyPlan.mutate(localConfig)}>Apply confirmed plan</Button>
             </div>
-            {buildPlan.isError ? <Alert type="error" showIcon message={buildPlan.error instanceof Error ? buildPlan.error.message : t('operationFailed')} /> : null}
-            {applyPlan.isError ? <Alert type="error" showIcon message={applyPlan.error instanceof Error ? applyPlan.error.message : t('operationFailed')} /> : null}
             {plan ? <div className="space-y-3">
               <Alert type="info" showIcon message={plan.summary} description={plan.warnings.join(' ')} />
               <CodeBlock value={[...plan.commands, ...plan.persistent_commands].join('\n')} language="shell" maxHeight={320} wrap copyable={false} />
@@ -166,8 +171,6 @@ export function Gateway() {
     </div>
 
     {validation.length ? <Alert type="warning" showIcon message="Configuration needs attention" description={validation.join('; ')} /> : null}
-    {save.isError ? <Alert type="error" showIcon message={save.error instanceof Error ? save.error.message : t('operationFailed')} /> : null}
-    {save.isSuccess ? <Alert type="success" showIcon message={t('operationDone')} description="Saved. Running services will reload through the managed runtime." /> : null}
 
     <div className="grid gap-3 md:grid-cols-3">
       <Metric icon={Network} label="Topology" value={config.topology === 'local-pve' ? 'Local PVE' : 'Remote PVE'} tone="blue" />

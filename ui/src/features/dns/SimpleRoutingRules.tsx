@@ -22,7 +22,7 @@ export interface SimpleRoutingSave {
   selections: Record<string, string>
 }
 
-export function SimpleRoutingRules({ settings, proxyGroups, saving, saved, pendingSelection, error, onSave }: { settings: DnsSettings; proxyGroups: ProxyNode[]; saving: boolean; saved: boolean; pendingSelection: boolean; error?: Error | null; onSave: (value: SimpleRoutingSave) => Promise<void> }) {
+export function SimpleRoutingRules({ settings, proxyGroups, saving, pendingSelection, onSave }: { settings: DnsSettings; proxyGroups: ProxyNode[]; saving: boolean; pendingSelection: boolean; onSave: (value: SimpleRoutingSave) => Promise<void> }) {
   const { locale } = useI18n()
   const zh = locale === 'zh-CN'
   const initial = useMemo(() => flattenRules(settings, proxyGroups), [settings, proxyGroups])
@@ -38,13 +38,12 @@ export function SimpleRoutingRules({ settings, proxyGroups, saving, saved, pendi
       return
     }
     setValidation('')
-    await onSave(composeSimpleRouting(settings, normalized, proxyGroups))
+    await onSave(composeSimpleRouting(settings, normalized, proxyGroups)).catch(() => undefined)
   }
 
   return <div className="space-y-4">
     <div className="flex min-h-10 items-start justify-between gap-4"><div><h1 className="text-xl font-semibold">{zh ? '分流规则' : 'Routing rules'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '为域名选择直连或指定节点。相同目标会在保存时自动归入同一规则集。' : 'Choose direct access or a node for each domain. Matching targets are grouped automatically when saved.'}</p></div><Button variant="primary" disabled={!dirty || saving} onClick={() => void submit()}>{saving ? <Spinner /> : <Save size={16} />}{zh ? '保存' : 'Save'}</Button></div>
-    {error ? <Alert type="error" showIcon message={error.message} /> : null}
-    {saved ? <Alert type="success" showIcon message={pendingSelection ? (zh ? '分流规则已保存。重启核心后会自动选择新规则对应的节点。' : 'Routing rules saved. After the core restarts, the new rule groups will select their nodes automatically.') : (zh ? '分流规则已保存；重启核心后应用。' : 'Routing rules saved. Restart the core to apply them.')} action={pendingSelection ? <RuntimeRestartButton showLabel /> : undefined} /> : null}
+    {pendingSelection ? <Alert type="info" showIcon message={zh ? '待重启核心以应用新规则对应的节点选择。' : 'Restart the core to apply the pending node selections.'} action={<RuntimeRestartButton showLabel />} /> : null}
     <Card className="p-4 md:p-5">
       <div className="space-y-3">
         {rows.map((row, index) => <div key={row.id} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,18rem)_2.25rem]">

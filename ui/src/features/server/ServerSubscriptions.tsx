@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
 import { MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Dropdown, Modal } from '@acme/components'
+import { Dropdown, Modal, useToast } from '@acme/components'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Card, EmptyState, Field, Input, PageTitle, Spinner } from '../../components/ui'
 import { ServerSubscriptionEditor } from './ServerSubscriptionEditor'
 import { newServerProfile, serverAPI, type ServerProfile, type ServerSession } from './server-api'
+import { useI18n } from '../../lib/i18n'
 import { useServerLocaleText } from './server-i18n'
 
 export function ServerSubscriptions({ session }: { session: ServerSession }) {
+  const { t: commonT } = useI18n()
+  const toast = useToast()
   const t = useServerLocaleText({
     title: '订阅配置', detail: '管理订阅源、规则、策略组和各版本输出。', create: '新建配置', tabLabel: '订阅配置', rename: '重命名', remove: '删除', manage: '管理配置', empty: '还没有订阅配置', emptyDetail: '创建第一个配置后即可添加订阅源并生成客户端配置。', createTitle: '新建订阅配置', createAction: '创建', renameTitle: '重命名订阅配置', save: '保存', name: '配置名称', removeTitle: '删除订阅配置', removeDetail: '删除“{name}”后，其版本、发布产物、成员和分享链接都会一并删除，且无法恢复。',
   }, {
@@ -37,15 +40,15 @@ export function ServerSubscriptions({ session }: { session: ServerSession }) {
     const trimmed = name.trim()
     if (!trimmed) return
     setPending(true)
-    setError('')
     try {
       const profile = await serverAPI<ServerProfile>(session, '/profiles', { method: 'POST', body: JSON.stringify({ name: trimmed, document: newServerProfile(trimmed) }) })
       setProfiles((current) => [profile, ...current])
       setCreateOpen(false)
       setName('')
       navigate(`/subscriptions/${profile.id}`)
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending(false)
     }
@@ -54,7 +57,6 @@ export function ServerSubscriptions({ session }: { session: ServerSession }) {
   const rename = async () => {
     if (!renameProfile || !name.trim()) return
     setPending(true)
-    setError('')
     try {
       const updated = await serverAPI<ServerProfile>(session, `/profiles/${renameProfile.id}`, {
         method: 'PUT', headers: { 'If-Match': `"${renameProfile.revision}"` },
@@ -63,8 +65,9 @@ export function ServerSubscriptions({ session }: { session: ServerSession }) {
       updateProfile(updated)
       setRenameProfile(null)
       setName('')
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending(false)
     }
@@ -72,15 +75,15 @@ export function ServerSubscriptions({ session }: { session: ServerSession }) {
   const remove = async () => {
     if (!deleteProfile) return
     setPending(true)
-    setError('')
     try {
       await serverAPI<void>(session, `/profiles/${deleteProfile.id}`, { method: 'DELETE' })
       const remaining = profiles.filter((profile) => profile.id !== deleteProfile.id)
       setProfiles(remaining)
       setDeleteProfile(null)
       navigate(remaining[0] ? `/subscriptions/${remaining[0].id}` : '/subscriptions')
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending(false)
     }

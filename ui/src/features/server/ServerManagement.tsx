@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Copy, Link2, Trash2, UserPlus } from 'lucide-react'
-import { Empty, Select } from '@acme/components'
+import { Empty, Select, useToast } from '@acme/components'
 import { Badge, Button, Card, EmptyState, Field, Input, PageTitle, Spinner } from '../../components/ui'
 import { serverAPI, type ServerMember, type ServerProfile, type ServerSession, type ServerShare } from './server-api'
+import { useI18n } from '../../lib/i18n'
 import { useServerLocaleText } from './server-i18n'
 
 export function ServerManagement({ session }: { session: ServerSession }) {
+  const { locale, t: commonT } = useI18n()
+  const toast = useToast()
   const t = useServerLocaleText({
     title: '管理', detail: '管理账号、订阅协作者和公开订阅链接。', account: '当前账号', email: '邮箱', accountId: '账号 ID', empty: '没有可管理的配置', emptyDetail: '只有配置所有者可以管理成员和分享链接。', profile: '订阅配置', members: '成员权限', membersDetail: '编辑者可以修改和发布，查看者只能读取配置。', registeredEmail: '已注册邮箱', role: '权限', viewer: '查看者', editor: '编辑者', add: '添加', remove: '移除', noMembers: '暂无协作者。', shares: '订阅分享', sharesDetail: '创建后请立即复制完整链接，服务端不会再次显示令牌。', createShare: '创建链接', copy: '复制分享链接', active: '有效', revoked: '已撤销', revoke: '撤销', noShares: '暂无分享链接。',
   }, {
@@ -26,7 +29,6 @@ export function ServerManagement({ session }: { session: ServerSession }) {
   const loadAccess = useCallback(async (id: string) => {
     if (!id) return
     setPending('load')
-    setError('')
     try {
       const [nextMembers, nextShares] = await Promise.all([
         serverAPI<ServerMember[]>(session, `/profiles/${id}/members`),
@@ -35,6 +37,7 @@ export function ServerManagement({ session }: { session: ServerSession }) {
       setMembers(nextMembers)
       setShares(nextShares)
       setNewShareURL('')
+      setError('')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -55,50 +58,50 @@ export function ServerManagement({ session }: { session: ServerSession }) {
   const addMember = async () => {
     if (!selectedId || !email.trim()) return
     setPending('member')
-    setError('')
     try {
       const member = await serverAPI<ServerMember>(session, `/profiles/${selectedId}/members`, { method: 'PUT', body: JSON.stringify({ email: email.trim(), role }) })
       setMembers((current) => [...current.filter((item) => item.user_id !== member.user_id), member].sort((left, right) => left.email.localeCompare(right.email)))
       setEmail('')
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending('')
     }
   }
   const removeMember = async (member: ServerMember) => {
     setPending(`member:${member.user_id}`)
-    setError('')
     try {
       await serverAPI<void>(session, `/profiles/${selectedId}/members/${member.user_id}`, { method: 'DELETE' })
       setMembers((current) => current.filter((item) => item.user_id !== member.user_id))
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending('')
     }
   }
   const createShare = async () => {
     setPending('share')
-    setError('')
     try {
       const share = await serverAPI<ServerShare>(session, `/profiles/${selectedId}/shares`, { method: 'POST' })
       setShares((current) => [share, ...current])
       setNewShareURL(share.url ?? '')
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending('')
     }
   }
   const revokeShare = async (share: ServerShare) => {
     setPending(`share:${share.id}`)
-    setError('')
     try {
       await serverAPI<void>(session, `/shares/${share.id}`, { method: 'DELETE' })
       setShares((current) => current.map((item) => item.id === share.id ? { ...item, enabled: false } : item))
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending('')
     }
@@ -112,7 +115,7 @@ export function ServerManagement({ session }: { session: ServerSession }) {
       <Card className="p-4"><Field label={t.profile}><Select className="min-w-64" value={selectedId} options={ownedProfiles.map((profile) => ({ value: profile.id, label: profile.name }))} onChange={(value) => selectProfile(String(value))} /></Field></Card>
       {pending === 'load' ? <Card className="grid min-h-40 place-items-center"><Spinner /></Card> : <div className="grid gap-4 xl:grid-cols-2">
         <Card className="space-y-4 p-5"><div><h2 className="font-semibold">{t.members}</h2><p className="mt-1 text-xs text-[var(--muted)]">{t.membersDetail}</p></div><div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem_auto]"><Field label={t.registeredEmail}><Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></Field><Field label={t.role}><Select value={role} options={[{ value: 'viewer', label: t.viewer }, { value: 'editor', label: t.editor }]} onChange={(value) => setRole(value as 'viewer' | 'editor')} /></Field><Button className="self-end" disabled={!email.trim() || Boolean(pending)} onClick={() => void addMember()}>{pending === 'member' ? <Spinner /> : <UserPlus size={16} />}{t.add}</Button></div><div className="divide-y divide-[var(--border)]">{members.map((member) => <div key={member.user_id} className="flex items-center gap-3 py-3"><span className="min-w-0 flex-1 truncate text-sm">{member.email}</span><Badge tone={member.role === 'editor' ? 'info' : 'neutral'}>{member.role === 'editor' ? t.editor : t.viewer}</Badge><Button size="icon" variant="ghost" disabled={Boolean(pending)} aria-label={`${t.remove} ${member.email}`} onClick={() => void removeMember(member)}>{pending === `member:${member.user_id}` ? <Spinner /> : <Trash2 size={15} />}</Button></div>)}{!members.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t.noMembers} /> : null}</div></Card>
-        <Card className="space-y-4 p-5"><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold">{t.shares}</h2><p className="mt-1 text-xs text-[var(--muted)]">{t.sharesDetail}</p></div><Button disabled={Boolean(pending)} onClick={() => void createShare()}>{pending === 'share' ? <Spinner /> : <Link2 size={16} />}{t.createShare}</Button></div>{newShareURL ? <div className="flex gap-2"><Input readOnly value={newShareURL} /><Button size="icon" aria-label={t.copy} onClick={() => void navigator.clipboard.writeText(newShareURL)}><Copy size={16} /></Button></div> : null}<div className="divide-y divide-[var(--border)]">{shares.map((share) => <div key={share.id} className="flex items-center gap-3 py-3"><span className="min-w-0 flex-1 font-mono text-xs">{share.token_prefix}…</span><Badge tone={share.enabled ? 'success' : 'neutral'}>{share.enabled ? t.active : t.revoked}</Badge>{share.enabled ? <Button size="icon" variant="ghost" disabled={Boolean(pending)} aria-label={`${t.revoke} ${share.token_prefix}`} onClick={() => void revokeShare(share)}>{pending === `share:${share.id}` ? <Spinner /> : <Trash2 size={15} />}</Button> : null}</div>)}{!shares.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t.noShares} /> : null}</div></Card>
+        <Card className="space-y-4 p-5"><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold">{t.shares}</h2><p className="mt-1 text-xs text-[var(--muted)]">{t.sharesDetail}</p></div><Button disabled={Boolean(pending)} onClick={() => void createShare()}>{pending === 'share' ? <Spinner /> : <Link2 size={16} />}{t.createShare}</Button></div>{newShareURL ? <div className="flex gap-2"><Input readOnly value={newShareURL} /><Button size="icon" aria-label={t.copy} onClick={() => void navigator.clipboard.writeText(newShareURL).then(() => toast.success(locale === 'zh-CN' ? '已复制' : 'Copied')).catch((reason: unknown) => toast.error(reason instanceof Error ? reason.message : String(reason)))}><Copy size={16} /></Button></div> : null}<div className="divide-y divide-[var(--border)]">{shares.map((share) => <div key={share.id} className="flex items-center gap-3 py-3"><span className="min-w-0 flex-1 font-mono text-xs">{share.token_prefix}…</span><Badge tone={share.enabled ? 'success' : 'neutral'}>{share.enabled ? t.active : t.revoked}</Badge>{share.enabled ? <Button size="icon" variant="ghost" disabled={Boolean(pending)} aria-label={`${t.revoke} ${share.token_prefix}`} onClick={() => void revokeShare(share)}>{pending === `share:${share.id}` ? <Spinner /> : <Trash2 size={15} />}</Button> : null}</div>)}{!shares.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t.noShares} /> : null}</div></Card>
       </div>}
     </>}
   </div>

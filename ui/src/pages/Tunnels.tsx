@@ -1,3 +1,4 @@
+import { useToast } from '@acme/components'
 import { I18nCodeBlock as CodeBlock } from '../components/I18nCodeBlock'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,6 +18,7 @@ const emptyStatus: TunnelStatus = {
 }
 
 export function Tunnels() {
+  const message = useToast()
   const { session } = useSession()
   const { locale } = useI18n()
   const copy = locale === 'zh-CN' ? zh : en
@@ -30,18 +32,22 @@ export function Tunnels() {
   const config = draft ?? status.data?.config ?? emptyStatus.config
   const dirty = JSON.stringify(config) !== JSON.stringify(status.data?.config ?? emptyStatus.config)
   const save = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: (next: TunnelConfig) => api<{ status: TunnelStatus }>(session!, '/tunnels', { method: 'PUT', body: JSON.stringify(next) }),
     onSuccess: (result) => { setDraft(null); setResolverDraftValues({}); setAdvancedDraftValues({}); queryClient.setQueryData(['tunnels'], result.status) },
   })
   const install = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: () => api(session!, '/tunnels/install', { method: 'POST' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tunnels'] }),
   })
   const action = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: ({ id, value }: { id: string; value: string }) => api<{ status: TunnelStatus }>(session!, `/tunnels/${encodeURIComponent(id)}/${value}`, { method: 'POST' }),
     onSuccess: (result) => { setDraft(null); queryClient.setQueryData(['tunnels'], result.status) },
   })
   const loadLog = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: async (instance: TunnelInstance) => ({ name: instance.name, ...(await api<{ content: string }>(session!, `/tunnels/${encodeURIComponent(instance.id)}/log`)) }),
     onSuccess: setLog,
   })
@@ -61,7 +67,7 @@ export function Tunnels() {
     </div>
     <Alert type="info" showIcon message={copy.safetyTitle} description={copy.safetyDetail} />
     {(status.data?.binary ?? emptyStatus.binary).installed ? null : <Alert type="warning" showIcon message={`wstunnel ${status.data?.binary.version ?? emptyStatus.binary.version} ${copy.notInstalled}`} description={<Button className="mt-2" size="small" icon={<Download size={14} />} loading={install.isPending} onClick={() => install.mutate()}>{copy.download}</Button>} />}
-    {status.isError || save.isError || install.isError || action.isError || loadLog.isError ? <Alert type="error" showIcon message={(status.error ?? save.error ?? install.error ?? action.error ?? loadLog.error) instanceof Error ? String((status.error ?? save.error ?? install.error ?? action.error ?? loadLog.error)?.message) : copy.failed} /> : null}
+    {status.isError ? <Alert type="error" showIcon message={status.error instanceof Error ? status.error.message : copy.failed} /> : null}
     {dirty ? <Alert type="warning" showIcon message={copy.unsaved} /> : null}
     {invalidResolverDraft ? <Alert type="error" showIcon message={copy.invalidResolver} /> : null}
     <div className="flex justify-end"><Button icon={<CirclePlus size={16} />} onClick={() => update({ ...config, instances: [...config.instances, newInstance()] })}>{copy.addInstance}</Button></div>

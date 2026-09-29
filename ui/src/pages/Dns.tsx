@@ -1,3 +1,4 @@
+import { useToast } from '@acme/components'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
@@ -26,6 +27,7 @@ interface DnsQueryEvent {
 const emptyRewrite = (): DnsRewrite => ({ id: randomUuid(), enabled: true, domain: '', type: 'A', answer: '', ttl: 300, comment: '' })
 
 export function Dns() {
+  const message = useToast()
   const { locale } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
@@ -48,10 +50,12 @@ export function Dns() {
   const save = useMutation({
     mutationFn: (candidate: DnsSettings) => api(session!, '/dns/settings', { method: 'PUT', body: JSON.stringify(candidate) }),
     onSuccess: () => {
+      message.success(zh ? '前置 DNS 设置已保存；接管开关变化时会暂存核心接线配置。' : 'Frontend DNS settings saved. Takeover changes stage the required core plumbing.')
       setDraft(null)
       queryClient.invalidateQueries({ queryKey: ['dns'] })
       queryClient.invalidateQueries({ queryKey: ['system'] })
     },
+    onError: (error) => message.error(error.message),
   })
   const clear = useMutation({
     mutationFn: () => api(session!, '/dns/queries', { method: 'DELETE' }),
@@ -100,8 +104,6 @@ export function Dns() {
       <div><h1 className="text-xl font-semibold">DNS</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '设备级前置 DNS；核心 DNS 仍由当前订阅配置。' : 'Device-level DNS frontend. Core DNS remains owned by the active subscription.'}</p></div>
       <div className="flex gap-2"><Button icon={<RefreshCw size={16} />} onClick={() => { settings.refetch(); queries.refetch() }}>{zh ? '刷新' : 'Refresh'}</Button><Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(current)}>{zh ? '保存' : 'Save'}</Button></div>
     </div>
-    {save.isError ? <Alert type="error" showIcon message={save.error instanceof Error ? save.error.message : String(save.error)} /> : null}
-    {save.isSuccess ? <Alert type="success" showIcon message={zh ? '前置 DNS 设置已保存；接管开关变化时会暂存核心接线配置。' : 'Frontend DNS settings saved. Takeover changes stage the required core plumbing.'} /> : null}
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><Tabs items={tabs} defaultActiveKey="queries" destroyInactiveTabPane={false} /></Card>
   </div>
 }

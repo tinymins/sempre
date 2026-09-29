@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, ChevronDown, Gauge, RefreshCw, Search } from 'lucide-react'
+import { useToast } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -11,23 +12,23 @@ export function Proxies() {
   const { t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
+  const toast = useToast()
   const [tab, setTab] = useState<'groups' | 'providers'>('groups')
   const [search, setSearch] = useState('')
-  const [notice, setNotice] = useState('')
   const proxies = useQuery({ queryKey: ['runtime', 'proxies'], queryFn: () => api<ProxyNode[]>(session!, '/runtime/proxies'), refetchInterval: 5000, retry: false })
   const providers = useQuery({ queryKey: ['runtime', 'providers'], queryFn: () => api<ProxyProvider[]>(session!, '/runtime/providers'), retry: false })
   const select = useMutation({
     mutationFn: ({ group, proxy }: { group: string; proxy: string }) => api(session!, '/runtime/proxies/select', { method: 'POST', body: JSON.stringify({ group, proxy }) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['runtime', 'proxies'] }); setNotice(t('operationDone')) },
-    onError: (error) => setNotice(error.message),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['runtime', 'proxies'] }); toast.success(t('operationDone')) },
+    onError: (error) => toast.error(error.message),
   })
   const delay = useMutation({
     mutationFn: (name: string) => api<{ delay: number }>(session!, '/runtime/proxies/delay', { method: 'POST', body: JSON.stringify({ name }) }),
-    onSuccess: (result) => setNotice(`${result.delay} ms`), onError: (error) => setNotice(error.message),
+    onSuccess: (result) => toast.info(`${result.delay} ms`), onError: (error) => toast.error(error.message),
   })
   const providerAction = useMutation({
     mutationFn: ({ name, action }: { name: string; action: 'update' | 'healthcheck' }) => api(session!, `/runtime/providers/${action}`, { method: 'POST', body: JSON.stringify({ name }) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['runtime', 'providers'] }); setNotice(t('operationDone')) }, onError: (error) => setNotice(error.message),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['runtime', 'providers'] }); toast.success(t('operationDone')) }, onError: (error) => toast.error(error.message),
   })
   const groups = useMemo(() => (proxies.data || []).filter((item) => item.all?.length && item.name.toLowerCase().includes(search.toLowerCase())), [proxies.data, search])
   const filteredProviders = useMemo(() => (providers.data || []).filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [providers.data, search])
@@ -45,7 +46,6 @@ export function Proxies() {
       </div> : null}
       <div className="relative ml-auto w-full sm:w-72"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div>
     </div>
-    {notice ? <div className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     {proxies.isLoading ? <Loading /> : activeTab === 'groups' ? (
       groups.length ? <div className="grid gap-4">{groups.map((group) => <ProxyGroup key={group.name} group={group} onSelect={(proxy) => select.mutate({ group: group.name, proxy })} onDelay={(proxy) => delay.mutate(proxy)} busy={select.isPending || delay.isPending} />)}</div> : <EmptyState title={t('noData')} detail={t('noDataDetail')} />
     ) : filteredProviders.length ? (

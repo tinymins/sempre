@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Checkbox, Input, Switch, Tag } from '@acme/components'
+import { Button, Checkbox, Input, Switch, Tag, useToast } from '@acme/components'
 import { Plus, Radar, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -14,9 +14,9 @@ export function NetworkAutomationPanel() {
   const { locale } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
+  const toast = useToast()
   const zh = locale === 'zh-CN'
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [notice, setNotice] = useState('')
   const network = useQuery({ queryKey: ['network', 'settings'], queryFn: () => api<NetworkSettingsResponse>(session!, '/network/settings') })
   const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system'), refetchInterval: 5000 })
   const update = useMutation({
@@ -24,9 +24,9 @@ export function NetworkAutomationPanel() {
     onSuccess: (result) => {
       queryClient.setQueryData(['network', 'settings'], result)
       queryClient.invalidateQueries({ queryKey: ['system'] })
-      setNotice(zh ? '已保存，点击顶部重启按钮应用改动。' : 'Saved. Use the restart button at the top to apply the changes.')
+      toast.success(zh ? '已保存，点击顶部重启按钮应用改动。' : 'Saved. Use the restart button at the top to apply the changes.')
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : String(error)),
+    onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
   })
   const settings = network.data?.settings
   const current = network.data?.current
@@ -44,7 +44,7 @@ export function NetworkAutomationPanel() {
   function addCurrent() {
     if (!settings || !current?.gateway_mac) return
     if (settings.known_networks.some((item) => item.gateway_mac.toLowerCase() === current.gateway_mac?.toLowerCase())) {
-      setNotice(zh ? '当前网络已经在列表中。' : 'The current network is already listed.')
+      toast.info(zh ? '当前网络已经在列表中。' : 'The current network is already listed.')
       return
     }
     const suffix = current.gateway_mac.split(':').slice(-3).join(':')
@@ -80,7 +80,6 @@ export function NetworkAutomationPanel() {
       </div>)}
       {settings && (settings.known_networks?.length ?? 0) === 0 ? <p className="rounded-lg border border-dashed border-[var(--border)] px-3 py-5 text-center text-sm text-[var(--muted)]">{zh ? '尚未添加网络。请在目标网络中打开本页并点击“将当前网络加入”。' : 'No networks yet. Open this page on the target network and add the current network.'}</p> : null}
     </div>
-    {notice ? <p className="mt-3 text-xs text-[var(--muted)]">{notice}</p> : null}
   </Card>
 }
 

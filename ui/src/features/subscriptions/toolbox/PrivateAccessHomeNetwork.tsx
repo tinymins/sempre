@@ -1,4 +1,4 @@
-import { Button, Checkbox, PlusOutlined, Tag } from "@acme/components";
+import { Button, Checkbox, PlusOutlined, Tag, useToast } from "@acme/components";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
@@ -20,11 +20,13 @@ export function PrivateAccessHomeNetwork({ enabled, networkIds, runtime, connect
   const { locale } = useI18n();
   const session = useOptionalSession()?.session;
   const queryClient = useQueryClient();
+  const toast = useToast();
   const zh = locale === "zh-CN";
   const network = useQuery({ queryKey: ["network", "settings"], queryFn: () => api<NetworkSettingsResponse>(session!, "/network/settings"), enabled: Boolean(session) });
   const save = useMutation({
     mutationFn: (settings: NetworkSettings) => api<NetworkSettingsResponse>(session!, "/network/settings", { method: "PUT", body: JSON.stringify(settings) }),
     onSuccess: (result) => queryClient.setQueryData(["network", "settings"], result),
+    onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
   });
   const mode = connectorStatus?.mode;
   const label = mode === "direct" ? t("proxy.form.privateHomeNetworkDirect") : mode === "wireguard" ? t("proxy.form.privateHomeNetworkWireGuard") : mode === "inactive" ? t("proxy.form.privateHomeNetworkInactive") : mode === "unknown" ? t("proxy.form.privateHomeNetworkUnknown") : t("proxy.form.privateHomeNetworkPending");
@@ -59,6 +61,5 @@ export function PrivateAccessHomeNetwork({ enabled, networkIds, runtime, connect
       {(network.data?.settings.known_networks?.length ?? 0) === 0 ? <p className="text-xs text-gray-500 dark:text-gray-400">{zh ? "请在家中点击上方按钮，Sempre 会自动读取默认网关 MAC。" : "Use the button at home; Sempre will capture the default gateway MAC."}</p> : null}
     </div> : null}
     {enabled && connectorStatus ? <p className="text-xs text-gray-500 dark:text-gray-400">{runtime?.interface || "-"} · {runtime?.interface_addresses.join(", ") || "-"}{connectorStatus.matched_network ? ` · ${connectorStatus.matched_network}` : ""}</p> : null}
-    {save.isError ? <p className="text-xs text-red-600">{save.error instanceof Error ? save.error.message : String(save.error)}</p> : null}
   </div>;
 }

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
+import { AcmeContentBoundary } from "@/components/AcmeContentBoundary";
 import { emptyConnector, serializeConfig } from "./PrivateAccessConfig";
 import PrivateAccessEditor from "./PrivateAccessEditor";
 
@@ -17,7 +18,7 @@ describe("PrivateAccessEditor WireGuard import", () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <I18nProvider>
-          <PrivateAccessEditor value={value} onChange={onChange} profileId="profile" />
+          <AcmeContentBoundary><PrivateAccessEditor value={value} onChange={onChange} profileId="profile" /></AcmeContentBoundary>
         </I18nProvider>
       </QueryClientProvider>,
     );

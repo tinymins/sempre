@@ -195,7 +195,8 @@ describe('CustomNodes', () => {
     const dialog = await openNew()
     failProfile = 'Work'
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Profile save failed')
+    expect(await screen.findByText('Profile save failed')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
     await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Save' })).toBeEnabled())
     expect(nodes).toHaveLength(0)
     expect(profiles[0].custom_node_ids).toEqual(['other-node'])

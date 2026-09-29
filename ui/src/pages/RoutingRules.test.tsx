@@ -1,3 +1,4 @@
+import { ToastProvider } from '@acme/components'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -26,7 +27,7 @@ const settings = {
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><RoutingRules /></SessionProvider></I18nProvider></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><RoutingRules /></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 }
 
 function response(body: unknown) {

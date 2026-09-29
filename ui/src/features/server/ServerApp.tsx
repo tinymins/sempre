@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { HashRouter, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { CircleGauge, Globe2, Library, Rss, Settings } from 'lucide-react'
 import { Shell, type ShellNavigationItem } from '../../components/Shell'
+import { AcmeContentBoundary } from '../../components/AcmeContentBoundary'
 import { Spinner } from '../../components/ui'
 import { useI18n } from '../../lib/i18n'
 import { ServerAuth } from './ServerAuth'
@@ -31,7 +32,7 @@ export function ServerApp() {
     return () => { cancelled = true }
   }, [checking, session])
   if (checking) return <div className="grid min-h-screen place-items-center"><Spinner /></div>
-  if (!session) return <ServerAuth onAuthenticated={setSession} />
+  if (!session) return <AcmeContentBoundary><ServerAuth onAuthenticated={setSession} /></AcmeContentBoundary>
   return <HashRouter><ServerRoutes session={session} onSessionExpired={() => setSession(null)} /></HashRouter>
 }
 

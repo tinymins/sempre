@@ -1,3 +1,4 @@
+import { ToastProvider } from '@acme/components'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -40,7 +41,7 @@ describe('Tunnels', () => {
 
   it('allocates globally unique forward IDs and listen ports across remote instances', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Tunnels /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><Tunnels /></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 
     await screen.findByText('尚未配置隧道。每台远端 OpenWrt 添加一个客户端实例。')
     fireEvent.click(screen.getByRole('button', { name: '新增远端实例' }))
@@ -57,7 +58,7 @@ describe('Tunnels', () => {
 
   it('hides generated IDs and keeps advanced parameters collapsed by default', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Tunnels /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><Tunnels /></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 
     await screen.findByText('尚未配置隧道。每台远端 OpenWrt 添加一个客户端实例。')
     fireEvent.click(screen.getByRole('button', { name: '新增远端实例' }))
@@ -92,7 +93,7 @@ describe('Tunnels', () => {
 
   it('builds internal wstunnel endpoint URLs from domain and port fields', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Tunnels /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ToastProvider><I18nProvider><SessionProvider><Tunnels /></SessionProvider></I18nProvider></ToastProvider></QueryClientProvider>)
 
     await screen.findByText('尚未配置隧道。每台远端 OpenWrt 添加一个客户端实例。')
     fireEvent.click(screen.getByRole('button', { name: '新增远端实例' }))

@@ -1,3 +1,4 @@
+import { useToast } from '@acme/components'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Download, LoaderCircle, Power, RefreshCw, ServerCog, ShieldAlert, Upload } from 'lucide-react'
@@ -11,6 +12,7 @@ import { Badge, Button, Card, ConfirmDialog, Spinner } from '../../components/ui
 import { ReleaseNotes } from './ReleaseNotes'
 
 export function ServicePanel() {
+  const message = useToast()
   const { locale, t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
@@ -20,6 +22,7 @@ export function ServicePanel() {
   const update = useQuery({ queryKey: ['service', 'update'], queryFn: () => api<ServiceUpdateStatus>(session!, '/service/update'), enabled: false, retry: false })
   const settings = useQuery({ queryKey: ['service', 'update-settings'], queryFn: () => api<ServiceUpdateSettingsResponse>(session!, '/service/update/settings'), retry: false })
   const saveSettings = useMutation({
+    onError: (error) => message.error(error.message),
     mutationFn: (allow_prerelease: boolean) => api<ServiceUpdateSettingsResponse>(session!, '/service/update/settings', { method: 'PUT', body: JSON.stringify({ allow_prerelease }) }),
     onSuccess: (result) => {
       queryClient.setQueryData(['service', 'update-settings'], result)
@@ -66,7 +69,7 @@ export function ServicePanel() {
         <Button disabled={!serviceAvailable || updating} onClick={() => updatePackageInput.current?.click()}><Upload size={16} />{uploadCopy}</Button>
         <input ref={updatePackageInput} aria-label={uploadCopy} className="sr-only" type="file" accept=".zip,.tar.gz,application/zip,application/gzip" disabled={!serviceAvailable || updating} onChange={(event) => { uploadPackage(event.target.files?.[0]); event.target.value = '' }} />
       </div>
-      {settings.isError || saveSettings.isError ? <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{(saveSettings.error || settings.error)?.message}</p> : null}
+      {settings.isError ? <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{settings.error?.message}</p> : null}
       <div className="grid gap-3 rounded-lg bg-[var(--surface-hover)] p-4 sm:grid-cols-2">
         <Version label={t('currentVersion')} value={currentVersion} />
         <Version label={t('latestVersion')} value={update.data?.latest_version ?? t('notChecked')} />
@@ -87,19 +90,18 @@ interface ServiceUpdateSettingsResponse {
 export function ServiceActionsPanel() {
   const { t } = useI18n()
   const { session } = useSession()
-  const [notice, setNotice] = useState('')
+  const message = useToast()
   const [serviceConfirm, setServiceConfirm] = useState<'restart' | 'stop' | null>(null)
   const [serviceConfirmOpen, setServiceConfirmOpen] = useState(false)
   const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system') })
   const serviceMutation = useMutation({
     mutationFn: (action: string) => api(session!, '/service/action', { method: 'POST', body: JSON.stringify({ action }) }),
-    onSuccess: () => { setNotice(t('operationAccepted')); setServiceConfirmOpen(false) },
-    onError: (error) => setNotice(error.message),
+    onSuccess: () => { message.success(t('operationAccepted')); setServiceConfirmOpen(false) },
+    onError: (error) => message.error(error.message),
   })
   const serviceAvailable = system.data?.mode === 'system' && system.data.service !== 'not installed'
 
   return <div className="min-w-0 space-y-5">
-    {notice ? <div role="status" className="border-l-2 border-emerald-500 bg-emerald-500/8 px-3 py-2 text-sm">{notice}</div> : null}
     <Card className="p-4 md:p-5">
       <div className="mb-5 flex items-center gap-2"><ShieldAlert size={18} className="text-emerald-600" /><h2 className="text-sm font-semibold">{t('systemServiceActions')}</h2></div>
       <div className="flex flex-wrap items-center justify-between gap-4"><div><Badge tone="danger">{t('dangerZone')}</Badge><p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">{t('serviceRestartWarning')}</p></div><div className="flex gap-2"><Button disabled={!serviceAvailable || serviceMutation.isPending} onClick={() => { setServiceConfirm('restart'); setServiceConfirmOpen(true) }}><RefreshCw size={16} />{t('restart')}</Button><Button variant="danger" disabled={!serviceAvailable || serviceMutation.isPending} onClick={() => { setServiceConfirm('stop'); setServiceConfirmOpen(true) }}><Power size={16} />{t('stop')}</Button></div></div>

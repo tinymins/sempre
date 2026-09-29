@@ -1,3 +1,4 @@
+import { useToast } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Download, Package, RefreshCw, Trash2, X } from 'lucide-react'
@@ -22,11 +23,11 @@ const referenceExamples: Record<string, string> = {
 }
 
 export function CorePanel() {
+  const message = useToast()
   const { t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
   const [reference, setReference] = useState(referenceExamples['sing-box'])
-  const [notice, setNotice] = useState('')
   const [cancelTask, setCancelTask] = useState<CoreDownloadTask | null>(null)
   const cores = useQuery({ queryKey: ['cores'], queryFn: () => api<CoresResponse>(session!, '/cores') })
   const tasks = useQuery({
@@ -38,18 +39,18 @@ export function CorePanel() {
   const task = tasks.data?.task
   const action = useMutation({
     mutationFn: ({ operation, value }: { operation: string; value?: string }) => api<ChangeResult>(session!, `/cores/${operation}`, { method: 'POST', body: JSON.stringify({ reference: value || '' }) }),
-    onSuccess: (result) => { setNotice(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); refreshCoreQueries(queryClient) },
-    onError: (error) => setNotice(error.message),
+    onSuccess: (result) => { message.success(changeNotice(result, queryClient, t('operationDone'), t('changeDeferred'))); refreshCoreQueries(queryClient) },
+    onError: (error) => message.error(error.message),
   })
   const download = useMutation({
     mutationFn: (operation: 'install' | 'update') => api<{ task: CoreDownloadTask }>(session!, `/cores/${operation}`, { method: 'POST', body: JSON.stringify({ reference }) }),
-    onSuccess: (result) => { setNotice(''); queryClient.setQueryData(taskKey, result) },
-    onError: (error) => setNotice(error.message),
+    onSuccess: (result) => { queryClient.setQueryData(taskKey, result) },
+    onError: (error) => message.error(error.message),
   })
   const removeTask = useMutation({
     mutationFn: (id: string) => api<{ task: null }>(session!, `/cores/download?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     onSuccess: () => { queryClient.setQueryData(taskKey, { task: null }); setCancelTask(null) },
-    onError: (error) => setNotice(error.message),
+    onError: (error) => message.error(error.message),
   })
 
   useEffect(() => {
@@ -73,7 +74,7 @@ export function CorePanel() {
     { title: '', key: 'actions', width: 130, render: (_value, item) => item.state === 'running' ? <Button size="small" variant="danger" onClick={() => setCancelTask(item)}><X size={14} />{t('cancelDownload')}</Button> : <Button size="small" onClick={() => removeTask.mutate(item.id)}>{t('clearDownload')}</Button> },
   ]
   const busy = task?.state === 'running' || download.isPending
-  const displayedNotice = task?.state === 'failed' ? task.error || t('operationFailed') : notice
+  const displayedNotice = task?.state === 'failed' ? task.error || t('operationFailed') : ''
 
   return <Card className="min-w-0 p-4 md:p-5">
     <div className="mb-5 flex items-center gap-2"><span className="text-emerald-600"><Package size={18} /></span><h2 className="text-sm font-semibold">{t('core')}</h2></div>

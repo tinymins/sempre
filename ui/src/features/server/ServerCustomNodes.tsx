@@ -2,9 +2,10 @@ import { useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
 import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Empty, Modal, Select } from '@acme/components'
+import { Empty, Modal, Select, useToast } from '@acme/components'
 import { Badge, Button, Card, Field, Input } from '../../components/ui'
 import { serverAPI, type ServerCustomNode, type ServerMember, type ServerSession } from './server-api'
+import { useI18n } from '../../lib/i18n'
 import { useServerLocaleText } from './server-i18n'
 
 const example = {
@@ -18,6 +19,8 @@ export function ServerCustomNodes({ session, nodes, members, onChange }: {
   members: ServerMember[]
   onChange: (nodes: ServerCustomNode[]) => void
 }) {
+  const { t: commonT } = useI18n()
+  const toast = useToast()
   const t = useServerLocaleText({
     title: '自定义节点库', detail: '这些节点可在订阅配置编辑器中复用。', add: '添加节点', shared: '共享', edit: '编辑', remove: '删除', empty: '还没有可复用节点。', addTitle: '添加自定义节点', editTitle: '编辑自定义节点', save: '保存', name: '名称', json: '节点 JSON', authorized: '授权的配置成员',
   }, {
@@ -49,25 +52,26 @@ export function ServerCustomNodes({ session, nodes, members, onChange }: {
       })
       onChange([result, ...nodes.filter((node) => node.id !== result.id)])
       setEditing(null)
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      if (reason instanceof SyntaxError) setError(reason.message)
+      else toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending(false)
     }
   }
   const remove = async (node: ServerCustomNode) => {
-    setError('')
     try {
       await serverAPI<void>(session, `/custom-nodes/${node.id}`, { method: 'DELETE' })
       onChange(nodes.filter((item) => item.id !== node.id))
+      toast.success(commonT('operationDone'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     }
   }
   return <>
     <Card className="space-y-4 p-5">
       <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold">{t.title}</h2><p className="text-sm text-[var(--muted)]">{t.detail}</p></div><Button onClick={() => open('new')}><Plus size={16} />{t.add}</Button></div>
-      {error && !editing ? <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
       <div className="grid gap-2 md:grid-cols-2">{nodes.map((node) => <div key={node.id} className="flex items-center justify-between gap-3 border-t border-[var(--border)] py-3"><div className="min-w-0"><div className="flex items-center gap-2"><span className="truncate font-medium">{node.name}</span><Badge>{String(node.proxy.type || '')}</Badge>{node.owner_id !== session.user.id ? <Badge tone="info">{t.shared}</Badge> : null}</div><p className="truncate font-mono text-xs text-[var(--muted)]">{String(node.proxy.server || '')}:{String(node.proxy.port || '')}</p></div>{node.owner_id === session.user.id ? <div className="flex gap-1"><Button size="icon" variant="ghost" aria-label={`${t.edit} ${node.name}`} onClick={() => open(node)}><Pencil size={15} /></Button><Button size="icon" variant="ghost" aria-label={`${t.remove} ${node.name}`} onClick={() => void remove(node)}><Trash2 size={15} /></Button></div> : null}</div>)}</div>
       {!nodes.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t.empty} /> : null}
     </Card>

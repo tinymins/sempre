@@ -1,6 +1,6 @@
 import { I18nCodeBlock as CodeBlock } from '../../components/I18nCodeBlock'
 import { useState } from 'react'
-import { Select } from '@acme/components'
+import { Select, useToast } from '@acme/components'
 import { Button, Card, Field, Spinner } from '../../components/ui'
 import type { SubscriptionSource, SubscriptionTarget } from '../../lib/types'
 import { serverAPI, type ServerPreviewNode, type ServerSession, type ServerSourceTestResult } from './server-api'
@@ -16,24 +16,23 @@ interface Props {
 
 export function ServerDiagnostics({ session, profileId, sources, target, targets }: Props) {
   const t = useServerT()
+  const toast = useToast()
   const [sourceId, setSourceId] = useState(sources[0]?.id ?? '')
   const [nodes, setNodes] = useState<ServerPreviewNode[]>([])
   const [nodeName, setNodeName] = useState('')
   const [sourceResult, setSourceResult] = useState<ServerSourceTestResult | null>(null)
   const [trace, setTrace] = useState<unknown>(null)
   const [pending, setPending] = useState('')
-  const [notice, setNotice] = useState('')
 
   const effectiveSourceId = sources.some((source) => source.id === sourceId) ? sourceId : sources[0]?.id ?? ''
   const targetValue = targets.find((item) => item.format === target) ?? { format: target }
 
   const run = async (name: string, operation: () => Promise<void>) => {
     setPending(name)
-    setNotice('')
     try {
       await operation()
     } catch (reason) {
-      setNotice(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending('')
     }
@@ -60,12 +59,11 @@ export function ServerDiagnostics({ session, profileId, sources, target, targets
 
   const clearCache = () => run('cache', async () => {
     await serverAPI<void>(session, `/profiles/${profileId}/sources/${encodeURIComponent(effectiveSourceId)}/cache`, { method: 'DELETE' })
-    setNotice(t('cacheCleared'))
+    toast.success(t('cacheCleared'))
   })
 
   return <Card className="space-y-4 p-4">
     <div><h3 className="font-medium">{t('diagnosticsTitle')}</h3><p className="text-xs text-[var(--muted)]">{t('diagnosticsDetail')}</p></div>
-    {notice ? <p role={notice === t('cacheCleared') ? 'status' : 'alert'} className="text-sm">{notice}</p> : null}
     <div className="flex flex-wrap items-end gap-2">
       <Field label={t('source')}><Select className="min-w-56" value={effectiveSourceId} options={sources.map((source) => ({ value: source.id, label: source.remark || source.url || source.id }))} onChange={(value) => setSourceId(String(value))} /></Field>
       <Button disabled={!effectiveSourceId || Boolean(pending)} onClick={testSource}>{pending === 'source' ? <Spinner /> : null}{t('testSource')}</Button>

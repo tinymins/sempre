@@ -1,3 +1,4 @@
+import { useToast } from '@acme/components'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LockKeyhole, Pencil, Plus, Save, Settings2, Trash2 } from 'lucide-react'
@@ -20,6 +21,7 @@ type DomainDialogState = {
 }
 
 export function RoutingRules() {
+  const message = useToast()
   const { locale } = useI18n()
   const { session } = useSession()
   const { mode: uiMode } = useLocalUIMode()
@@ -48,10 +50,12 @@ export function RoutingRules() {
   const save = useMutation({
     mutationFn: (candidate: DnsSettings) => api(session!, '/dns/settings', { method: 'PUT', body: JSON.stringify(candidate) }),
     onSuccess: () => {
+      message.success(zh ? '分流规则已保存并暂存；重启核心后应用新的核心规则和前置 DNS。' : 'Routing rules saved and staged. Restart the core to apply the core and frontend DNS changes.')
       setDraft(null)
       queryClient.invalidateQueries({ queryKey: ['dns'] })
       queryClient.invalidateQueries({ queryKey: ['system'] })
     },
+    onError: (error) => message.error(error.message),
   })
   const selectProxy = useMutation({
     mutationFn: ({ group, proxy }: { group: string; proxy: string }) => api(session!, '/runtime/proxies/select', { method: 'POST', body: JSON.stringify({ group, proxy }) }),
@@ -134,7 +138,7 @@ export function RoutingRules() {
     await save.mutateAsync(value.settings)
     const remaining: Record<string, string> = {}
     for (const [group, proxy] of Object.entries(value.selections)) {
-      if (proxies.data?.some((item) => item.name === group)) await selectProxy.mutateAsync({ group, proxy })
+      if (proxies.data?.some((item) => item.name === group)) await selectProxy.mutateAsync({ group, proxy }).catch((error: Error) => { message.error(error.message); throw error })
       else remaining[group] = proxy
     }
     setPendingSelections(remaining)
@@ -142,14 +146,12 @@ export function RoutingRules() {
 
   if (!current) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载分流规则…' : 'Loading routing rules…'}</div>
   if (uiMode === 'simple' && proxies.isLoading) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载分流节点…' : 'Loading routing nodes…'}</div>
-  if (uiMode === 'simple') return <SimpleRoutingRules key={`${current.schema}:${current.revision}`} settings={current} proxyGroups={proxies.data ?? []} saving={save.isPending || selectProxy.isPending} saved={save.isSuccess} pendingSelection={Object.keys(pendingSelections).length > 0} error={(save.error || selectProxy.error) as Error | null} onSave={saveSimple} />
+  if (uiMode === 'simple') return <SimpleRoutingRules key={`${current.schema}:${current.revision}`} settings={current} proxyGroups={proxies.data ?? []} saving={save.isPending || selectProxy.isPending} pendingSelection={Object.keys(pendingSelections).length > 0} onSave={saveSimple} />
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
       <div><h1 className="text-xl font-semibold">{zh ? '分流规则' : 'Routing rules'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '前置 DNS 决定解析路径；同一规则集同时注入 sing-box 路由。' : 'Frontend DNS selects the resolver path while the same rule set is injected into sing-box routing.'}</p></div>
       <div className="flex gap-2"><Button icon={<Plus size={16} />} onClick={addSet}>{zh ? '新增规则集' : 'Add rule set'}</Button><Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(current)}>{zh ? '保存' : 'Save'}</Button></div>
     </div>
-    {save.isError ? <Alert type="error" showIcon message={save.error instanceof Error ? save.error.message : String(save.error)} /> : null}
-    {save.isSuccess ? <Alert type="success" showIcon message={zh ? '分流规则已保存并暂存；重启核心后应用新的核心规则和前置 DNS。' : 'Routing rules saved and staged. Restart the core to apply the core and frontend DNS changes.'} /> : null}
     <div className="grid min-h-[34rem] gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
       <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
         <div className="border-b border-[var(--border)] px-4 py-3 text-sm font-medium">{zh ? '规则集' : 'Rule sets'}</div>
@@ -159,7 +161,7 @@ export function RoutingRules() {
         </div>
       </Card>
       <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
-        {selectedId === BUILTIN_ID ? <BuiltinRuleSet count={builtinCount} zh={zh} /> : active ? <EditableRuleSet ruleSet={active} proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} selectError={selectProxy.error} zh={zh} onSettings={openSettings} onAdd={() => openDomainDialog()} onEdit={openDomainDialog} onDelete={deleteDomain} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy })} /> : null}
+        {selectedId === BUILTIN_ID ? <BuiltinRuleSet count={builtinCount} zh={zh} /> : active ? <EditableRuleSet ruleSet={active} proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} zh={zh} onSettings={openSettings} onAdd={() => openDomainDialog()} onEdit={openDomainDialog} onDelete={deleteDomain} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy }, { onError: (error) => message.error(error.message) })} /> : null}
       </Card>
     </div>
     <Modal open={settingsDialogOpen} title={zh ? '设置规则集' : 'Rule set settings'} okText={zh ? '确定' : 'Apply'} cancelText={zh ? '取消' : 'Cancel'} okButtonProps={{ disabled: !settingsDraft.name.trim() }} onOk={() => { applySettings(); return undefined }} onCancel={() => setSettingsDialogOpen(false)} destroyOnClose>
@@ -188,7 +190,7 @@ function BuiltinRuleSet({ count, zh }: { count: number; zh: boolean }) {
   return <div className="space-y-4"><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold">{zh ? '中国大陆域名' : 'Mainland China domains'}</h2><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '内置 domains-min，随 Sempre 版本更新，不依赖运行时 URL。' : 'Built-in domains-min, updated with Sempre and never fetched from a runtime URL.'}</p></div><Tag color="green">DIRECT</Tag></div><div className="rounded-md border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted)]">{zh ? '域名数量' : 'Domains'}</div><div className="mt-1 text-2xl font-semibold tabular-nums">{count}</div></div><Alert type="info" showIcon message={zh ? '这是受保护的系统规则集，固定使用直连 DNS，不能编辑或删除。' : 'This protected system rule set always uses direct DNS and cannot be edited or deleted.'} /></div>
 }
 
-function EditableRuleSet({ ruleSet, proxyGroups, selecting, selectError, zh, onSettings, onAdd, onEdit, onDelete, onSelectProxy }: { ruleSet: DnsRoutingRuleSet; proxyGroups: ProxyNode[]; selecting: boolean; selectError: Error | null; zh: boolean; onSettings: () => void; onAdd: () => void; onEdit: (entry: DnsRoutingDomain) => void; onDelete: (id: string) => void; onSelectProxy: (group: string, proxy: string) => void }) {
+function EditableRuleSet({ ruleSet, proxyGroups, selecting, zh, onSettings, onAdd, onEdit, onDelete, onSelectProxy }: { ruleSet: DnsRoutingRuleSet; proxyGroups: ProxyNode[]; selecting: boolean; zh: boolean; onSettings: () => void; onAdd: () => void; onEdit: (entry: DnsRoutingDomain) => void; onDelete: (id: string) => void; onSelectProxy: (group: string, proxy: string) => void }) {
   const groupName = `DNS · ${ruleSet.name}`
   const proxyGroup = useMemo(() => proxyGroups.find((item) => item.name === groupName && item.all?.length), [groupName, proxyGroups])
   return <div className="space-y-5">
@@ -196,7 +198,7 @@ function EditableRuleSet({ ruleSet, proxyGroups, selecting, selectError, zh, onS
       <Button icon={<Settings2 size={15} />} onClick={onSettings}>{zh ? '设置规则集' : 'Rule set settings'}</Button>
       <Button variant="primary" icon={<Plus size={15} />} onClick={onAdd}>{zh ? '添加规则' : 'Add rule'}</Button>
     </div>
-    <RuleSetRuntime ruleSet={ruleSet} proxyGroup={proxyGroup} selecting={selecting} selectError={selectError} zh={zh} onSelect={onSelectProxy} />
+    <RuleSetRuntime ruleSet={ruleSet} proxyGroup={proxyGroup} selecting={selecting} zh={zh} onSelect={onSelectProxy} />
     <div className="overflow-hidden rounded-md border border-[var(--border)]">
       <div className="grid grid-cols-[minmax(0,1fr)_10rem_7rem] border-b border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2 text-xs text-[var(--muted)]"><span>{zh ? '域名' : 'Domain'}</span><span>{zh ? '包括子域名' : 'Subdomains'}</span><span className="text-right">{zh ? '操作' : 'Actions'}</span></div>
       {ruleSet.domains.length ? ruleSet.domains.map((entry) => <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_10rem_7rem] items-center gap-2 border-b border-[var(--border)] px-3 py-2 last:border-b-0"><span className="truncate text-sm">{entry.domain}</span><span className="text-sm">{entry.include_subdomains ? (zh ? '是' : 'Yes') : (zh ? '否' : 'No')}</span><span className="flex justify-end gap-1"><Button size="small" variant="text" icon={<Pencil size={14} />} title={zh ? '编辑' : 'Edit'} onClick={() => onEdit(entry)} /><Button size="small" variant="text" icon={<Trash2 size={14} />} title={zh ? '删除' : 'Delete'} onClick={() => onDelete(entry.id)} /></span></div>) : <div className="p-8 text-center text-sm text-[var(--muted)]">{zh ? '此规则集还没有规则。' : 'This rule set has no rules yet.'}</div>}
@@ -204,14 +206,13 @@ function EditableRuleSet({ ruleSet, proxyGroups, selecting, selectError, zh, onS
   </div>
 }
 
-function RuleSetRuntime({ ruleSet, proxyGroup, selecting, selectError, zh, onSelect }: { ruleSet: DnsRoutingRuleSet; proxyGroup?: ProxyNode; selecting: boolean; selectError: Error | null; zh: boolean; onSelect: (group: string, proxy: string) => void }) {
+function RuleSetRuntime({ ruleSet, proxyGroup, selecting, zh, onSelect }: { ruleSet: DnsRoutingRuleSet; proxyGroup?: ProxyNode; selecting: boolean; zh: boolean; onSelect: (group: string, proxy: string) => void }) {
   const [search, setSearch] = useState<string | null>(null)
   if (ruleSet.mode === 'direct') return <Alert type="info" showIcon message={zh ? 'FakeIP 下返回 Real-IP 并绕过核心；Real-IP 下进入核心后显式走 direct。' : 'In FakeIP mode, return real IPs and bypass the core. In Real-IP mode, enter the core and explicitly route direct.'} />
   if (!proxyGroup) return <Alert type="warning" showIcon message={zh ? '当前核心尚未识别此代理分组，请先保存并重启核心。' : 'The running core has not recognized this proxy group. Save and restart the core first.'} action={<RuntimeRestartButton showLabel />} />
   return <div className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--surface-subtle)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,24rem)] md:items-center">
     <div><div className="text-sm font-medium">{zh ? '代理节点快速切换' : 'Quick proxy selection'}</div><div className="mt-1 text-xs text-[var(--muted)]">{proxyGroup.name}</div></div>
     <label className="text-sm"><span className="sr-only">{zh ? '代理节点' : 'Proxy node'}</span><AutoComplete className="w-full" value={search ?? proxyGroup.now ?? ''} options={proxyGroup.all ?? []} disabled={selecting} allowClear={false} onChange={setSearch} onFocus={() => setSearch('')} onBlur={() => setSearch(null)} onSelect={(proxy) => { setSearch(proxy); onSelect(proxyGroup.name, proxy) }} /></label>
-    {selectError ? <div role="alert" className="text-xs text-red-600 md:col-start-2">{selectError.message}</div> : null}
   </div>
 }
 

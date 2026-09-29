@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useToast } from '@acme/components'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, CircleCheck, Clock3, Play, Route, Square, Terminal } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -19,12 +20,16 @@ type RuntimeAction = 'start' | 'stop'
 const transientStates = new Set(['starting', 'stopping', 'restarting'])
 
 export function RuntimeControlPanel() {
+  const message = useToast()
   const { t } = useI18n()
   const { session } = useSession()
   const { mode: uiMode } = useLocalUIMode()
   const queryClient = useQueryClient()
   const [confirmStop, setConfirmStop] = useState(false)
   const [notice, setNotice] = useState<RuntimeActionNotice | null>(null)
+  useEffect(() => {
+    if (notice) message[notice.tone]({ content: notice.message, key: 'runtime-action' })
+  }, [notice, message])
   const status = useQuery({
     queryKey: ['runtime', 'status'],
     queryFn: () => api<ManagedRuntimeStatus>(session!, '/runtime/status'),
@@ -72,7 +77,6 @@ export function RuntimeControlPanel() {
           <RuntimeRestartButton panel />
         </div>
       </div>
-      {notice ? <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`whitespace-pre-line border-b border-[var(--border)] px-4 py-2 text-sm md:px-5 ${notice.tone === 'error' ? 'bg-red-500/8 text-red-700 dark:text-red-300' : 'bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'}`}>{notice.message}</div> : null}
       <div className="grid gap-x-5 gap-y-4 p-4 sm:grid-cols-2 md:p-5 lg:grid-cols-4">
         <RuntimeInfo label={t('desiredState')} value={desiredState === 'running' ? t('running') : t('stopped')} />
         <RuntimeInfo label={t('actualState')} value={runtimeLabel(runtimeState, t)} />
@@ -93,7 +97,7 @@ export function RuntimeControlPanel() {
       {uiMode === 'advanced' ? <PrivateAccessRuntimePanel status={value?.private_access} /> : null}
       {uiMode === 'advanced' && value?.dns_frontend?.enabled ? <div className="mx-4 mb-4 rounded-md border border-[var(--border)] bg-[var(--surface-subtle)] p-3 text-sm md:mx-5 md:mb-5"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{t('dnsFrontend')}</span><Badge tone={value.dns_frontend.running ? 'success' : 'danger'}>{value.dns_frontend.running ? t('running') : t('failed')}</Badge><Badge tone={value.dns_frontend.core_dns_healthy ? 'success' : 'danger'}>{value.dns_frontend.core_dns_healthy ? t('dnsCoreHealthy') : t('dnsCoreUnavailable')}</Badge></div><div className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-4"><RuntimeInfo label={t('dnsMode')} value={value.dns_frontend.mode === 'fake-ip' ? 'FakeIP' : 'Real-IP'} /><RuntimeInfo label={t('dnsOriginalUpstreams')} value={value.dns_frontend.original_upstreams.join(', ') || '-'} mono /><RuntimeInfo label={t('dnsCoreUpstream')} value={value.dns_frontend.core_upstream || '-'} mono /><RuntimeInfo label={t('dnsDomesticRules')} value={`${value.dns_frontend.domestic_domain_count} · ${compactHash(value.dns_frontend.domestic_domain_sha256)}`} mono /></div>{value.dns_frontend.last_error ? <p className="mt-3 break-words text-xs text-red-700 dark:text-red-300">{value.dns_frontend.last_error}</p> : null}</div> : null}
       {value?.pending ? <div className="mx-4 mb-4 flex items-start gap-2 rounded-md border border-amber-500/35 bg-amber-500/8 px-3 py-2 text-sm text-amber-800 dark:text-amber-300 md:mx-5 md:mb-5"><Clock3 size={16} className="mt-0.5 shrink-0" /><span>{pendingMessage}</span></div> : null}
-      {value?.last_failure && !notice ? <div className="mx-4 mb-4 flex flex-wrap items-start gap-3 rounded-md border border-red-500/35 bg-red-500/8 px-3 py-3 text-sm text-red-800 dark:text-red-300 md:mx-5 md:mb-5"><AlertCircle size={17} className="mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="font-medium">{t('lastError')}</p><p className="mt-1 whitespace-pre-line break-words text-xs leading-5">{formatRuntimeFailure(value.last_failure, t)}</p></div><Link className="inline-flex h-8 items-center rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-hover)]" to="/logs">{t('viewLogs')}</Link></div> : value?.last_error ? <div className="mx-4 mb-4 flex flex-wrap items-start gap-3 rounded-md border border-red-500/35 bg-red-500/8 px-3 py-3 text-sm text-red-800 dark:text-red-300 md:mx-5 md:mb-5"><AlertCircle size={17} className="mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="font-medium">{t('lastError')}</p><p className="mt-1 break-words text-xs leading-5">{value.last_error}</p></div><Link className="inline-flex h-8 items-center rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-hover)]" to="/logs">{t('viewLogs')}</Link></div> : value?.last_exit ? <div className="border-t border-[var(--border)] px-4 py-3 text-xs text-[var(--muted)] md:px-5"><span className="font-medium">{t('lastExit')}:</span> {value.last_exit}</div> : null}
+      {value?.last_failure ? <div className="mx-4 mb-4 flex flex-wrap items-start gap-3 rounded-md border border-red-500/35 bg-red-500/8 px-3 py-3 text-sm text-red-800 dark:text-red-300 md:mx-5 md:mb-5"><AlertCircle size={17} className="mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="font-medium">{t('lastError')}</p><p className="mt-1 whitespace-pre-line break-words text-xs leading-5">{formatRuntimeFailure(value.last_failure, t)}</p></div><Link className="inline-flex h-8 items-center rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-hover)]" to="/logs">{t('viewLogs')}</Link></div> : value?.last_error ? <div className="mx-4 mb-4 flex flex-wrap items-start gap-3 rounded-md border border-red-500/35 bg-red-500/8 px-3 py-3 text-sm text-red-800 dark:text-red-300 md:mx-5 md:mb-5"><AlertCircle size={17} className="mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="font-medium">{t('lastError')}</p><p className="mt-1 break-words text-xs leading-5">{value.last_error}</p></div><Link className="inline-flex h-8 items-center rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-hover)]" to="/logs">{t('viewLogs')}</Link></div> : value?.last_exit ? <div className="border-t border-[var(--border)] px-4 py-3 text-xs text-[var(--muted)] md:px-5"><span className="font-medium">{t('lastExit')}:</span> {value.last_exit}</div> : null}
     </Card>
 	<ConfirmDialog open={confirmStop} title={t('coreStopTitle')} detail={t('coreStopWarning').replace('{core}', coreName)} confirmLabel={t('stopCore')} cancelLabel={t('cancel')} pending={actionPending === 'stop'} onCancel={() => setConfirmStop(false)} onConfirm={() => run('stop')} />
   </>

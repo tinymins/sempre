@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
 import { SessionProvider } from '../lib/session'
+import { AcmeContentBoundary } from '../components/AcmeContentBoundary'
 import { Proxies } from './Proxies'
 
 describe('Proxies', () => {
@@ -26,7 +27,7 @@ describe('Proxies', () => {
 
   it('keeps API order and starts every proxy group collapsed', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Proxies /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><AcmeContentBoundary><Proxies /></AcmeContentBoundary></SessionProvider></I18nProvider></QueryClientProvider>)
 
     const headings = await screen.findAllByRole('heading', { level: 2 })
     expect(headings.map((heading) => heading.textContent)).toEqual(['GLOBAL', 'configured-second'])
@@ -54,7 +55,7 @@ describe('Proxies', () => {
       return Response.json({})
     }))
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Proxies /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><AcmeContentBoundary><Proxies /></AcmeContentBoundary></SessionProvider></I18nProvider></QueryClientProvider>)
 
     const providerTab = await screen.findByRole('button', { name: 'Node Providers' })
     expect(screen.getByText('Proxy groups 1 · Node Providers 1')).toBeInTheDocument()
@@ -66,7 +67,7 @@ describe('Proxies', () => {
 
   it('selects a node from the whole row but not from the latency button', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Proxies /></SessionProvider></I18nProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><AcmeContentBoundary><Proxies /></AcmeContentBoundary></SessionProvider></I18nProvider></QueryClientProvider>)
 
     fireEvent.click(await screen.findByRole('button', { name: /GLOBAL/ }))
     const activeNode = screen.getByRole('radio', { name: 'active-global' })
