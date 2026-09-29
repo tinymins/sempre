@@ -123,6 +123,7 @@ async fn direct(
         &stored.hash,
         false,
         is_stale,
+        true,
     )
 }
 
@@ -200,7 +201,14 @@ async fn artifact(
         &headers,
     )
     .await;
-    response(stored.content, &stored.target, &stored.hash, true, false)
+    response(
+        stored.content,
+        &stored.target,
+        &stored.hash,
+        true,
+        false,
+        false,
+    )
 }
 
 async fn resolve_current(
@@ -447,10 +455,18 @@ fn response(
     hash: &str,
     immutable: bool,
     stale: bool,
+    inline_text: bool,
 ) -> Result<Response<Body>, ApiError> {
     let mut builder = Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, content_type(target))
+        .header(
+            header::CONTENT_TYPE,
+            if inline_text {
+                "text/plain; charset=utf-8"
+            } else {
+                content_type(target)
+            },
+        )
         .header(header::ETAG, format!("\"{hash}\""))
         .header(
             header::CACHE_CONTROL,
@@ -460,6 +476,9 @@ fn response(
                 "public, max-age=60"
             },
         );
+    if inline_text {
+        builder = builder.header(header::CONTENT_DISPOSITION, "inline");
+    }
     if stale {
         builder = builder
             .header("x-sempre-stale", "true")
