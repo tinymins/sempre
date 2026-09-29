@@ -240,7 +240,7 @@ export const jaJP = {
   "links.debugFormat": "保存済みの {format} 設定をデバッグ",
   "preview.title": "ノードプレビュー · {name}",
   "preview.target": "出力形式",
-  "preview.generate": "プレビューを再生成",
+  "preview.generate": "更新",
   "preview.summary": "全 {total} ノード · 保持 {active} · 除外 {filtered}",
   "preview.search": "名前、プロトコル、アドレス、ソースを検索",
   "preview.transportTls": "転送 / TLS",

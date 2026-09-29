@@ -238,7 +238,7 @@ export const zhCN = {
   'links.debugFormat': '调试已保存的 {format} 配置',
   'preview.title': '节点预览 · {name}',
   'preview.target': '输出格式',
-  'preview.generate': '重新生成预览',
+  'preview.generate': '刷新',
   'preview.summary': '共 {total} 个节点 · 保留 {active} · 过滤 {filtered}',
   'preview.search': '搜索名称、协议、地址或来源',
   'preview.transportTls': '传输 / TLS',

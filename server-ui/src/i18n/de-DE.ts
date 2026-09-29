@@ -240,7 +240,7 @@ export const deDE = {
   "links.debugFormat": "Gespeicherte {format}-Konfiguration debuggen",
   "preview.title": "Knotenvorschau · {name}",
   "preview.target": "Ausgabeformat",
-  "preview.generate": "Vorschau neu erzeugen",
+  "preview.generate": "Aktualisieren",
   "preview.summary": "{total} Knoten · {active} behalten · {filtered} herausgefiltert",
   "preview.search": "Name, Protokoll, Adresse oder Quelle suchen",
   "preview.transportTls": "Transport / TLS",

@@ -81,16 +81,19 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
 
   return <Modal open title={t('preview.title', { name: subscription.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} size="almost-full">
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="min-w-44 flex-1 space-y-1 text-sm">{t('preview.target')}
-          <Select value={format} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(next) => { requestId.current += 1; preparePreview(); setFormat(String(next)) }} className="w-full" />
-        </label>
-        <Button variant="primary" onClick={() => { if (target) { preparePreview(); void preview(target) } }} loading={loading} disabled={!target}>{t('preview.generate')}</Button>
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        {nodes ? <p className="min-w-0 flex-1 basis-64 break-words text-sm">{t('preview.summary', { total: number(nodes.length), active: number(activeCount), filtered: number(filteredCount) })}{typeCounts.length ? ` · ${typeCounts.map(([type, count]) => `${type} ${number(count)}`).join(' / ')}` : ''}</p> : <div className="min-w-0 flex-1 basis-64" />}
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+          {nodes ? <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('preview.search')} className="w-full min-w-0 sm:w-60" /> : null}
+          <label className="inline-flex min-w-0 items-center gap-2 text-sm"><span className="shrink-0 whitespace-nowrap">{t('preview.target')}</span>
+            <Select value={format} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(next) => { requestId.current += 1; preparePreview(); setFormat(String(next)) }} className="w-36 shrink-0" />
+          </label>
+          <Button variant="primary" onClick={() => { if (target) { preparePreview(); void preview(target) } }} loading={loading} disabled={!target}>{t('preview.generate')}</Button>
+        </div>
       </div>
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       {loading ? <Spin /> : null}
       {nodes ? <>
-        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm">{t('preview.summary', { total: number(nodes.length), active: number(activeCount), filtered: number(filteredCount) })}{typeCounts.length ? ` · ${typeCounts.map(([type, count]) => `${type} ${number(count)}`).join(' / ')}` : ''}</p><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('preview.search')} className="max-w-sm" /></div>
         <Table<PreviewNode> rowKey={(_, index) => String(index)} dataSource={filtered} pagination={false} scroll={{ x: 750 }} columns={[
           { title: t('common.name'), dataIndex: 'name' }, { title: t('common.protocol'), dataIndex: 'type', width: 110 },
           { title: t('common.server'), render: (_, node) => `${node.server}:${node.port}` },

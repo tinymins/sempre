@@ -240,7 +240,7 @@ export const zhTW = {
   "links.debugFormat": "偵錯已儲存的 {format} 設定",
   "preview.title": "節點預覽 · {name}",
   "preview.target": "輸出格式",
-  "preview.generate": "重新產生預覽",
+  "preview.generate": "重新整理",
   "preview.summary": "共 {total} 個節點 · 保留 {active} · 篩選 {filtered}",
   "preview.search": "搜索名稱、協議、位址或來源",
   "preview.transportTls": "傳輸 / TLS",

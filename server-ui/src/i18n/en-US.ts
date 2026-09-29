@@ -240,7 +240,7 @@ export const enUS = {
   "links.debugFormat": "Debug saved {format} configuration",
   "preview.title": "Node preview · {name}",
   "preview.target": "Output format",
-  "preview.generate": "Regenerate preview",
+  "preview.generate": "Refresh",
   "preview.summary": "{total} nodes · {active} kept · {filtered} filtered",
   "preview.search": "Search name, protocol, address, or source",
   "preview.transportTls": "Transport / TLS",
