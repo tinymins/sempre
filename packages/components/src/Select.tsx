@@ -294,7 +294,7 @@ export function Select({
         {...getReferenceProps()}
       >
         {addonBefore != null && <span className="self-stretch flex shrink-0 items-center whitespace-nowrap rounded-l-md border-r border-black/[0.08] bg-black/[0.03] px-2.5 text-[var(--text-muted)] dark:border-white/[0.1] dark:bg-white/[0.05]">{addonBefore}</span>}
-        <div className="flex-1 flex items-center gap-1 overflow-hidden min-w-0">
+        <div className={cn("flex-1 flex items-center gap-1 overflow-hidden min-w-0", addonBefore != null && "pl-1")}>
           {isMultiple ? (
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
               {selectedValues.map((v) => (
