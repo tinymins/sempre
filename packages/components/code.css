@@ -28,6 +28,18 @@
   outline-offset: 2px;
 }
 
+.acme-code-panel--fill {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.acme-code-panel--fill .acme-code-panel__body {
+  min-height: 0;
+  flex: 1;
+}
+
 .acme-code-panel__header {
   display: flex;
   align-items: center;

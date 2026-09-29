@@ -30,8 +30,9 @@ export function InheritedConfig({ field, draft, defaults, update, onDnsInvalidCh
   const { t } = useI18n()
   const { labelKey, flag } = fields[field]
   const useSystem = draft[flag]
+  const fillEditor = field === 'ruleList' || field === 'group' || field === 'customConfig'
   return (
-    <div className="space-y-3">
+    <div className={fillEditor || field === 'dnsConfig' ? 'flex min-h-[20rem] flex-1 flex-col gap-3' : 'space-y-3'}>
       <div className="flex items-center justify-between gap-3">
         <label className="text-sm font-medium" htmlFor={`config-${field}`}>{t(labelKey)}</label>
         <Checkbox checked={useSystem} onChange={(event) => update({ [flag]: event.target.checked })}>{t('editor.inherit')}</Checkbox>
@@ -39,14 +40,14 @@ export function InheritedConfig({ field, draft, defaults, update, onDnsInvalidCh
       {useSystem ? (
         <>
           <p className="text-xs text-[var(--muted)]">{t('editor.inheritHint')}</p>
-          {defaults === null ? <p className="text-sm text-[var(--muted)]">{t('common.unavailable')}</p> : field === 'filter' ? <FilterConfig value={defaults.filter} readOnly /> : field === 'dnsConfig' ? <DnsConfigEditor value={defaults.dnsConfig} onChange={() => undefined} readOnly /> : <CodeEditor value={defaults[field]} readOnly ariaLabel={t(labelKey)} />}
+          {defaults === null ? <p className="text-sm text-[var(--muted)]">{t('common.unavailable')}</p> : field === 'filter' ? <FilterConfig value={defaults.filter} readOnly /> : field === 'dnsConfig' ? <DnsConfigEditor value={defaults.dnsConfig} onChange={() => undefined} readOnly fillHeight /> : <div className="min-h-[18rem] flex-1"><CodeEditor value={defaults[field]} readOnly ariaLabel={t(labelKey)} height="100%" /></div>}
         </>
       ) : field === 'dnsConfig' ? (
-        <DnsConfigEditor value={draft.dnsConfig} onChange={(next) => update({ dnsConfig: next })} onInvalidChange={onDnsInvalidChange} />
+        <DnsConfigEditor value={draft.dnsConfig} onChange={(next) => update({ dnsConfig: next })} onInvalidChange={onDnsInvalidChange} fillHeight />
       ) : field === 'filter' ? (
         <FilterConfig value={draft.filter ?? '[]'} onChange={(next) => update({ filter: next || null })} />
       ) : (
-        <CodeEditor value={draft[field] ?? ''} onChange={(next) => update({ [field]: next || null })} ariaLabel={t(labelKey)} />
+        <div className="min-h-[18rem] flex-1"><CodeEditor value={draft[field] ?? ''} onChange={(next) => update({ [field]: next || null })} ariaLabel={t(labelKey)} height="100%" /></div>
       )}
     </div>
   )
@@ -109,8 +110,8 @@ export function ExtraConfig({ draft, assignedNodes, update }: Pick<Props, 'draft
         <span className="rounded bg-[var(--surface)] px-2 py-0.5">{number(manualCount)}</span>
         <Button size="small" variant="link" onClick={openManual}>{t('common.edit')}</Button>
       </div>
-      <Modal open={manualOpen} title={t('editor.manualServers')} onCancel={() => setManualOpen(false)} onOk={saveManual} okText={t('common.save')} cancelText={t('common.cancel')} size="large" destroyOnClose>
-        <CodeEditor value={manualDraft} onChange={(next) => { setManualDraft(next); setManualError(false) }} ariaLabel={t('editor.manualServers')} height={440} />
+      <Modal open={manualOpen} title={t('editor.manualServers')} onCancel={() => setManualOpen(false)} onOk={saveManual} okText={t('common.save')} cancelText={t('common.cancel')} size="large" style={{ height: 'min(760px, calc(100dvh - 32px))' }} bodyStyle={{ display: 'flex', flexDirection: 'column' }} destroyOnClose>
+        <div className="min-h-[20rem] flex-1"><CodeEditor value={manualDraft} onChange={(next) => { setManualDraft(next); setManualError(false) }} ariaLabel={t('editor.manualServers')} height="100%" /></div>
         {manualError ? <p role="alert" className="mt-2 text-sm text-red-600">{t('editor.invalidJsonc', { field: t('editor.manualServers') })}</p> : null}
       </Modal>
     </div>

@@ -149,7 +149,7 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   }
 
   return (
-    <Modal open={open} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" onCancel={() => { if (!saving) onClose() }} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
+    <Modal open={open} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" bodyStyle={{ display: 'flex', flexDirection: 'column' }} onCancel={() => { if (!saving) onClose() }} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
       <Button className="h-auto! min-h-8 min-w-0 max-w-full justify-self-start whitespace-normal text-left" disabled={!draft || targets.length === 0 || saving} onClick={() => setDebugOpen(true)}><span className="min-w-0 break-words">{t('editor.debugDraft')}</span></Button>
       <div className="flex shrink-0 gap-2">
         <Button disabled={saving} onClick={() => { if (!saving) onClose() }}>{t('common.cancel')}</Button>
@@ -163,8 +163,9 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
       {usersError ? <p role="alert" className="mb-3 text-sm text-red-600">{t('editor.authorizedUsers')}: {usersError} <Button size="small" onClick={() => void retryUsers()}>{t('common.retry')}</Button></p> : null}
       {conflict ? <Popconfirm title={t('editor.reloadTitle')} description={t('editor.reloadWarning')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={reload}><Button className="mb-3" size="small">{t('editor.reloadLatest')}</Button></Popconfirm> : null}
       {draft ? (
-        <div className="space-y-5">
+        <div className="flex min-h-[24rem] flex-1 flex-col gap-5">
           <Tabs items={tabs.map((item) => ({ key: item.key, label: t(item.labelKey) }))} activeKey={tab} onChange={setTab} type="segment" />
+          <div className={['ruleList', 'group', 'customConfig', 'dnsConfig'].includes(tab) ? 'flex min-h-[20rem] flex-1 flex-col' : ''}>
           {tab === 'basic' ? <BasicConfig draft={draft} users={users} canManageAuthorization={!id || Boolean(saved?.canManageAuthorization)} update={update} /> : null}
           {tab === 'sources' ? (
             <div className="space-y-4">
@@ -181,6 +182,7 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
           {tab === 'dnsConfig' ? <InheritedConfig field="dnsConfig" draft={draft} defaults={defaults} update={update} onDnsInvalidChange={setDnsInvalid} /> : null}
           {tab === 'privateAccess' ? <PrivateAccessEditor value={draft.privateAccessConfig} onChange={(next) => update({ privateAccessConfig: next })} /> : null}
           {tab === 'servers' ? <ExtraConfig draft={draft} assignedNodes={saved?.assignedCustomNodes ?? []} update={update} /> : null}
+          </div>
         </div>
       ) : null}
       {draft && debugOpen ? <SubscriptionDebug draft={draft} targets={targets} subscriptionId={saved?.id} onClose={() => setDebugOpen(false)} /> : null}

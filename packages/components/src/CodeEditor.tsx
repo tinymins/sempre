@@ -13,7 +13,7 @@ export interface CodeEditorProps {
 }
 
 export function CodeEditor({ value, onChange, readOnly = false, height = 320, language = 'json', ariaLabel }: CodeEditorProps) {
-  return <Suspense fallback={<CodePanel language={language} padded={false}><div style={{ height }} /></CodePanel>}>
+  return <Suspense fallback={<CodePanel language={language} padded={false} className={height === '100%' ? 'acme-code-panel--fill' : undefined}><div style={{ height }} /></CodePanel>}>
     <CodeEditorRuntime value={value} onChange={onChange} readOnly={readOnly} height={height} language={language} ariaLabel={ariaLabel} />
   </Suspense>
 }

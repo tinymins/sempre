@@ -16,7 +16,7 @@ loader.config({ monaco })
 export default function CodeEditorRuntime({ value, onChange, readOnly = false, height = 320, language = 'json', ariaLabel }: CodeEditorProps) {
   const theme = useCodeEditorTheme()
 
-  return <CodePanel language={language} padded={false}>
+  return <CodePanel language={language} padded={false} className={height === '100%' ? 'acme-code-panel--fill' : undefined}>
     <Editor
       height={height}
       language={language}

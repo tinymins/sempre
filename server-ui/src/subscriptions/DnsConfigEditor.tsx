@@ -9,6 +9,7 @@ interface Props {
   value: string | null
   onChange: (next: string | null) => void
   readOnly?: boolean
+  fillHeight?: boolean
   onInvalidChange?: (invalid: boolean) => void
 }
 
@@ -21,7 +22,7 @@ const overrideTabs = [
 
 type OverrideKey = typeof overrideTabs[number]['key']
 
-function OverrideEditor({ name, value, onChange, onInvalidChange, readOnly }: { name: OverrideKey; value: string | null; onChange: Props['onChange']; onInvalidChange?: Props['onInvalidChange']; readOnly: boolean }) {
+function OverrideEditor({ name, value, onChange, onInvalidChange, readOnly, fillHeight }: { name: OverrideKey; value: string | null; onChange: Props['onChange']; onInvalidChange?: Props['onInvalidChange']; readOnly: boolean; fillHeight: boolean }) {
   const { t } = useI18n()
   const [activeRange, setActiveRange] = useState<{ source: string; offset: number; length: number } | null>(null)
   const [error, setError] = useState('')
@@ -60,10 +61,10 @@ function OverrideEditor({ name, value, onChange, onInvalidChange, readOnly }: { 
     setError('')
     onInvalidChange?.(false)
   }
-  return <div className="space-y-2">
+  return <div className={fillHeight ? 'flex min-h-[18rem] flex-1 flex-col gap-2' : 'space-y-2'}>
     <p className="text-xs text-[var(--muted)]">{t('dns.overrideHint')}</p>
     {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
-    <CodeEditor ariaLabel={`${overrideTabs.find((tab) => tab.key === name)?.label} DNS`} height={420} value={text} readOnly={readOnly} onChange={update} />
+    <div className={fillHeight ? 'min-h-[16rem] flex-1' : ''}><CodeEditor ariaLabel={`${overrideTabs.find((tab) => tab.key === name)?.label} DNS`} height={fillHeight ? '100%' : 420} value={text} readOnly={readOnly} onChange={update} /></div>
   </div>
 }
 
@@ -95,7 +96,7 @@ const groups: { title: MessageKey; fields: string[] }[] = [
   { title: 'dns.clashSection', fields: ['clashApiSecret', 'clashApiUiPath', 'clashApiPort'] },
 ]
 
-export function DnsConfigEditor({ value, onChange, readOnly = false, onInvalidChange }: Props) {
+export function DnsConfigEditor({ value, onChange, readOnly = false, onInvalidChange, fillHeight = false }: Props) {
   const { t } = useI18n()
   const booleanOptions = [
     { value: 'unset', label: t('dns.unset') },
@@ -117,13 +118,13 @@ export function DnsConfigEditor({ value, onChange, readOnly = false, onInvalidCh
   }
 
   return (
-    <div className="space-y-4">
+    <div className={fillHeight && tab !== 'shared' ? 'flex min-h-[20rem] flex-1 flex-col gap-4' : 'space-y-4'}>
       <p className="text-xs text-[var(--muted)]">{t('dns.intro')}</p>
       {issue ? <p role="alert" className="text-sm text-red-600">{issue}</p> : null}
       <Tabs type="segment" activeKey={tab} onChange={setTab} items={[{ key: 'shared', label: t('dns.shared') }, ...overrideTabs]} />
       {invalidOverrideTab ? <p role="alert" className="text-xs text-red-600">{t('dns.fixOverride')}</p> : null}
-      {!advancedInvalid && !shapeError ? overrideTabs.map(({ key }) => <div key={key} className={tab === key ? '' : 'hidden'}>
-        <OverrideEditor key={advancedRevision} name={key} value={value} onChange={onChange} readOnly={readOnly || Boolean(issue) && invalidOverrideTab !== key} onInvalidChange={(invalid) => { setInvalidOverrideTab(invalid ? key : null); onInvalidChange?.(invalid) }} />
+      {!advancedInvalid && !shapeError ? overrideTabs.map(({ key }) => <div key={key} className={tab === key ? fillHeight ? 'flex min-h-[18rem] flex-1 flex-col' : '' : 'hidden'}>
+        <OverrideEditor key={advancedRevision} name={key} value={value} onChange={onChange} readOnly={readOnly || Boolean(issue) && invalidOverrideTab !== key} fillHeight={fillHeight} onInvalidChange={(invalid) => { setInvalidOverrideTab(invalid ? key : null); onInvalidChange?.(invalid) }} />
       </div>) : null}
       {tab === 'shared' ? groups.map((group) => <section key={group.title} className="space-y-3">
         <h3 className="border-b border-[var(--border)] pb-1 text-sm font-medium">{t(group.title)}</h3>
