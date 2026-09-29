@@ -1,5 +1,5 @@
-import { AppSidebar, Button, Card, Drawer, Spin, ToastProvider, useToast } from '@acme/components'
-import { ChevronDown, ChevronRight, Globe2, Home, LogOut, Menu, Rss, Settings, UserRound, Wrench } from 'lucide-react'
+import { AppSidebar, Avatar, Button, Card, Drawer, Dropdown, Spin, ToastProvider, useToast } from '@acme/components'
+import { ChevronDown, ChevronRight, ChevronsUpDown, Globe2, Home, LogOut, Menu, Rss, Settings, UserRound, Wrench } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ServerAuth } from './ServerAuth'
@@ -89,12 +89,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
       onSignedOut()
     } catch (reason) { toast.error(t('nav.signOutFailed', { reason: reason instanceof Error ? reason.message : String(reason) })) }
   }
-  const logoutButton = (
-    <Button block variant="text" icon={<LogOut size={15} />} onClick={() => void signOut()}>
-      {t('nav.signOut')}
-    </Button>
-  )
-  const profileButton = <Button block variant="text" icon={<UserRound size={15} />} onClick={() => setProfileOpen(true)}>{t('nav.profile')}</Button>
+  const accountFooter = <ServerAccountMenu user={user} onProfile={() => setProfileOpen(true)} onSignOut={() => void signOut()} />
   const childIndent = <span className="inline-block w-7" aria-hidden="true" />
   const sections = [
     { items: [{ key: 'overview', label: t('nav.overview'), icon: <Home size={17} /> }] },
@@ -119,14 +114,14 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
           onSelect={select}
           header={<Brand />}
           sections={sections}
-          footer={<div className="space-y-2"><p className="truncate px-2 text-xs text-[var(--muted)]">{user.email}</p>{profileButton}{logoutButton}</div>}
+          footer={accountFooter}
         />
       </aside>
       <div className="min-w-0 flex-1">
         <header className="border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2 md:hidden">
           <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-1"><Button variant="text" size="small" icon={<Menu size={18} />} aria-label={t('nav.openMenu')} onClick={() => setMobileMenuOpen(true)} /><Brand /></div><div className="flex shrink-0 gap-1"><Button variant="text" size="small" icon={<UserRound size={15} />} aria-label={t('nav.profile')} onClick={() => setProfileOpen(true)} /><Button variant="text" size="small" icon={<LogOut size={15} />} aria-label={t('nav.signOut')} onClick={() => void signOut()} /></div></div>
         </header>
-        <Drawer open={mobileMenuOpen} title={t('nav.menu')} placement="left" width={280} onClose={() => setMobileMenuOpen(false)} className="md:hidden"><AppSidebar width={256} activeKey={location.pathname.slice(1) || 'overview'} onSelect={select} header={<Brand />} sections={sections} footer={<div className="space-y-2"><p className="truncate px-2 text-xs text-[var(--muted)]">{user.email}</p>{profileButton}{logoutButton}</div>} /></Drawer>
+        <Drawer open={mobileMenuOpen} title={t('nav.menu')} placement="left" width={280} onClose={() => setMobileMenuOpen(false)} className="md:hidden"><AppSidebar width={256} activeKey={location.pathname.slice(1) || 'overview'} onSelect={select} header={<Brand />} sections={sections} footer={accountFooter} /></Drawer>
         <main className="w-full p-4 sm:p-6">
           <Routes location={location}>
             <Route path="/subscriptions" element={<SubscriptionPage />} />
@@ -143,6 +138,33 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
       </div>
       {profileOpen ? <ProfileSettingsModal user={user} onUpdated={onUserUpdated} onClose={() => setProfileOpen(false)} /> : null}
     </div>
+  )
+}
+
+function ServerAccountMenu({ user, onProfile, onSignOut }: { user: ServerUser; onProfile: () => void; onSignOut: () => void }) {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const avatarKey = typeof user.settings?.avatarKey === 'string' ? user.settings.avatarKey : null
+  const avatarUrl = avatarKey ? `/api/v1/avatars/${encodeURIComponent(avatarKey)}` : undefined
+
+  return (
+    <Dropdown
+      trigger={['click']}
+      placement="topLeft"
+      open={open}
+      onOpenChange={setOpen}
+      dropdownRender={(menu) => <div className="w-60">{menu}</div>}
+      menu={{ items: [
+        { key: 'profile', label: t('nav.profile'), icon: <UserRound size={16} />, onClick: () => { setOpen(false); onProfile() } },
+        { key: 'sign-out', label: t('nav.signOut'), icon: <LogOut size={16} />, onClick: () => { setOpen(false); onSignOut() } },
+      ] }}
+    >
+      <Button variant="unstyled" className="w-full gap-2.5! rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/[0.06] dark:hover:bg-white/[0.06]" aria-label={`${user.name} (${user.email})`}>
+        <Avatar src={avatarUrl} alt={user.name} size={32}>{user.name.charAt(0).toUpperCase()}</Avatar>
+        <span className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium text-fg-primary">{user.name}</span><span className="block truncate text-xs text-fg-muted">{user.email}</span></span>
+        <ChevronsUpDown size={14} className="shrink-0 text-fg-muted" />
+      </Button>
+    </Dropdown>
   )
 }
 
