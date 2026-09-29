@@ -4,9 +4,11 @@ COPY package.json bun.lock ./
 COPY ui/package.json ./ui/package.json
 COPY server-ui/package.json ./server-ui/package.json
 COPY packages/components/package.json ./packages/components/package.json
+COPY packages/subscription-editor/package.json ./packages/subscription-editor/package.json
 RUN bun install --frozen-lockfile
 COPY server-ui ./server-ui
 COPY packages/components ./packages/components
+COPY packages/subscription-editor ./packages/subscription-editor
 RUN bun --cwd=server-ui run build
 
 FROM rust:1.95-bookworm AS builder

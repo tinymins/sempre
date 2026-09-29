@@ -8,9 +8,12 @@
 !packages/
 !packages/components/
 !packages/components/**
+!packages/subscription-editor/
+!packages/subscription-editor/**
 !package.json
 !bun.lock
 rust/target/
 server-ui/dist/
 server-ui/node_modules/
 packages/components/node_modules/
+packages/subscription-editor/node_modules/
