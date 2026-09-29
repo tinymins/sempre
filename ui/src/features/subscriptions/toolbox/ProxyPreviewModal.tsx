@@ -310,14 +310,14 @@ const ProxyPreviewModal = forwardRef<ProxyPreviewModalRef>((_, ref) => {
                               {formatValue(f.value)}
                             </span>
                           ),
-                        span: typeof f.value === "object" ? 3 : undefined,
+                        span: typeof f.value === "object" ? 2 : undefined,
                       }),
                     );
                     return (
                       <Descriptions
                         bordered
                         size="small"
-                        column={3}
+                        column={2}
                         items={descItems}
                       />
                     );
