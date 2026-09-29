@@ -1,4 +1,4 @@
-import { Button, Card, Popconfirm, Table } from '@acme/components'
+import { Button, Card, Popconfirm, Table, useToast } from '@acme/components'
 import { BarChart3, Edit3, Eye, Link2, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -13,6 +13,7 @@ import { useI18n } from '../i18n/provider'
 
 export function SubscriptionPage({ initialEditId }: { initialEditId?: string }) {
   const { t, date, number } = useI18n()
+  const toast = useToast()
   const location = useLocation()
   const navigate = useNavigate()
   const [items, setItems] = useState<Subscription[]>([])
@@ -57,13 +58,15 @@ export function SubscriptionPage({ initialEditId }: { initialEditId?: string }) 
   const remove = async (id: string) => {
     try {
       await subscriptionApi.remove(id)
+      toast.success(t('common.deleted'))
       await load()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     }
   }
   const saved = (value: Subscription) => {
     closeEditor()
+    toast.success(t('common.saved'))
     setItems((current) => [value, ...current.filter((item) => item.id !== value.id)])
     void load()
   }

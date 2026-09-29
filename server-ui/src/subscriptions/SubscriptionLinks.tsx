@@ -1,4 +1,4 @@
-import { Button, Modal, Popconfirm, Tag } from '@acme/components'
+import { Button, Modal, Popconfirm, Tag, useToast } from '@acme/components'
 import { Bug, Copy, ExternalLink, Globe2, Link2 } from 'lucide-react'
 import { useState } from 'react'
 import { targetSuffix, type Target } from './diagnostic-types'
@@ -32,8 +32,7 @@ function LinkRow({ label, url, copyLabel, openLabel, debugLabel, onCopy, onDebug
 
 export function SubscriptionLinks({ subscription, targets, onClose }: { subscription: Subscription | null; targets: Target[]; onClose: () => void }) {
   const { t, number } = useI18n()
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const toast = useToast()
   const [clearing, setClearing] = useState(false)
   const [debugTarget, setDebugTarget] = useState<Target | null>(null)
   const base = subscription ? `${window.location.origin}/api/public/proxy/${encodeURIComponent(subscription.url)}` : ''
@@ -41,26 +40,22 @@ export function SubscriptionLinks({ subscription, targets, onClose }: { subscrip
   const copy = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value)
-      setError('')
-      setNotice(t('common.copied'))
+      toast.success(t('common.copied'))
     } catch {
-      setNotice('')
-      setError(t('common.copyFailed'))
+      toast.error(t('common.copyFailed'))
     }
   }
   const clearCache = async () => {
     if (!subscription) return
-    setClearing(true); setError(''); setNotice('')
+    setClearing(true)
     try {
       const result = await subscriptionApi.clearCache(subscription.id)
-      setNotice(t('links.cleared', { count: number(result.cleared) }))
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+      toast.success(t('links.cleared', { count: number(result.cleared) }))
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setClearing(false) }
   }
   return (
     <Modal open={Boolean(subscription)} title={t('links.title', { name: subscription?.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} width={560}>
-      {error ? <p role="alert" className="mb-3 text-sm text-red-600">{error}</p> : null}
-      {notice ? <p role="status" className="mb-3 text-sm text-emerald-600">{notice}</p> : null}
       <p className="mb-4 text-sm text-[var(--muted)]">{t('links.stableHint')}</p>
       {manifestUrl ? <section className="mb-5 space-y-2"><p className="text-xs text-[var(--muted)]">{t('links.manifestHint')}</p><LinkRow label={t('links.manifest')} url={manifestUrl} copyLabel={t('links.copyManifest')} openLabel={t('links.openManifest')} onCopy={() => void copy(manifestUrl)} /></section> : null}
       <h3 className="mb-2 text-sm font-semibold">{t('links.rawFormats')}</h3>

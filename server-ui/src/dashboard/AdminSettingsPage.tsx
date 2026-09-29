@@ -1,4 +1,4 @@
-import { Button, Card, Spin, Switch, Tabs } from '@acme/components'
+import { Button, Card, Spin, Switch, Tabs, useToast } from '@acme/components'
 import { useEffect, useState } from 'react'
 import type { ServerUser } from '../server-api'
 import { adminApi } from './admin-api'
@@ -9,6 +9,7 @@ import { useI18n } from '../i18n/provider'
 
 export function AdminSettingsPage({ user }: { user: ServerUser }) {
   const { t } = useI18n()
+  const toast = useToast()
   const [settings, setSettings] = useState<SystemSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -31,9 +32,9 @@ export function AdminSettingsPage({ user }: { user: ServerUser }) {
     return () => { active = false }
   }, [admin])
   const update = async (value: boolean) => {
-    setBusy(true); setError('')
-    try { setSettings(await adminApi.updateSettings({ allowRegistration: value })) }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    setBusy(true)
+    try { setSettings(await adminApi.updateSettings({ allowRegistration: value })); toast.success(t('common.saved')) }
+    catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
   if (!admin) return <Card><p role="alert">{t('admin.forbidden')}</p></Card>

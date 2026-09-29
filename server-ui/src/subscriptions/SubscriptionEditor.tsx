@@ -1,4 +1,4 @@
-import { Button, Modal, Popconfirm, Spin, Tabs, TextArea } from '@acme/components'
+import { Button, Modal, Popconfirm, Spin, Tabs, TextArea, useToast } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { parse, type ParseError } from 'jsonc-parser'
 import { ServerApiError } from '../server-api'
@@ -34,6 +34,7 @@ const tabs: { key: string; labelKey: MessageKey }[] = [
 
 export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Props) {
   const { t, number } = useI18n()
+  const toast = useToast()
   const [draft, setDraft] = useState<SubscriptionDraft | null>(null)
   const [saved, setSaved] = useState<Subscription | null>(null)
   const [defaults, setDefaults] = useState<SubscriptionDefaults | null>(null)
@@ -123,7 +124,7 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
         setConflict(true)
         setError(t('editor.conflict'))
       } else {
-        setError(reason instanceof Error ? reason.message : String(reason))
+        toast.error(reason instanceof Error ? reason.message : String(reason))
       }
     } finally {
       setSaving(false)

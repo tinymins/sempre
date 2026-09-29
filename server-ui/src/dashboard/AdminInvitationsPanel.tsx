@@ -1,4 +1,4 @@
-import { Button, Card, InputNumber, Popconfirm, Spin, Table } from '@acme/components'
+import { Button, Card, InputNumber, Popconfirm, Spin, Table, useToast } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { adminApi, type Invitation } from './admin-api'
 import { useI18n } from '../i18n/provider'
@@ -12,12 +12,12 @@ function inviteUrl(code: string): string {
 
 export function AdminInvitationsPanel() {
   const { t, date } = useI18n()
+  const toast = useToast()
   const [items, setItems] = useState<Invitation[]>([])
   const [hours, setHours] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const load = async () => {
     setLoading(true); setError('')
     try { setItems(await adminApi.invitations()) }
@@ -32,23 +32,22 @@ export function AdminInvitationsPanel() {
     return () => { active = false }
   }, [])
   const copy = async (code: string) => {
-    setError(''); setNotice('')
-    try { await navigator.clipboard.writeText(inviteUrl(code)); setNotice(t('admin.inviteCopied')) }
-    catch { setError(t('common.copyFailed')) }
+    try { await navigator.clipboard.writeText(inviteUrl(code)); toast.success(t('admin.inviteCopied')) }
+    catch { toast.error(t('common.copyFailed')) }
   }
   const create = async () => {
-    setBusy(true); setError(''); setNotice('')
+    setBusy(true)
     try {
       const result = await adminApi.createInvitation(hours ?? undefined)
       await load()
       await copy(result.code)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
   const remove = async (id: string) => {
-    setBusy(true); setError(''); setNotice('')
-    try { await adminApi.deleteInvitation(id); await load() }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    setBusy(true)
+    try { await adminApi.deleteInvitation(id); toast.success(t('common.deleted')); await load() }
+    catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
   return <Card><div className="space-y-4">
@@ -62,7 +61,6 @@ export function AdminInvitationsPanel() {
     </div>
     {loading ? <Spin /> : null}
     {error ? <p role="alert" className="text-sm text-red-600">{error} <Button size="small" onClick={() => void load()}>{t('common.retry')}</Button></p> : null}
-    {notice ? <p role="status" className="text-sm text-emerald-600">{notice}</p> : null}
     <Table<Invitation> rowKey="id" dataSource={items} pagination={false} scroll={{ x: 700 }} columns={[
       { title: t('admin.inviteCode'), dataIndex: 'code' },
       { title: t('common.status'), render: (_, item) => item.usedAt ? t('admin.inviteUsed') : item.expiresAt && new Date(item.expiresAt).getTime() <= Date.now() ? t('admin.inviteExpired') : t('admin.inviteAvailable') },

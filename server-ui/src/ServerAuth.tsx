@@ -1,4 +1,4 @@
-import { Button, Card, Input, Password } from '@acme/components'
+import { Button, Card, Input, Password, useToast } from '@acme/components'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { authConfig, login, register, type ServerUser } from './server-api'
@@ -6,6 +6,7 @@ import { useI18n } from './i18n/provider'
 
 export function ServerAuth({ onAuthenticated }: { onAuthenticated: (user: ServerUser) => void }) {
   const { t } = useI18n()
+  const toast = useToast()
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -33,7 +34,7 @@ export function ServerAuth({ onAuthenticated }: { onAuthenticated: (user: Server
     try {
       onAuthenticated(mode === 'register' ? await register(name.trim(), email.trim(), password, invitationCode.trim() || undefined) : await login(email.trim(), password))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setPending(false)
     }

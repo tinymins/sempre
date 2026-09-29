@@ -1,4 +1,4 @@
-import { AppSidebar, Button, Card, Drawer, Spin } from '@acme/components'
+import { AppSidebar, Button, Card, Drawer, Spin, ToastProvider, useToast } from '@acme/components'
 import { ChevronDown, ChevronRight, Globe2, Home, LogOut, Menu, Rss, Settings, UserRound, Wrench } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -20,7 +20,7 @@ import { GeneralSettingsPage } from './dashboard/GeneralSettingsPage'
 import { I18nProvider, useI18n } from './i18n/provider'
 
 export function App() {
-  return <I18nProvider><AppContent /></I18nProvider>
+  return <I18nProvider><ToastProvider><AppContent /></ToastProvider></I18nProvider>
 }
 
 function AppContent() {
@@ -71,9 +71,9 @@ function AppContent() {
 
 function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; onUserUpdated: (user: ServerUser) => void; onSignedOut: () => void }) {
   const { t } = useI18n()
+  const toast = useToast()
   const location = useLocation()
   const navigate = useNavigate()
-  const [signOutError, setSignOutError] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [openGroups, setOpenGroups] = useState(() => ({
@@ -84,11 +84,10 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
   const isAdmin = user.role === 'admin' || user.role === 'superadmin'
   const toggleGroup = (group: keyof typeof openGroups) => setOpenGroups((current) => ({ ...current, [group]: !current[group] }))
   const signOut = async () => {
-    setSignOutError('')
     try {
       await logout()
       onSignedOut()
-    } catch (reason) { setSignOutError(reason instanceof Error ? reason.message : String(reason)) }
+    } catch (reason) { toast.error(t('nav.signOutFailed', { reason: reason instanceof Error ? reason.message : String(reason) })) }
   }
   const logoutButton = (
     <Button block variant="text" icon={<LogOut size={15} />} onClick={() => void signOut()}>
@@ -120,7 +119,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
           onSelect={select}
           header={<Brand />}
           sections={sections}
-          footer={<div className="space-y-2"><p className="truncate px-2 text-xs text-[var(--muted)]">{user.email}</p>{signOutError ? <p role="alert" className="px-2 text-xs text-red-600">{t('nav.signOutFailed', { reason: signOutError })}</p> : null}{profileButton}{logoutButton}</div>}
+          footer={<div className="space-y-2"><p className="truncate px-2 text-xs text-[var(--muted)]">{user.email}</p>{profileButton}{logoutButton}</div>}
         />
       </aside>
       <div className="min-w-0 flex-1">
@@ -128,7 +127,6 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
           <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-1"><Button variant="text" size="small" icon={<Menu size={18} />} aria-label={t('nav.openMenu')} onClick={() => setMobileMenuOpen(true)} /><Brand /></div><div className="flex shrink-0 gap-1"><Button variant="text" size="small" icon={<UserRound size={15} />} aria-label={t('nav.profile')} onClick={() => setProfileOpen(true)} /><Button variant="text" size="small" icon={<LogOut size={15} />} aria-label={t('nav.signOut')} onClick={() => void signOut()} /></div></div>
         </header>
         <Drawer open={mobileMenuOpen} title={t('nav.menu')} placement="left" width={280} onClose={() => setMobileMenuOpen(false)} className="md:hidden"><AppSidebar width={256} activeKey={location.pathname.slice(1) || 'overview'} onSelect={select} header={<Brand />} sections={sections} footer={<div className="space-y-2"><p className="truncate px-2 text-xs text-[var(--muted)]">{user.email}</p>{profileButton}{logoutButton}</div>} /></Drawer>
-        {signOutError ? <p role="alert" className="px-4 pt-2 text-xs text-red-600 md:hidden">{t('nav.signOutFailed', { reason: signOutError })}</p> : null}
         <main className="w-full p-4 sm:p-6">
           <Routes location={location}>
             <Route path="/subscriptions" element={<SubscriptionPage />} />

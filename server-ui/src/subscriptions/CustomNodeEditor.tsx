@@ -1,4 +1,4 @@
-import { Button, CodeEditor, Modal, Popconfirm, Select, Spin } from '@acme/components'
+import { Button, CodeEditor, Modal, Popconfirm, Select, Spin, useToast } from '@acme/components'
 import { useCallback, useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { CustomNode, Subscription, UserBrief } from './types'
@@ -19,6 +19,7 @@ interface Props {
 
 export function CustomNodeEditor({ nodeId, currentUserId, users, subscriptions, usersError, subscriptionsError, retryUsers, retrySubscriptions, onClose, onSaved }: Props) {
   const { t } = useI18n()
+  const toast = useToast()
   const [node, setNode] = useState<CustomNode | null>(null)
   const [content, setContent] = useState('{\n  "name": "",\n  "type": "vless",\n  "server": "",\n  "port": 443\n}')
   const [authorizedUserIds, setAuthorizedUserIds] = useState<string[]>([])
@@ -66,8 +67,9 @@ export function CustomNodeEditor({ nodeId, currentUserId, users, subscriptions, 
         await subscriptionApi.createCustomNode({ content, authorizedUserIds, assignedSubscribeIds })
       }
       onSaved()
+      toast.success(t('common.saved'))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      toast.error(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setSaving(false)
     }

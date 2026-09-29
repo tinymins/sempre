@@ -1,4 +1,4 @@
-import { Button, Card, Popconfirm, Table, Tag } from '@acme/components'
+import { Button, Card, Popconfirm, Table, Tag, useToast } from '@acme/components'
 import { Edit3, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
@@ -8,6 +8,7 @@ import { useI18n } from '../i18n/provider'
 
 export function CustomNodesPage({ currentUserId }: { currentUserId: string }) {
   const { t, number } = useI18n()
+  const toast = useToast()
   const [nodes, setNodes] = useState<CustomNode[]>([])
   const [subscriptions, setSubscriptions] = useState<Subscription[] | null>(null)
   const [users, setUsers] = useState<UserBrief[] | null>(null)
@@ -49,8 +50,9 @@ export function CustomNodesPage({ currentUserId }: { currentUserId: string }) {
   const remove = async (id: string) => {
     try {
       await subscriptionApi.removeCustomNode(id)
+      toast.success(t('common.deleted'))
       await loadNodes()
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
   }
   return <section className="space-y-4">
     <div className="flex items-center justify-between gap-3"><div className="min-w-0"><h1 className="text-xl font-semibold">{t('nodes.title')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('nodes.subtitle')}</p></div><Button variant="primary" className="shrink-0 whitespace-nowrap" icon={<Plus size={16} />} onClick={() => setEditing(null)}>{t('nodes.new')}</Button></div>

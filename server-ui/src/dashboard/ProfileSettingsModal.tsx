@@ -1,4 +1,4 @@
-import { Avatar, Button, Input, Modal, Password, Select, Tabs, Upload } from '@acme/components'
+import { Avatar, Button, Input, Modal, Password, Select, Tabs, Upload, useToast } from '@acme/components'
 import { useState } from 'react'
 import type { ServerUser } from '../server-api'
 import { accountApi, type AccountSettings } from './account-api'
@@ -6,6 +6,7 @@ import { useI18n } from '../i18n/provider'
 
 export function ProfileSettingsModal({ user, onClose, onUpdated }: { user: ServerUser; onClose: () => void; onUpdated: (user: ServerUser) => void }) {
   const { t } = useI18n()
+  const toast = useToast()
   const languageOptions = [
     { value: 'auto', label: t('account.auto') },
     { value: 'zh-CN', label: '简体中文' }, { value: 'zh-TW', label: '繁體中文' },
@@ -29,47 +30,47 @@ export function ProfileSettingsModal({ user, onClose, onUpdated }: { user: Serve
   const [confirmPassword, setConfirmPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const avatarKey = typeof settings?.avatarKey === 'string' ? settings.avatarKey : null
   const avatarUrl = avatarKey ? `/api/v1/avatars/${encodeURIComponent(avatarKey)}` : undefined
 
   const save = async () => {
     if (!name.trim() || !email.trim()) { setError(t('account.missingNameEmail')); return }
-    setBusy(true); setError(''); setNotice('')
+    setBusy(true); setError('')
     try {
       const updated = await accountApi.update({ name: name.trim(), email: email.trim(), settings: { langMode, themeMode, accentColor } })
       onUpdated(updated)
       onClose()
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+      toast.success(t('common.saved'))
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
   const changePassword = async () => {
     if (newPassword.length < 12) { setError(t('account.passwordMin')); return }
     if (newPassword !== confirmPassword) { setError(t('account.passwordMismatch')); return }
-    setBusy(true); setError(''); setNotice('')
+    setBusy(true); setError('')
     try {
       await accountApi.changePassword(currentPassword, newPassword)
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('')
-      setNotice(t('account.passwordUpdated'))
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+      toast.success(t('account.passwordUpdated'))
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
   const upload = async (file: File, onSuccess?: (response?: unknown) => void, onError?: (error: Error) => void) => {
-    setBusy(true); setError(''); setNotice('')
+    setBusy(true); setError('')
     try {
       const result = await accountApi.uploadAvatar(file)
       onUpdated(await accountApi.profile())
       onSuccess?.(result)
-      setNotice(t('account.avatarUpdated'))
+      toast.success(t('account.avatarUpdated'))
     } catch (reason) {
       const failure = reason instanceof Error ? reason : new Error(String(reason))
-      setError(failure.message); onError?.(failure)
+      toast.error(failure.message); onError?.(failure)
     } finally { setBusy(false) }
   }
   const removeAvatar = async () => {
-    setBusy(true); setError(''); setNotice('')
-    try { await accountApi.deleteAvatar(); onUpdated(await accountApi.profile()); setNotice(t('account.avatarRemoved')) }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    setBusy(true); setError('')
+    try { await accountApi.deleteAvatar(); onUpdated(await accountApi.profile()); toast.success(t('account.avatarRemoved')) }
+    catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
 
@@ -77,7 +78,6 @@ export function ProfileSettingsModal({ user, onClose, onUpdated }: { user: Serve
     <div className="space-y-4">
       <Tabs items={[{ key: 'profile', label: t('account.profile') }, { key: 'password', label: t('account.changePassword') }]} activeKey={tab} onChange={setTab} type="segment" />
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
-      {notice ? <p role="status" className="text-sm text-emerald-600">{notice}</p> : null}
       {tab === 'profile' ? <div className="space-y-4">
         <div className="flex items-center gap-3"><Avatar src={avatarUrl} alt={user.name} size={64}>{user.name.charAt(0).toUpperCase()}</Avatar><div className="space-y-2"><Upload accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} showUploadList={false} beforeUpload={(file) => { if (file.size > 5 * 1024 * 1024) { setError(t('account.avatarMax')); return false } return true }} customRequest={({ file, onSuccess, onError }) => { void upload(file, onSuccess, onError) }}><Button size="small" disabled={busy}>{t('account.uploadAvatar')}</Button></Upload>{avatarKey ? <Button size="small" danger disabled={busy} onClick={() => void removeAvatar()}>{t('account.removeAvatar')}</Button> : null}</div></div>
         <label className="block space-y-1 text-sm">{t('account.name')}<Input value={name} onChange={(event) => setName(event.target.value)} /></label>
