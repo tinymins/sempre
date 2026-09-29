@@ -12,11 +12,26 @@ use crate::{
     subscriptions::SubscriptionFields,
 };
 
+#[derive(Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum SourceType {
+    #[default]
+    Url,
+    Raw,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SourceItem {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default, rename = "type")]
+    pub kind: SourceType,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
     pub url: String,
     #[serde(default)]
     pub prefix: String,
@@ -72,7 +87,15 @@ pub(crate) async fn load_sources(
     for (source_index, item) in enabled_items {
         let ua = item.effective_ua().to_owned();
         let mode = item.fetch_mode.clone().unwrap_or_else(|| "auto".into());
-        let source_id = source_id(&item.url, &ua, &mode);
+        let source_id = if item.kind == SourceType::Raw {
+            if item.id.is_empty() {
+                format!("raw:{source_index}")
+            } else {
+                item.id.clone()
+            }
+        } else {
+            source_id(&item.url, &ua, &mode)
+        };
         let source_label = source_label(&item, source_index);
         stages.push(json!({"type":"fetch","status":"running","sourceId":source_id,"sourceIndex":source_index,"sourceLabel":source_label,"fetchMode":mode}));
         let fetch_started = Instant::now();
@@ -134,22 +157,33 @@ pub(crate) async fn load_sources(
             content_hash: format!("{:x}", Sha256::digest(loaded.content.as_bytes())),
             content: loaded.content,
         });
-        let mut extra = Map::new();
-        extra.insert("cache_ttl_minutes".into(), json!(ttl));
-        extra.insert("fetch_mode".into(), json!(mode));
-        profile.sources.push(Source {
-            id: source_id,
-            kind: "url".into(),
-            enabled: true,
-            url: item.url,
-            remark: item.remark,
-            prefix: item.prefix,
-            content: String::new(),
-            user_agent: ua,
-            extra,
-        });
+        profile
+            .sources
+            .push(profile_source(item, source_id, ua, &mode, ttl));
     }
     Ok(summary)
+}
+
+fn profile_source(item: SourceItem, source_id: String, ua: String, mode: &str, ttl: i32) -> Source {
+    let mut extra = Map::new();
+    extra.insert("cache_ttl_minutes".into(), json!(ttl));
+    extra.insert("fetch_mode".into(), json!(mode));
+    Source {
+        id: source_id,
+        kind: if item.kind == SourceType::Raw {
+            "raw"
+        } else {
+            "url"
+        }
+        .into(),
+        enabled: true,
+        url: item.url,
+        remark: item.remark,
+        prefix: item.prefix,
+        content: item.content,
+        user_agent: ua,
+        extra,
+    }
 }
 
 fn source_label(item: &SourceItem, index: usize) -> String {
@@ -172,6 +206,16 @@ async fn load_source(
     ttl: i32,
     cache_mode: CacheMode,
 ) -> Result<source_cache::LoadedSource, ApiError> {
+    if item.kind == SourceType::Raw {
+        return Ok(source_cache::LoadedSource {
+            content: item.content.clone(),
+            usable: !parse_subscription(&item.content).nodes.is_empty(),
+            cache_state: "inline",
+            warning: None,
+            http_status: None,
+            response_headers: std::collections::BTreeMap::default(),
+        });
+    }
     if let Some(error) = source_input_error(&item.url, ttl) {
         return Err(error);
     }
@@ -274,6 +318,9 @@ pub(crate) fn source_items(fields: &SubscriptionFields) -> Result<Vec<SourceItem
             .filter(|url| !url.is_empty())
             .map(|url| SourceItem {
                 enabled: true,
+                kind: SourceType::Url,
+                id: String::new(),
+                content: String::new(),
                 url,
                 prefix: String::new(),
                 remark: String::new(),
@@ -323,3 +370,7 @@ pub(crate) fn source_proxy<'a>(
         _ => Err(ApiError::bad_request("invalid fetchMode")),
     }
 }
+
+#[cfg(test)]
+#[path = "subscription_sources_tests.rs"]
+mod tests;

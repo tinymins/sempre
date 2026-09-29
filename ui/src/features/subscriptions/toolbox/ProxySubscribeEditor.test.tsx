@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createRef, type Ref } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AcmeContentBoundary } from '@/components/AcmeContentBoundary'
@@ -66,7 +66,7 @@ const defaults = {
   group: '[]',
   filter: '[]',
   custom_config: '[]',
-  dns_config: '',
+  dns_config: JSON.stringify({ shared: { remoteDns: '8.8.8.8' } }),
   private_access_config: '',
   servers: '[]',
 }
@@ -117,33 +117,29 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     const rendered = renderEditor()
 
-    const labels = ['Basic', 'Subscribe URL', 'Rule List', 'Proxy Groups', 'Custom Rules', 'DNS Config', 'Private Access', 'Runtime', 'Manual Servers', 'Diagnostics']
+    const labels = ['Basic information', 'Subscription sources', 'Rule List', 'Proxy Groups', 'Routing rules', 'DNS configuration', 'Private Access', 'Runtime', 'Manual servers', 'Diagnostics']
     for (const label of labels) {
       expect(await screen.findByRole('button', { name: label })).toBeInTheDocument()
     }
     expect(labels.map((label) => screen.getByRole('button', { name: label }).textContent)).toEqual(labels)
-    expect(within(screen.getByRole('button', { name: 'Basic' })).getByText('Basic')).toHaveClass('text-sm', 'font-medium')
-    expect(within(screen.getByRole('button', { name: 'Subscribe URL' })).getByText('Subscribe URL')).toHaveClass('text-sm', 'font-normal')
     expect(screen.queryByText('Authorized Users')).not.toBeInTheDocument()
     expect(screen.getByText('Update schedule')).toBeInTheDocument()
     expect(screen.getByText('Restart after scheduled updates')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Subscribe URL' }))
-    expect(within(screen.getByRole('button', { name: 'Basic' })).getByText('Basic')).toHaveClass('text-sm', 'font-normal')
-    expect(within(screen.getByRole('button', { name: 'Subscribe URL' })).getByText('Subscribe URL')).toHaveClass('text-sm', 'font-medium')
-    expect(screen.getByRole('button', { name: 'Add Subscribe Source' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add Raw Source' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Subscription sources' }))
+    expect(screen.getByRole('button', { name: 'Add source' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add raw source' })).toBeInTheDocument()
     expect(screen.getByText('Node Filter')).toBeInTheDocument()
-    expect(rendered.container.querySelector('svg.lucide-circle-play')).toBeInTheDocument()
+    expect(rendered.container.querySelector('svg.lucide-play')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Private Access' }))
     expect(screen.getByText('Add connector')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Manual Servers' }))
-    expect(screen.getByText('Configuration nodes')).toBeInTheDocument()
-    expect(screen.getAllByText('Manual Servers').length).toBeGreaterThan(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Manual servers' }))
+    expect(screen.getByText('Selected custom nodes')).toBeInTheDocument()
+    expect(screen.getByText('Additional manual nodes (JSONC)')).toBeInTheDocument()
 
 	  fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }))
 	  expect(screen.getByText('Diagnostic tools')).toBeInTheDocument()
@@ -166,8 +162,8 @@ describe('ProxySubscribeEditor', () => {
 
 		fireEvent.click(screen.getByRole('button', { name: 'Rule List' }))
 		expect(screen.queryByLabelText('Local proxy password')).not.toBeInTheDocument()
-		fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use Recommended Config' })[0])
-		fireEvent.change(screen.getAllByLabelText('JSONC editor')[0], { target: { value: '{"geoip-cn": {}}' } })
+		fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use system defaults' })[0])
+		fireEvent.change(screen.getByRole('textbox', { name: 'JSONC editor' }), { target: { value: '{"geoip-cn": {}}' } })
 		await act(async () => vi.advanceTimersByTime(800))
 		expect(onSave).toHaveBeenCalledTimes(1)
 		expect(onSave.mock.calls[0][0]).toMatchObject({
@@ -196,7 +192,7 @@ describe('ProxySubscribeEditor', () => {
 			},
 		})
 
-		fireEvent.click(await screen.findByRole('button', { name: 'DNS Config' }))
+		fireEvent.click(await screen.findByRole('button', { name: 'DNS configuration' }))
 		expect(screen.getByText('Remote DNS')).toBeInTheDocument()
 		expect(screen.getByText('FakeIP')).toBeInTheDocument()
 		expect(screen.queryByText('System DNS takeover')).not.toBeInTheDocument()
@@ -214,16 +210,16 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     const { onSave } = renderEditor({ profile: { ...profile, sources: [] } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Subscribe URL' }))
-    expect(screen.queryByPlaceholderText('URL')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Subscription sources' }))
+    expect(screen.queryByPlaceholderText('https://example.com/subscription')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Subscribe Source' }))
-    expect(screen.getByPlaceholderText('URL')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add source' }))
+    expect(screen.getByPlaceholderText('https://example.com/subscription')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove source 1' }))
     await act(async () => vi.advanceTimersByTime(800))
 
-    expect(screen.queryByPlaceholderText('URL')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('https://example.com/subscription')).not.toBeInTheDocument()
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(onSave.mock.calls[0][0].sources).toEqual([])
   })
@@ -233,7 +229,7 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     const { onSave, onScheduleSave } = renderEditor()
 
-    const remark = screen.getByLabelText('Remark')
+    const remark = screen.getByRole('textbox', { name: 'Remark' })
     fireEvent.change(remark, { target: { value: 'First' } })
     fireEvent.change(remark, { target: { value: 'Latest' } })
     await act(async () => vi.advanceTimersByTime(799))
@@ -260,7 +256,7 @@ describe('ProxySubscribeEditor', () => {
     const { onSave } = renderEditor({ editorRef, onSaveStateChange })
 
     expect(onSaveStateChange).toHaveBeenLastCalledWith({ profileID: 'profile-1', dirty: false, saving: false })
-    fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'Save now' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Remark' }), { target: { value: 'Save now' } })
     expect(onSaveStateChange).toHaveBeenLastCalledWith({ profileID: 'profile-1', dirty: true, saving: false })
 
     act(() => editorRef.current?.saveNow())
@@ -279,7 +275,7 @@ describe('ProxySubscribeEditor', () => {
     const onSaveStateChange = vi.fn()
     renderEditor({ onSave: () => pendingSave, onSaveStateChange })
 
-    fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'Autosaving' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Remark' }), { target: { value: 'Autosaving' } })
     await act(async () => vi.advanceTimersByTime(800))
     expect(onSaveStateChange).toHaveBeenLastCalledWith({ profileID: 'profile-1', dirty: true, saving: true })
 
@@ -338,10 +334,10 @@ describe('ProxySubscribeEditor', () => {
     const firstSave = new Promise<void>((resolve) => { resolveFirst = resolve })
     const { onSave } = renderEditor({ onSave: vi.fn().mockReturnValueOnce(firstSave).mockResolvedValue(undefined) })
 
-    fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'First' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Remark' }), { target: { value: 'First' } })
     await act(async () => vi.advanceTimersByTime(800))
     expect(onSave).toHaveBeenCalledTimes(1)
-    fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'Newest' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Remark' }), { target: { value: 'Newest' } })
     await act(async () => vi.advanceTimersByTime(800))
     expect(onSave).toHaveBeenCalledTimes(1)
 
@@ -360,10 +356,10 @@ describe('ProxySubscribeEditor', () => {
     vi.useFakeTimers()
     localStorage.setItem('sempre.locale', 'en')
     const { onSave } = renderEditor()
-    fireEvent.click(screen.getByRole('button', { name: 'Custom Rules' }))
-    fireEvent.click(screen.getAllByRole('checkbox', { name: 'Use Recommended Config' })[2])
+    fireEvent.click(screen.getByRole('button', { name: 'Routing rules' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Use system defaults' }))
 
-    const customRules = screen.getAllByLabelText('JSONC editor')[2]
+    const customRules = screen.getByRole('textbox', { name: 'JSONC editor' })
     fireEvent.change(customRules, { target: { value: '{ temporarily invalid JSONC' } })
     await act(async () => vi.advanceTimersByTime(800))
 		expect(onSave).toHaveBeenCalledTimes(1)
@@ -388,11 +384,11 @@ describe('ProxySubscribeEditor', () => {
 				},
 			},
 		})
-		expect(await screen.findByRole('button', { name: 'DNS Config' })).toBeInTheDocument()
+		expect(await screen.findByRole('button', { name: 'DNS configuration' })).toBeInTheDocument()
 		expect(screen.getByRole('button', { name: 'Runtime' })).toBeInTheDocument()
 		expect(screen.getByRole('button', { name: 'Rule List' })).toBeInTheDocument()
 		expect(screen.getByRole('button', { name: 'Proxy Groups' })).toBeInTheDocument()
-		expect(screen.getByRole('button', { name: 'Manual Servers' })).toBeInTheDocument()
+		expect(screen.getByRole('button', { name: 'Manual servers' })).toBeInTheDocument()
 		expect(screen.queryByRole('button', { name: 'Advanced Config' })).not.toBeInTheDocument()
 		expect(screen.queryByRole('button', { name: 'Private Access' })).not.toBeInTheDocument()
 	})
@@ -407,7 +403,7 @@ describe('ProxySubscribeEditor', () => {
 			},
 		})
 		expect(await screen.findByRole('button', { name: 'Runtime' })).toBeInTheDocument()
-		for (const label of ['Rule List', 'Proxy Groups', 'Custom Rules', 'Advanced Config', 'DNS Config', 'Private Access', 'Manual Servers']) {
+		for (const label of ['Rule List', 'Proxy Groups', 'Routing rules', 'Advanced Config', 'DNS configuration', 'Private Access', 'Manual servers']) {
 			expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
 		}
 		expect(screen.queryByLabelText('Log Level')).not.toBeInTheDocument()
@@ -455,7 +451,7 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     renderEditor({ onSave: async () => { throw new Error('Compiled configuration was rejected') } })
 
-    const remark = screen.getByLabelText('Remark')
+    const remark = screen.getByRole('textbox', { name: 'Remark' })
     fireEvent.change(remark, { target: { value: 'Unsaved local edit' } })
     await act(async () => vi.advanceTimersByTime(800))
     expect(screen.getByRole('alert')).toHaveTextContent('Compiled configuration was rejected')
@@ -468,7 +464,7 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     const { onSave, unmount } = renderEditor()
 
-    fireEvent.change(screen.getByLabelText('Remark'), { target: { value: 'Save before leaving' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Remark' }), { target: { value: 'Save before leaving' } })
     expect(onSave).not.toHaveBeenCalled()
     unmount()
     await act(async () => Promise.resolve())
@@ -476,4 +472,17 @@ describe('ProxySubscribeEditor', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(onSave.mock.calls[0][0]).toMatchObject({ remark: 'Save before leaving' })
   })
+  it('autosaves URL and RAW sources in their original interleaved order', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('sempre.locale', 'en')
+    const sources: SubscriptionProfile['sources'] = [profile.sources[0],
+      { id: 'raw', type: 'raw', enabled: true, content: 'proxies: []' },
+      { ...profile.sources[0], id: 'last', url: 'https://last.example/sub' }]
+    const { onSave } = renderEditor({ profile: { ...profile, sources } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Remark' }), { target: { value: 'ordered' } })
+    await act(async () => vi.advanceTimersByTime(800))
+    expect(onSave.mock.calls[0][0].sources.map(source => source.id)).toEqual(['source-1', 'raw', 'last'])
+    expect(onSave.mock.calls[0][0].sources[1].content).toBe('proxies: []')
+  })
+
 })

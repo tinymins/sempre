@@ -2,11 +2,13 @@ mod auth;
 mod config;
 mod debug_stream;
 mod diagnostic_projection;
+mod editor_migration;
 mod error;
 mod fetch;
 mod maintenance;
 mod source_cache;
 mod subscription_compile;
+mod subscription_editor;
 mod subscription_rules;
 mod subscription_selected_nodes;
 mod subscription_source_debug;
@@ -60,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let database_url = std::env::var("DATABASE_URL")?;
             let pool = PgPool::connect(&database_url).await?;
             sqlx::migrate!("./toolbox-migrations").run(&pool).await?;
+            editor_migration::run(&pool).await?;
             info!("Toolbox schema initialized");
             return Ok(());
         }
@@ -78,6 +81,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Toolbox schema missing or incompatible; run sempre-server migrate on a new database"
                 .into(),
         );
+    }
+    let editor_ready: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='proxy_subscribes' AND column_name='editor_version')")
+        .fetch_one(&pool).await?;
+    if !editor_ready {
+        return Err("shared editor migration required; run sempre-server migrate".into());
+    }
+    let pending: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM proxy_subscribes WHERE editor_version=0)")
+            .fetch_one(&pool)
+            .await?;
+    if pending {
+        return Err("shared editor migration incomplete; run sempre-server migrate".into());
     }
     let address = config.bind_address;
     let web_root = config.web_root.clone();

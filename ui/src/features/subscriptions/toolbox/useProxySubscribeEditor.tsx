@@ -1,6 +1,5 @@
 import { Form } from "@acme/components";
-import type { SubscribeItem } from "@acme/types";
-import { parse as parseJsonc } from "jsonc-parser";
+import { sourceText, type EditorSource } from "@acme/subscription-editor";
 import {
   useCallback,
   useEffect,
@@ -12,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { SubscriptionProfile, SubscriptionSource } from "@/lib/types";
 import { randomUuid } from "@/lib/randomUuid";
 
-import { AUTOSAVE_DELAY, BASE_TABS, type Props, type SaveFeedback, isValidJsonc, profileFormValues } from "./ProxySubscribeModel";
+import { AUTOSAVE_DELAY, type Props, type SaveFeedback, profileFormValues } from "./ProxySubscribeModel";
 
 export function useProxySubscribeEditor({
   profile,
@@ -28,14 +27,6 @@ export function useProxySubscribeEditor({
 	sourceDebug = true,
 }: Props) {
     const { t } = useTranslation();
-    const [activeTab, setActiveTab] = useState("basic");
-    const [manualServersEditorOpen, setManualServersEditorOpen] =
-      useState(false);
-    const [manualServersDraft, setManualServersDraft] = useState("");
-    const [manualServersError, setManualServersError] = useState("");
-    const [rawSources, setRawSources] = useState<SubscriptionSource[]>(() =>
-      profile.sources.filter((source) => source.type === "raw"),
-    );
     const [scheduleInterval, setScheduleInterval] = useState(schedule.interval);
     const [autoRestart, setAutoRestart] = useState(schedule.autoRestart);
     const [profileFeedback, setProfileFeedback] = useState<SaveFeedback>({ state: "idle" });
@@ -45,7 +36,6 @@ export function useProxySubscribeEditor({
 		const supportsTransparent = features.has("transparent.tun") || features.has("transparent.tproxy") || features.has("transparent.ebpf");
 		const supportsLocalProxy = features.has("inbound.local_proxy");
 		const supportsManagement = features.has("management.external_api");
-		const supportsDNS = configurationContext.capabilities.features.some((feature) => feature.startsWith("dns."));
 		const savedTransparentMode = profile.transparent_proxy?.mode;
 		const unsupportedTransparentMode = savedTransparentMode && savedTransparentMode !== "disabled" && !(
 			savedTransparentMode === "tun-router" && features.has("transparent.tun") ||
@@ -53,25 +43,12 @@ export function useProxySubscribeEditor({
 			savedTransparentMode === "ebpf-router" && features.has("transparent.ebpf")
 		);
 		const runtimeVisible = supportsLocalProxy || supportsTransparent || supportsManagement || Boolean(unsupportedTransparentMode);
-		const availableTabs = useMemo(() => [
-				...BASE_TABS,
-				...(features.has("routing.rule_providers") ? [{ label: "ruleList", value: "ruleList" }] : []),
-				...(features.has("routing.selector") || features.has("routing.url_test") ? [{ label: "group", value: "group" }] : []),
-				...(features.has("routing.rules") ? [{ label: "customRules", value: "customConfig" }] : []),
-				...(supportsDNS ? [{ label: "dnsConfig", value: "dnsConfig" }] : []),
-				...(features.has("private_access") ? [{ label: "privateAccessConfig", value: "privateAccessConfig" }] : []),
-				...(runtimeVisible ? [{ label: "runtime", value: "runtime" }] : []),
-				...(configurationContext.capabilities.protocols.length > 0 ? [{ label: "servers", value: "servers" }] : []),
-				{ label: "diagnostics", value: "diagnostics" },
-			], [configurationContext.capabilities.protocols.length, features, runtimeVisible, supportsDNS]);
 		const [form] = Form.useForm(profileFormValues(profile));
-    const manualServers = Form.useWatch("servers", form) as string | undefined;
 		const transparentMode = Form.useWatch("transparentMode", form) as string | undefined;
 		const tunInterfaceMode = Form.useWatch("tunInterfaceMode", form) as string | undefined;
 
     const mountedRef = useRef(true);
     const profileRef = useRef(profile);
-    const rawSourcesRef = useRef(rawSources);
     const onSaveRef = useRef(onSave);
     const onScheduleSaveRef = useRef(onScheduleSave);
     const buildCandidateRef = useRef<(() => Promise<SubscriptionProfile>) | undefined>(undefined);
@@ -88,10 +65,9 @@ export function useProxySubscribeEditor({
 
     useEffect(() => {
       profileRef.current = profile;
-      rawSourcesRef.current = rawSources;
       onSaveRef.current = onSave;
       onScheduleSaveRef.current = onScheduleSave;
-    }, [profile, rawSources, onSave, onScheduleSave]);
+    }, [profile, onSave, onScheduleSave]);
 
     useEffect(() => {
       onSaveStateChange?.({
@@ -112,27 +88,16 @@ export function useProxySubscribeEditor({
       };
     }, [profile.id]);
 
-    // 获取 tabs 的本地化标签
-		const visibleActiveTab = availableTabs.some((tab) => tab.value === activeTab) ? activeTab : "basic";
-
-    const localizedTabs = availableTabs.map((tab) => ({
-      ...tab,
-      label: (
-        <span className={`text-sm ${tab.value === visibleActiveTab ? "font-medium" : "font-normal"}`}>
-          {t(`proxy.tabs.${tab.label}`)}
-        </span>
-      ),
-    }));
-
     const buildCandidate = async (): Promise<SubscriptionProfile> => {
       const values = form.getFieldsValue();
-      const cleanedItems = ((values.subscribeItems as SubscribeItem[]) || [])
-        .filter((item: SubscribeItem) => item.url?.trim());
-      const sources: SubscriptionSource[] = cleanedItems.map((item: SubscribeItem) => ({
+      const cleanedItems = ((values.subscribeItems as EditorSource[]) || [])
+        .filter((item: EditorSource) => sourceText(item).trim());
+      const sources: SubscriptionSource[] = cleanedItems.map((item: EditorSource) => ({
         id: item.id || randomUuid(),
-        type: "url",
+        type: item.type,
+        content: item.type === "raw" ? item.content : undefined,
         enabled: item.enabled,
-        url: item.url.trim(),
+        url: item.type === "url" ? item.url.trim() : undefined,
         prefix: item.prefix || undefined,
         remark: item.remark || undefined,
         user_agent: item.fetchUa || "clash.meta",
@@ -143,7 +108,7 @@ export function useProxySubscribeEditor({
         ...profileRef.current,
         remark: values.remark || "",
         log_level: values.logLevel ?? "info",
-        sources: [...sources, ...rawSourcesRef.current],
+        sources,
         custom_node_ids: values.selectedCustomNodeIds ?? [],
 			local_proxy: {
 				socks_port: values.localProxySOCKSPort ?? 20580,
@@ -285,70 +250,8 @@ export function useProxySubscribeEditor({
       }
     }, []);
 
-    const manualServerCount = (() => {
-      try {
-        const parsed = parseJsonc(manualServers || "[]");
-        return Array.isArray(parsed) ? parsed.length : 0;
-      } catch {
-        return 0;
-      }
-    })();
-
-    const openManualServersEditor = () => {
-      setManualServersDraft(manualServers || JSON.stringify([], null, 2));
-      setManualServersError("");
-      setManualServersEditorOpen(true);
-    };
-
-    const saveManualServers = (): undefined => {
-      if (isValidJsonc(manualServersDraft)) {
-        form.setFieldValue("servers", manualServersDraft);
-        setManualServersEditorOpen(false);
-        setManualServersError("");
-        queueAutosave();
-      } else {
-        setManualServersError(t("proxy.form.jsonFormatError"));
-      }
-      return undefined;
-    };
-
-    // 配置字段定义（用于统一渲染 useSystem checkbox + editor）
-    type ConfigField = "ruleList" | "group" | "customConfig";
-    const CONFIG_FIELDS: {
-      field: ConfigField;
-      useSystemField: string;
-      tab: string;
-      labelKey: string;
-      placeholderKey: string;
-    }[] = [
-      {
-        field: "ruleList",
-        useSystemField: "useSystemRuleList",
-        tab: "ruleList",
-        labelKey: "proxy.form.ruleListLabel",
-        placeholderKey: "proxy.form.ruleListPlaceholder",
-      },
-      {
-        field: "group",
-        useSystemField: "useSystemGroup",
-        tab: "group",
-        labelKey: "proxy.form.groupLabel",
-        placeholderKey: "proxy.form.groupPlaceholder",
-      },
-      {
-        field: "customConfig",
-        useSystemField: "useSystemCustomConfig",
-        tab: "customConfig",
-        labelKey: "proxy.form.customConfigLabel",
-        placeholderKey: "proxy.form.customConfigPlaceholder",
-      },
-    ];
-
   return {
     t,
-    setActiveTab,
-    visibleActiveTab,
-    localizedTabs,
     profileFeedback,
     scheduleFeedback,
     configurationContext,
@@ -361,27 +264,16 @@ export function useProxySubscribeEditor({
     queueScheduleSave,
     autoRestart,
     setAutoRestart,
-    rawSources,
-    rawSourcesRef,
-    setRawSources,
     defaults,
-    CONFIG_FIELDS,
     supportsLocalProxy,
     supportsTransparent,
+    runtimeVisible,
     supportsManagement,
     transparentMode,
     tunInterfaceMode,
     networkInventory,
     customNodes,
-    manualServerCount,
-    openManualServersEditor,
 		diagnostics,
 		sourceDebug,
-    manualServersEditorOpen,
-    setManualServersEditorOpen,
-    saveManualServers,
-    manualServersDraft,
-    setManualServersDraft,
-    manualServersError,
   };
 }

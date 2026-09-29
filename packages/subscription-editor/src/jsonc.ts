@@ -2,7 +2,7 @@ import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser'
 
 export type JsonObject = Record<string, unknown>
 
-export function readJsoncObject(value: string | null): { object: JsonObject | null; error: boolean } {
+export function readJsoncObject(value: string | null | undefined): { object: JsonObject | null; error: boolean } {
   if (!value?.trim()) return { object: {}, error: false }
   const errors: ParseError[] = []
   const parsed: unknown = parse(value, errors, { allowTrailingComma: true })
@@ -17,8 +17,10 @@ export function objectAt(parent: JsonObject, key: string): JsonObject {
   return value && !Array.isArray(value) && typeof value === 'object' ? value as JsonObject : {}
 }
 
-export function editJsonc(value: string | null, path: (string | number)[], next: unknown): string {
+/** Change only the requested field; unfinished documents remain editable as text. */
+export function editJsonc(value: string | null | undefined, path: (string | number)[], next: unknown): string {
   const text = value?.trim() ? value : '{}'
+  if (readJsoncObject(text).error) return text
   const edits = modify(text, path, next, { formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' } })
   return applyEdits(text, edits)
 }

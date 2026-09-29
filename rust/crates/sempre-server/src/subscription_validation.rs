@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use sempre_converter::{EditorConfig, Profile, parse_jsonc_value, profile_from_editor};
+use sempre_converter::{EditorConfig, Profile, profile_from_editor};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -80,12 +80,12 @@ fn validate_editor_fields(
     }
     let editor = EditorConfig {
         rule_list: if includes(&["ruleList", "useSystemRuleList"]) {
-            effective_default_on_empty(fields.use_system_rule_list, fields.rule_list.as_ref(), "")?
+            active(fields.use_system_rule_list, fields.rule_list.as_ref())
         } else {
             String::new()
         },
         group: if includes(&["group", "useSystemGroup"]) {
-            effective_default_on_empty(fields.use_system_group, fields.group.as_ref(), "")?
+            active(fields.use_system_group, fields.group.as_ref())
         } else {
             String::new()
         },
@@ -132,27 +132,4 @@ fn active(use_system: bool, value: Option<&String>) -> String {
     } else {
         value.cloned().unwrap_or_default()
     }
-}
-
-pub(crate) fn effective_default_on_empty(
-    use_system: bool,
-    value: Option<&String>,
-    default: &str,
-) -> Result<String, ApiError> {
-    if use_system {
-        return Ok(default.into());
-    }
-    let value = active(use_system, value);
-    if value.trim().is_empty() {
-        return Ok(default.into());
-    }
-    let parsed =
-        parse_jsonc_value(&value).map_err(|error| ApiError::bad_request(error.to_string()))?;
-    if parsed.is_null()
-        || parsed.as_array().is_some_and(Vec::is_empty)
-        || parsed.as_object().is_some_and(serde_json::Map::is_empty)
-    {
-        return Ok(default.into());
-    }
-    Ok(value)
 }

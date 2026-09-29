@@ -156,3 +156,5 @@ export type { UploadChangeInfo, UploadFile, UploadProps } from "./Upload";
 export { Dragger, Upload } from "./Upload";
 // ─── Utilities ───
 export { cn } from "./utils";
+
+export { randomUuid } from './randomUuid'

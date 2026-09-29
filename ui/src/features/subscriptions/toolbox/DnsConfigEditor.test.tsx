@@ -21,6 +21,7 @@ describe('DnsConfigEditor', () => {
     render(
       <I18nProvider>
         <DnsConfigEditor
+          defaults={JSON.stringify({ shared: { systemDnsListenHosts: ['127.0.0.1'], cnDomainRuleSetUrl: 'https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs' } })}
           features={['dns.local_upstream', 'dns.system_takeover']}
           onChange={onChange}
         />
@@ -45,6 +46,7 @@ describe('DnsConfigEditor', () => {
     render(
       <I18nProvider>
         <DnsConfigEditor
+          defaults={JSON.stringify({ shared: { systemDnsListenHosts: ['127.0.0.1'], cnDomainRuleSetUrl: 'https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs' } })}
           features={['dns.system_takeover']}
           value={JSON.stringify({ shared: { systemDnsTakeoverEnabled: true } })}
           systemDnsListenHostOptions={[{ value: '10.10.10.1', label: '10.10.10.1 · vmbr1' }]}
@@ -54,23 +56,24 @@ describe('DnsConfigEditor', () => {
     )
 
     fireEvent.click(screen.getByText('10.10.10.1 · vmbr1'))
-    expect(onChange).toHaveBeenLastCalledWith(JSON.stringify({
+    expect(JSON.parse(onChange.mock.calls.at(-1)?.[0] as string)).toEqual({
       shared: { systemDnsTakeoverEnabled: true, systemDnsListenHosts: ['127.0.0.1', '10.10.10.1'] },
-    }, null, 2))
+    })
 
     fireEvent.click(screen.getByText('0.0.0.0'))
-    expect(onChange).toHaveBeenLastCalledWith(JSON.stringify({
+    expect(JSON.parse(onChange.mock.calls.at(-1)?.[0] as string)).toEqual({
       shared: { systemDnsTakeoverEnabled: true, systemDnsListenHosts: ['0.0.0.0'] },
-    }, null, 2))
+    })
   })
 
-  it('edits managed GEO sources and drops fields without controls', () => {
+  it('edits managed GEO sources and preserves fields without controls', () => {
     localStorage.setItem('sempre.locale', 'en')
     const onChange = vi.fn()
 
     render(
       <I18nProvider>
         <DnsConfigEditor
+          defaults={JSON.stringify({ shared: { systemDnsListenHosts: ['127.0.0.1'], cnDomainRuleSetUrl: 'https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs' } })}
           features={['dns.local_upstream', 'dns.local_transport', 'dns.geo_sources']}
           value={JSON.stringify({
             shared: { managedDnsFrontend: true, unknown: 'hidden' },
@@ -85,8 +88,8 @@ describe('DnsConfigEditor', () => {
     fireEvent.change(cnDomainUrl, { target: { value: 'https://rules.example/geosite-cn.srs' } })
 
     const saved = JSON.parse(onChange.mock.calls.at(-1)?.[0] as string)
-    expect(saved).toEqual({ shared: { cnDomainRuleSetUrl: 'https://rules.example/geosite-cn.srs' } })
-    expect(saved.shared.managedDnsFrontend).toBeUndefined()
-    expect(saved.shared.unknown).toBeUndefined()
+    expect(saved).toEqual({ shared: { managedDnsFrontend: true, unknown: 'hidden', cnDomainRuleSetUrl: 'https://rules.example/geosite-cn.srs' } })
+    expect(saved.shared.managedDnsFrontend).toBe(true)
+    expect(saved.shared.unknown).toBe('hidden')
   })
 })

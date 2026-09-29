@@ -1,33 +1,13 @@
-export interface SubscriptionSource {
-  enabled: boolean
-  url: string
-  prefix: string
-  remark: string
-  cacheTtlMinutes?: number
-  fetchUa?: string
-  fetchMode?: 'auto' | 'domestic-direct'
-}
+import { clearInheritedValues, createSource, normalizeSource, type EditorSource, type ConfigDraft } from '@acme/subscription-editor'
+export type SubscriptionSource = EditorSource
 
-export interface SubscriptionDraft {
+export interface SubscriptionDraft extends ConfigDraft {
   remark: string | null
   logLevel: 'off' | 'error' | 'warn' | 'info' | 'debug'
   subscribeItems: SubscriptionSource[] | null
   subscribeUrl: string | null
-  ruleList: string | null
-  useSystemRuleList: boolean
-  group: string | null
-  useSystemGroup: boolean
-  filter: string | null
-  useSystemFilter: boolean
-  servers: string | null
-  customConfig: string | null
-  useSystemCustomConfig: boolean
-  dnsConfig: string | null
-  useSystemDnsConfig: boolean
-  privateAccessConfig: string | null
   authorizedUserIds: string[]
   cacheTtlMinutes: number | null
-  selectedCustomNodeIds: string[]
 }
 
 export interface Subscription extends SubscriptionDraft {
@@ -80,7 +60,7 @@ export interface UserBrief {
 export function emptyDraft(): SubscriptionDraft {
   return {
     remark: null, logLevel: 'info',
-    subscribeItems: [{ enabled: true, url: '', prefix: '', remark: '', fetchMode: 'auto' }],
+    subscribeItems: [createSource()],
     subscribeUrl: null,
     ruleList: null, useSystemRuleList: true,
     group: null, useSystemGroup: true,
@@ -94,9 +74,9 @@ export function emptyDraft(): SubscriptionDraft {
 }
 
 export function draftFromSubscription(value: Subscription): SubscriptionDraft {
-  return {
+  return clearInheritedValues({
     remark: value.remark, logLevel: value.logLevel,
-    subscribeItems: value.subscribeItems?.map((item) => ({ ...item })) ?? null,
+    subscribeItems: value.subscribeItems?.map(normalizeSource) ?? null,
     subscribeUrl: value.subscribeUrl,
     ruleList: value.ruleList, useSystemRuleList: value.useSystemRuleList,
     group: value.group, useSystemGroup: value.useSystemGroup,
@@ -108,5 +88,5 @@ export function draftFromSubscription(value: Subscription): SubscriptionDraft {
     authorizedUserIds: [...value.authorizedUserIds],
     cacheTtlMinutes: value.cacheTtlMinutes,
     selectedCustomNodeIds: [...value.selectedCustomNodeIds],
-  }
+  })
 }

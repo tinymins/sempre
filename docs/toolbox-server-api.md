@@ -124,18 +124,23 @@ values come from the server ACL.
 
 Nonempty `subscribeItems` takes priority over the old `subscribeUrl` field;
 an empty list falls back to the old field for migrated records. Each item
-has `enabled`, `url`, `prefix`, `remark`, optional `cacheTtlMinutes`,
-`fetchUa`, and `fetchMode` (`auto` or `domestic-direct`). The old
+has `id`, `type` (`url` or `raw`), `enabled`, `prefix`, and `remark`.
+URL items carry `url` and optional `cacheTtlMinutes`, `fetchUa`, and `fetchMode`
+(`auto` or `domestic-direct`); RAW items carry `content` and never fetch over HTTP.
+Existing items without a type are URLs. The list preserves mixed source order. The old
 `subscribeUrl` value remains readable and editable for existing rows.
 `servers` remains the configuration's private inline JSONC nodes; global
 nodes remain separately owned and assigned. Inline, enabled global, then
 remote source nodes is the output order.
 
 The five `useSystem*` flags are per-field selectors. When true, compilation
-uses the current server default, even when a stored custom field is present.
-When false, compilation uses the saved field according to the original field's
-empty-value semantics. `GET /api/v1/subscription-defaults` supplies editor
-display values but does not copy defaults into every subscription on save.
+uses the converter's current recommendation for the requested output target.
+When false, compilation uses the saved field; explicit empty rules/groups stay
+empty. The shared editor clears inactive custom values when inheritance is on
+and copies current defaults when inheritance is turned off.
+`GET /api/v1/subscription-defaults` supplies the converter's generic display
+values. Existing Server settings are materialized once by migration 0010 plus
+`editor_migration::run`; see [shared editor architecture](subscription-editor-architecture.md).
 The three debug POST routes accept JSON with the existing session cookie and
 respond with `text/event-stream`. They emit `stage` events as work occurs,
 followed by exactly one terminal `result` (success) or `error` (failure).

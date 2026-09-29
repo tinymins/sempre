@@ -1,11 +1,12 @@
+import { appendConnector, patchConnector } from '@acme/subscription-editor/private-edit'
 import { describe, expect, it } from 'vitest'
-import { emptyConnector, parseConfig, serializeConfig } from './PrivateAccessConfig'
+import { emptyConnector, parseConfig } from './PrivateAccessConfig'
 import { parseWireGuardImport, WireGuardImportError } from './WireGuardImport'
 
 describe('PrivateAccessConfig tunnel forwarding', () => {
   it('round-trips the managed transport endpoint reference', () => {
     const connector = { ...emptyConnector(), tag: 'hz', transportEndpointRef: 'hz-wg' }
-    const serialized = serializeConfig(true, [connector])
+    const serialized = patchConnector(appendConnector('{}'), 0, connector)
     expect(JSON.parse(serialized).connectors[0]).toMatchObject({ type: 'wireguard', transport_endpoint_ref: 'hz-wg' })
     expect(parseConfig(serialized).connectors[0].transportEndpointRef).toBe('hz-wg')
   })
@@ -66,7 +67,7 @@ describe('PrivateAccessConfig home network detection', () => {
       homeNetworkEnabled: true,
       homeNetworkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
     }
-    const serialized = serializeConfig(true, [connector])
+    const serialized = patchConnector(appendConnector('{}'), 0, connector)
     expect(JSON.parse(serialized).connectors[0].homeNetwork).toEqual({
       enabled: true,
       networkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
@@ -83,7 +84,7 @@ describe('PrivateAccessConfig home network detection', () => {
       homeNetworkEnabled: false,
       homeNetworkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
     }
-    expect(JSON.parse(serializeConfig(true, [connector])).connectors[0].homeNetwork).toEqual({
+    expect(JSON.parse(patchConnector(appendConnector('{}'), 0, connector)).connectors[0].homeNetwork).toEqual({
       enabled: false,
       networkIds: ['d286d2f8-33c5-4f1e-b871-d22a9ba91143'],
     })

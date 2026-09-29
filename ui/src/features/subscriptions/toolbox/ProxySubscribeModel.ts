@@ -1,6 +1,5 @@
 import type { FormFieldValues } from "@acme/components";
-import type { SubscribeItem } from "@acme/types";
-import { parse as parseJsonc, type ParseError } from "jsonc-parser";
+import { clearInheritedValues, normalizeSource, type EditorSource } from "@acme/subscription-editor";
 import type { ReactNode } from "react";
 import type { CustomNode, LinuxNetworkInventory, SubscriptionConfigurationContext, SubscriptionEditorConfig, SubscriptionProfile } from "@/lib/types";
 
@@ -26,11 +25,6 @@ export type ProxySubscribeSaveState = {
 	dirty: boolean;
 	saving: boolean;
 };
-
-export const BASE_TABS = [
-  { label: "basic", value: "basic" },
-  { label: "subscribeUrl", value: "subscribeUrl" },
-];
 
 export const AUTOSAVE_DELAY = 800;
 
@@ -61,10 +55,11 @@ export function profileFormValues(profile: SubscriptionProfile): FormFieldValues
 		};
 	const localProxy = profile.local_proxy ?? { socks_port: 20580, http_port: 20581, username: "sempre", password: "" };
 	const managementAPI = profile.management_api ?? { external_controller: "0.0.0.0:9090", secret: "", allow_origins: [], allow_private_network: false };
-  const items: SubscribeItem[] = profile.sources
-    .filter((source) => source.type === "url")
-    .map((source) => ({
+  const items: EditorSource[] = profile.sources
+    .map((source) => normalizeSource({
       id: source.id,
+      type: source.type,
+      content: source.content,
       enabled: source.enabled,
       url: source.url ?? "",
       prefix: source.prefix ?? "",
@@ -72,8 +67,8 @@ export function profileFormValues(profile: SubscriptionProfile): FormFieldValues
       cacheTtlMinutes: source.cache_ttl_minutes,
       fetchUa: source.user_agent || undefined,
       fetchMode: source.fetch_mode ?? "auto",
-    }));
-  return {
+    } as Partial<EditorSource>));
+  return clearInheritedValues({
     remark: profile.remark ?? "",
     logLevel: profile.log_level ?? "info",
     subscribeItems: items,
@@ -113,11 +108,5 @@ export function profileFormValues(profile: SubscriptionProfile): FormFieldValues
 		managementAPIUI: managementAPI.external_ui ?? "",
 		managementAPIOrigins: managementAPI.allow_origins,
 		managementAPIPrivateNetwork: managementAPI.allow_private_network,
-  };
-}
-
-export function isValidJsonc(value: string) {
-  const errors: ParseError[] = [];
-  parseJsonc(value, errors, { allowTrailingComma: true });
-  return errors.length === 0;
+  });
 }

@@ -29,7 +29,8 @@
     "react-router-dom": "latest",
     "tailwind-merge": "latest",
     "uplot": "latest",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@acme/subscription-editor": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "latest",

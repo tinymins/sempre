@@ -1,0 +1,45 @@
+{
+  "name": "@acme/subscription-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsonc": "./src/jsonc.ts",
+    "./private-model": "./src/private-model.ts",
+    "./private-edit": "./src/private-edit.ts",
+    "./private-labels": "./src/private-labels.tsx",
+    "./WireGuardImport": "./src/WireGuardImport.ts",
+    "./WireGuardImportModal": "./src/WireGuardImportModal.tsx"
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings 0",
+    "tsc": "tsc --noEmit --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@acme/components": "workspace:*",
+    "jsonc-parser": "^3.3.1",
+    "lucide-react": "latest",
+    "zod": "^4.3.6",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "6.0.3",
+    "vitest": "latest",
+    "@testing-library/react": "latest",
+    "@testing-library/jest-dom": "latest",
+    "jsdom": "latest",
+    "eslint": "latest"
+  }
+}

@@ -12,7 +12,7 @@ use sqlx::Row as _;
 use uuid::Uuid;
 
 use sempre_converter::{
-    CompileRequest, CompileResult, CustomNode, Diagnostic, EditorConfig, Profile, Target, compile,
+    CompileRequest, CompileResult, CustomNode, Diagnostic, Profile, Target, compile,
     parse_jsonc_value, preview_nodes, trace_node_steps,
 };
 
@@ -25,7 +25,6 @@ use crate::{
     source_cache::CacheMode,
     subscription_rules::load_rule_snapshots,
     subscription_sources::{all_sources_failed, load_sources},
-    subscription_validation::effective_default_on_empty,
     subscriptions::{SubscriptionFields, parse_input, row_fields},
 };
 
@@ -266,35 +265,7 @@ pub(crate) async fn prepare_local(
             .clone()
             .unwrap_or_else(|| "Subscription".into()),
         log_level: fields.log_level.clone(),
-        editor: EditorConfig {
-            rule_list: effective_default_on_empty(
-                fields.use_system_rule_list,
-                fields.rule_list.as_ref(),
-                include_str!("toolbox_defaults/rules.jsonc"),
-            )?,
-            group: effective_default_on_empty(
-                fields.use_system_group,
-                fields.group.as_ref(),
-                include_str!("toolbox_defaults/groups.jsonc"),
-            )?,
-            filter: effective(
-                fields.use_system_filter,
-                fields.filter.as_ref(),
-                "[\"官网\",\"客服\",\"qq群\"]",
-            ),
-            custom_config: effective(
-                fields.use_system_custom_config,
-                fields.custom_config.as_ref(),
-                "[]",
-            ),
-            dns_config: effective(
-                fields.use_system_dns_config,
-                fields.dns_config.as_ref(),
-                include_str!("toolbox_defaults/dns.jsonc"),
-            ),
-            private_access_config: fields.private_access_config.clone().unwrap_or_default(),
-            servers: fields.servers.clone().unwrap_or_default(),
-        },
+        editor: crate::subscription_editor::editor(fields, &target.core),
         ..Profile::default()
     };
     let custom_nodes = load_custom_nodes(state, selected, options.viewer, options.node_scope)
@@ -372,14 +343,6 @@ pub(crate) async fn prepare_with_local(
         },
         diagnostics,
     ))
-}
-
-fn effective(use_system: bool, custom: Option<&String>, default: &str) -> String {
-    if use_system {
-        default.into()
-    } else {
-        custom.cloned().unwrap_or_default()
-    }
 }
 
 async fn load_custom_nodes(

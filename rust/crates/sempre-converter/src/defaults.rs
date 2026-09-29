@@ -203,6 +203,7 @@ fn default_dns() -> Value {
     json!({ "shared": {
         "localDnsTransport": "udp", "localDns": "223.5.5.5", "localDnsPort": 53, "localServerName": "",
         "bootstrapDns": "223.5.5.5", "bootstrapDnsPort": 853, "bootstrapServerName": "dns.alidns.com",
+        "remoteDetour": "", "systemDnsTakeoverEnabled": false, "systemDnsListenPort": 53, "systemDnsListenHosts": ["127.0.0.1"],
         "remoteDns": "8.8.8.8", "remoteDnsPort": 853, "remoteServerName": "dns.google",
         "fakeipIpv4Range": "198.18.0.0/15", "fakeipIpv6Range": "fc00::/18",
         "fakeipEnabled": true, "fakeipTtl": 300, "rejectHttps": true,
@@ -284,7 +285,7 @@ fn enabled(profile: &Profile, key: &str) -> bool {
 }
 
 fn editor_config(defaults: &Defaults) -> EditorConfig {
-    let mut providers = BTreeMap::<String, Vec<Value>>::new();
+    let mut providers = indexmap::IndexMap::<String, Vec<Value>>::new();
     for provider in &defaults.rule_providers {
         providers
             .entry(provider.outbound.clone())

@@ -3,17 +3,16 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { AcmeContentBoundary } from "@/components/AcmeContentBoundary";
-import { emptyConnector, serializeConfig } from "./PrivateAccessConfig";
 import PrivateAccessEditor from "./PrivateAccessEditor";
 
 describe("PrivateAccessEditor WireGuard import", () => {
   it("enables import only for WireGuard and fills the selected connector", async () => {
     localStorage.setItem("sempre.locale", "zh-CN");
     const onChange = vi.fn();
-    const value = serializeConfig(true, [
-      { ...emptyConnector(), tag: "wg", routeCidrs: "10.0.0.0/8" },
-      { ...emptyConnector(), tag: "proxy", type: "vmess" },
-    ]);
+    const value = JSON.stringify({ enabled: true, connectors: [
+      { enabled: true, tag: "wg", type: "wireguard", routes: { ipCidrs: ["10.0.0.0/8"] }, endpoint: { peers: [] } },
+      { enabled: true, tag: "proxy", type: "vmess", outbound: { type: "vmess" } },
+    ] });
 
     render(
       <QueryClientProvider client={new QueryClient()}>

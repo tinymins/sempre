@@ -2,7 +2,7 @@ import { Button, CodeEditor, Input } from '@acme/components'
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser'
 import { Plus, X } from 'lucide-react'
 import { useState } from 'react'
-import { useI18n } from '../i18n/provider'
+import { useEditorI18n as useI18n } from './i18n'
 
 function readTags(value: string): { tags: string[]; error: boolean } {
   if (!value.trim()) return { tags: [], error: false }
@@ -14,7 +14,7 @@ function readTags(value: string): { tags: string[]; error: boolean } {
   return { tags: parsed as string[], error: false }
 }
 
-export function FilterConfig({ value, readOnly = false, onChange }: { value: string; readOnly?: boolean; onChange?: (value: string) => void }) {
+export function FilterEditor({ value, readOnly = false, onChange }: { value: string; readOnly?: boolean; onChange?: (value: string) => void }) {
   const { t } = useI18n()
   const [newTag, setNewTag] = useState('')
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
@@ -47,7 +47,7 @@ export function FilterConfig({ value, readOnly = false, onChange }: { value: str
       {tags.length === 0 && !error ? <span className="text-sm text-[var(--muted)]">{t('filter.empty')}</span> : null}
     </div>
     {!readOnly ? <div className="flex max-w-md gap-2"><Input value={newTag} disabled={Boolean(error)} placeholder={t('filter.add')} onChange={(event) => setNewTag(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }} /><Button icon={<Plus size={14} />} disabled={Boolean(error) || !newTag.trim()} onClick={add}>{t('filter.add')}</Button></div> : null}
-    {!readOnly ? <label className="block space-y-1 text-sm">{t('filter.advanced')}
+    {!readOnly && error ? <label className="block space-y-1 text-sm">{t('filter.advanced')}
       <CodeEditor height={180} value={value} onChange={(next) => onChange?.(next)} ariaLabel={t('filter.advanced')} />
     </label> : null}
   </div>

@@ -326,13 +326,7 @@ async fn users(
 }
 
 async fn defaults(CurrentUser(_user): CurrentUser) -> Json<Value> {
-    Json(json!({
-        "ruleList": include_str!("toolbox_defaults/rules.jsonc"),
-        "group": include_str!("toolbox_defaults/groups.jsonc"),
-        "filter": "[\"官网\",\"客服\",\"qq群\"]",
-        "customConfig": "[]",
-        "dnsConfig": include_str!("toolbox_defaults/dns.jsonc"),
-    }))
+    Json(crate::subscription_editor::defaults())
 }
 
 async fn visible_row(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result<PgRow, ApiError> {

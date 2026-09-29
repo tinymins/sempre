@@ -9,7 +9,7 @@ import { DiagnosticValue } from './DiagnosticValue'
 import { diagnosticText } from './diagnostic-locale'
 import { ServerCodeBlock } from '../ServerCodeBlock'
 
-export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSource; saved?: { id: string; index: number; source: SubscriptionSource }; onClose: () => void }) {
+export function SourceDebug({ source, saved, onClose }: { source: Extract<SubscriptionSource, { type: 'url' }>; saved?: { id: string; index: number; source: Extract<SubscriptionSource, { type: 'url' }> }; onClose: () => void }) {
   const { t, number, locale } = useI18n()
   const [mode, setMode] = useState<'bypass-cache' | 'production'>(saved ? 'production' : 'bypass-cache')
   const [result, setResult] = useState<SourceDebugResult | null>(null)
