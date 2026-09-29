@@ -1,4 +1,4 @@
-import { Modal, Pagination, Spin, Table } from '@acme/components'
+import { Modal, Pagination, Spin, Table, Tag } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { AccessStats } from './diagnostic-types'
@@ -32,12 +32,12 @@ export function SubscriptionStats({ subscription, onClose }: { subscription: Sub
       </div>
       <p className="text-xs text-[var(--muted)]">{t('stats.retentionHint')}</p>
       <section><h3 className="mb-2 text-sm font-medium">{t('stats.byFormat')}</h3>
-        <div className="flex flex-wrap gap-2">{stats.accessByType.map((item) => <span key={item.type} className="rounded border border-[var(--border)] px-2 py-1 text-xs">{item.type}: {number(item.count)}</span>)}</div>
+        <div className="flex flex-wrap gap-2">{stats.accessByType.map((item) => <Tag key={item.type} color="blue" className="gap-2 px-3 py-1">{item.type.toUpperCase()}<span className="border-l border-blue-200 pl-2 font-semibold dark:border-sky-400/25">{number(item.count)}</span></Tag>)}</div>
       </section>
       <section><h3 className="mb-2 text-sm font-medium">{t('stats.recent')}</h3>
-        <Table rowKey="id" dataSource={stats.recentAccesses} pagination={false} size="small" scroll={{ x: 620 }} columns={[
+        <Table rowKey="id" dataSource={stats.recentAccesses} pagination={false} scroll={{ x: 620 }} columns={[
           { title: t('common.time'), render: (_, item) => date(item.createdAt) },
-          { title: t('common.format'), dataIndex: 'accessType' },
+          { title: t('common.format'), render: (_, item) => <Tag color="blue">{item.accessType.toUpperCase()}</Tag> },
           { title: t('stats.nodeCount'), render: (_, item) => item.nodeCount === null ? '—' : number(item.nodeCount) },
           { title: t('stats.ip'), dataIndex: 'ip' },
           { title: t('common.userAgent'), dataIndex: 'userAgent' },
