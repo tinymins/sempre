@@ -1,11 +1,10 @@
-import { Button, Collapse, Input, Modal, Select, Spin, Table } from '@acme/components'
+import { Button, Input, Modal, Select, Spin, Table, Tag } from '@acme/components'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { NodeTraceResult, PreviewNode, Target } from './diagnostic-types'
 import type { Subscription } from './types'
 import { useI18n } from '../i18n/provider'
-import { DiagnosticValue } from './DiagnosticValue'
-import { TraceSteps } from './DiagnosticTrace'
+import { PreviewNodeDetails } from './PreviewNodeDetails'
 
 interface Props {
   subscription: Subscription
@@ -13,19 +12,29 @@ interface Props {
   onClose: () => void
 }
 
+type IndexedPreviewNode = PreviewNode & { previewIndex: number }
+const typeColors: Record<string, string> = { vmess: 'blue', vless: 'purple', ss: 'green', trojan: 'orange', hysteria2: 'magenta', hysteria: 'red', tuic: 'cyan', socks5: 'default', http: 'default' }
+
 export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
   const { t, number } = useI18n()
   const [format, setFormat] = useState(targets.find((item) => item.format === 'clash-meta')?.format ?? targets[0]?.format ?? '')
   const [nodes, setNodes] = useState<PreviewNode[] | null>(null)
   const [search, setSearch] = useState('')
-  const [detail, setDetail] = useState<PreviewNode | null>(null)
-  const [trace, setTrace] = useState<NodeTraceResult | null>(null)
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
+  const [trace, setTrace] = useState<{ index: number; result: NodeTraceResult } | null>(null)
   const [loading, setLoading] = useState(targets.length > 0)
   const [traceLoading, setTraceLoading] = useState(false)
   const [error, setError] = useState('')
   const requestId = useRef(0)
   const traceRequestId = useRef(0)
   const target = targets.find((item) => item.format === format)
+
+  const expandNode = (index: number | null) => {
+    traceRequestId.current += 1
+    setTraceLoading(false)
+    setTrace(null)
+    setExpandedIndex(index)
+  }
 
   const preview = useCallback(async (selected: Target) => {
     const currentRequest = ++requestId.current
@@ -42,10 +51,7 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
     setLoading(true)
     setError('')
     setNodes(null)
-    setDetail(null)
-    setTrace(null)
-    traceRequestId.current += 1
-    setTraceLoading(false)
+    expandNode(null)
   }
   useEffect(() => {
     if (!target) return
@@ -59,7 +65,7 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
     })
     return () => { requestId.current += 1 }
   }, [subscription.id, target])
-  const traceNode = async (node: PreviewNode) => {
+  const traceNode = async (node: IndexedPreviewNode) => {
     if (!target) return
     const currentTrace = ++traceRequestId.current
     const currentPreview = requestId.current
@@ -67,14 +73,14 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
     setError('')
     try {
       const result = await subscriptionApi.trace(subscription.id, target, node.name)
-      if (traceRequestId.current === currentTrace && requestId.current === currentPreview) setTrace(result)
+      if (traceRequestId.current === currentTrace && requestId.current === currentPreview) setTrace({ index: node.previewIndex, result })
     } catch (reason) {
       if (traceRequestId.current === currentTrace && requestId.current === currentPreview) setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       if (traceRequestId.current === currentTrace && requestId.current === currentPreview) setTraceLoading(false)
     }
   }
-  const filtered = nodes?.filter((node) => `${node.name} ${node.type} ${node.server} ${node.sourceUrl}`.toLowerCase().includes(search.toLowerCase())) ?? []
+  const filtered = nodes?.map((node, previewIndex) => ({ ...node, previewIndex })).filter((node) => `${node.name} ${node.type} ${node.server} ${node.sourceUrl}`.toLowerCase().includes(search.toLowerCase())) ?? []
   const activeCount = nodes?.filter((node) => !node.filtered).length ?? 0
   const filteredCount = (nodes?.length ?? 0) - activeCount
   const typeCounts = Object.entries((nodes ?? []).filter((node) => !node.filtered).reduce<Record<string, number>>((counts, node) => ({ ...counts, [node.type]: (counts[node.type] ?? 0) + 1 }), {}))
@@ -84,7 +90,7 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         {nodes ? <p className="min-w-0 flex-1 basis-64 break-words text-sm">{t('preview.summary', { total: number(nodes.length), active: number(activeCount), filtered: number(filteredCount) })}{typeCounts.length ? ` · ${typeCounts.map(([type, count]) => `${type} ${number(count)}`).join(' / ')}` : ''}</p> : <div className="min-w-0 flex-1 basis-64" />}
         <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
-          {nodes ? <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('preview.search')} className="w-full min-w-0 sm:w-60" /> : null}
+          {nodes ? <Input value={search} onChange={(event) => { setSearch(event.target.value); expandNode(null) }} placeholder={t('preview.search')} className="w-full min-w-0 sm:w-60" /> : null}
           <Select value={format} addonBefore={t('preview.target')} aria-label={t('preview.target')} options={targets.map((item) => ({ value: item.format, label: item.format }))} onChange={(next) => { requestId.current += 1; preparePreview(); setFormat(String(next)) }} className="w-56 shrink-0 sm:w-60" />
           <Button variant="primary" onClick={() => { if (target) { preparePreview(); void preview(target) } }} loading={loading} disabled={!target}>{t('preview.generate')}</Button>
         </div>
@@ -92,22 +98,31 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       {loading ? <Spin /> : null}
       {nodes ? <>
-        <Table<PreviewNode> rowKey={(_, index) => String(index)} dataSource={filtered} pagination={false} scroll={{ x: 750 }} columns={[
+        <div className="hidden md:block"><Table<IndexedPreviewNode> rowKey="previewIndex" dataSource={filtered} pagination={false} scroll={{ x: 750 }} onRow={(node) => ({
+          className: 'cursor-pointer',
+          tabIndex: 0,
+          'aria-expanded': expandedIndex === node.previewIndex,
+          onClick: (event) => { if (!(event.target as Element).closest('button')) expandNode(expandedIndex === node.previewIndex ? null : node.previewIndex) },
+          onKeyDown: (event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); expandNode(expandedIndex === node.previewIndex ? null : node.previewIndex) } },
+        })} expandable={{
+          expandedRowKeys: expandedIndex === null ? [] : [String(expandedIndex)],
+          onExpand: (expanded, node) => expandNode(expanded ? node.previewIndex : null),
+          expandedRowRender: (node) => <PreviewNodeDetails node={node} trace={trace?.index === node.previewIndex ? trace.result : null} traceLoading={traceLoading && expandedIndex === node.previewIndex} onTrace={() => void traceNode(node)} />,
+        }} columns={[
           { title: t('common.name'), dataIndex: 'name' }, { title: t('common.protocol'), dataIndex: 'type', width: 110 },
           { title: t('common.server'), render: (_, node) => `${node.server}:${node.port}` },
           { title: t('preview.transportTls'), render: (_, node) => `${typeof node.raw.network === 'string' ? node.raw.network.toUpperCase() : '—'}${node.raw.tls === true ? ' · TLS' : ''}` },
           { title: t('preview.credential'), render: (_, node) => { const credential = [node.raw.uuid, node.raw.password, node.raw['auth-str']].find((value): value is string => typeof value === 'string'); return credential ? credential.length > 16 ? `${credential.slice(0, 8)}…${credential.slice(-4)}` : '••••' : '—' } },
           { title: t('common.source'), render: (_, node) => node.sourceUrl || `${t('common.source')} ${number(node.sourceIndex)}` },
           { title: t('common.status'), render: (_, node) => node.filtered ? t('preview.filtered', { rule: node.filteredBy ?? '' }) : t('preview.kept') },
-          { title: t('common.actions'), render: (_, node) => <Button size="small" onClick={() => { traceRequestId.current += 1; setTraceLoading(false); setDetail(node); setTrace(null) }}>{t('preview.detail')}</Button> },
-        ]} locale={{ emptyText: t('common.noData') }} />
+          { title: t('common.actions'), width: 78, minWidth: 78, render: (_, node) => <Button size="small" className="whitespace-nowrap" aria-expanded={expandedIndex === node.previewIndex} onClick={() => expandNode(expandedIndex === node.previewIndex ? null : node.previewIndex)}>{t('preview.detail')}</Button> },
+        ]} locale={{ emptyText: t('common.noData') }} /></div>
+        <div className="space-y-2 md:hidden">{filtered.map((node) => <article key={node.previewIndex} className="min-w-0 rounded-lg border border-[var(--border)]">
+          <div className="flex min-w-0 items-start justify-between gap-2 p-3"><div className="min-w-0"><strong className="block break-all text-sm">{node.name}</strong><p className="mt-1 break-all text-xs text-[var(--muted)]">{node.server}:{node.port}</p></div><Tag color={node.filtered ? 'default' : typeColors[node.type] ?? 'default'}>{node.type.toUpperCase()}</Tag></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] px-3 py-2 text-xs"><div className="min-w-0"><p className="break-all text-[var(--muted)]">{node.sourceUrl || `${t('common.source')} ${number(node.sourceIndex)}`}</p><p className={node.filtered ? 'mt-1 text-orange-600' : 'mt-1 text-green-600'}>{node.filtered ? t('preview.filtered', { rule: node.filteredBy ?? '' }) : t('preview.kept')}</p></div><Button size="small" variant="text" className="whitespace-nowrap" aria-expanded={expandedIndex === node.previewIndex} onClick={() => expandNode(expandedIndex === node.previewIndex ? null : node.previewIndex)}>{t('preview.detail')}</Button></div>
+          {expandedIndex === node.previewIndex ? <div className="border-t border-[var(--border)] p-3"><PreviewNodeDetails node={node} trace={trace?.index === node.previewIndex ? trace.result : null} traceLoading={traceLoading} onTrace={() => void traceNode(node)} mobile /></div> : null}
+        </article>)}</div>
       </> : null}
-      {detail ? <section className="rounded-lg border border-[var(--border)] p-3 space-y-3">
-        <div className="flex items-center justify-between gap-2"><h3 className="font-medium">{detail.name}</h3><Button size="small" loading={traceLoading} onClick={() => void traceNode(detail)}>{t('preview.trace')}</Button></div>
-        <p className="text-xs text-[var(--muted)]">{detail.type} · {detail.server}:{detail.port} · {detail.sourceUrl || `${t('common.source')} ${number(detail.sourceIndex)}`}</p>
-        <Collapse size="small" items={[{ key: 'raw', label: t('preview.raw'), children: <DiagnosticValue value={detail.raw} /> }]} />
-        {trace ? <div className="space-y-2"><h4 className="text-sm font-medium">{t('preview.traceSteps', { name: trace.nodeName })}</h4><TraceSteps trace={trace} /></div> : null}
-      </section> : null}
     </div>
   </Modal>
 }
