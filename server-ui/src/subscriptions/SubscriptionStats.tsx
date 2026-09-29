@@ -5,6 +5,20 @@ import type { AccessStats } from './diagnostic-types'
 import type { Subscription } from './types'
 import { useI18n } from '../i18n/provider'
 
+const accessTypeColors: Record<string, string> = {
+  clash: 'blue',
+  'clash-meta': 'purple',
+  'sing-box': 'green',
+  'sing-box-windows': 'green',
+  'sing-box-macos': 'green',
+  'sing-box-v12': 'cyan',
+  'sing-box-v12-windows': 'cyan',
+  'sing-box-v12-macos': 'cyan',
+  'sing-box-v13': 'blue',
+  'sing-box-v13-windows': 'blue',
+  'sing-box-v13-macos': 'blue',
+}
+
 export function SubscriptionStats({ subscription, onClose }: { subscription: Subscription | null; onClose: () => void }) {
   const { t, date, number } = useI18n()
   const [stats, setStats] = useState<AccessStats | null>(null)
@@ -32,12 +46,12 @@ export function SubscriptionStats({ subscription, onClose }: { subscription: Sub
       </div>
       <p className="text-xs text-[var(--muted)]">{t('stats.retentionHint')}</p>
       <section><h3 className="mb-2 text-sm font-medium">{t('stats.byFormat')}</h3>
-        <div className="flex flex-wrap gap-2">{stats.accessByType.map((item) => <Tag key={item.type} color="blue" className="gap-2 px-3 py-1">{item.type.toUpperCase()}<span className="border-l border-blue-200 pl-2 font-semibold dark:border-sky-400/25">{number(item.count)}</span></Tag>)}</div>
+        <div className="flex flex-wrap gap-2 md:gap-4">{stats.accessByType.map((item) => <Tag key={item.type} color={item.type === 'clash' ? 'blue' : 'green'} className="px-3 py-1 text-sm! md:px-4">{item.type.toUpperCase()}: {number(item.count)}</Tag>)}</div>
       </section>
       <section><h3 className="mb-2 text-sm font-medium">{t('stats.recent')}</h3>
         <Table rowKey="id" dataSource={stats.recentAccesses} pagination={false} scroll={{ x: 620 }} columns={[
           { title: t('common.time'), render: (_, item) => date(item.createdAt) },
-          { title: t('common.format'), render: (_, item) => <Tag color="blue">{item.accessType.toUpperCase()}</Tag> },
+          { title: t('common.format'), render: (_, item) => <Tag color={accessTypeColors[item.accessType] ?? 'default'}>{item.accessType.toUpperCase()}</Tag> },
           { title: t('stats.nodeCount'), render: (_, item) => item.nodeCount === null ? '—' : number(item.nodeCount) },
           { title: t('stats.ip'), dataIndex: 'ip' },
           { title: t('common.userAgent'), dataIndex: 'userAgent' },
