@@ -1,4 +1,4 @@
-import { Button, Card, Popconfirm, Table, useToast } from '@acme/components'
+import { Button, Card, Popconfirm, Table, Tooltip, useToast } from '@acme/components'
 import { BarChart3, Edit3, Eye, Link2, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -105,13 +105,13 @@ export function SubscriptionPage({ initialEditId }: { initialEditId?: string }) 
       </Card>)}
     </div>
     <div className="hidden md:block">
-      <Table<Subscription> rowKey="id" loading={loading} pagination={false} dataSource={items} locale={{ emptyText: t('configs.empty') }} columns={[
-        { title: t('configs.creator'), render: (_, item) => item.creator.name },
-        { title: t('configs.remark'), render: (_, item) => item.remark || t('configs.unnamed') },
-        { title: t('configs.recentNodes'), render: (_, item) => number(item.cachedNodeCount), width: 130 },
-        { title: t('configs.accessCount'), render: (_, item) => number(item.accessCount), width: 90 },
-        { title: t('configs.updatedAt'), width: 170, render: (_, item) => date(item.updatedAt) },
-        { title: t('common.actions'), width: 190, render: (_, item) => actions(item) },
+      <Table<Subscription> rowKey="id" loading={loading} pagination={false} scroll={{ x: 1020 }} dataSource={items} locale={{ emptyText: t('configs.empty') }} columns={[
+        { title: t('configs.creator'), width: 160, minWidth: 160, ellipsis: true, render: (_, item) => <Tooltip title={item.creator.name}><span className="block truncate">{item.creator.name}</span></Tooltip> },
+        { title: t('configs.remark'), width: 255, minWidth: 255, ellipsis: true, render: (_, item) => <Tooltip title={item.remark || t('configs.unnamed')}><span className="block truncate">{item.remark || t('configs.unnamed')}</span></Tooltip> },
+        { title: t('configs.recentNodes'), width: 125, minWidth: 125, className: 'whitespace-nowrap', render: (_, item) => number(item.cachedNodeCount) },
+        { title: t('configs.accessCount'), width: 110, minWidth: 110, className: 'whitespace-nowrap', render: (_, item) => number(item.accessCount) },
+        { title: t('configs.updatedAt'), width: 180, minWidth: 180, className: 'whitespace-nowrap', render: (_, item) => date(item.updatedAt) },
+        { title: t('common.actions'), width: 190, minWidth: 190, className: 'whitespace-nowrap', render: (_, item) => actions(item) },
       ]} />
     </div>
     {editing !== undefined ? <SubscriptionEditor open id={editing} targets={targets} onClose={closeEditor} onSaved={saved} /> : null}

@@ -1,4 +1,4 @@
-import { Button, Card, InputNumber, Popconfirm, Spin, Table, useToast } from '@acme/components'
+import { Button, Card, InputNumber, Popconfirm, Spin, Table, Tooltip, useToast } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { adminApi, type Invitation } from './admin-api'
 import { useI18n } from '../i18n/provider'
@@ -61,11 +61,11 @@ export function AdminInvitationsPanel() {
     </div>
     {loading ? <Spin /> : null}
     {error ? <p role="alert" className="text-sm text-red-600">{error} <Button size="small" onClick={() => void load()}>{t('common.retry')}</Button></p> : null}
-    <Table<Invitation> rowKey="id" dataSource={items} pagination={false} scroll={{ x: 700 }} columns={[
-      { title: t('admin.inviteCode'), dataIndex: 'code' },
-      { title: t('common.status'), render: (_, item) => item.usedAt ? t('admin.inviteUsed') : item.expiresAt && new Date(item.expiresAt).getTime() <= Date.now() ? t('admin.inviteExpired') : t('admin.inviteAvailable') },
-      { title: t('admin.expiresAt'), render: (_, item) => item.expiresAt ? date(item.expiresAt) : t('common.unlimited') },
-      { title: t('common.actions'), render: (_, item) => <div className="flex gap-1"><Button size="small" disabled={busy} onClick={() => void copy(item.code)}>{t('admin.copyInvite')}</Button><Popconfirm title={t('admin.deleteInvite')} okText={t('common.delete')} cancelText={t('common.cancel')} onConfirm={() => void remove(item.id)} okType="danger"><Button size="small" danger disabled={busy}>{t('common.delete')}</Button></Popconfirm></div> },
+    <Table<Invitation> rowKey="id" dataSource={items} pagination={false} scroll={{ x: 900 }} columns={[
+      { title: t('admin.inviteCode'), width: 270, minWidth: 270, ellipsis: true, render: (_, item) => <Tooltip title={item.code}><span className="block truncate">{item.code}</span></Tooltip> },
+      { title: t('common.status'), width: 160, minWidth: 160, className: 'whitespace-nowrap', render: (_, item) => item.usedAt ? t('admin.inviteUsed') : item.expiresAt && new Date(item.expiresAt).getTime() <= Date.now() ? t('admin.inviteExpired') : t('admin.inviteAvailable') },
+      { title: t('admin.expiresAt'), width: 190, minWidth: 190, className: 'whitespace-nowrap', render: (_, item) => item.expiresAt ? date(item.expiresAt) : t('common.unlimited') },
+      { title: t('common.actions'), width: 280, minWidth: 280, className: 'whitespace-nowrap', render: (_, item) => <div className="flex gap-1"><Button size="small" disabled={busy} onClick={() => void copy(item.code)}>{t('admin.copyInvite')}</Button><Popconfirm title={t('admin.deleteInvite')} okText={t('common.delete')} cancelText={t('common.cancel')} onConfirm={() => void remove(item.id)} okType="danger"><Button size="small" danger disabled={busy}>{t('common.delete')}</Button></Popconfirm></div> },
     ]} locale={{ emptyText: <div className="px-4 py-6 text-left text-sm text-[var(--muted)]">{t('common.noData')}</div> }} />
   </div></Card>
 }

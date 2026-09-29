@@ -1,4 +1,4 @@
-import { Modal, Pagination, Spin, Table, Tag } from '@acme/components'
+import { Modal, Pagination, Spin, Table, Tag, Tooltip } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { AccessStats } from './diagnostic-types'
@@ -49,12 +49,12 @@ export function SubscriptionStats({ subscription, onClose }: { subscription: Sub
         <div className="flex flex-wrap gap-2 md:gap-4">{stats.accessByType.map((item) => <Tag key={item.type} color={item.type === 'clash' ? 'blue' : 'green'} className="px-3 py-1 text-sm! md:px-4">{item.type.toUpperCase()}: {number(item.count)}</Tag>)}</div>
       </section>
       <section><h3 className="mb-2 text-sm font-medium">{t('stats.recent')}</h3>
-        <Table rowKey="id" dataSource={stats.recentAccesses} pagination={false} scroll={{ x: 620 }} columns={[
-          { title: t('common.time'), render: (_, item) => date(item.createdAt) },
-          { title: t('common.format'), render: (_, item) => <Tag color={accessTypeColors[item.accessType] ?? 'default'}>{item.accessType.toUpperCase()}</Tag> },
-          { title: t('stats.nodeCount'), render: (_, item) => item.nodeCount === null ? '—' : number(item.nodeCount) },
-          { title: t('stats.ip'), dataIndex: 'ip' },
-          { title: t('common.userAgent'), dataIndex: 'userAgent' },
+        <Table rowKey="id" dataSource={stats.recentAccesses} pagination={false} scroll={{ x: 930 }} columns={[
+          { title: t('common.time'), width: 170, minWidth: 170, className: 'whitespace-nowrap', render: (_, item) => date(item.createdAt) },
+          { title: t('common.format'), width: 210, minWidth: 210, className: 'whitespace-nowrap', render: (_, item) => <Tag color={accessTypeColors[item.accessType] ?? 'default'}>{item.accessType.toUpperCase()}</Tag> },
+          { title: t('stats.nodeCount'), width: 100, minWidth: 100, className: 'whitespace-nowrap', render: (_, item) => item.nodeCount === null ? '—' : number(item.nodeCount) },
+          { title: t('stats.ip'), width: 160, minWidth: 160, ellipsis: true, render: (_, item) => <Tooltip title={item.ip}><span className="block truncate">{item.ip || '—'}</span></Tooltip> },
+          { title: t('common.userAgent'), width: 290, minWidth: 290, ellipsis: true, render: (_, item) => <Tooltip title={item.userAgent}><span className="block truncate">{item.userAgent || '—'}</span></Tooltip> },
         ]} locale={{ emptyText: t('common.noData') }} />
         <Pagination className="mt-3" current={page} total={stats.recentAccessTotal} pageSize={20} onChange={setPage} />
       </section>
