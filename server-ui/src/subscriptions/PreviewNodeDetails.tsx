@@ -58,17 +58,17 @@ export function PreviewNodeDetails({ node, trace, traceLoading, onTrace, mobile 
     return {
       key,
       label: labels[key] ?? key,
-      children: structured ? <DiagnosticValue value={maskNested(value)} /> : <span className="break-all font-mono">{previewValue(key, value)}</span>,
-      span: structured && !mobile ? 3 : undefined,
+      children: structured ? <DiagnosticValue value={maskNested(value)} /> : <span className="break-words font-mono">{previewValue(key, value)}</span>,
+      span: structured && !mobile ? 2 : undefined,
     }
   })
 
   return <div className="min-w-0 space-y-3">
     <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-      <div className="min-w-0"><strong className="break-all text-sm">{node.name}</strong><p className="break-all text-xs text-[var(--muted)]">{node.type} · {node.server}:{node.port} · {node.sourceUrl || `${t('common.source')} ${number(node.sourceIndex)}`}</p></div>
+      <div className="min-w-0"><strong className="break-words text-sm">{node.name}</strong><p className="min-w-0 break-words text-xs text-[var(--muted)]">{node.type} · {node.server}:{node.port}</p><p className="truncate text-xs text-[var(--muted)]" title={node.sourceUrl}>{node.sourceUrl || `${t('common.source')} ${number(node.sourceIndex)}`}</p></div>
       <Button size="small" loading={traceLoading} onClick={onTrace}>{t('preview.trace')}</Button>
     </div>
-    {items.length ? <div className="min-w-0 overflow-x-auto"><Descriptions bordered size="small" column={mobile ? 1 : 3} items={items} /></div> : null}
+    {items.length ? <div className="min-w-0 overflow-x-auto"><Descriptions bordered size="small" column={mobile ? 1 : 2} items={items} /></div> : null}
     <Collapse size="small" items={[{ key: 'raw', label: t('preview.raw'), children: <DiagnosticValue value={node.raw} /> }]} />
     {trace ? <div className="space-y-2"><h4 className="text-sm font-medium">{t('preview.traceSteps', { name: trace.nodeName })}</h4><TraceSteps trace={trace} /></div> : null}
   </div>

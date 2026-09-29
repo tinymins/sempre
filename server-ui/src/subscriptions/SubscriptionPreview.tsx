@@ -1,4 +1,4 @@
-import { Button, Input, Modal, Select, Spin, Table, Tag } from '@acme/components'
+import { Button, Input, Modal, Select, Spin, Table, Tag, Tooltip } from '@acme/components'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { NodeTraceResult, PreviewNode, Target } from './diagnostic-types'
@@ -98,7 +98,7 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       {loading ? <Spin /> : null}
       {nodes ? <>
-        <div className="hidden md:block"><Table<IndexedPreviewNode> rowKey="previewIndex" dataSource={filtered} pagination={false} scroll={{ x: 750 }} onRow={(node) => ({
+        <div className="hidden md:block"><Table<IndexedPreviewNode> rowKey="previewIndex" dataSource={filtered} pagination={false} scroll={{ x: 1250 }} onRow={(node) => ({
           className: 'cursor-pointer',
           tabIndex: 0,
           'aria-expanded': expandedIndex === node.previewIndex,
@@ -109,17 +109,18 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
           onExpand: (expanded, node) => expandNode(expanded ? node.previewIndex : null),
           expandedRowRender: (node) => <PreviewNodeDetails node={node} trace={trace?.index === node.previewIndex ? trace.result : null} traceLoading={traceLoading && expandedIndex === node.previewIndex} onTrace={() => void traceNode(node)} />,
         }} columns={[
-          { title: t('common.name'), dataIndex: 'name' }, { title: t('common.protocol'), dataIndex: 'type', width: 110 },
-          { title: t('common.server'), render: (_, node) => `${node.server}:${node.port}` },
-          { title: t('preview.transportTls'), render: (_, node) => `${typeof node.raw.network === 'string' ? node.raw.network.toUpperCase() : '—'}${node.raw.tls === true ? ' · TLS' : ''}` },
-          { title: t('preview.credential'), render: (_, node) => { const credential = [node.raw.uuid, node.raw.password, node.raw['auth-str']].find((value): value is string => typeof value === 'string'); return credential ? credential.length > 16 ? `${credential.slice(0, 8)}…${credential.slice(-4)}` : '••••' : '—' } },
-          { title: t('common.source'), render: (_, node) => node.sourceUrl || `${t('common.source')} ${number(node.sourceIndex)}` },
-          { title: t('common.status'), render: (_, node) => node.filtered ? t('preview.filtered', { rule: node.filteredBy ?? '' }) : t('preview.kept') },
+          { title: t('common.name'), width: 250, minWidth: 220, ellipsis: true, render: (_, node) => <Tooltip title={node.name}><span className="block truncate">{node.name}</span></Tooltip> },
+          { title: t('common.protocol'), width: 110, minWidth: 110, render: (_, node) => <Tag color={node.filtered ? 'default' : typeColors[node.type] ?? 'default'}>{node.type.toUpperCase()}</Tag> },
+          { title: t('common.server'), width: 200, minWidth: 200, ellipsis: true, render: (_, node) => <Tooltip title={`${node.server}:${node.port}`}><span className="block truncate font-mono text-xs">{node.server}:{node.port}</span></Tooltip> },
+          { title: t('preview.transportTls'), width: 130, minWidth: 130, render: (_, node) => <span className="whitespace-nowrap">{typeof node.raw.network === 'string' ? node.raw.network.toUpperCase() : '—'}{node.raw.tls === true ? ' · TLS' : ''}</span> },
+          { title: t('preview.credential'), width: 175, minWidth: 175, render: (_, node) => { const credential = [node.raw.uuid, node.raw.password, node.raw['auth-str']].find((value): value is string => typeof value === 'string'); return <span className="block truncate whitespace-nowrap font-mono text-xs">{credential ? credential.length > 16 ? `${credential.slice(0, 8)}…${credential.slice(-4)}` : '••••' : '—'}</span> } },
+          { title: t('common.source'), width: 90, minWidth: 90, render: (_, node) => <Tooltip title={node.sourceUrl || `${t('common.source')} #${number(node.sourceIndex)}`}><span className="whitespace-nowrap">#{number(node.sourceIndex)}</span></Tooltip> },
+          { title: t('common.status'), width: 165, minWidth: 165, ellipsis: true, render: (_, node) => { const status = node.filtered ? t('preview.filtered', { rule: node.filteredBy ?? '' }) : t('preview.kept'); return <Tooltip title={status}><span className="block truncate">{status}</span></Tooltip> } },
           { title: t('common.actions'), width: 78, minWidth: 78, render: (_, node) => <Button size="small" className="whitespace-nowrap" aria-expanded={expandedIndex === node.previewIndex} onClick={() => expandNode(expandedIndex === node.previewIndex ? null : node.previewIndex)}>{t('preview.detail')}</Button> },
         ]} locale={{ emptyText: t('common.noData') }} /></div>
         <div className="space-y-2 md:hidden">{filtered.map((node) => <article key={node.previewIndex} className="min-w-0 rounded-lg border border-[var(--border)]">
-          <div className="flex min-w-0 items-start justify-between gap-2 p-3"><div className="min-w-0"><strong className="block break-all text-sm">{node.name}</strong><p className="mt-1 break-all text-xs text-[var(--muted)]">{node.server}:{node.port}</p></div><Tag color={node.filtered ? 'default' : typeColors[node.type] ?? 'default'}>{node.type.toUpperCase()}</Tag></div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] px-3 py-2 text-xs"><div className="min-w-0"><p className="break-all text-[var(--muted)]">{node.sourceUrl || `${t('common.source')} ${number(node.sourceIndex)}`}</p><p className={node.filtered ? 'mt-1 text-orange-600' : 'mt-1 text-green-600'}>{node.filtered ? t('preview.filtered', { rule: node.filteredBy ?? '' }) : t('preview.kept')}</p></div><Button size="small" variant="text" className="whitespace-nowrap" aria-expanded={expandedIndex === node.previewIndex} onClick={() => expandNode(expandedIndex === node.previewIndex ? null : node.previewIndex)}>{t('preview.detail')}</Button></div>
+          <div className="flex min-w-0 items-start justify-between gap-2 p-3"><div className="min-w-0"><strong className="block break-words text-sm">{node.name}</strong><p className="mt-1 break-words text-xs text-[var(--muted)]">{node.server}:{node.port}</p></div><Tag color={node.filtered ? 'default' : typeColors[node.type] ?? 'default'}>{node.type.toUpperCase()}</Tag></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] px-3 py-2 text-xs"><div className="min-w-0"><p className="break-words text-[var(--muted)]">{node.sourceUrl || `${t('common.source')} ${number(node.sourceIndex)}`}</p><p className={node.filtered ? 'mt-1 text-orange-600' : 'mt-1 text-green-600'}>{node.filtered ? t('preview.filtered', { rule: node.filteredBy ?? '' }) : t('preview.kept')}</p></div><Button size="small" variant="text" className="whitespace-nowrap" aria-expanded={expandedIndex === node.previewIndex} onClick={() => expandNode(expandedIndex === node.previewIndex ? null : node.previewIndex)}>{t('preview.detail')}</Button></div>
           {expandedIndex === node.previewIndex ? <div className="border-t border-[var(--border)] p-3"><PreviewNodeDetails node={node} trace={trace?.index === node.previewIndex ? trace.result : null} traceLoading={traceLoading} onTrace={() => void traceNode(node)} mobile /></div> : null}
         </article>)}</div>
       </> : null}

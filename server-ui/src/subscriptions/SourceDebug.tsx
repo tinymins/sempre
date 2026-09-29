@@ -1,4 +1,4 @@
-import { Button, Collapse, Modal, Select, Spin, Table, Tag } from '@acme/components'
+import { Button, Collapse, Modal, Select, Spin, Table, Tag, Tooltip } from '@acme/components'
 import { useEffect, useRef, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { DebugStage, SourceDebugResult } from './diagnostic-types'
@@ -54,13 +54,13 @@ export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSo
   const displayedSource = mode === 'production' && saved ? saved.source : source
   return <Modal open title={t('sourceDebug.title', { name: displayedSource.remark || displayedSource.url })} size="large" footer={null} onCancel={() => { stop(); onClose() }}>
     <div className="space-y-4">
-      <p className="break-all text-xs text-[var(--muted)]">{displayedSource.url}</p>
+      <p className="truncate text-xs text-[var(--muted)]" title={displayedSource.url}>{displayedSource.url}</p>
       <p className="text-xs text-[var(--muted)]">{saved ? t('sourceDebug.savedHint') : t('sourceDebug.draftHint')}</p>
       <dl className="grid grid-cols-2 gap-2 rounded border border-[var(--border)] p-3 text-xs md:grid-cols-4">
-        <div><dt className="text-[var(--muted)]">User-Agent</dt><dd className="break-all">{displayedSource.fetchUa || 'clash.meta'}</dd></div>
+        <div className="min-w-0"><dt className="text-[var(--muted)]">User-Agent</dt><dd className="break-words">{displayedSource.fetchUa || 'clash.meta'}</dd></div>
         <div><dt className="text-[var(--muted)]">{diagnosticText(locale, 'fetchMode')}</dt><dd>{displayedSource.fetchMode || 'auto'}</dd></div>
         <div><dt className="text-[var(--muted)]">{diagnosticText(locale, 'cacheTtlMinutes')}</dt><dd>{number(displayedSource.cacheTtlMinutes ?? 60)}</dd></div>
-        <div><dt className="text-[var(--muted)]">{diagnosticText(locale, 'prefix')}</dt><dd>{displayedSource.prefix || '—'}</dd></div>
+        <div className="min-w-0"><dt className="text-[var(--muted)]">{diagnosticText(locale, 'prefix')}</dt><dd className="break-words">{displayedSource.prefix || '—'}</dd></div>
       </dl>
       <div className="flex items-end gap-2"><label className="min-w-48 flex-1 space-y-1 text-sm">{t('sourceDebug.mode')}
         <Select value={mode} disabled={loading} options={[{ value: 'bypass-cache', label: t('sourceDebug.bypass') }, ...(saved ? [{ value: 'production', label: t('sourceDebug.production') }] : [])]} onChange={(next) => { stop(); setMode(next as typeof mode); setResult(null); setProgress([]); setError('') }} className="w-full" />
@@ -76,7 +76,7 @@ export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSo
           <Tag color={result.cached ? 'green' : 'default'}>{t('sourceDebug.cache', { state: result.cacheState })}</Tag>
           <Tag>{diagnosticText(locale, 'elapsedMs')}: {number(result.elapsedMs)} ms</Tag><Tag>{number(result.bodyBytes)} B</Tag>
         </div>
-        <p className="text-xs text-[var(--muted)]">{t('sourceDebug.summary', { status: result.ok ? t('common.completed') : t('common.failed'), ua: result.ua, count: number(result.nodeCount) })}</p>
+        <p className="break-words text-xs text-[var(--muted)]">{t('sourceDebug.summary', { status: result.ok ? t('common.completed') : t('common.failed'), ua: result.ua, count: number(result.nodeCount) })}</p>
         {result.warning ? <p className="text-xs text-amber-700">{result.warning}</p> : null}
         <Collapse size="small" items={[
           { key: 'diagnostics', label: t('sourceDebug.diagnostics'), children: <DiagnosticValue value={result.diagnostics} /> },
@@ -85,9 +85,10 @@ export function SourceDebug({ source, saved, onClose }: { source: SubscriptionSo
           ...(result.decodedText ? [{ key: 'decodedText', label: `${t('sourceDebug.decodedText')}${result.decodedTextTruncated ? t('sourceDebug.truncated') : ''}`, children: <ServerCodeBlock value={result.decodedText} language="TEXT" maxHeight={280} wrap /> }] : []),
           ...(result.decoded.length ? [{ key: 'decoded', label: t('sourceDebug.decoded', { count: number(result.decoded.length) }), children: <DiagnosticValue value={result.decoded} /> }] : []),
         ]} />
-        <Table rowKey={(_, index) => String(index)} dataSource={result.nodes} pagination={false} size="small" scroll={{ x: 500 }} columns={[
-          { title: t('common.name'), dataIndex: 'name' }, { title: t('common.protocol'), dataIndex: 'type' },
-          { title: t('common.server'), render: (_, node) => `${node.server}:${node.port}` },
+        <Table rowKey={(_, index) => String(index)} dataSource={result.nodes} pagination={false} size="small" scroll={{ x: 600 }} columns={[
+          { title: t('common.name'), width: 260, minWidth: 260, ellipsis: true, render: (_, node) => <Tooltip title={node.name}><span className="block truncate">{node.name}</span></Tooltip> },
+          { title: t('common.protocol'), width: 110, minWidth: 110, render: (_, node) => <span className="whitespace-nowrap">{node.type}</span> },
+          { title: t('common.server'), width: 220, minWidth: 220, ellipsis: true, render: (_, node) => <Tooltip title={`${node.server}:${node.port}`}><span className="block truncate font-mono text-xs">{node.server}:{node.port}</span></Tooltip> },
         ]} locale={{ emptyText: t('common.noData') }} />
       </> : null}
     </div>
