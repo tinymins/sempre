@@ -103,9 +103,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const destroy = useCallback((key?: string) => {
     if (key) {
       setToasts((prev) => prev.filter((t) => t.key !== key));
+      const timer = timers.current.get(key);
+      if (timer) clearTimeout(timer);
+      timers.current.delete(key);
     } else {
       setToasts([]);
+      timers.current.forEach(clearTimeout);
+      timers.current.clear();
     }
+  }, []);
+
+  useEffect(() => {
+    const activeTimers = timers.current;
+    return () => {
+      activeTimers.forEach(clearTimeout);
+      activeTimers.clear();
+    };
   }, []);
 
   const api = useMemo<ToastAPI>(
@@ -159,16 +172,20 @@ function ToastItem({
 }) {
   return (
     <div
+      role={toast.type === "error" || toast.type === "warning" ? "alert" : "status"}
+      aria-live={toast.type === "error" || toast.type === "warning" ? "assertive" : "polite"}
+      aria-atomic="true"
       className={cn(
-        "pointer-events-auto flex items-center gap-2 rounded-lg bg-white/90 dark:bg-[rgba(15,15,25,0.9)] backdrop-blur-xl border border-black/[0.06] dark:border-white/[0.08] shadow-lg px-4 py-3 text-sm text-[var(--text-primary)] animate-[toastIn_0.2s_ease-out]",
+        "pointer-events-auto flex items-center gap-2 max-w-[min(90vw,560px)] rounded-lg bg-white/95 dark:bg-[rgba(15,15,25,0.95)] backdrop-blur-xl border border-black/[0.1] dark:border-white/[0.16] shadow-lg px-4 py-3 text-sm text-[var(--text-primary)] animate-[toastIn_0.2s_ease-out]",
       )}
     >
-      {iconMap[toast.type]}
-      <span>{toast.content}</span>
+      <span aria-hidden="true">{iconMap[toast.type]}</span>
+      <span className="min-w-0 break-words">{toast.content}</span>
       <button
         type="button"
         className="ml-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
         onClick={onClose}
+        aria-label="Dismiss notification"
       >
         <X className="h-3.5 w-3.5" />
       </button>

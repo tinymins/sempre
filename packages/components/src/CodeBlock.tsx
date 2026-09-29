@@ -1,6 +1,7 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useId, type CSSProperties } from 'react'
 import { Button } from './Button'
 import { CodePanel } from './CodePanel'
+import { useToast } from './Toast'
 
 export interface CodeBlockProps {
   value: string
@@ -27,33 +28,35 @@ export function CodeBlock({
   className,
   copyable = true,
 }: CodeBlockProps) {
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
-
-  useEffect(() => {
-    if (copyState === 'idle') return
-    const timer = window.setTimeout(() => setCopyState('idle'), 2400)
-    return () => window.clearTimeout(timer)
-  }, [copyState])
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopyState('copied')
-    } catch {
-      setCopyState('error')
-    }
-  }
-
-  const copyText = copyState === 'copied' ? copiedLabel : copyState === 'error' ? copyErrorLabel : copyLabel
-
   return <CodePanel
     title={title}
     language={language}
     className={className}
     maxHeight={maxHeight}
     scrollLabel={title ?? language ?? 'Code'}
-    actions={copyable ? <Button size="small" variant="text" onClick={() => void copy()} aria-live="polite">{copyText}</Button> : undefined}
+    actions={copyable ? <CopyAction value={value} copyLabel={copyLabel} copiedLabel={copiedLabel} copyErrorLabel={copyErrorLabel} /> : undefined}
   >
     <pre className={wrap ? 'acme-code-block acme-code-block--wrap' : 'acme-code-block'}><code>{value}</code></pre>
   </CodePanel>
+}
+
+function CopyAction({ value, copyLabel, copiedLabel, copyErrorLabel }: {
+  value: string
+  copyLabel: string
+  copiedLabel: string
+  copyErrorLabel: string
+}) {
+  const toast = useToast()
+  const key = useId()
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success({ content: copiedLabel, key })
+    } catch {
+      toast.error({ content: copyErrorLabel, key })
+    }
+  }
+
+  return <Button size="small" variant="text" onClick={() => void copy()}>{copyLabel}</Button>
 }
