@@ -142,6 +142,8 @@ export type { TabItem, TabsProps } from "./Tabs";
 export { Tabs } from "./Tabs";
 export type { TagProps } from "./Tag";
 export { Tag } from "./Tag";
+export type { TagListEdit, TagListEditorProps } from "./TagListEditor";
+export { TagListEditor } from "./TagListEditor";
 export type { TemplateInputProps, TemplateVariable } from "./TemplateInput";
 export { TemplateInput } from "./TemplateInput";
 export type { ToastType } from "./Toast";
