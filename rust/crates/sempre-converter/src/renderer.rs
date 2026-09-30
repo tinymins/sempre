@@ -2,6 +2,7 @@ mod address_groups;
 mod clash;
 mod dae;
 mod dns;
+mod outbound_names;
 mod singbox;
 mod transparent;
 mod v2ray;

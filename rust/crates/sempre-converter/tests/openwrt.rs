@@ -1,4 +1,4 @@
-use sempre_converter::{CompileRequest, Profile, Target, compile};
+use sempre_converter::{CompileRequest, DIRECT_OUTBOUND_NAME, Profile, Target, compile};
 use serde_json::{Value, json};
 
 fn render(version: &str) -> Value {
@@ -14,6 +14,12 @@ fn render_with_gfw(version: &str, gfw_black: bool) -> Value {
             "name": "🔰 国外流量", "type": "select",
             "proxies": ["DIRECT", "example-node"]
         }],
+        "rules": [
+            { "domain": "direct", "outbound": "direct" },
+            { "type": "logical", "mode": "or", "rules": [
+                { "domain_suffix": "example.test", "outbound": "direct" }
+            ] }
+        ],
         "dns": { "shared": {
             "localDns": "192.0.2.53", "localDnsPort": 53,
             "gfwBlackRuleSetUrl": "https://rules.example.test/gfwblack.json"
@@ -43,6 +49,59 @@ fn render_with_gfw(version: &str, gfw_black: bool) -> Value {
     serde_json::from_str(&result.content).expect("JSON")
 }
 
+fn assert_direct_outbound_name(config: &Value, version: &str) {
+    let outbounds = config["outbounds"].as_array().expect("outbounds");
+    assert!(
+        outbounds.iter().any(|outbound| {
+            outbound["type"] == "direct" && outbound["tag"] == DIRECT_OUTBOUND_NAME
+        }),
+        "{version}"
+    );
+    for name in ["🔰 国外流量", "内网地址", "中国地址"] {
+        let selector = outbounds
+            .iter()
+            .find(|outbound| outbound["tag"] == name)
+            .expect("selector");
+        assert_eq!(
+            selector["default"], DIRECT_OUTBOUND_NAME,
+            "{version}: {name}"
+        );
+        assert_eq!(
+            selector["outbounds"][0], DIRECT_OUTBOUND_NAME,
+            "{version}: {name}"
+        );
+    }
+    let route_rules = config["route"]["rules"].as_array().expect("route rules");
+    assert!(
+        route_rules
+            .iter()
+            .any(|rule| { rule["domain"] == "direct" && rule["outbound"] == DIRECT_OUTBOUND_NAME }),
+        "{version}"
+    );
+    assert!(
+        route_rules.iter().any(|rule| {
+            rule["type"] == "logical" && rule["rules"][0]["outbound"] == DIRECT_OUTBOUND_NAME
+        }),
+        "{version}"
+    );
+    let rule_sets = config["route"]["rule_set"].as_array().expect("rule sets");
+    assert!(
+        rule_sets.iter().all(|set| {
+            set.get("download_detour").is_none() || set["download_detour"] == DIRECT_OUTBOUND_NAME
+        }),
+        "{version}"
+    );
+    if version == "sing-box" {
+        let dns_servers = config["dns"]["servers"].as_array().expect("DNS servers");
+        assert!(
+            dns_servers.iter().any(|server| {
+                server["tag"] == "local" && server["detour"] == DIRECT_OUTBOUND_NAME
+            }),
+            "{version}"
+        );
+    }
+}
+
 #[test]
 fn openwrt_uses_tproxy_local_dns_and_first_selector_member_across_versions() {
     for version in ["sing-box", "sing-box-v12", "sing-box-v13", "sing-box-v14"] {
@@ -53,13 +112,7 @@ fn openwrt_uses_tproxy_local_dns_and_first_selector_member_across_versions() {
         assert_eq!(inbounds[0]["listen_port"], 1053, "{version}");
         assert_eq!(inbounds[1]["type"], "tproxy", "{version}");
         assert_eq!(inbounds[1]["listen_port"], 7893, "{version}");
-        let selector = config["outbounds"]
-            .as_array()
-            .expect("outbounds")
-            .iter()
-            .find(|item| item["tag"] == "🔰 国外流量")
-            .expect("foreign selector");
-        assert_eq!(selector["default"], "direct", "{version}");
+        assert_direct_outbound_name(&config, version);
         assert_eq!(config["route"]["find_process"], Value::Null, "{version}");
         assert_eq!(
             config["route"]["auto_detect_interface"],

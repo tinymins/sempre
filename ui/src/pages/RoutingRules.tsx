@@ -6,6 +6,7 @@ import { Alert, AutoComplete, Button, Card, Input, Modal, Select, Switch, Tag } 
 import { RuntimeRestartButton } from '../components/RuntimeRestartButton'
 import type { DnsRoutingDomain, DnsRoutingRuleSet, DnsSettings, DnsSettingsResponse } from '../features/dns/types'
 import { api } from '../lib/api'
+import { directLabel } from '../lib/directLabel'
 import { useI18n } from '../lib/i18n'
 import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
@@ -167,7 +168,7 @@ export function RoutingRules() {
     <Modal open={settingsDialogOpen} title={zh ? '设置规则集' : 'Rule set settings'} okText={zh ? '确定' : 'Apply'} cancelText={zh ? '取消' : 'Cancel'} okButtonProps={{ disabled: !settingsDraft.name.trim() }} onOk={() => { applySettings(); return undefined }} onCancel={() => setSettingsDialogOpen(false)} destroyOnClose>
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_12rem]">
         <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '名称' : 'Name'}</span><Input autoFocus value={settingsDraft.name} onChange={(event) => setSettingsDraft((value) => ({ ...value, name: event.target.value }))} /></label>
-        <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '模式' : 'Mode'}</span><Select className="w-full" value={settingsDraft.mode} options={[{ value: 'direct', label: zh ? '直连' : 'Direct' }, { value: 'proxy', label: zh ? '代理' : 'Proxy' }]} onChange={(mode) => setSettingsDraft((value) => ({ ...value, mode }))} /></label>
+        <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '模式' : 'Mode'}</span><Select className="w-full" value={settingsDraft.mode} options={[{ value: 'direct', label: directLabel('direct') }, { value: 'proxy', label: zh ? '代理' : 'Proxy' }]} onChange={(mode) => setSettingsDraft((value) => ({ ...value, mode }))} /></label>
       </div>
     </Modal>
     <Modal open={Boolean(domainDialog)} title={domainDialog?.mode === 'edit' ? (zh ? '编辑规则' : 'Edit rule') : (zh ? '添加规则' : 'Add rule')} okText={domainDialog?.mode === 'edit' ? (zh ? '保存' : 'Save') : (zh ? '添加' : 'Add')} cancelText={zh ? '取消' : 'Cancel'} okButtonProps={{ disabled: !normalizeDomain(domainDialog?.entry.domain ?? '') }} onOk={() => { applyDomain(); return undefined }} onCancel={() => setDomainDialog(null)} destroyOnClose>
@@ -181,13 +182,13 @@ export function RoutingRules() {
 
 function RuleSetButton({ selected, name, mode, count, builtin, onClick, onDelete }: { selected: boolean; name: string; mode: string; count: number; builtin?: boolean; onClick: () => void; onDelete?: () => void }) {
   return <div className={`flex items-center rounded-md ${selected ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'hover:bg-[var(--surface-hover)]'}`}>
-    <button className="min-w-0 flex-1 px-3 py-2.5 text-left" onClick={onClick}><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{name}</span>{builtin ? <LockKeyhole className="shrink-0" size={13} /> : null}</div><div className="mt-1 flex gap-2 text-xs text-[var(--muted)]"><span>{mode === 'direct' ? 'DIRECT' : 'PROXY'}</span><span>·</span><span>{count}</span></div></button>
+    <button className="min-w-0 flex-1 px-3 py-2.5 text-left" onClick={onClick}><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{name}</span>{builtin ? <LockKeyhole className="shrink-0" size={13} /> : null}</div><div className="mt-1 flex gap-2 text-xs text-[var(--muted)]"><span>{mode === 'direct' ? directLabel('direct') : 'PROXY'}</span><span>·</span><span>{count}</span></div></button>
     {onDelete ? <Button className="mr-1" size="small" variant="text" icon={<Trash2 size={14} />} title="Delete" onClick={onDelete} /> : null}
   </div>
 }
 
 function BuiltinRuleSet({ count, zh }: { count: number; zh: boolean }) {
-  return <div className="space-y-4"><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold">{zh ? '中国大陆域名' : 'Mainland China domains'}</h2><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '内置 domains-min，随 Sempre 版本更新，不依赖运行时 URL。' : 'Built-in domains-min, updated with Sempre and never fetched from a runtime URL.'}</p></div><Tag color="green">DIRECT</Tag></div><div className="rounded-md border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted)]">{zh ? '域名数量' : 'Domains'}</div><div className="mt-1 text-2xl font-semibold tabular-nums">{count}</div></div><Alert type="info" showIcon message={zh ? '这是受保护的系统规则集，固定使用直连 DNS，不能编辑或删除。' : 'This protected system rule set always uses direct DNS and cannot be edited or deleted.'} /></div>
+  return <div className="space-y-4"><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold">{zh ? '中国大陆域名' : 'Mainland China domains'}</h2><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '内置 domains-min，随 Sempre 版本更新，不依赖运行时 URL。' : 'Built-in domains-min, updated with Sempre and never fetched from a runtime URL.'}</p></div><Tag color="green">{directLabel('DIRECT')}</Tag></div><div className="rounded-md border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted)]">{zh ? '域名数量' : 'Domains'}</div><div className="mt-1 text-2xl font-semibold tabular-nums">{count}</div></div><Alert type="info" showIcon message={zh ? '这是受保护的系统规则集，固定使用直连 DNS，不能编辑或删除。' : 'This protected system rule set always uses direct DNS and cannot be edited or deleted.'} /></div>
 }
 
 function EditableRuleSet({ ruleSet, proxyGroups, selecting, zh, onSettings, onAdd, onEdit, onDelete, onSelectProxy }: { ruleSet: DnsRoutingRuleSet; proxyGroups: ProxyNode[]; selecting: boolean; zh: boolean; onSettings: () => void; onAdd: () => void; onEdit: (entry: DnsRoutingDomain) => void; onDelete: (id: string) => void; onSelectProxy: (group: string, proxy: string) => void }) {
@@ -208,11 +209,11 @@ function EditableRuleSet({ ruleSet, proxyGroups, selecting, zh, onSettings, onAd
 
 function RuleSetRuntime({ ruleSet, proxyGroup, selecting, zh, onSelect }: { ruleSet: DnsRoutingRuleSet; proxyGroup?: ProxyNode; selecting: boolean; zh: boolean; onSelect: (group: string, proxy: string) => void }) {
   const [search, setSearch] = useState<string | null>(null)
-  if (ruleSet.mode === 'direct') return <Alert type="info" showIcon message={zh ? 'FakeIP 下返回 Real-IP 并绕过核心；Real-IP 下进入核心后显式走 direct。' : 'In FakeIP mode, return real IPs and bypass the core. In Real-IP mode, enter the core and explicitly route direct.'} />
+  if (ruleSet.mode === 'direct') return <Alert type="info" showIcon message={zh ? 'FakeIP 下返回 Real-IP 并绕过核心；Real-IP 下进入核心后显式直连。' : 'In FakeIP mode, return real IPs and bypass the core. In Real-IP mode, enter the core and explicitly route direct.'} />
   if (!proxyGroup) return <Alert type="warning" showIcon message={zh ? '当前核心尚未识别此代理分组，请先保存并重启核心。' : 'The running core has not recognized this proxy group. Save and restart the core first.'} action={<RuntimeRestartButton showLabel />} />
   return <div className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--surface-subtle)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,24rem)] md:items-center">
     <div><div className="text-sm font-medium">{zh ? '代理节点快速切换' : 'Quick proxy selection'}</div><div className="mt-1 text-xs text-[var(--muted)]">{proxyGroup.name}</div></div>
-    <label className="text-sm"><span className="sr-only">{zh ? '代理节点' : 'Proxy node'}</span><AutoComplete className="w-full" value={search ?? proxyGroup.now ?? ''} options={proxyGroup.all ?? []} disabled={selecting} allowClear={false} onChange={setSearch} onFocus={() => setSearch('')} onBlur={() => setSearch(null)} onSelect={(proxy) => { setSearch(proxy); onSelect(proxyGroup.name, proxy) }} /></label>
+    <label className="text-sm"><span className="sr-only">{zh ? '代理节点' : 'Proxy node'}</span><AutoComplete className="w-full" value={search ?? directLabel(proxyGroup.now ?? '')} options={(proxyGroup.all ?? []).map((name) => ({ value: name, label: directLabel(name) }))} filterOption={(input, option) => directLabel(option.value).toLowerCase().includes(input.toLowerCase()) || option.value.toLowerCase().includes(input.toLowerCase())} disabled={selecting} allowClear={false} onChange={setSearch} onFocus={() => setSearch('')} onBlur={() => setSearch(null)} onSelect={(proxy) => { setSearch(directLabel(proxy)); onSelect(proxyGroup.name, proxy) }} /></label>
   </div>
 }
 

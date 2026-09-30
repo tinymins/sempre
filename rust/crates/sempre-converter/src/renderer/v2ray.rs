@@ -64,10 +64,40 @@ pub(super) fn render(
     if let Some(observatory) = routing::observatory(&model) {
         config["observatory"] = observatory;
     }
+    restore_direct_name(&mut config);
     let mut content = serde_json::to_string_pretty(&config)
         .map_err(|error| CompileError::Render(error.to_string()))?;
     content.push('\n');
     Ok((content, diffs, warnings))
+}
+
+fn restore_direct_name(config: &mut Value) {
+    use super::outbound_names::{DIRECT, restore_field};
+
+    if let Some(outbounds) = config.get_mut("outbounds").and_then(Value::as_array_mut) {
+        for outbound in outbounds {
+            if outbound.get("protocol").and_then(Value::as_str) == Some("freedom")
+                && outbound.get("tag").and_then(Value::as_str) == Some("direct")
+            {
+                outbound["tag"] = Value::from(DIRECT);
+            }
+        }
+    }
+    if let Some(routing) = config.get_mut("routing") {
+        if let Some(rules) = routing.get_mut("rules").and_then(Value::as_array_mut) {
+            for rule in rules {
+                restore_field(rule, "outboundTag");
+            }
+        }
+        if let Some(balancers) = routing.get_mut("balancers").and_then(Value::as_array_mut) {
+            for balancer in balancers {
+                restore_field(balancer, "selector");
+            }
+        }
+    }
+    if let Some(observatory) = config.get_mut("observatory") {
+        restore_field(observatory, "subjectSelector");
+    }
 }
 
 fn log(level: &str, modern: bool) -> Value {

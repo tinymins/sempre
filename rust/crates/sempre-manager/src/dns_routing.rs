@@ -8,6 +8,9 @@ use serde_json::{Value, json};
 
 use crate::{DnsSettings, ManagerError};
 
+mod outbounds;
+use outbounds::{compiled_direct_outbound, compiled_proxy_names};
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DnsRoutingRuleSet {
     pub id: String,
@@ -106,6 +109,11 @@ impl DnsSettings {
             ))
         })?;
         let proxy_names = compiled_proxy_names(&document)?;
+        let direct_outbound = if active.iter().any(|rule_set| rule_set.mode == "direct") {
+            Some(compiled_direct_outbound(&document)?)
+        } else {
+            None
+        };
         let outbounds = document["outbounds"]
             .as_array_mut()
             .expect("validated outbounds");
@@ -114,7 +122,10 @@ impl DnsSettings {
         for rule_set in active {
             let provider_tag = format!("sempre-dns-rule-set:{}", rule_set.id);
             let outbound = if rule_set.mode == "direct" {
-                "direct".into()
+                direct_outbound
+                    .as_ref()
+                    .expect("direct outbound resolved")
+                    .clone()
             } else {
                 if proxy_names.is_empty() {
                     return Err(ManagerError::InvalidOperation(format!(
@@ -189,24 +200,6 @@ impl DnsSettings {
 
 fn proxy_group_name(rule_set: &DnsRoutingRuleSet) -> String {
     format!("DNS · {}", rule_set.name)
-}
-
-fn compiled_proxy_names(document: &Value) -> Result<Vec<String>, ManagerError> {
-    let outbounds = document
-        .get("outbounds")
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
-            ManagerError::InvalidOperation("remote sing-box configuration has no outbounds".into())
-        })?;
-    Ok(outbounds
-        .iter()
-        .filter_map(|outbound| {
-            let kind = outbound.get("type")?.as_str()?;
-            let tag = outbound.get("tag")?.as_str()?;
-            (!matches!(kind, "direct" | "block" | "dns" | "selector" | "urltest"))
-                .then(|| tag.to_owned())
-        })
-        .collect())
 }
 
 pub(crate) fn validate(settings: &DnsSettings) -> Result<(), ManagerError> {
@@ -362,7 +355,9 @@ fn valid_domain(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use sempre_converter::{CompileRequest, Profile, Target, compile_with_overlay};
+    use sempre_converter::{
+        CompileRequest, DIRECT_OUTBOUND_NAME, Profile, Target, compile_with_overlay,
+    };
     use serde_json::Value;
 
     use super::*;
@@ -400,7 +395,7 @@ mod tests {
         let route_rules = document["route"]["rules"].as_array().expect("route rules");
         assert!(route_rules.iter().any(|rule| {
             rule["rule_set"][0] == "sempre-dns-rule-set:direct-sites"
-                && rule["outbound"] == "direct"
+                && rule["outbound"] == DIRECT_OUTBOUND_NAME
         }));
         assert!(route_rules.iter().any(|rule| {
             rule["rule_set"][0] == "sempre-dns-rule-set:proxy-sites"
@@ -456,12 +451,15 @@ mod tests {
         };
         let content = settings
             .apply_compiled_sing_box_overlay(
-                r#"{"outbounds":[{"type":"direct","tag":"direct"},{"type":"shadowsocks","tag":"node-a"}],"route":{"rules":[{"action":"sniff"},{"ip_is_private":true,"outbound":"direct"}],"rule_set":[]}}"#,
+                &json!({"outbounds":[{"type":"direct","tag":DIRECT_OUTBOUND_NAME},{"type":"shadowsocks","tag":"node-a"}],"route":{"rules":[{"action":"sniff"},{"ip_is_private":true,"outbound":DIRECT_OUTBOUND_NAME}],"rule_set":[]}}).to_string(),
             )
             .expect("remote overlay");
         let document: Value = serde_json::from_str(&content).expect("sing-box JSON");
         assert_eq!(document["route"]["rules"][0]["action"], "sniff");
-        assert_eq!(document["route"]["rules"][1]["outbound"], "direct");
+        assert_eq!(
+            document["route"]["rules"][1]["outbound"],
+            DIRECT_OUTBOUND_NAME
+        );
         assert_eq!(
             document["route"]["rules"][2]["outbound"],
             "DNS · Proxy sites"

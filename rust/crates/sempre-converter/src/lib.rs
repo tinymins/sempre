@@ -7,6 +7,7 @@ mod model;
 mod openwrt;
 mod parser;
 mod renderer;
+pub const DIRECT_OUTBOUND_NAME: &str = "🚀 直接连接";
 mod rule_set;
 mod target;
 

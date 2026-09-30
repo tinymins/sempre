@@ -1,5 +1,6 @@
 use sempre_converter::{
-    CompileRequest, Profile, SourceSnapshot, Target, compile, rule_provider_snapshot_id,
+    CompileRequest, DIRECT_OUTBOUND_NAME, Profile, SourceSnapshot, Target, compile,
+    rule_provider_snapshot_id,
 };
 use serde_json::{Value, json};
 
@@ -63,7 +64,7 @@ fn modern_sing_box_preserves_v1_runtime_and_private_access_semantics() {
     assert_eq!(document["route"]["find_process"], true);
     assert_eq!(document["inbounds"][2]["sniff"], true);
     assert_eq!(document["inbounds"][2]["sniff_override_destination"], true);
-    assert_eq!(document["outbounds"][0]["tag"], "direct");
+    assert_eq!(document["outbounds"][0]["tag"], DIRECT_OUTBOUND_NAME);
     assert_eq!(document["outbounds"][1]["tag"], "reject");
     let edge = document["outbounds"]
         .as_array()
@@ -222,7 +223,7 @@ fn assert_home_auto_rules(document: &Value) {
             })
             .expect("private route rule")
     };
-    let direct = route_index("direct");
+    let direct = route_index(DIRECT_OUTBOUND_NAME);
     assert!(direct < route_index("private-wg"));
     assert_eq!(
         route_rules[direct]["clash_mode"],
@@ -231,7 +232,7 @@ fn assert_home_auto_rules(document: &Value) {
     let public_direct = route_rules
         .iter()
         .position(|rule| {
-            rule["outbound"] == "direct"
+            rule["outbound"] == DIRECT_OUTBOUND_NAME
                 && rule["clash_mode"] == "Sempre Network d286d2f8-33c5-4f1e-b871-d22a9ba91143"
                 && rule.get("ip_cidr").is_none()
         })

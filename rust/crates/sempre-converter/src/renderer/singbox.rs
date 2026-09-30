@@ -6,6 +6,7 @@ use crate::{CompileError, FieldDiff, Profile, Proxy, SourceSnapshot, Target};
 
 mod assembly;
 mod config;
+mod direct_outbound;
 mod fields;
 mod private_access;
 use fields::consumed_keys;

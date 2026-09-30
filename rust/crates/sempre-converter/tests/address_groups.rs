@@ -1,4 +1,6 @@
-use sempre_converter::{CompileRequest, Profile, Target, compile, prepare_profile};
+use sempre_converter::{
+    CompileRequest, DIRECT_OUTBOUND_NAME, Profile, Target, compile, prepare_profile,
+};
 use serde_json::{Value, json};
 
 const PRIVATE: &str = "内网地址";
@@ -63,9 +65,9 @@ fn sing_box_versions_route_private_and_cn_traffic_to_independent_selectors() {
             for name in [PRIVATE, CHINA] {
                 let group = sing_box_group(&config, name);
                 assert_eq!(group["type"], "selector", "{format}: {name}");
-                assert_eq!(group["default"], "direct", "{format}: {name}");
+                assert_eq!(group["default"], DIRECT_OUTBOUND_NAME, "{format}: {name}");
                 let members = group["outbounds"].as_array().expect("selector members");
-                for member in ["direct", FOREIGN, NODE] {
+                for member in [DIRECT_OUTBOUND_NAME, FOREIGN, NODE] {
                     assert!(
                         members.iter().any(|item| item == member),
                         "{format}: {name} missing {member}"

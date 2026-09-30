@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{DnsSettings, ManagerError};
 
-const CONFIG_BUILD_SCHEMA: u32 = 11;
+const CONFIG_BUILD_SCHEMA: u32 = 12;
 
 pub(crate) fn config_build(
     profile: &Profile,

@@ -1,4 +1,6 @@
-use sempre_converter::{CompileRequest, Profile, SourceSnapshot, Target, compile};
+use sempre_converter::{
+    CompileRequest, DIRECT_OUTBOUND_NAME, Profile, SourceSnapshot, Target, compile,
+};
 use serde_json::{Value, json};
 
 fn request(format: &str) -> CompileRequest {
@@ -39,9 +41,12 @@ fn sing_box_compiles_a_direct_only_configuration_without_nodes() {
 
     assert_eq!(result.node_count, 0);
     assert!(document["outbounds"].as_array().is_some_and(|outbounds| {
-        outbounds.iter().any(|outbound| outbound["tag"] == "direct")
+        outbounds
+            .iter()
+            .any(|outbound| outbound["tag"] == DIRECT_OUTBOUND_NAME)
             && outbounds.iter().any(|outbound| {
-                outbound["tag"] == "proxy" && outbound["outbounds"] == serde_json::json!(["direct"])
+                outbound["tag"] == "proxy"
+                    && outbound["outbounds"] == serde_json::json!([DIRECT_OUTBOUND_NAME])
             })
     }));
     assert_eq!(document["route"]["final"], "proxy");

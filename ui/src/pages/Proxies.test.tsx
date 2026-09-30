@@ -13,7 +13,7 @@ describe('Proxies', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       const body = url.endsWith('/api/v1/runtime/proxies') ? [
-        { name: 'GLOBAL', type: 'Fallback', all: ['active-global', 'global-node'], now: 'active-global' },
+        { name: 'GLOBAL', type: 'Fallback', all: ['active-global', 'global-node', 'DIRECT'], now: 'active-global' },
         { name: 'configured-second', type: 'Selector', all: ['active-second', 'second-node'], now: 'active-second' },
       ] : url.endsWith('/api/v1/runtime/proxies/delay') ? { delay: 42 } : []
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -72,8 +72,15 @@ describe('Proxies', () => {
     fireEvent.click(await screen.findByRole('button', { name: /GLOBAL/ }))
     const activeNode = screen.getByRole('radio', { name: 'active-global' })
     const inactiveNode = screen.getByRole('radio', { name: 'global-node' })
+    const directNode = screen.getByRole('radio', { name: '🚀 直接连接' })
     expect(activeNode).toHaveAttribute('aria-checked', 'true')
     expect(inactiveNode).toHaveAttribute('aria-checked', 'false')
+
+    fireEvent.click(directNode)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/proxies/select', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ group: 'GLOBAL', proxy: 'DIRECT' }),
+    })))
 
     fireEvent.click(inactiveNode)
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/runtime/proxies/select', expect.objectContaining({

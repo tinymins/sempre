@@ -1,4 +1,4 @@
-use sempre_converter::{CompileRequest, Profile, Target, compile};
+use sempre_converter::{CompileRequest, DIRECT_OUTBOUND_NAME, Profile, Target, compile};
 use serde_json::{Value, json};
 
 fn request(format: &str, profile: Value) -> CompileRequest {
@@ -146,13 +146,17 @@ fn routing_maps_rules_to_balancers_and_reports_providers() {
     );
     let config: Value = serde_json::from_str(&result.content).expect("valid JSON");
     let rules = config["routing"]["rules"].as_array().expect("rules");
+    assert_eq!(
+        outbound(&config, DIRECT_OUTBOUND_NAME)["protocol"],
+        "freedom"
+    );
     assert!(rules.iter().any(|rule| {
         rule["domain"] == json!(["domain:example.com"]) && rule["balancerTag"] == "foreign"
     }));
     assert!(
         rules
             .iter()
-            .any(|rule| { rule["port"] == "53" && rule["outboundTag"] == "direct" })
+            .any(|rule| { rule["port"] == "53" && rule["outboundTag"] == DIRECT_OUTBOUND_NAME })
     );
     assert!(rules.iter().any(|rule| {
         rule["inboundTag"] == json!(["remote-dns"]) && rule["balancerTag"] == "foreign"

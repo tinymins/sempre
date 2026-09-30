@@ -101,6 +101,7 @@ pub(super) fn render(
     }
     super::super::dns::apply_sing_box_platform_policy(profile, target, &mut output, &mut warnings);
     config::normalize_for_version(&mut output, target);
+    super::direct_outbound::restore_direct_name(&mut output);
     let mut content = serde_json::to_string_pretty(&output)
         .map_err(|error| CompileError::Render(error.to_string()))?;
     content.push('\n');

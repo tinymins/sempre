@@ -4,6 +4,7 @@ import { Plus, Save, Trash2 } from 'lucide-react'
 import { RuntimeRestartButton } from '../../components/RuntimeRestartButton'
 import { Button, Card, Input, Spinner } from '../../components/ui'
 import { useI18n } from '../../lib/i18n'
+import { directLabel, isBuiltinDirect } from '../../lib/directLabel'
 import { randomUuid } from '../../lib/randomUuid'
 import type { ProxyNode } from '../../lib/types'
 import type { DnsRoutingDomain, DnsRoutingRuleSet, DnsSettings } from './types'
@@ -99,11 +100,11 @@ function currentTarget(ruleSet: DnsRoutingRuleSet, proxyGroups: ProxyNode[]) {
 }
 
 function targetOptions(settings: DnsSettings, proxyGroups: ProxyNode[], rows: SimpleRoutingRow[]) {
-  const nodes = [...new Set(proxyGroups.flatMap((group) => group.all ?? []).filter((name) => !['DIRECT', 'REJECT'].includes(name)))].sort((left, right) => left.localeCompare(right))
+  const nodes = [...new Set(proxyGroups.flatMap((group) => group.all ?? []).filter((name) => !isBuiltinDirect(name) && name !== 'REJECT'))].sort((left, right) => left.localeCompare(right))
   const unresolved = [...new Set(rows.map((row) => row.target).filter((target) => target.startsWith(GROUP_PREFIX)))]
   return [
-    { value: DIRECT, label: 'DIRECT' },
-    ...nodes.map((node) => ({ value: `${NODE_PREFIX}${node}`, label: node })),
+    { value: DIRECT, label: directLabel(DIRECT) },
+    ...nodes.map((node) => ({ value: `${NODE_PREFIX}${node}`, label: directLabel(node) })),
     ...unresolved.map((target) => ({ value: target, label: settings.rule_sets.find((item) => item.id === target.slice(GROUP_PREFIX.length))?.name ?? '原有代理规则' })),
   ]
 }

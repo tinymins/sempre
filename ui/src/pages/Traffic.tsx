@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Select, Table, type TableColumn } from '@acme/components'
 import { Database, Trash2 } from 'lucide-react'
 import { useI18n } from '../lib/i18n'
+import { directLabel } from '../lib/directLabel'
 import { useRuntimeEvents } from '../lib/useRuntimeEvents'
 import { api } from '../lib/api'
 import { useSession } from '../lib/session'
@@ -56,7 +57,7 @@ export function Traffic() {
     { value: 'outbound', label: t('outbound') }, { value: 'process', label: t('process') },
   ]
   const totalColumns: Array<TableColumn<TrafficHistory['totals'][number]>> = [
-    { title: dimensions.find((item) => item.value === dimension)?.label, dataIndex: 'label', sorter: (left, right) => compareText(left.label, right.label), render: (value) => <span className="font-medium">{value}</span> },
+    { title: dimensions.find((item) => item.value === dimension)?.label, dataIndex: 'label', sorter: (left, right) => compareText(left.label, right.label), render: (value) => <span className="font-medium">{dimension === 'outbound' ? directLabel(value) : value}</span> },
     { title: t('download'), dataIndex: 'download', align: 'right', sorter: (left, right) => left.download - right.download, render: (value) => <span className="tabular-nums text-cyan-600">{formatBytes(value)}</span> },
     { title: t('upload'), dataIndex: 'upload', align: 'right', sorter: (left, right) => left.upload - right.upload, render: (value) => <span className="tabular-nums text-emerald-600">{formatBytes(value)}</span> },
     { title: t('totalTraffic'), key: 'total', align: 'right', sorter: (left, right) => left.download + left.upload - right.download - right.upload, render: (_value, item) => <span className="tabular-nums">{formatBytes(item.download + item.upload)}</span> },
