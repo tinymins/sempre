@@ -42,16 +42,16 @@ export function FilterEditor({ value, readOnly = false, onChange }: { value: str
     {error ? <p role="alert" className="text-sm text-red-600">{t('filter.invalid')}</p> : null}
     <div className="flex flex-wrap items-center gap-2">
       {tags.map((tag, index) => <span key={`${index}-${tag}`} className={`inline-flex min-h-7 max-w-full items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-1 text-sm leading-5 ${readOnly ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
-        {editingIndex === index ? <Input autoFocus value={editingTag} onChange={(event) => setEditingTag(event.target.value)} onBlur={finishEdit} onKeyDown={(event) => {
+        {editingIndex === index ? <Input variant="inline" autoFocus value={editingTag} style={{ width: `${Math.max(editingTag.length, 3)}ch`, minWidth: 40 }} onChange={(event) => setEditingTag(event.target.value)} onBlur={finishEdit} onKeyDown={(event) => {
           if (event.key === 'Enter') { event.preventDefault(); finishEdit() }
           if (event.key === 'Escape') { event.stopPropagation(); setEditingIndex(null) }
-        }} className="h-5 w-36 min-w-0 max-w-full rounded-none border-0 bg-transparent p-0" /> : readOnly ? <span className="min-w-0 [overflow-wrap:anywhere]">{tag}</span> : <Button variant="unstyled" className="min-w-0 text-left [overflow-wrap:anywhere]" onClick={() => { setEditingIndex(index); setEditingTag(tag) }}>{tag}</Button>}
+        }} /> : readOnly ? <span className="min-w-0 [overflow-wrap:anywhere]">{tag}</span> : <Button variant="unstyled" className="min-w-0 text-left [overflow-wrap:anywhere]" onClick={() => { setEditingIndex(index); setEditingTag(tag) }}>{tag}</Button>}
         {!readOnly ? <Button variant="unstyled" className="size-4 shrink-0 rounded-sm text-[var(--text-muted)] transition-colors hover:text-red-500" icon={<X size={13} />} aria-label={t('filter.remove', { tag })} onClick={() => edit(index, undefined)} /> : null}
       </span>)}
-      {!readOnly ? isAdding ? <Input autoFocus value={newTag} disabled={error} aria-label={t('filter.add')} placeholder={t('filter.add')} onChange={(event) => setNewTag(event.target.value)} onBlur={add} onKeyDown={(event) => {
+      {!readOnly ? isAdding ? <span className="inline-flex max-w-full items-center rounded-md border border-[var(--accent)] bg-[var(--input-bg)] px-2.5 py-1 text-sm leading-5"><Input variant="inline" autoFocus value={newTag} disabled={error} aria-label={t('filter.add')} placeholder={t('filter.add')} onChange={(event) => setNewTag(event.target.value)} onBlur={add} onKeyDown={(event) => {
         if (event.key === 'Enter') { event.preventDefault(); add() }
         if (event.key === 'Escape') { event.stopPropagation(); setNewTag(''); setIsAdding(false) }
-      }} className="h-8 w-44 min-w-0 max-w-full border-[var(--accent)]" /> : <Button variant="dashed" className="h-8 shrink-0 px-2.5 text-[var(--text-muted)]" icon={<Plus size={14} />} aria-label={t('filter.add')} title={t('filter.add')} disabled={error} onClick={() => setIsAdding(true)} /> : null}
+      }} style={{ width: '18ch', minWidth: 80 }} /></span> : <Button variant="dashed" className="h-8 shrink-0 px-2.5 text-[var(--text-muted)]" icon={<Plus size={14} />} aria-label={t('filter.add')} title={t('filter.add')} disabled={error} onClick={() => setIsAdding(true)} /> : null}
       {tags.length === 0 && !error && readOnly ? <span className="text-sm text-[var(--text-muted)]">{t('filter.empty')}</span> : null}
     </div>
     {!readOnly && error ? <label className="block space-y-1 text-sm">{t('filter.advanced')}

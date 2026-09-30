@@ -15,6 +15,8 @@ export interface InputProps
     "size" | "prefix" | "suffix"
   > {
   size?: "small" | "middle" | "large";
+  /** Inline editing inside an existing control, without form-field chrome. */
+  variant?: "default" | "inline";
   /** Prefix icon/element */
   prefix?: ReactNode;
   /** Suffix icon/element */
@@ -37,6 +39,7 @@ const BaseInput = forwardRef<HTMLInputElement, InputProps>(
   (
     {
       size = "middle",
+      variant = "default",
       prefix,
       suffix,
       status,
@@ -48,13 +51,15 @@ const BaseInput = forwardRef<HTMLInputElement, InputProps>(
   ) => (
     <div
       className={cn(
-        "w-full flex items-center gap-2 rounded-md border bg-[var(--input-bg)] transition-colors focus-within:border-[var(--accent)] focus-within:ring-1 focus-within:ring-[var(--accent)] dark:focus-within:border-[var(--accent)]",
-        status === "error"
+        variant === "inline"
+          ? "flex min-w-0 max-w-full items-center"
+          : "w-full flex items-center gap-2 rounded-md border bg-[var(--input-bg)] transition-colors focus-within:border-[var(--accent)] focus-within:ring-1 focus-within:ring-[var(--accent)] dark:focus-within:border-[var(--accent)]",
+        variant !== "inline" && (status === "error"
           ? "border-red-500"
           : status === "warning"
             ? "border-amber-500"
-            : "border-black/[0.08] dark:border-white/[0.1]",
-        sizeMap[size],
+            : "border-black/[0.08] dark:border-white/[0.1]"),
+        variant !== "inline" && sizeMap[size],
         className,
       )}
     >
@@ -66,7 +71,10 @@ const BaseInput = forwardRef<HTMLInputElement, InputProps>(
       <input
         ref={ref}
         autoComplete={autoComplete}
-        className="w-full min-w-0 bg-transparent outline-none placeholder:text-[var(--text-muted)] text-inherit"
+        className={cn(
+          "min-w-0 bg-transparent outline-none placeholder:text-[var(--text-muted)] text-inherit",
+          variant === "inline" ? "max-w-full border-0 p-0 leading-[inherit]" : "w-full",
+        )}
         {...rest}
       />
       {suffix ? (
