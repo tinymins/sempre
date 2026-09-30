@@ -2665,7 +2665,6 @@ version = "2.0.7"
 dependencies = [
  "argon2",
  "axum",
- "base64",
  "chrono",
  "futures-util",
  "rand 0.9.5",

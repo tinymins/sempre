@@ -1,5 +1,4 @@
 //! Resolve server-owned remote rule URLs before invoking the pure converter.
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sempre_converter::{EditorConfig, Profile, Target, prepare_profile};
 use url::Url;
 
@@ -38,12 +37,19 @@ pub(crate) fn prepare(
 }
 
 fn rule_url(base: &Url, version: &str, source: &str) -> Result<String, ApiError> {
-    base.join(&format!(
-        "api/proxy/sing-box/convert/rule/1.{version}/{}",
-        URL_SAFE_NO_PAD.encode(source)
-    ))
-    .map(|url| url.to_string())
-    .map_err(ApiError::internal)
+    let path = match version {
+        "11" => "api/proxy/sing-box/convert/rule",
+        "12" => "api/proxy/sing-box/convert/rule/12",
+        "13" | "14" => "api/proxy/sing-box/convert/rule/13",
+        _ => {
+            return Err(ApiError::bad_request(
+                "unsupported sing-box rule-set version",
+            ));
+        }
+    };
+    let mut url = base.join(path).map_err(ApiError::internal)?;
+    url.query_pairs_mut().append_pair("url", source);
+    Ok(url.to_string())
 }
 
 #[cfg(test)]
@@ -53,7 +59,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn openwrt_remote_rules_are_versioned_and_query_free() {
+    fn openwrt_remote_rules_use_toolbox_query_urls() {
         let source = "https://example.com/a%20b.yaml?branch=main&token=test";
         let profile = Profile {
             editor: EditorConfig {
@@ -81,14 +87,23 @@ mod tests {
             )
             .unwrap();
             let url = Url::parse(&result.rule_providers[0].url).unwrap();
-            assert_eq!(url.query(), None);
-            assert!(url.path().contains(&format!("/rule/1.{version}/")));
+            let expected_path = match version {
+                "11" => "/api/proxy/sing-box/convert/rule",
+                "12" => "/api/proxy/sing-box/convert/rule/12",
+                "13" | "14" => "/api/proxy/sing-box/convert/rule/13",
+                _ => unreachable!(),
+            };
+            assert_eq!(url.path(), expected_path);
             assert_eq!(
-                URL_SAFE_NO_PAD
-                    .decode(url.path_segments().unwrap().next_back().unwrap())
-                    .unwrap(),
-                source.as_bytes()
+                url.query_pairs()
+                    .find(|(key, _)| key == "url")
+                    .map(|(_, value)| value.into_owned()),
+                Some(source.into())
             );
+            let gfw =
+                Url::parse(result.dns["shared"]["gfwBlackRuleSetUrl"].as_str().unwrap()).unwrap();
+            assert_eq!(gfw.path(), expected_path);
+            assert_eq!(gfw.query_pairs().filter(|(key, _)| key == "url").count(), 1);
             assert_eq!(result.transparent_proxy.tproxy.listen_port, 17893);
             assert_eq!(result.management_api.secret, "fixture-secret");
             let again = prepare_profile(&result, &target).unwrap();

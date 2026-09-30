@@ -84,6 +84,27 @@ fn openwrt_uses_tproxy_local_dns_and_first_selector_member_across_versions() {
             "{version}"
         );
 
+        let route_rules = config["route"]["rules"].as_array().expect("route rules");
+        if version == "sing-box" {
+            assert_eq!(
+                route_rules[0],
+                json!({
+                    "inbound": ["dns-in"], "protocol": "dns", "outbound": "dns-out"
+                })
+            );
+        } else {
+            assert_eq!(
+                route_rules[0],
+                json!({ "inbound": "dns-in", "action": "hijack-dns" })
+            );
+            assert_eq!(route_rules[1], json!({ "action": "sniff" }));
+        }
+        assert!(
+            !route_rules
+                .iter()
+                .any(|rule| { rule["protocol"] == "dns" && rule["action"] == "hijack-dns" })
+        );
+
         let dns_servers = config["dns"]["servers"].as_array().expect("DNS servers");
         assert!(dns_servers.iter().any(|server| server["tag"] == "local"));
         assert!(dns_servers.iter().any(|server| server["tag"] == "fakeip"));

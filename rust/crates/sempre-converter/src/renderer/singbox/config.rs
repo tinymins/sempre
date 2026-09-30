@@ -46,15 +46,7 @@ pub(super) fn route(
         .map(|snapshot| (snapshot.source_id.as_str(), snapshot.content.as_str()))
         .collect::<HashMap<_, _>>();
     let mut rule_sets = Vec::new();
-    let mut rules = super::super::dns::sing_box_system_route_rules(profile, target);
-    rules.extend(if target.version == "11" {
-        vec![json!({ "protocol": "dns", "outbound": "dns-out" })]
-    } else {
-        vec![
-            json!({ "action": "sniff" }),
-            json!({ "protocol": "dns", "action": "hijack-dns" }),
-        ]
-    });
+    let mut rules = initial_route_rules(profile, target);
     if !private.direct_domains.is_empty() {
         rules.push(json!({
             "domain": private.direct_domains, "action": "route", "outbound": "direct"
@@ -138,6 +130,26 @@ pub(super) fn route(
         route["auto_detect_interface"] = json!(true);
     }
     route
+}
+
+fn initial_route_rules(profile: &Profile, target: &Target) -> Vec<Value> {
+    let mut rules = super::super::dns::sing_box_system_route_rules(profile, target);
+    if target.is_openwrt() {
+        if target.version == "11" {
+            rules.push(json!({
+                "inbound": ["dns-in"], "protocol": "dns", "outbound": "dns-out"
+            }));
+        } else {
+            rules.push(json!({ "inbound": "dns-in", "action": "hijack-dns" }));
+            rules.push(json!({ "action": "sniff" }));
+        }
+    } else if target.version == "11" {
+        rules.push(json!({ "protocol": "dns", "outbound": "dns-out" }));
+    } else {
+        rules.push(json!({ "action": "sniff" }));
+        rules.push(json!({ "protocol": "dns", "action": "hijack-dns" }));
+    }
+    rules
 }
 
 fn append_rule_providers<'a>(
