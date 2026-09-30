@@ -17,6 +17,7 @@ function readTags(value: string): { tags: string[]; error: boolean } {
 export function FilterEditor({ value, readOnly = false, onChange }: { value: string; readOnly?: boolean; onChange?: (value: string) => void }) {
   const { t } = useI18n()
   const [newTag, setNewTag] = useState('')
+  const [isAdding, setIsAdding] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editingTag, setEditingTag] = useState('')
   const { tags, error } = readTags(value)
@@ -27,9 +28,9 @@ export function FilterEditor({ value, readOnly = false, onChange }: { value: str
   }
   const add = () => {
     const tag = newTag.trim()
-    if (!tag || tags.includes(tag)) return
-    edit(tags.length, tag)
+    if (tag && !tags.includes(tag)) edit(tags.length, tag)
     setNewTag('')
+    setIsAdding(false)
   }
   const finishEdit = () => {
     if (editingIndex === null) return
@@ -39,14 +40,20 @@ export function FilterEditor({ value, readOnly = false, onChange }: { value: str
   }
   return <div className="space-y-3">
     {error ? <p role="alert" className="text-sm text-red-600">{t('filter.invalid')}</p> : null}
-    <div className="flex flex-wrap gap-2">
-      {tags.map((tag, index) => <span key={`${index}-${tag}`} className="inline-flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-sm">
-        {editingIndex === index ? <Input autoFocus value={editingTag} onChange={(event) => setEditingTag(event.target.value)} onBlur={finishEdit} onKeyDown={(event) => { if (event.key === 'Enter') finishEdit(); if (event.key === 'Escape') setEditingIndex(null) }} className="w-36" /> : readOnly ? tag : <Button size="small" variant="text" onClick={() => { setEditingIndex(index); setEditingTag(tag) }}>{tag}</Button>}
-        {!readOnly ? <Button size="small" variant="text" icon={<X size={13} />} aria-label={t('filter.remove', { tag })} onClick={() => edit(index, undefined)} /> : null}
+    <div className="flex flex-wrap items-center gap-2">
+      {tags.map((tag, index) => <span key={`${index}-${tag}`} className={`inline-flex min-h-7 max-w-full items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-1 text-sm leading-5 ${readOnly ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
+        {editingIndex === index ? <Input autoFocus value={editingTag} onChange={(event) => setEditingTag(event.target.value)} onBlur={finishEdit} onKeyDown={(event) => {
+          if (event.key === 'Enter') { event.preventDefault(); finishEdit() }
+          if (event.key === 'Escape') { event.stopPropagation(); setEditingIndex(null) }
+        }} className="h-5 w-36 min-w-0 max-w-full rounded-none border-0 bg-transparent p-0" /> : readOnly ? <span className="min-w-0 [overflow-wrap:anywhere]">{tag}</span> : <Button variant="unstyled" className="min-w-0 text-left [overflow-wrap:anywhere]" onClick={() => { setEditingIndex(index); setEditingTag(tag) }}>{tag}</Button>}
+        {!readOnly ? <Button variant="unstyled" className="size-4 shrink-0 rounded-sm text-[var(--text-muted)] transition-colors hover:text-red-500" icon={<X size={13} />} aria-label={t('filter.remove', { tag })} onClick={() => edit(index, undefined)} /> : null}
       </span>)}
-      {tags.length === 0 && !error ? <span className="text-sm text-[var(--muted)]">{t('filter.empty')}</span> : null}
+      {!readOnly ? isAdding ? <Input autoFocus value={newTag} disabled={error} aria-label={t('filter.add')} placeholder={t('filter.add')} onChange={(event) => setNewTag(event.target.value)} onBlur={add} onKeyDown={(event) => {
+        if (event.key === 'Enter') { event.preventDefault(); add() }
+        if (event.key === 'Escape') { event.stopPropagation(); setNewTag(''); setIsAdding(false) }
+      }} className="h-8 w-44 min-w-0 max-w-full border-[var(--accent)]" /> : <Button variant="dashed" className="h-8 shrink-0 px-2.5 text-[var(--text-muted)]" icon={<Plus size={14} />} aria-label={t('filter.add')} title={t('filter.add')} disabled={error} onClick={() => setIsAdding(true)} /> : null}
+      {tags.length === 0 && !error && readOnly ? <span className="text-sm text-[var(--text-muted)]">{t('filter.empty')}</span> : null}
     </div>
-    {!readOnly ? <div className="flex max-w-md gap-2"><Input value={newTag} disabled={Boolean(error)} placeholder={t('filter.add')} onChange={(event) => setNewTag(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }} /><Button icon={<Plus size={14} />} disabled={Boolean(error) || !newTag.trim()} onClick={add}>{t('filter.add')}</Button></div> : null}
     {!readOnly && error ? <label className="block space-y-1 text-sm">{t('filter.advanced')}
       <CodeEditor height={180} value={value} onChange={(next) => onChange?.(next)} ariaLabel={t('filter.advanced')} />
     </label> : null}
