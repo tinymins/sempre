@@ -256,13 +256,22 @@ pub(super) fn route_policy(profile: &Profile, target: &Target) -> (Vec<Value>, V
             rule_sets.push(json!({ "tag": tag, "type": "remote", "format": "binary", "url": rule_set.url, "download_detour": rule_set.detour }));
         }
     }
+    if target.is_openwrt()
+        && let Some(url) = profile
+            .dns
+            .pointer("/shared/gfwBlackRuleSetUrl")
+            .and_then(Value::as_str)
+        && !url.trim().is_empty()
+    {
+        rule_sets.push(json!({ "tag": "geoip-gfwblack", "type": "remote", "format": "source", "url": url, "download_detour": "direct" }));
+    }
     let mut routes = Vec::new();
     // Known domestic domains keep local/CDN resolution and need no GeoIP lookup.
     if shared.cn_domain_rule_set.enabled {
         routes.push(json!({ "rule_set": ["geosite-cn"], "outbound": "direct" }));
     }
     if shared.cn_ip_rule_set.enabled {
-        if target.version != "11" {
+        if target.version != "11" && !target.is_openwrt() {
             // FakeIP restores a domain, not the real addresses required by GeoIP.
             // Unknown domains must not inherit poisoned local DNS answers.
             routes.push(json!({ "action": "resolve", "server": "remote" }));

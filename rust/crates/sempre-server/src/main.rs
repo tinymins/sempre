@@ -4,8 +4,10 @@ mod debug_stream;
 mod diagnostic_projection;
 mod editor_migration;
 mod error;
+mod export_target;
 mod fetch;
 mod maintenance;
+mod openwrt_export;
 mod source_cache;
 mod subscription_compile;
 mod subscription_editor;
@@ -146,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn targets() -> axum::Json<Vec<sempre_converter::Target>> {
-    axum::Json(sempre_converter::available_targets())
+    axum::Json(export_target::available())
 }
 
 async fn health() -> Result<&'static str, ApiError> {

@@ -10,8 +10,8 @@ import { useI18n } from '../i18n/provider'
 function formatLabel(format: string): string {
   const names: Record<string, string> = { clash: 'Clash', 'clash-meta': 'Clash Meta', 'clash-rs': 'Clash RS', xray: 'Xray', v2ray: 'V2Ray', dae: 'Dae' }
   if (names[format]) return names[format]
-  const singBox = /^sing-box(?:-v(12|13|14))?(?:-(windows|macos))?$/.exec(format)
-  if (singBox) return `Sing-box v1.${singBox[1] ?? '11'}${singBox[2] === 'windows' ? ' Windows' : singBox[2] === 'macos' ? ' macOS' : ''}`
+  const singBox = /^sing-box(?:-v(12|13|14))?(?:-(openwrt|windows|macos))?$/.exec(format)
+  if (singBox) return `Sing-box v1.${singBox[1] ?? '11'}${singBox[2] === 'windows' ? ' Windows' : singBox[2] === 'macos' ? ' macOS' : ' OpenWrt'}`
   return format
 }
 

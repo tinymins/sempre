@@ -4,6 +4,7 @@ mod editor;
 mod icons;
 mod inspection;
 mod model;
+mod openwrt;
 mod parser;
 mod renderer;
 mod rule_set;
@@ -196,7 +197,11 @@ fn apply_compile_overlay(
 }
 
 pub fn prepare_profile(profile: &Profile, target: &Target) -> Result<Profile, CompileError> {
-    Ok(defaults::effective_profile(editor::apply(profile)?, target))
+    let mut effective = defaults::effective_profile(editor::apply(profile)?, target);
+    if target.is_openwrt() {
+        openwrt::apply(profile, &mut effective)?;
+    }
+    Ok(effective)
 }
 
 pub fn profile_from_editor(profile: &Profile) -> Result<Profile, CompileError> {

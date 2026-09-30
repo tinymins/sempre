@@ -21,7 +21,7 @@ pub(super) fn render(
     let private = private_access::resolve(
         &profile.private_access,
         &target.version,
-        target.platform != "default",
+        target.is_desktop(),
         automatic_switching,
     );
     let mut outbounds = vec![
@@ -38,8 +38,7 @@ pub(super) fn render(
         let (converted, mut diff) = convert_proxy(proxy, target);
         if let Some(mut outbound) = converted {
             if modern && proxy.server.parse::<IpAddr>().is_err() {
-                outbound["domain_resolver"] =
-                    json!({ "server": "bootstrap", "strategy": "ipv4_only" });
+                outbound["domain_resolver"] = json!({ "server": if target.is_openwrt() { "local" } else { "bootstrap" }, "strategy": "ipv4_only" });
             }
             names.push(proxy.name.clone());
             diff.outbound = Some(outbound.clone());
@@ -49,7 +48,7 @@ pub(super) fn render(
         diffs.push(diff);
     }
     outbounds.extend(private.outbounds.iter().cloned());
-    outbounds.extend(selector_outbounds(&profile.groups, &names)?);
+    outbounds.extend(selector_outbounds(&profile.groups, &names, target)?);
 
     let mut dns = super::super::dns::sing_box(profile, proxies, target)?;
     let direct_modes = network_direct_modes(&profile.network_policy);
@@ -84,9 +83,10 @@ pub(super) fn render(
         .get("servers")
         .and_then(Value::as_array)
         .is_some_and(|servers| {
-            servers
-                .iter()
-                .any(|server| server.get("type").and_then(Value::as_str) == Some("fakeip"))
+            servers.iter().any(|server| {
+                server.get("type").and_then(Value::as_str) == Some("fakeip")
+                    || server.get("address").and_then(Value::as_str) == Some("fakeip")
+            })
         });
     let mut output = json!({
         "log": config::log(&profile.log_level),
@@ -138,7 +138,11 @@ fn network_direct_modes(policy: &Value) -> Vec<String> {
         .collect()
 }
 
-fn selector_outbounds(groups: &[ProxyGroup], names: &[String]) -> Result<Vec<Value>, CompileError> {
+fn selector_outbounds(
+    groups: &[ProxyGroup],
+    names: &[String],
+    target: &Target,
+) -> Result<Vec<Value>, CompileError> {
     let configured = if groups.is_empty() {
         vec![ProxyGroup {
             name: "proxy".into(),
@@ -180,8 +184,11 @@ fn selector_outbounds(groups: &[ProxyGroup], names: &[String]) -> Result<Vec<Val
         };
         let mut outbound = json!({ "type": kind, "tag": group.name, "outbounds": members });
         if kind == "selector" {
-            let default =
-                selector_default(&group, outbound["outbounds"].as_array().expect("members"));
+            let default = selector_default(
+                &group,
+                outbound["outbounds"].as_array().expect("members"),
+                target,
+            );
             outbound["default"] = json!(default);
             outbound["interrupt_exist_connections"] = json!(true);
         } else {
@@ -202,11 +209,12 @@ fn selector_outbounds(groups: &[ProxyGroup], names: &[String]) -> Result<Vec<Val
     Ok(outbounds)
 }
 
-fn selector_default(group: &ProxyGroup, members: &[Value]) -> String {
+fn selector_default(group: &ProxyGroup, members: &[Value], target: &Target) -> String {
     if !group.default.is_empty() {
         return normalize(&group.default);
     }
-    if group.name == "🔰 国外流量"
+    if !target.is_openwrt()
+        && group.name == "🔰 国外流量"
         && let Some(value) = members
             .iter()
             .filter_map(Value::as_str)

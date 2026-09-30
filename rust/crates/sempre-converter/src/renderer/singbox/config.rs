@@ -7,7 +7,7 @@ use crate::{Profile, SourceSnapshot, Target, rule_provider_snapshot_id};
 use super::private_access::Resolved;
 
 pub(super) fn inbounds(profile: &Profile, target: &Target, private: &Resolved) -> Vec<Value> {
-    let local = if target.standalone {
+    let local = if target.standalone || target.is_openwrt() {
         Vec::new()
     } else {
         local_inbounds(profile)
@@ -126,14 +126,15 @@ pub(super) fn route(
     let mut route = json!({
         "rules": rules,
         "rule_set": rule_sets,
-        "final": final_outbound,
-        "find_process": true
+        "final": final_outbound
     });
-    if target.version != "11" {
-        route["default_domain_resolver"] =
-            json!({ "server": "bootstrap", "strategy": "ipv4_only" });
+    if !target.is_openwrt() {
+        route["find_process"] = json!(true);
     }
-    if target.platform != "default" || profile.transparent_proxy.mode == "tun-router" {
+    if target.version != "11" {
+        route["default_domain_resolver"] = json!({ "server": if target.is_openwrt() { "local" } else { "bootstrap" }, "strategy": "ipv4_only" });
+    }
+    if target.is_desktop() || profile.transparent_proxy.mode == "tun-router" {
         route["auto_detect_interface"] = json!(true);
     }
     route
@@ -207,7 +208,7 @@ fn custom_route_rule(line: &str) -> Option<Value> {
 }
 
 pub(super) fn experimental(profile: &Profile, target: &Target, store_fakeip: bool) -> Value {
-    let desktop = target.standalone && target.platform != "default";
+    let desktop = target.standalone && target.is_desktop();
     let external_controller = if desktop {
         loopback_controller(&profile.management_api.external_controller)
     } else {
@@ -218,7 +219,7 @@ pub(super) fn experimental(profile: &Profile, target: &Target, store_fakeip: boo
     } else {
         profile.management_api.external_ui.clone()
     };
-    json!({
+    let mut result = json!({
         "cache_file": {
             "enabled": true, "path": "cache.db",
             "store_fakeip": store_fakeip, "store_rdrc": false
@@ -229,7 +230,13 @@ pub(super) fn experimental(profile: &Profile, target: &Target, store_fakeip: boo
             "secret": profile.management_api.secret,
             "default_mode": "rule"
         }
-    })
+    });
+    if target.is_openwrt() {
+        result["clash_api"]["external_ui_download_url"] = json!(
+            "https://gh-proxy.org/https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
+        );
+    }
+    result
 }
 
 fn loopback_controller(value: &str) -> String {

@@ -40,6 +40,9 @@ impl Target {
         } else if let Some(stripped) = value.strip_suffix("-macos") {
             value = stripped;
             target.platform = "macos".into();
+        } else if let Some(stripped) = value.strip_suffix("-openwrt") {
+            value = stripped;
+            target.platform = "openwrt".into();
         }
         target.version = match value {
             "sing-box" => "11",
@@ -50,6 +53,14 @@ impl Target {
         }
         .into();
         Ok(target)
+    }
+
+    pub fn is_desktop(&self) -> bool {
+        matches!(self.platform.as_str(), "windows" | "macos")
+    }
+
+    pub fn is_openwrt(&self) -> bool {
+        self.platform == "openwrt"
     }
 }
 

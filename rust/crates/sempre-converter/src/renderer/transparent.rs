@@ -11,7 +11,7 @@ pub(super) fn sing_box_inbounds(
     target: &Target,
     private_capture_cidrs: &[String],
 ) -> Vec<Value> {
-    if target.platform != "default" {
+    if target.is_desktop() {
         let mut inbound = json!({
             "type": "tun", "tag": "tun-in", "address": ["172.19.0.1/30"],
             "auto_route": true, "strict_route": true, "stack": "mixed"

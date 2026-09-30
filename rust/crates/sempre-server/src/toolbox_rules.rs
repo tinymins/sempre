@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     routing::get,
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -16,6 +17,10 @@ use crate::{
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
+        .route(
+            "/api/proxy/sing-box/convert/rule/{version}/{source}",
+            get(rule_path),
+        )
         .route("/api/proxy/sing-box/convert/rule", get(rule_v11))
         .route("/api/proxy/sing-box/convert/rule/12", get(rule_v12))
         .route("/api/proxy/sing-box/convert/rule/13", get(rule_v13))
@@ -25,6 +30,24 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
 #[derive(Deserialize)]
 struct RuleQuery {
     url: String,
+}
+
+async fn rule_path(
+    State(state): State<Arc<AppState>>,
+    Path((version, source)): Path<(String, String)>,
+) -> Result<Json<Value>, ApiError> {
+    let version = match version.as_str() {
+        "1.11" => 1,
+        "1.12" => 3,
+        "1.13" | "1.14" => 4,
+        _ => return Err(ApiError::not_found("rule-set version")),
+    };
+    let source = URL_SAFE_NO_PAD
+        .decode(source)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .ok_or_else(|| ApiError::bad_request("invalid rule source encoding"))?;
+    convert(&state, &source, version).await
 }
 
 async fn rule_v11(

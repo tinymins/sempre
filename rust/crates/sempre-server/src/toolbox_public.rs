@@ -15,11 +15,12 @@ use sha2::{Digest, Sha256};
 use sqlx::{Row as _, postgres::PgRow};
 use uuid::Uuid;
 
-use sempre_converter::{Target, available_targets, compile};
+use sempre_converter::{Target, compile};
 
 use crate::{
     AppState,
     error::ApiError,
+    export_target::{available as available_targets, from_path as suffix_target},
     source_cache::CacheMode,
     subscription_compile::{PrepareOptions, PreparedInput, prepare_local, prepare_with_local},
     subscriptions::{SubscriptionFields, row_fields},
@@ -416,37 +417,6 @@ async fn record_access(
     } else {
         tracing::warn!(subscribe_id=%id, "access log write failed");
     }
-}
-
-fn suffix_target(suffix: &str) -> Option<Target> {
-    let suffix = suffix.trim_start_matches('/');
-    let format = if let Some(rest) = suffix.strip_prefix("sing-box/") {
-        let mut parts = rest.split('/').filter(|part| !part.is_empty());
-        let first = parts.next();
-        let (version, platform) = match first {
-            Some("12" | "13" | "14") => (first.unwrap_or_default(), parts.next()),
-            Some("windows" | "macos") => ("", first),
-            _ => return None,
-        };
-        if parts.next().is_some() || platform.is_some_and(|p| !matches!(p, "windows" | "macos")) {
-            return None;
-        }
-        format!(
-            "sing-box{}{}",
-            if version.is_empty() {
-                String::new()
-            } else {
-                format!("-v{version}")
-            },
-            platform.map_or_else(String::new, |p| format!("-{p}"))
-        )
-    } else {
-        if suffix.contains('/') {
-            return None;
-        }
-        suffix.to_owned()
-    };
-    Target::parse(&format).ok()
 }
 
 fn response(

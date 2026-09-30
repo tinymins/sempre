@@ -1,4 +1,5 @@
 mod clash;
+mod openwrt;
 mod singbox;
 mod v2ray;
 
@@ -29,7 +30,11 @@ pub(super) fn sing_box(
     }
     let shared = SharedDns::resolve(&profile.dns);
     shared.validate(profile, target)?;
-    Ok(singbox::render(profile, proxies, target, &shared))
+    if target.is_openwrt() {
+        Ok(openwrt::render(target, &shared, &profile.dns))
+    } else {
+        Ok(singbox::render(profile, proxies, target, &shared))
+    }
 }
 
 pub(super) fn sing_box_system_inbounds(profile: &Profile, target: &Target) -> Vec<Value> {
@@ -285,7 +290,7 @@ impl SharedDns {
         }
         if self.system_takeover() {
             let frontend = managed_frontend(self, target);
-            if target.platform != "default" && !frontend {
+            if target.is_desktop() && !frontend {
                 return Err(CompileError::Render(
                     "system DNS takeover is only available for Linux system or managed desktop sing-box runtime".into(),
                 ));

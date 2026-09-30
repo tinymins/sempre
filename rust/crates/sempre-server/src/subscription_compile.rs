@@ -259,7 +259,7 @@ pub(crate) async fn prepare_local(
     let mut target =
         Target::parse(&target.format).map_err(|error| ApiError::bad_request(error.to_string()))?;
     target.standalone = true;
-    let profile = Profile {
+    let mut profile = Profile {
         name: fields
             .remark
             .clone()
@@ -268,6 +268,9 @@ pub(crate) async fn prepare_local(
         editor: crate::subscription_editor::editor(fields, &target.core),
         ..Profile::default()
     };
+    if target.is_openwrt() {
+        profile = crate::openwrt_export::prepare(&profile, &target, &state.config.public_url)?;
+    }
     let custom_nodes = load_custom_nodes(state, selected, options.viewer, options.node_scope)
         .await
         .inspect_err(|error| {
@@ -307,7 +310,7 @@ pub(crate) async fn prepare_with_local(
     .await?;
     if source_summary.enabled > 0 && source_summary.failed == source_summary.enabled {
         let manual_count = if profile.editor.servers.trim().is_empty() {
-            0
+            profile.manual_servers.len()
         } else {
             parse_jsonc_value(&profile.editor.servers)
                 .map_err(|error| ApiError::bad_request(error.to_string()))?
@@ -320,7 +323,7 @@ pub(crate) async fn prepare_with_local(
             ));
         }
     }
-    if options.include_rule_snapshots && target.core == "sing-box" {
+    if options.include_rule_snapshots && target.core == "sing-box" && !target.is_openwrt() {
         load_rule_snapshots(
             state,
             &profile,

@@ -109,7 +109,7 @@ export interface NodeTraceResult {
 
 export function targetSuffix(format: string): string | null {
   if (['clash', 'clash-meta', 'clash-rs', 'xray', 'v2ray', 'dae'].includes(format)) return format
-  const match = /^sing-box(?:-v(12|13|14))?(?:-(windows|macos))?$/.exec(format)
+  const match = /^sing-box(?:-v(12|13|14))?(?:-(openwrt|windows|macos))?$/.exec(format)
   if (!match) return null
-  return ['sing-box', match[1], match[2]].filter(Boolean).join('/')
+  return `sing-box/1.${match[1] ?? '11'}/${match[2] ?? 'openwrt'}`
 }
