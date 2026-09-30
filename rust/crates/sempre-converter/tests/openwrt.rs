@@ -152,21 +152,23 @@ fn openwrt_omits_gfw_exclusion_when_rule_set_url_is_unavailable() {
 }
 
 #[test]
-fn openwrt_keeps_private_and_cn_direct_routes_before_final_proxy() {
+fn openwrt_keeps_address_group_routes_before_final_proxy() {
     let config = render("sing-box-v13");
     let rules = config["route"]["rules"].as_array().expect("route rules");
     let private = rules
         .iter()
-        .position(|rule| rule["ip_is_private"] == true && rule["outbound"] == "direct")
-        .expect("private direct route");
+        .position(|rule| rule["ip_is_private"] == true && rule["outbound"] == "内网地址")
+        .expect("private address route");
     let cn_domain = rules
         .iter()
-        .position(|rule| rule["rule_set"] == json!(["geosite-cn"]) && rule["outbound"] == "direct")
-        .expect("CN domain direct route");
+        .position(|rule| {
+            rule["rule_set"] == json!(["geosite-cn"]) && rule["outbound"] == "中国地址"
+        })
+        .expect("CN domain address route");
     let cn_ip = rules
         .iter()
-        .position(|rule| rule["rule_set"] == json!(["geoip-cn"]) && rule["outbound"] == "direct")
-        .expect("CN IP direct route");
+        .position(|rule| rule["rule_set"] == json!(["geoip-cn"]) && rule["outbound"] == "中国地址")
+        .expect("CN IP address route");
     assert!(private < cn_domain && cn_domain < cn_ip);
     assert_eq!(config["route"]["final"], "🔰 国外流量");
 }

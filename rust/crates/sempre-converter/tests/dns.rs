@@ -319,8 +319,8 @@ fn sing_box_resolves_real_addresses_through_remote_dns_before_domestic_ip_routin
             assert!(explicit < position("geosite-cn"));
             assert_eq!(position("geosite-cn") + 2, geoip);
             assert!(geoip < position("ordinary"));
-            assert_eq!(rules[position("geosite-cn")]["outbound"], "direct");
-            assert_eq!(rules[geoip]["outbound"], "direct");
+            assert_eq!(rules[position("geosite-cn")]["outbound"], "中国地址");
+            assert_eq!(rules[geoip]["outbound"], "中国地址");
             assert_eq!(output["route"]["final"], "foreign");
             assert_eq!(output["dns"]["independent_cache"], true);
             let remote = output["dns"]["servers"]

@@ -2,6 +2,8 @@ use serde_json::{Map, Value, json};
 
 use crate::{CompileError, FieldDiff, Profile, Proxy, ProxyGroup, Target};
 
+use super::address_groups::{self, CHINA, PRIVATE};
+
 pub(super) fn render(
     profile: &Profile,
     proxies: &[Proxy],
@@ -58,12 +60,8 @@ pub(super) fn render(
         };
         rules.push(format!("RULE-SET,{},{outbound}", provider.tag));
     }
-    rules.extend([
-        "DOMAIN-SUFFIX,local,DIRECT".into(),
-        "GEOIP,LAN,DIRECT,no-resolve".into(),
-        "GEOIP,CN,DIRECT,no-resolve".into(),
-        format!("MATCH,{final_group}"),
-    ]);
+    append_address_rules(&mut rules, &mut providers);
+    rules.push(format!("MATCH,{final_group}"));
     let mut rendered_proxies = proxies.iter().map(Proxy::as_value).collect::<Vec<_>>();
     if matches!(target.core.as_str(), "mihomo" | "clash-rs")
         && profile.transparent_proxy.mode == "tproxy"
@@ -102,6 +100,24 @@ pub(super) fn render(
     Ok((content, diffs, warnings))
 }
 
+fn append_address_rules(rules: &mut Vec<String>, providers: &mut Map<String, Value>) {
+    let mut china_domains = "sempre-geosite-cn".to_owned();
+    while providers.contains_key(&china_domains) {
+        china_domains.push('_');
+    }
+    providers.insert(china_domains.clone(), json!({
+        "type": "http", "behavior": "domain",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.yaml",
+        "path": format!("./rules/{china_domains}.yaml"), "interval": 86400
+    }));
+    rules.extend([
+        format!("DOMAIN-SUFFIX,local,{PRIVATE}"),
+        format!("GEOIP,LAN,{PRIVATE},no-resolve"),
+        format!("RULE-SET,{china_domains},{CHINA}"),
+        format!("GEOIP,CN,{CHINA},no-resolve"),
+    ]);
+}
+
 fn apply_meta_options(config: &mut Value) {
     let object = config.as_object_mut().expect("object");
     object.insert("unified-delay".into(), json!(true));
@@ -124,11 +140,17 @@ fn apply_meta_options(config: &mut Value) {
 }
 
 fn groups(configured: &[ProxyGroup], names: &[String]) -> Vec<Value> {
-    if configured.is_empty() {
-        return vec![
-            json!({ "name": "proxy", "type": "select", "proxies": std::iter::once("DIRECT".into()).chain(names.iter().cloned()).collect::<Vec<String>>() }),
-        ];
-    }
+    let mut configured = if configured.is_empty() {
+        vec![ProxyGroup {
+            name: "proxy".into(),
+            group_type: "select".into(),
+            proxies: vec!["DIRECT".into()],
+            ..ProxyGroup::default()
+        }]
+    } else {
+        configured.to_vec()
+    };
+    address_groups::append_missing(&mut configured);
     configured
         .iter()
         .map(|group| {

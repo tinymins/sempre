@@ -1,3 +1,4 @@
+mod address_groups;
 mod clash;
 mod dae;
 mod dns;

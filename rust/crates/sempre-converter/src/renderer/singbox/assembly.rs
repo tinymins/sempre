@@ -143,7 +143,7 @@ fn selector_outbounds(
     names: &[String],
     target: &Target,
 ) -> Result<Vec<Value>, CompileError> {
-    let configured = if groups.is_empty() {
+    let mut configured = if groups.is_empty() {
         vec![ProxyGroup {
             name: "proxy".into(),
             group_type: "select".into(),
@@ -153,6 +153,7 @@ fn selector_outbounds(
     } else {
         groups.to_vec()
     };
+    super::super::address_groups::append_missing(&mut configured);
     let mut outbounds = Vec::new();
     for group in configured {
         if group.name.trim().is_empty() {

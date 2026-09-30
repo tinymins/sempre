@@ -113,12 +113,12 @@ fn system_switches_apply_ohmywrt_defaults_during_compilation() {
     }
     let result = compile(&input).expect("compile with system defaults");
     let document: Value = serde_yaml::from_str(&result.content).expect("valid YAML output");
-    assert_eq!(document["proxy-groups"].as_array().map(Vec::len), Some(24));
+    assert_eq!(document["proxy-groups"].as_array().map(Vec::len), Some(26));
     assert_eq!(
         document["rule-providers"]
             .as_object()
             .map(serde_json::Map::len),
-        Some(23)
+        Some(24)
     );
     assert!(result.content.contains("GoogleCIDRv2"));
 }

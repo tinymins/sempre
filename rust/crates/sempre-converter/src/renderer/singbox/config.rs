@@ -84,7 +84,7 @@ pub(super) fn route(
         &direct_modes,
         &json!({ "action": "route", "outbound": "direct" }),
     );
-    rules.push(json!({ "ip_is_private": true, "outbound": "direct" }));
+    rules.push(json!({ "ip_is_private": true, "outbound": super::super::address_groups::PRIVATE }));
     append_rule_providers(
         profile
             .rule_providers
