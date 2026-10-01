@@ -42,6 +42,9 @@ async fn command(program: &str, args: &[&str]) -> Result<Output, ServiceError> {
 async fn checked(program: &str, args: &[&str]) -> Result<(), ServiceError> {
     command(program, args).await.map(|_| ())
 }
+fn windows_failure_flag_arguments(name: &str) -> [&str; 3] {
+    ["failureflag", name, "1"]
+}
 #[allow(dead_code)]
 #[path = "../src/platform/windows.rs"]
 mod platform;
