@@ -84,6 +84,11 @@ mod tests {
         Store::new(source.clone()).initialize().unwrap();
         fs::create_dir_all(&source.resources).unwrap();
         fs::write(&source.service_executable, b"new executable").unwrap();
+        fs::write(
+            &source.web_config,
+            br#"{"schema":1,"listen":"127.0.0.1:33211"}"#,
+        )
+        .unwrap();
         crate::mark_release_directory(&source.root).unwrap();
     }
 
