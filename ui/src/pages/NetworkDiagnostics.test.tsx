@@ -32,6 +32,12 @@ const conflictReport = {
   }],
 }
 
+function diagnosticResponse() {
+  const events = conflictReport.layers.map(layer => `event: layer-completed\ndata: ${JSON.stringify({ layer })}\n\n`)
+  events.push(`event: result\ndata: ${JSON.stringify(conflictReport)}\n\n`)
+  return new Response(events.join(''), { headers: { 'Content-Type': 'text/event-stream' } })
+}
+
 describe('NetworkDiagnostics', () => {
   beforeEach(() => {
     localStorage.setItem('sempre.locale', 'en')
@@ -45,11 +51,12 @@ describe('NetworkDiagnostics', () => {
   })
 
   it('locates a FakeIP route conflict and presents actionable evidence', async () => {
-    const fetch = vi.fn(async () => Response.json(conflictReport))
+    const fetch = vi.fn(async () => diagnosticResponse())
     vi.stubGlobal('fetch', fetch)
     renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Run diagnostics' }))
 
-    expect(await screen.findByText('Issue located at the route / TUN layer')).toBeInTheDocument()
+    expect(await screen.findByText('Issue located at the route / TUN layer', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.getByText('Multiple TUN routes claim the FakeIP range')).toBeInTheDocument()
     expect(screen.getByText('198.18.0.67 → utun4 via 10.251.1.1')).toBeInTheDocument()
     expect(screen.getByText(/non-overlapping FakeIP range/)).toBeInTheDocument()
@@ -60,13 +67,14 @@ describe('NetworkDiagnostics', () => {
   })
 
   it('runs again for a user-supplied target', async () => {
-    const fetch = vi.fn(async () => Response.json(conflictReport))
+    const fetch = vi.fn(async () => diagnosticResponse())
     vi.stubGlobal('fetch', fetch)
     renderPage()
-    await screen.findByText('Problems and solutions')
+    fireEvent.click(screen.getByRole('button', { name: 'Run diagnostics' }))
+    await screen.findByText('Problems and solutions', {}, { timeout: 3000 })
 
     fireEvent.change(screen.getByLabelText('Diagnostic target'), { target: { value: 'https://example.com/' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Run diagnostics' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run again' }))
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
     expect(fetch).toHaveBeenLastCalledWith('http://sempre.test/api/v1/network/diagnostics', expect.objectContaining({
       body: JSON.stringify({ target: 'https://example.com/' }),

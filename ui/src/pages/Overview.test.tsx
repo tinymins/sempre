@@ -1,3 +1,4 @@
+import { AcmeContentBoundary } from '../components/AcmeContentBoundary'
 import { cleanup, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -128,7 +129,7 @@ describe('Overview', () => {
 function renderOverview() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <I18nProvider><SessionProvider><MemoryRouter><Overview /></MemoryRouter></SessionProvider></I18nProvider>
+      <I18nProvider><SessionProvider><AcmeContentBoundary><MemoryRouter><Overview /></MemoryRouter></AcmeContentBoundary></SessionProvider></I18nProvider>
     </QueryClientProvider>,
   )
 }

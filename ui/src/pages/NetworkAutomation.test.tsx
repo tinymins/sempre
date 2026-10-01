@@ -1,3 +1,4 @@
+import { AcmeContentBoundary } from '../components/AcmeContentBoundary'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -72,5 +73,5 @@ describe('Network automation page', () => {
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><NetworkAutomation /></SessionProvider></I18nProvider></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><AcmeContentBoundary><NetworkAutomation /></AcmeContentBoundary></SessionProvider></I18nProvider></QueryClientProvider>)
 }

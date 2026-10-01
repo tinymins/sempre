@@ -74,7 +74,7 @@ describe('ServerApp', () => {
     expect(screen.getByText('This shared profile is read-only.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
     expect(screen.queryByText('Custom node library')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Basic' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Basic information' })).toBeInTheDocument()
   })
 
   it('persists owner refresh settings and publishes immediately', async () => {
