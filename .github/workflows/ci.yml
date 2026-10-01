@@ -51,6 +51,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "WINDIVERT_PATH=$sdk" >> $env:GITHUB_ENV
           $sdk >> $env:GITHUB_PATH
+      - name: Verify Windows upgrade transactions
+        if: startsWith(matrix.name, 'windows-')
+        run: cargo test --manifest-path=rust/Cargo.toml -p sempre-bundle install::windows_resources::tests
       - run: cargo test --manifest-path=rust/Cargo.toml --workspace
       - run: cargo clippy --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings
 
