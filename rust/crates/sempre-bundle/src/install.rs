@@ -6,24 +6,33 @@ use crate::BundleError;
 
 use super::restore::{RestoreTransaction, Swap, validate_release};
 
+#[cfg(windows)]
+mod windows_resources;
+
 pub fn stage_install(source: &Layout, target: &Layout) -> Result<RestoreTransaction, BundleError> {
     validate_release(&source.root)?;
     let mut transaction = RestoreTransaction::empty();
-    for (from, to, required, executable) in [
-        (
-            &source.service_executable,
-            &target.service_executable,
-            true,
-            true,
-        ),
-        (&source.resources, &target.resources, false, false),
-        (&source.tools, &target.tools, false, false),
-        (&source.ui, &target.ui, false, false),
-    ] {
+    #[cfg(windows)]
+    windows_resources::stage(&source.resources, &target.resources, &mut transaction)?;
+    #[cfg(not(windows))]
+    transaction.operations.push(Swap::stage(
+        &source.resources,
+        &target.resources,
+        false,
+        false,
+    )?);
+    for (from, to) in [(&source.tools, &target.tools), (&source.ui, &target.ui)] {
         transaction
             .operations
-            .push(Swap::stage(from, to, required, executable)?);
+            .push(Swap::stage(from, to, false, false)?);
     }
+    // Replace the executable only after application resources are ready.
+    transaction.operations.push(Swap::stage(
+        &source.service_executable,
+        &target.service_executable,
+        true,
+        true,
+    )?);
     for (from, to, required) in [
         (&source.cores, &target.cores, false),
         (&source.configs, &target.configs, false),

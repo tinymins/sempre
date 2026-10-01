@@ -46,6 +46,7 @@ pub(super) struct Swap {
     pub(super) backup: PathBuf,
     pub(super) had_target: bool,
     pub(super) activated: bool,
+    file_backup: bool,
 }
 
 pub fn validate_snapshot(root: &Path) -> Result<(), BundleError> {
@@ -236,6 +237,7 @@ impl Swap {
             backup: unique_sibling(target, "backup"),
             had_target: false,
             activated: false,
+            file_backup: false,
         })
     }
 
@@ -246,6 +248,7 @@ impl Swap {
             staged: Some(staged),
             had_target: false,
             activated: false,
+            file_backup: false,
         }
     }
 
@@ -262,12 +265,18 @@ impl Swap {
             }
         };
         if self.had_target {
-            rename(&self.target, &self.backup, "back up deployment target")?;
+            self.file_backup =
+                self.target.is_file() && self.staged.as_ref().is_some_and(|path| path.is_file());
+            if self.file_backup {
+                copy_file(&self.target, &self.backup, false)?;
+            } else {
+                rename(&self.target, &self.backup, "back up deployment target")?;
+            }
         }
         if let Some(staged) = &self.staged
             && let Err(error) = rename(staged, &self.target, "activate deployment target")
         {
-            if self.had_target {
+            if self.had_target && !self.file_backup {
                 let _ = rename_with_retry(&self.backup, &self.target);
             }
             return Err(error);
@@ -278,7 +287,9 @@ impl Swap {
 
     fn rollback(&mut self) {
         if self.activated {
-            let _ = remove_path(&self.target);
+            if !self.file_backup {
+                let _ = remove_path(&self.target);
+            }
             if self.had_target {
                 let _ = rename_with_retry(&self.backup, &self.target);
             }
