@@ -6,6 +6,14 @@ fn render(version: &str) -> Value {
 }
 
 fn render_with_gfw(version: &str, gfw_black: bool) -> Value {
+    render_with_dns(
+        version,
+        gfw_black,
+        &json!({ "localDns": "192.0.2.53", "localDnsPort": 53 }),
+    )
+}
+
+fn render_with_dns(version: &str, gfw_black: bool, local_dns: &Value) -> Value {
     let mut profile: Profile = serde_json::from_value(json!({
         "manual_servers": [{
             "name": "example-node", "type": "socks5", "server": "edge.example.test", "port": 1080
@@ -26,6 +34,10 @@ fn render_with_gfw(version: &str, gfw_black: bool) -> Value {
         }}
     }))
     .expect("profile");
+    profile.dns["shared"]
+        .as_object_mut()
+        .expect("DNS settings")
+        .extend(local_dns.as_object().expect("local DNS settings").clone());
     if !gfw_black {
         profile.dns["shared"]
             .as_object_mut()
@@ -245,4 +257,65 @@ fn openwrt_keeps_address_group_routes_before_final_proxy() {
         .expect("CN IP address route");
     assert!(private < cn_domain && cn_domain < cn_ip);
     assert_eq!(config["route"]["final"], "🔰 国外流量");
+}
+
+#[test]
+fn openwrt_modern_preserves_selected_local_dns_upstream() {
+    let cases = [
+        (
+            json!({ "localDns": "127.0.0.1", "localDnsPort": 53 }),
+            json!({ "type": "udp", "server": "127.0.0.1", "server_port": 53 }),
+        ),
+        (
+            json!({ "localDnsTransport": "udp", "localDns": "192.0.2.53", "localDnsPort": 5353 }),
+            json!({ "type": "udp", "server": "192.0.2.53", "server_port": 5353 }),
+        ),
+        (
+            json!({ "localDnsTransport": "tls", "localDns": "192.0.2.54", "localDnsPort": 8853, "localServerName": "dns.example.test" }),
+            json!({ "type": "tls", "server": "192.0.2.54", "server_port": 8853, "tls": { "server_name": "dns.example.test" } }),
+        ),
+        (
+            json!({ "localDnsTransport": "system", "localDns": "local" }),
+            json!({ "type": "local" }),
+        ),
+    ];
+    for version in ["sing-box-v12", "sing-box-v13", "sing-box-v14"] {
+        for (settings, expected) in &cases {
+            let config = render_with_dns(version, true, settings);
+            let servers = config["dns"]["servers"].as_array().expect("DNS servers");
+            for tag in ["local", "local_v4"] {
+                let server = servers.iter().find(|server| server["tag"] == tag);
+                if tag == "local_v4" && expected["type"] == "local" {
+                    assert!(server.is_none(), "{version}: {settings}");
+                } else {
+                    let mut expected_server = expected.clone();
+                    expected_server["tag"] = json!(tag);
+                    assert_eq!(server, Some(&expected_server), "{version}: {settings}");
+                }
+            }
+            assert_eq!(config["dns"]["final"], "local", "{version}");
+            assert_eq!(
+                config["route"]["default_domain_resolver"]["server"], "local",
+                "{version}"
+            );
+            let node = config["outbounds"]
+                .as_array()
+                .expect("outbounds")
+                .iter()
+                .find(|node| node["tag"] == "example-node")
+                .expect("node");
+            assert_eq!(node["domain_resolver"]["server"], "local", "{version}");
+            let rules = config["dns"]["rules"].as_array().expect("DNS rules");
+            assert!(
+                rules.iter().any(|rule| rule["server"] == "local"),
+                "{version}"
+            );
+            assert!(
+                rules.iter().all(|rule| rule.get("server").is_none()
+                    || rule["server"] == "local"
+                    || rule["server"] == "fakeip"),
+                "{version}"
+            );
+        }
+    }
 }

@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{Profile, Proxy, Target};
 
-use super::{SharedDns, managed_frontend};
+use super::{SharedDns, managed_frontend, modern_local};
 
 const FRONTEND_DNS_INBOUND: &str = "sempre-dns-core-in";
 
@@ -131,17 +131,6 @@ fn legacy_dns(
     }
     if fakeip {
         result["fakeip"] = json!({ "enabled": true, "inet4_range": shared.fakeip_ipv4_range, "inet6_range": shared.fakeip_ipv6_range });
-    }
-    result
-}
-
-fn modern_local(tag: &str, server: &str, shared: &SharedDns) -> Value {
-    if shared.local_server().1 {
-        return json!({ "type": "local", "tag": tag });
-    }
-    let mut result = json!({ "type": shared.local_transport, "tag": tag, "server": server, "server_port": shared.local_port });
-    if shared.local_transport == "tls" && !shared.local_server_name.is_empty() {
-        result["tls"] = json!({ "server_name": shared.local_server_name });
     }
     result
 }

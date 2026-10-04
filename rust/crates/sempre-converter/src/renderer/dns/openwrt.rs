@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 
 use crate::Target;
 
-use super::SharedDns;
+use super::{SharedDns, modern_local};
 
 const PRIVATE_CIDRS: [&str; 4] = [
     "127.0.0.0/8",
@@ -16,7 +16,7 @@ pub(super) fn render(target: &Target, shared: &SharedDns, source: &Value) -> Val
     let response_matching = target.version == "14";
     let (local_dns, local_system) = shared.local_server();
     let mut servers = vec![if modern {
-        json!({ "type": "local", "tag": "local" })
+        modern_local("local", local_dns, shared)
     } else {
         json!({ "tag": "local", "address": local_dns, "detour": "direct" })
     }];
@@ -29,7 +29,7 @@ pub(super) fn render(target: &Target, shared: &SharedDns, source: &Value) -> Val
     }
     if !local_system {
         servers.push(if modern {
-            json!({ "type": "udp", "tag": "local_v4", "server": local_dns, "server_port": shared.local_port })
+            modern_local("local_v4", local_dns, shared)
         } else {
             json!({ "tag": "local_v4", "address": local_dns, "strategy": "ipv4_only", "detour": "direct" })
         });

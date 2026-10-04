@@ -3,7 +3,7 @@ mod openwrt;
 mod singbox;
 mod v2ray;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::{CompileError, Profile, Proxy, Target};
 
@@ -421,4 +421,15 @@ impl RuleSet {
             detour: string(shared, &detour_key, "direct"),
         }
     }
+}
+
+fn modern_local(tag: &str, server: &str, shared: &SharedDns) -> Value {
+    if shared.local_server().1 {
+        return json!({ "type": "local", "tag": tag });
+    }
+    let mut result = json!({ "type": shared.local_transport, "tag": tag, "server": server, "server_port": shared.local_port });
+    if shared.local_transport == "tls" && !shared.local_server_name.is_empty() {
+        result["tls"] = json!({ "server_name": shared.local_server_name });
+    }
+    result
 }
