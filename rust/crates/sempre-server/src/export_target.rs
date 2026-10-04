@@ -20,23 +20,14 @@ pub(crate) fn available() -> Vec<Target> {
 pub(crate) fn from_path(suffix: &str) -> Option<Target> {
     let parts = suffix.split('/').collect::<Vec<_>>();
     let (version, consumer) = match parts.as_slice() {
-        [format] => return parse(format).ok(),
-        ["sing-box", consumer @ ("windows" | "macos")] => ("11", *consumer),
-        ["sing-box", version @ ("12" | "13" | "14")] => (*version, "openwrt"),
+        [format @ ("clash" | "clash-meta" | "clash-rs" | "xray" | "v2ray" | "dae")] => {
+            return parse(format).ok();
+        }
         [
             "sing-box",
-            version,
+            version @ ("1.11" | "1.12" | "1.13" | "1.14"),
             consumer @ ("openwrt" | "windows" | "macos"),
-        ] => {
-            let version = match *version {
-                "1.11" => "11",
-                "1.12" | "12" => "12",
-                "1.13" | "13" => "13",
-                "1.14" | "14" => "14",
-                _ => return None,
-            };
-            (version, *consumer)
-        }
+        ] => (version.strip_prefix("1.")?, *consumer),
         _ => return None,
     };
     let version = if version == "11" {
@@ -52,7 +43,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn canonical_paths_and_legacy_aliases_share_one_target() {
+    fn canonical_paths_require_full_version_and_consumer() {
         for version in ["11", "12", "13", "14"] {
             for consumer in ["openwrt", "windows", "macos"] {
                 let target = from_path(&format!("sing-box/1.{version}/{consumer}")).unwrap();
@@ -65,7 +56,7 @@ mod tests {
                     (_, "openwrt") => format!("sing-box/{version}"),
                     _ => format!("sing-box/{version}/{consumer}"),
                 };
-                assert_eq!(from_path(&legacy).unwrap().format, target.format);
+                assert!(from_path(&legacy).is_none(), "{legacy}");
             }
         }
     }

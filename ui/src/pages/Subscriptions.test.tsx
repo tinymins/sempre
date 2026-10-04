@@ -314,7 +314,7 @@ describe('Subscriptions subscription sets', () => {
     fireEvent.change(within(dialog).getByLabelText('Subscription set name'), { target: { value: 'Team' } })
     fireEvent.click(within(dialog).getByRole('combobox'))
     fireEvent.click(await screen.findByText('Remote read-only'))
-    fireEvent.change(within(dialog).getByLabelText('Remote manifest URL'), { target: { value: 'https://server.example/api/v1/public/subscriptions/token' } })
+    fireEvent.change(within(dialog).getByLabelText('Remote manifest URL'), { target: { value: 'https://server.example/api/subscriptions/token/manifest' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
 
     expect(await screen.findByRole('tab', { name: 'Team' })).toHaveAttribute('aria-selected', 'true')
@@ -324,10 +324,10 @@ describe('Subscriptions subscription sets', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Edit on server' })).toBeEnabled()
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New subscription set' })).not.toBeInTheDocument())
-    expect(screen.getByDisplayValue('https://server.example/api/v1/public/subscriptions/token')).toHaveAttribute('readonly')
+    expect(screen.getByDisplayValue('https://server.example/api/subscriptions/token/manifest')).toHaveAttribute('readonly')
     expect(requests).toContainEqual(expect.objectContaining({
       method: 'POST',
-      body: { name: 'Team', mode: 'remote', manifest_url: 'https://server.example/api/v1/public/subscriptions/token' },
+      body: { name: 'Team', mode: 'remote', manifest_url: 'https://server.example/api/subscriptions/token/manifest' },
     }))
   })
 

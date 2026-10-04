@@ -50,7 +50,8 @@ it('labels OpenWrt links and opens debug with the selected public target', () =>
   render(<I18nProvider><ToastProvider><SubscriptionLinks subscription={subscription} targets={singBoxTargets} onClose={vi.fn()} /></ToastProvider></I18nProvider>)
 
   expect(screen.getByText('Sing-box v1.11 OpenWrt')).toBeInTheDocument()
-  expect(screen.getByText(`${window.location.origin}/api/public/proxy/public-url/sing-box/1.13/openwrt`)).toBeInTheDocument()
+  expect(screen.getByText(`${window.location.origin}/api/subscriptions/public-url/manifest`)).toBeInTheDocument()
+  expect(screen.getByText(`${window.location.origin}/api/subscriptions/public-url/sing-box/1.13/openwrt`)).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /debug saved sing-box v1\.13 openwrt/i }))
   expect(debugTarget).toHaveBeenCalledWith(selected)
   expect(screen.getByText('Debug target: sing-box-v13-openwrt')).toBeInTheDocument()

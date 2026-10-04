@@ -35,8 +35,8 @@ export function SubscriptionLinks({ subscription, targets, onClose }: { subscrip
   const toast = useToast()
   const [clearing, setClearing] = useState(false)
   const [debugTarget, setDebugTarget] = useState<Target | null>(null)
-  const base = subscription ? `${window.location.origin}/api/public/proxy/${encodeURIComponent(subscription.url)}` : ''
-  const manifestUrl = subscription ? `${window.location.origin}/api/v1/public/subscriptions/${encodeURIComponent(subscription.url)}` : ''
+  const base = subscription ? `${window.location.origin}/api/subscriptions/${encodeURIComponent(subscription.url)}` : ''
+  const manifestUrl = subscription ? `${base}/manifest` : ''
   const copy = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value)

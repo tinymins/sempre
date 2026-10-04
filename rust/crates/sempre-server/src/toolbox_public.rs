@@ -29,11 +29,10 @@ use crate::{
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/api/public/proxy/{url}/manifest", get(manifest))
-        .route("/api/public/proxy/{url}/{*suffix}", get(direct))
-        .route("/api/v1/public/subscriptions/{url}", get(manifest))
+        .route("/api/subscriptions/{url}/manifest", get(manifest))
+        .route("/api/subscriptions/{url}/{*suffix}", get(direct))
         .route(
-            "/api/v1/public/subscriptions/{url}/artifacts/{artifact_id}",
+            "/api/subscriptions/{url}/artifacts/{artifact_id}",
             get(artifact),
         )
 }
@@ -142,10 +141,7 @@ async fn manifest(
     let artifact_url = state
         .config
         .public_url
-        .join(&format!(
-            "api/v1/public/subscriptions/{url}/artifacts/{}",
-            stored.id
-        ))
+        .join(&format!("api/subscriptions/{url}/artifacts/{}", stored.id))
         .map_err(ApiError::internal)?;
     let mut edit_url = state.config.public_url.clone();
     edit_url.set_fragment(Some(&format!("/subscriptions/{}", stored.subscribe_id)));

@@ -22,7 +22,7 @@ trap cleanup EXIT
 
 request_manifest() {
   curl --fail --silent --show-error --max-time 30 \
-    "$base_url/api/v1/public/subscriptions/$stable_url?target=sing-box-v13"
+    "$base_url/api/subscriptions/$stable_url/manifest?target=sing-box-v13"
 }
 
 fetch_artifact() {
@@ -102,7 +102,7 @@ test "$(printf '%s' "$manifest_a_again" | jq -er '.artifact.sha256')" = \
   "$(printf '%s' "$manifest_a" | jq -er '.artifact.sha256')"
 current=$(patch_subscription "$current" '')
 curl --fail --silent --show-error --max-time 30 -D "$scratch/stale-headers" \
-  "$base_url/api/public/proxy/$stable_url/sing-box/13" -o "$scratch/stale.json"
+  "$base_url/api/subscriptions/$stable_url/sing-box/1.13/openwrt" -o "$scratch/stale.json"
 grep -iq '^x-sempre-stale: true' "$scratch/stale-headers"
 cmp "$scratch/a.json" "$scratch/stale.json"
 fetch_artifact "$manifest_b" "$scratch/b-after-failure.json"

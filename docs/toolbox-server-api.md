@@ -192,17 +192,24 @@ it does not start a proxy core or invent network evidence for target compilation
 
 ## Public URLs and target mapping
 
-All historical Toolbox paths use the original `proxy_subscribes.url` value.
-They must remain multi-segment routes where shown.
+Public subscription links use the saved `proxy_subscribes.url` token under
+`/api/subscriptions/{url}/`. Sing-box links require the full version and consumer.
 
-| Toolbox path suffix after `/api/public/proxy/{url}/` | Converter target |
+| Public path suffix | Converter target |
 | --- | --- |
 | `clash`, `clash-meta` | `clash`, `clash-meta` |
-| `sing-box`, `sing-box/windows`, `sing-box/macos` | `sing-box`, `sing-box-windows`, `sing-box-macos` |
-| `sing-box/12`, `sing-box/12/windows`, `sing-box/12/macos` | `sing-box-v12`, `sing-box-v12-windows`, `sing-box-v12-macos` |
-| `sing-box/13`, `sing-box/13/windows`, `sing-box/13/macos` | `sing-box-v13`, `sing-box-v13-windows`, `sing-box-v13-macos` |
-| `sing-box/14`, `sing-box/14/windows`, `sing-box/14/macos` | `sing-box-v14`, `sing-box-v14-windows`, `sing-box-v14-macos` |
+| `sing-box/1.11/openwrt` | `sing-box-openwrt` |
+| `sing-box/1.11/windows`, `sing-box/1.11/macos` | `sing-box-windows`, `sing-box-macos` |
+| `sing-box/1.12/openwrt` | `sing-box-v12-openwrt` |
+| `sing-box/1.12/windows`, `sing-box/1.12/macos` | `sing-box-v12-windows`, `sing-box-v12-macos` |
+| `sing-box/1.13/openwrt` | `sing-box-v13-openwrt` |
+| `sing-box/1.13/windows`, `sing-box/1.13/macos` | `sing-box-v13-windows`, `sing-box-v13-macos` |
+| `sing-box/1.14/openwrt` | `sing-box-v14-openwrt` |
+| `sing-box/1.14/windows`, `sing-box/1.14/macos` | `sing-box-v14-windows`, `sing-box-v14-macos` |
 | `xray`, `v2ray`, `clash-rs`, `dae` | Same-named converter target. |
+
+Short sing-box versions, omitted consumers, internal target names, and the old
+public subscription prefixes are not public URL aliases.
 
 Keep `/api/proxy/sing-box/convert/rule` and its `/12`, `/13`, and `/14` variants for
 the public rule conversion URLs embedded in generated configurations.
@@ -210,10 +217,10 @@ the public rule conversion URLs embedded in generated configurations.
 Sempre's remote subscription client also has a real consumer contract. It
 fetches a manifest URL with `?target=<converter-format>`, requires a
 `schema: 1`, `service: "sempre"`, `read_only: true` manifest, then fetches a
-same-origin artifact and checks its SHA-256. A public manifest endpoint can
-is derived from a subscription's stable `url` at
-`/api/public/proxy/{url}/manifest` or `/api/v1/public/subscriptions/{url}`, and returns an artifact link backed by
-the same current compilation service. It needs `profile` name/revision/time,
+same-origin artifact and checks its SHA-256. The public manifest endpoint is
+`/api/subscriptions/{url}/manifest`; its artifact URL uses
+`/api/subscriptions/{url}/artifacts/{artifact_id}`. Both use the same current
+compilation service. The manifest needs `profile` name/revision/time,
 `target`, artifact URL/hash/node count/time, runtime output settings, and an
 edit URL. This preserves the client contract without a user-facing publish or share
 operation. Manifest creation must persist an internal immutable artifact
