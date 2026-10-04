@@ -22,7 +22,11 @@ pub fn convert_clash_rule_set(text: &str, version: u8) -> Value {
         }
         let parts = line.splitn(3, ',').collect::<Vec<_>>();
         if parts.len() == 1 {
-            domain.push(parts[0].to_owned());
+            if let Some(suffix) = line.strip_prefix("+.") {
+                domain_suffix.push(suffix.to_owned());
+            } else {
+                domain.push(line.to_owned());
+            }
             continue;
         }
         let kind = parts[0].trim();
