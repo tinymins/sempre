@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     routing::get,
 };
 use chrono::{DateTime, Utc};
+use sempre_converter::Target;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row as _, postgres::PgRow};
@@ -325,8 +326,22 @@ async fn users(
         .map(Json)
 }
 
-async fn defaults(CurrentUser(_user): CurrentUser) -> Json<Value> {
-    Json(crate::subscription_editor::defaults())
+#[derive(Deserialize)]
+struct DefaultsQuery {
+    format: Option<String>,
+}
+
+async fn defaults(
+    CurrentUser(_user): CurrentUser,
+    Query(query): Query<DefaultsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let target = query
+        .format
+        .as_deref()
+        .map(Target::parse)
+        .transpose()
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    Ok(Json(crate::subscription_editor::defaults(target.as_ref())))
 }
 
 async fn visible_row(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result<PgRow, ApiError> {

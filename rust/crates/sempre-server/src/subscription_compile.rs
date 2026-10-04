@@ -265,7 +265,7 @@ pub(crate) async fn prepare_local(
             .clone()
             .unwrap_or_else(|| "Subscription".into()),
         log_level: fields.log_level.clone(),
-        editor: crate::subscription_editor::editor(fields, &target.core),
+        editor: crate::subscription_editor::editor(fields, &target),
         ..Profile::default()
     };
     if target.is_openwrt() {

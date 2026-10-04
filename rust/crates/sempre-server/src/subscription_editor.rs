@@ -1,11 +1,16 @@
 //! Server field names adapted to the converter's canonical editor contract.
-use sempre_converter::{EditorConfig, recommended_editor_defaults};
+use sempre_converter::{
+    EditorConfig, Target, recommended_editor_defaults, recommended_editor_defaults_for_target,
+};
 use serde_json::{Value, json};
 
 use crate::subscriptions::SubscriptionFields;
 
-pub(crate) fn defaults() -> Value {
-    let defaults = recommended_editor_defaults().editor;
+pub(crate) fn defaults(target: Option<&Target>) -> Value {
+    let defaults = target.map_or_else(
+        || recommended_editor_defaults().editor,
+        recommended_editor_defaults_for_target,
+    );
     json!({
         "ruleList": defaults.rule_list, "group": defaults.group,
         "filter": defaults.filter, "customConfig": defaults.custom_config,
@@ -13,9 +18,8 @@ pub(crate) fn defaults() -> Value {
     })
 }
 
-pub(crate) fn editor(fields: &SubscriptionFields, core: &str) -> EditorConfig {
-    let mut defaults = recommended_editor_defaults();
-    let defaults = defaults.by_core.remove(core).unwrap_or(defaults.editor);
+pub(crate) fn editor(fields: &SubscriptionFields, target: &Target) -> EditorConfig {
+    let defaults = recommended_editor_defaults_for_target(target);
     EditorConfig {
         rule_list: effective(
             fields.use_system_rule_list,
@@ -70,7 +74,7 @@ mod tests {
             };
             let server = prepare_profile(
                 &Profile {
-                    editor: editor(&fields, core),
+                    editor: editor(&fields, &target),
                     ..Profile::default()
                 },
                 &target,
@@ -115,7 +119,7 @@ mod tests {
         )
         .unwrap();
         let profile = sempre_converter::profile_from_editor(&Profile {
-            editor: editor(&fields, "mihomo"),
+            editor: editor(&fields, &Target::parse("clash-meta").unwrap()),
             ..Profile::default()
         })
         .unwrap();

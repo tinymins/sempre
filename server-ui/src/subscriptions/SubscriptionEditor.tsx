@@ -1,5 +1,5 @@
 import { EditorProvider, SubscriptionConfigEditor, sourceText, normalizeSource } from '@acme/subscription-editor'
-import { Button, Modal, Popconfirm, Spin, TextArea, useToast } from '@acme/components'
+import { Button, Modal, Popconfirm, Select, Spin, TextArea, useToast } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { parse, type ParseError } from 'jsonc-parser'
 import { ServerApiError } from '../server-api'
@@ -25,17 +25,23 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   const toast = useToast()
   const [draft, setDraft] = useState<SubscriptionDraft | null>(null)
   const [saved, setSaved] = useState<Subscription | null>(null)
-  const [defaults, setDefaults] = useState<SubscriptionDefaults | null>(null)
+  const [defaultsResult, setDefaultsResult] = useState<{ key: string; value: SubscriptionDefaults | null; error: string } | null>(null)
+  const [previewFormat, setPreviewFormat] = useState('sing-box-v13-openwrt')
+  const [defaultsRetry, setDefaultsRetry] = useState(0)
   const [users, setUsers] = useState<UserBrief[] | null>(null)
   const [tab, setTab] = useState('basic')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [defaultsError, setDefaultsError] = useState('')
   const [usersError, setUsersError] = useState('')
   const [conflict, setConflict] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [sourceDebug, setSourceDebug] = useState<{ source: Extract<SubscriptionSource, { type: 'url' }>; index: number } | null>(null)
+  const selectedFormat = targets.find(target => target.format === previewFormat)?.format ?? targets[0]?.format ?? null
+  const defaultsKey = JSON.stringify([id, selectedFormat, defaultsRetry])
+  const currentDefaults = open && defaultsResult?.key === defaultsKey ? defaultsResult : null
+  const defaults = currentDefaults?.value ?? null
+  const defaultsError = currentDefaults?.error ?? ''
 
   useEffect(() => {
     if (!open) return
@@ -48,22 +54,30 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
       })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)) })
       .finally(() => { if (active) setLoading(false) })
-    void subscriptionApi.defaults().then((next) => { if (active) setDefaults(next) })
-      .catch((reason) => { if (active) setDefaultsError(reason instanceof Error ? reason.message : String(reason)) })
     void subscriptionApi.users().then((next) => { if (active) setUsers(next) })
       .catch((reason) => { if (active) setUsersError(reason instanceof Error ? reason.message : String(reason)) })
     return () => { active = false }
   }, [open, id])
 
-  const retryDefaults = async () => {
-    setDefaultsError('')
-    try { setDefaults(await subscriptionApi.defaults()) }
-    catch (reason) { setDefaultsError(reason instanceof Error ? reason.message : String(reason)) }
-  }
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    void subscriptionApi.defaults(selectedFormat ?? undefined)
+      .then(value => { if (active) setDefaultsResult({ key: defaultsKey, value, error: '' }) })
+      .catch(reason => { if (active) setDefaultsResult({ key: defaultsKey, value: null, error: reason instanceof Error ? reason.message : String(reason) }) })
+    return () => { active = false }
+  }, [open, selectedFormat, defaultsKey])
+
   const retryUsers = async () => {
     setUsersError('')
     try { setUsers(await subscriptionApi.users()) }
     catch (reason) { setUsersError(reason instanceof Error ? reason.message : String(reason)) }
+  }
+
+  const close = () => {
+    if (saving) return
+    setDefaultsRetry(value => value + 1)
+    onClose()
   }
 
   const update = (patch: Partial<SubscriptionDraft>) => {
@@ -133,17 +147,17 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   }
 
   return (
-    <EditorProvider locale={locale}><Modal open={open} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" bodyStyle={{ display: 'flex', flexDirection: 'column' }} onCancel={() => { if (!saving) onClose() }} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
+    <EditorProvider locale={locale}><Modal open={open} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" bodyStyle={{ display: 'flex', flexDirection: 'column' }} onCancel={close} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
       <Button className="h-auto! min-h-8 min-w-0 max-w-full justify-self-start whitespace-normal text-left" disabled={!draft || targets.length === 0 || saving} onClick={() => setDebugOpen(true)}><span className="min-w-0 break-words">{t('editor.debugDraft')}</span></Button>
       <div className="flex shrink-0 gap-2">
-        <Button disabled={saving} onClick={() => { if (!saving) onClose() }}>{t('common.cancel')}</Button>
+        <Button disabled={saving} onClick={close}>{t('common.cancel')}</Button>
         <Button variant="primary" loading={saving} disabled={loading || !draft || (saved !== null && !saved.canEdit)} onClick={save}>{t('common.save')}</Button>
       </div>
     </div>}>
       {loading ? <div className="grid min-h-48 place-items-center"><Spin size="large" /></div> : null}
       {error ? <p role="alert" className="mb-3 text-sm text-red-600">{error}</p> : null}
       {id && !draft && !loading ? <Button size="small" onClick={() => void reload()}>{t('common.retry')}</Button> : null}
-      {defaultsError ? <p role="alert" className="mb-3 text-sm text-red-600">{t('editor.inherit')}: {defaultsError} <Button size="small" onClick={() => void retryDefaults()}>{t('common.retry')}</Button></p> : null}
+      {defaultsError ? <p role="alert" className="mb-3 text-sm text-red-600">{t('editor.inherit')}: {defaultsError} <Button size="small" onClick={() => setDefaultsRetry(value => value + 1)}>{t('common.retry')}</Button></p> : null}
       {usersError ? <p role="alert" className="mb-3 text-sm text-red-600">{t('editor.authorizedUsers')}: {usersError} <Button size="small" onClick={() => void retryUsers()}>{t('common.retry')}</Button></p> : null}
       {conflict ? <Popconfirm title={t('editor.reloadTitle')} description={t('editor.reloadWarning')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={reload}><Button className="mb-3" size="small">{t('editor.reloadLatest')}</Button></Popconfirm> : null}
       {draft ? <SubscriptionConfigEditor value={{ ...draft, subscribeItems: draft.subscribeItems ?? [] }} defaults={defaults} onChange={update}
@@ -151,6 +165,7 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
         nodes={(saved?.assignedCustomNodes ?? []).map(node => ({ id: node.id, name: node.name, label: `${node.name} · ${node.proxyType} · ${node.server}:${node.port}` }))}
         basicExtension={<AuthorizationFields draft={draft} users={users} canManageAuthorization={!id || Boolean(saved?.canManageAuthorization)} update={update} />}
         sourceExtension={draft.subscribeUrl !== null ? <label className="block space-y-1 text-sm">{t('editor.oldSource')}<TextArea rows={4} value={draft.subscribeUrl} onChange={event => update({ subscribeUrl: event.target.value || null })} className="font-mono text-xs" /></label> : null}
+        dnsPreviewControls={<div className="space-y-1 text-sm"><Select value={selectedFormat ?? ''} addonBefore={t('editor.defaultsPreviewFormat')} aria-label={t('editor.defaultsPreviewFormat')} options={targets.length ? targets.map(target => ({ value: target.format, label: target.format })) : [{ value: '', label: t('editor.defaultsPreviewGeneric') }]} disabled={targets.length === 0} onChange={next => setPreviewFormat(String(next))} className="w-full max-w-md" /><p className="text-xs text-[var(--muted)]">{t('editor.defaultsPreviewHint')}</p></div>}
         onDebugSource={(source, index) => { if (source.type === 'url') setSourceDebug({ source, index }) }}
       /> : null}
       {draft && debugOpen ? <SubscriptionDebug draft={draft} targets={targets} subscriptionId={saved?.id} onClose={() => setDebugOpen(false)} /> : null}

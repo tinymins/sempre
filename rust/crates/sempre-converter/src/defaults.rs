@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::{EditorConfig, Profile, ProxyGroup, RuleProvider, Target};
 
@@ -229,8 +229,32 @@ pub fn recommended_defaults(core: &str) -> Defaults {
     defaults
 }
 
+pub fn recommended_defaults_for_target(target: &Target) -> Defaults {
+    let mut defaults = recommended_defaults(&target.core);
+    if target.is_openwrt()
+        && let Some(shared) = defaults
+            .dns
+            .get_mut("shared")
+            .and_then(Value::as_object_mut)
+    {
+        shared.extend(openwrt_dns_defaults());
+    }
+    defaults
+}
+
+pub(crate) fn openwrt_dns_defaults() -> Map<String, Value> {
+    json!({
+        "localDns": "127.0.0.1", "localDnsTransport": "udp", "localDnsPort": 53,
+        "localServerName": "", "dnsListenPort": 1053, "tproxyPort": 7893,
+        "clashApiPort": 9999, "clashApiSecret": "123456", "clashApiUiPath": "/etc/sb/ui",
+    })
+    .as_object()
+    .expect("OpenWrt defaults are an object")
+    .clone()
+}
+
 pub fn effective_profile(mut profile: Profile, target: &Target) -> Profile {
-    let defaults = recommended_defaults(&target.core);
+    let defaults = recommended_defaults_for_target(target);
     if enabled(&profile, "use_system_groups") {
         profile.groups = defaults.groups;
     }
@@ -256,6 +280,10 @@ pub fn recommended_editor_defaults() -> EditorDefaults {
         .map(|core| (core.into(), editor_config(&recommended_defaults(core))))
         .collect();
     EditorDefaults { editor, by_core }
+}
+
+pub fn recommended_editor_defaults_for_target(target: &Target) -> EditorConfig {
+    editor_config(&recommended_defaults_for_target(target))
 }
 
 fn group(name: &str, proxies: &[&str], include_all: bool, readonly: bool) -> ProxyGroup {

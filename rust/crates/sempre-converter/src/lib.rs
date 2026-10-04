@@ -12,8 +12,9 @@ mod rule_set;
 mod target;
 
 pub use defaults::{
-    Defaults, EditorDefaults, effective_profile, recommended_defaults, recommended_editor_defaults,
-    system_defaults,
+    Defaults, EditorDefaults, effective_profile, recommended_defaults,
+    recommended_defaults_for_target, recommended_editor_defaults,
+    recommended_editor_defaults_for_target, system_defaults,
 };
 pub use domain_policy::{DnsFrontendPolicy, apply_dns_frontend_settings, dns_frontend_policy};
 pub use editor::parse_jsonc_value;

@@ -21,13 +21,14 @@ interface Props {
   onActiveKeyChange?: (key: string) => void
   basicExtension?: ReactNode
   sourceExtension?: ReactNode
+  dnsPreviewControls?: ReactNode
   onDebugSource?: (source: EditorSource, index: number) => void
   extraTabs?: { key: string; label: string; children: ReactNode }[]
   dnsOptions?: Pick<DnsConfigEditorProps, 'features' | 'systemDnsListenHostOptions'>
   privateAccessOptions?: Pick<PrivateAccessEditorProps, 'renderTransport' | 'renderHomeNetwork'>
 }
 
-export function SubscriptionConfigEditor({ value, defaults, onChange: emitChange, nodes, features, protocolCount, readOnly, activeKey, onActiveKeyChange, basicExtension, sourceExtension, onDebugSource, extraTabs = [], dnsOptions, privateAccessOptions }: Props) {
+export function SubscriptionConfigEditor({ value, defaults, onChange: emitChange, nodes, features, protocolCount, readOnly, activeKey, onActiveKeyChange, basicExtension, sourceExtension, dnsPreviewControls, onDebugSource, extraTabs = [], dnsOptions, privateAccessOptions }: Props) {
   const { t } = useEditorI18n()
   const onChange = (patch: Partial<EditorDraft>) => { if (!readOnly) emitChange(patch) }
   const [localKey, setLocalKey] = useState('basic')
@@ -52,6 +53,7 @@ export function SubscriptionConfigEditor({ value, defaults, onChange: emitChange
 
   return <div className="flex min-h-[24rem] min-w-0 flex-1 flex-col gap-5">
     <div className="shrink-0 overflow-x-auto"><Tabs items={tabs.map(({ key, label }) => ({ key, label }))} type="segment" activeKey={current} onChange={key => { setLocalKey(key); onActiveKeyChange?.(key) }} /></div>
+    {current === 'dnsConfig' ? dnsPreviewControls : null}
     <fieldset disabled={readOnly} className="m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0">
       <div hidden={current !== 'basic'} className={current === 'basic' ? 'space-y-4' : 'hidden'}>
         <label className="block space-y-1 text-sm">{t('editor.remark')}<TextArea rows={3} value={value.remark ?? ''} onChange={event => onChange({ remark: event.target.value })} /></label>

@@ -17,7 +17,7 @@ export const subscriptionApi = {
   }),
   remove: (id: string) => serverRequest<void>(`${base}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   clearCache: (id: string) => serverRequest<{ cleared: number }>(`${base}/clear-cache`, { method: 'POST', body: JSON.stringify({ id }) }),
-  defaults: () => serverRequest<SubscriptionDefaults>('/subscription-defaults'),
+  defaults: (format?: string) => serverRequest<SubscriptionDefaults>(`/subscription-defaults${format ? `?format=${encodeURIComponent(format)}` : ''}`),
   users: () => serverRequest<UserBrief[]>('/users'),
   targets: () => serverRequest<Target[]>('/targets'),
   stats: (id: string, page = 1, pageSize = 20) => serverRequest<AccessStats>(`${base}/${encodeURIComponent(id)}/stats?page=${page}&pageSize=${pageSize}`),

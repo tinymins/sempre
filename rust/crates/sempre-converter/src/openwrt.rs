@@ -1,8 +1,6 @@
 //! `OpenWrt` exports consume the router's listener and dashboard settings.
+use crate::{CompileError, Profile};
 use serde::Deserialize;
-use serde_json::Value;
-
-use crate::{CompileError, Profile, parse_jsonc_value};
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,13 +13,26 @@ struct Settings {
 }
 
 pub(crate) fn apply(input: &Profile, profile: &mut Profile) -> Result<(), CompileError> {
-    let dns = if input.editor.dns_config.trim().is_empty() {
-        input.dns.clone()
-    } else {
-        parse_jsonc_value(&input.editor.dns_config)?
-    };
+    if !profile.dns.is_object() {
+        profile.dns = serde_json::json!({});
+    }
+    let shared = profile
+        .dns
+        .as_object_mut()
+        .expect("DNS object")
+        .entry("shared")
+        .or_insert_with(|| serde_json::json!({}));
+    if !shared.is_object() {
+        *shared = serde_json::json!({});
+    }
+    let shared = shared.as_object_mut().expect("shared DNS object");
+    for (key, value) in crate::defaults::openwrt_dns_defaults() {
+        shared.entry(key).or_insert(value);
+    }
     let settings: Settings = serde_json::from_value(
-        dns.get("shared")
+        profile
+            .dns
+            .get("shared")
             .cloned()
             .unwrap_or_else(|| serde_json::json!({})),
     )
@@ -72,12 +83,6 @@ pub(crate) fn apply(input: &Profile, profile: &mut Profile) -> Result<(), Compil
         profile.management_api.external_ui = path;
     } else if profile.management_api.external_ui.is_empty() {
         profile.management_api.external_ui = "/etc/sb/ui".into();
-    }
-    if let Some(url) = dns
-        .pointer("/shared/gfwBlackRuleSetUrl")
-        .and_then(Value::as_str)
-    {
-        profile.dns["shared"]["gfwBlackRuleSetUrl"] = url.into();
     }
     Ok(())
 }

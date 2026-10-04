@@ -31,11 +31,13 @@ export const DnsEditor = ({ value, onChange, readOnly, features, systemDnsListen
     if (!readOnly && !invalid) onChange?.(updateDnsField(value, field, next ?? undefined));
   };
   const hasOverrides = current.object?.overrides !== undefined;
+  const hasAdditionalFields = Object.keys(shared).some((field) => !(field in DnsSharedConfigSchema.shape))
+    || Object.keys(current.object ?? {}).some((field) => field !== "shared" && field !== "overrides");
   return <div className="space-y-4">
     {invalid ? <p role="alert" className="text-sm text-red-600">{t("editor.invalidObject")}</p> : null}
     <SharedForm merged={merged} readOnly={readOnly || invalid} features={features} systemDnsListenHostOptions={systemDnsListenHostOptions} onFieldChange={change} />
     {hasOverrides ? <p className="text-xs text-[var(--muted)]">{t("dns.fallbackHint")}</p> : null}
-    {hasOverrides || invalid ? <Collapse items={[{ key: 'document', label: t('filter.advanced'), children: <CodeEditor ariaLabel={t('editor.tabDns')} value={value ?? ''} readOnly={readOnly} onChange={onChange} height={320} /> }]} /> : null}
+    {hasOverrides || hasAdditionalFields || invalid ? <Collapse items={[{ key: 'document', label: t('filter.advanced'), children: <CodeEditor ariaLabel={t('editor.tabDns')} value={value ?? ''} readOnly={readOnly} onChange={onChange} height={320} /> }]} /> : null}
   </div>;
 };
 
