@@ -105,6 +105,13 @@ pub(super) fn route(
     let (dns_rule_sets, dns_routes) = super::super::dns::sing_box_route_policy(profile, target);
     rule_sets.extend(dns_rule_sets);
     rules.extend(dns_routes);
+    if target.is_openwrt() {
+        let mut bittorrent = json!({ "protocol": "bittorrent", "outbound": "direct" });
+        if target.version != "11" {
+            bittorrent["action"] = json!("route");
+        }
+        rules.push(bittorrent);
+    }
     append_rule_providers(
         profile
             .rule_providers
