@@ -77,6 +77,11 @@ fn default_rule_providers() -> Vec<RuleProvider> {
 fn default_rule_providers_primary() -> Vec<RuleProvider> {
     vec![
         provider(
+            "AI",
+            "🤖 AI",
+            "https://raw.githubusercontent.com/dler-io/Rules/refs/heads/main/Clash/Provider/AI%20Suite.yaml",
+        ),
+        provider(
             "AppleApns",
             "🍎 苹果APNs",
             "https://raw.githubusercontent.com/ohmywrt/clash-rule/refs/heads/master/AppleAPNs.yaml",
@@ -110,11 +115,6 @@ fn default_rule_providers_primary() -> Vec<RuleProvider> {
             "ChatGPT-IOS",
             "🤖 ChatGPT-IOS",
             "https://raw.githubusercontent.com/ohmywrt/clash-rule/refs/heads/master/chatgpt-ios.yaml",
-        ),
-        provider(
-            "AI",
-            "🤖 AI",
-            "https://raw.githubusercontent.com/dler-io/Rules/refs/heads/main/Clash/Provider/AI%20Suite.yaml",
         ),
         provider(
             "GitHub",
@@ -319,7 +319,7 @@ mod tests {
         assert_eq!(defaults.filters, ["官网", "客服", "qq群"]);
         assert_eq!(defaults.groups[0].name, FOREIGN);
         assert_eq!(defaults.groups[23].name, "⚓️ 其他流量");
-        assert_eq!(defaults.rule_providers[0].tag, "AppleApns");
+        assert_eq!(defaults.rule_providers[0].tag, "AI");
         assert_eq!(defaults.rule_providers[22].tag, "AD");
     }
 

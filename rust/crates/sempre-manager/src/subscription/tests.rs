@@ -478,13 +478,13 @@ fn config_build_schema_invalidates_legacy_target_key() {
     let profile = Profile::default();
     let target = Target::parse("sing-box-v14-macos").expect("target");
     let build = config_build(&profile, &target, &manager.dns_settings()).expect("build");
-    for schema in 1..=11 {
+    for schema in 1..=12 {
         let mut legacy = build.clone();
         legacy.target_key = format!(
             "{}|build:{schema}",
             build
                 .target_key
-                .strip_suffix("|build:12")
+                .strip_suffix("|build:13")
                 .expect("schema suffix")
         );
 
