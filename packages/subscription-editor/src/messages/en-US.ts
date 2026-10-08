@@ -155,7 +155,7 @@ export default {
   "private.dnsPort": "Private DNS port",
   "private.tailscaleHint": "Edit the Tailscale endpoint in advanced JSONC.",
   "private.unsupported": "Type {type} is not supported by this target. Its original content remains in JSONC.",
-  "private.invalid": "“connectors” must be an array. Fix it in advanced JSONC.",
+  "private.invalid": "Private access configuration is invalid. Structured controls are unavailable.",
   "proxy.form.dnsConfigLabel": "DNS Config",
   "proxy.form.dnsLocalDns": "Local DNS",
   "proxy.form.dnsLocalDnsPort": "Local DNS Port",

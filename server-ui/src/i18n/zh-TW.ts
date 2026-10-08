@@ -225,7 +225,7 @@ export const zhTW = {
   "private.dnsPort": "專用 DNS 連接埠",
   "private.tailscaleHint": "Tailscale 的 endpoint 請在進階 JSONC 中編輯。",
   "private.unsupported": "類型 {type} 目前不受目標格式支援；原始內容保留在 JSONC 中。",
-  "private.invalid": "connectors 必須是陣列，請先在進階 JSONC 中修正。",
+  "private.invalid": "私人網路存取設定無效，暫時無法使用表單編輯。",
   "links.title": "訂閱連結 · {name}",
   "links.stableHint": "連結使用訂閱的穩定識別碼，儲存設定後無需重新產生。",
   "links.manifest": "Sempre 客戶端訂閱",

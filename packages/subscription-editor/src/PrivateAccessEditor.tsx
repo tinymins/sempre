@@ -1,7 +1,5 @@
 import {
   Button,
-  CodeEditor,
-  Collapse,
   Checkbox,
   DeleteOutlined,
   ImportOutlined,
@@ -15,7 +13,6 @@ import {
 } from "@acme/components";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useEditorI18n as useTranslation } from "./i18n";
-import { useEditorLayout } from './layout';
 import { editJsonc, readJsoncObject } from "./jsonc";
 import { appendConnector, patchConnector } from "./private-edit";
 import { FieldLabel, connectorTypeLabel } from "./private-labels";
@@ -38,7 +35,6 @@ export interface PrivateAccessEditorProps {
 }
 
 export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport, renderHomeNetwork, variant = "default" }: PrivateAccessEditorProps) => {
-  const page = useEditorLayout() === 'page';
   const { t } = useTranslation();
   const [state, setState] = useState(() => parseConfig(value));
   const [importIndex, setImportIndex] = useState<number | null>(null);
@@ -387,7 +383,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
         {t("proxy.form.addPrivateConnector")}
       </Button>
       </fieldset>
-      <Collapse items={[{ key: "document", label: t("filter.advanced"), children: <CodeEditor appearance={page ? 'plain' : 'panel'} readOnly={readOnly} ariaLabel={t("editor.tabPrivate")} value={value ?? ""} height={page ? 'calc(100vh - 280px)' : 320} onChange={onChange} /> }]} />
       <WireGuardImportModal
         open={importIndex !== null}
         onCancel={() => setImportIndex(null)}

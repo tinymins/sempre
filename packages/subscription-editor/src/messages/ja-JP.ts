@@ -155,7 +155,7 @@ export default {
   "private.dnsPort": "専用 DNS ポート",
   "private.tailscaleHint": "Tailscale の endpoint は高度な JSONC で編集してください。",
   "private.unsupported": "種類 {type} はこの対象形式ではサポートされません。元の内容は JSONC に保持されます。",
-  "private.invalid": "connectors は配列である必要があります。高度な JSONC で修正してください。",
+  "private.invalid": "プライベートネットワークの設定が無効です。フォームでの編集は利用できません。",
   "proxy.form.dnsConfigLabel": "DNS 設定",
   "proxy.form.dnsLocalDns": "ローカル DNS",
   "proxy.form.dnsLocalDnsPort": "ローカル DNS ポート",

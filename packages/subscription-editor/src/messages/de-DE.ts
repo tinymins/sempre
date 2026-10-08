@@ -155,7 +155,7 @@ export default {
   "private.dnsPort": "Privater DNS-Port",
   "private.tailscaleHint": "Bearbeite den Tailscale-Endpunkt im erweiterten JSONC.",
   "private.unsupported": "Typ {type} wird vom Zielformat derzeit nicht unterstützt. Der ursprüngliche Inhalt bleibt im JSONC erhalten.",
-  "private.invalid": "„connectors“ muss ein Array sein. Korrigiere es im erweiterten JSONC.",
+  "private.invalid": "Die Konfiguration für private Netzwerke ist ungültig. Die Formularbearbeitung ist nicht verfügbar.",
   "proxy.form.dnsConfigLabel": "DNS-Konfiguration",
   "proxy.form.dnsLocalDns": "Lokales DNS",
   "proxy.form.dnsLocalDnsPort": "Lokaler DNS-Port",

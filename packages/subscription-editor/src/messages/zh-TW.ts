@@ -155,7 +155,7 @@ export default {
   "private.dnsPort": "專用 DNS 連接埠",
   "private.tailscaleHint": "Tailscale 的 endpoint 請在進階 JSONC 中編輯。",
   "private.unsupported": "類型 {type} 目前不受目標格式支援；原始內容保留在 JSONC 中。",
-  "private.invalid": "connectors 必須是陣列，請先在進階 JSONC 中修正。",
+  "private.invalid": "私人網路存取設定無效，暫時無法使用表單編輯。",
   "proxy.form.dnsConfigLabel": "DNS 設定",
   "proxy.form.dnsLocalDns": "本地 DNS",
   "proxy.form.dnsLocalDnsPort": "本地 DNS 連接埠",

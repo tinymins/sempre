@@ -223,7 +223,7 @@ export const zhCN = {
   'private.dnsPort': '专用 DNS 端口',
   'private.tailscaleHint': 'Tailscale 的 endpoint 请在高级 JSONC 中编辑。',
   'private.unsupported': '类型 {type} 当前不受目标格式支持；原始内容保留在 JSONC 中。',
-  'private.invalid': 'connectors 必须是数组，请先在高级 JSONC 中修正。',
+  'private.invalid': '内网访问配置无效，暂时无法使用表单编辑。',
   'links.title': '订阅链接 · {name}',
   'links.stableHint': '链接使用订阅的稳定标识，保存配置后无需重新生成。',
   'links.manifest': 'Sempre 客户端订阅',

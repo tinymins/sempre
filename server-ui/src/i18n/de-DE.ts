@@ -225,7 +225,7 @@ export const deDE = {
   "private.dnsPort": "Privater DNS-Port",
   "private.tailscaleHint": "Bearbeite den Tailscale-Endpunkt im erweiterten JSONC.",
   "private.unsupported": "Typ {type} wird vom Zielformat derzeit nicht unterstützt. Der ursprüngliche Inhalt bleibt im JSONC erhalten.",
-  "private.invalid": "„connectors“ muss ein Array sein. Korrigiere es im erweiterten JSONC.",
+  "private.invalid": "Die Konfiguration für private Netzwerke ist ungültig. Die Formularbearbeitung ist nicht verfügbar.",
   "links.title": "Abonnementlinks · {name}",
   "links.stableHint": "Links verwenden die stabile Kennung des Abonnements; nach dem Speichern müssen sie nicht neu erzeugt werden.",
   "links.manifest": "Sempre-Client-Abonnement",
