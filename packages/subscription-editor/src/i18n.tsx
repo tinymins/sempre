@@ -6,18 +6,18 @@ import ja from './messages/ja-JP'
 import de from './messages/de-DE'
 
 const messages: Record<string, Record<string, string>> = { 'zh-CN': zh, 'en-US': en, en, 'zh-TW': tw, 'ja-JP': ja, 'de-DE': de }
-const LocaleContext = createContext('en-US')
+const LocaleContext = createContext({ locale: 'en-US', messages: {} as Record<string, string> })
 
-export function EditorProvider({ locale, children }: { locale: string; children: ReactNode }) {
-  return <LocaleContext.Provider value={locale}>{children}</LocaleContext.Provider>
+export function EditorProvider({ locale, messages = {}, children }: { locale: string; messages?: Record<string, string>; children: ReactNode }) {
+  return <LocaleContext.Provider value={{ locale, messages }}>{children}</LocaleContext.Provider>
 }
 
 export function useEditorI18n() {
-  const locale = useContext(LocaleContext)
+  const { locale, messages: overrides } = useContext(LocaleContext)
   const dictionary = messages[locale] ?? en
   return {
     t: (key: string, values: Record<string, string | number> = {}) =>
-      Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{{${name}}}`, String(value)).replaceAll(`{${name}}`, String(value)), dictionary[key] ?? key),
+      Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{{${name}}}`, String(value)).replaceAll(`{${name}}`, String(value)), overrides[key] ?? dictionary[key] ?? key),
     number: (value: number) => new Intl.NumberFormat(locale).format(value),
   }
 }

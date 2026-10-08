@@ -1,4 +1,4 @@
-import { Button, Checkbox, CodeEditor, Empty, Modal } from '@acme/components'
+import { Button, Checkbox, CodeEditor, Empty, Form, Modal, Select, Tag } from '@acme/components'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -7,11 +7,13 @@ import { parse, type ParseError } from 'jsonc-parser'
 import { useState } from 'react'
 import { useEditorI18n as useI18n } from './i18n'
 import type { ConfigDraft } from './model'
+import { useEditorLayout } from './layout'
 
 export interface EditorNode { id: string; name: string; label: string }
 
 export function ManualNodesEditor({ readOnly, draft, nodes: assignedNodes, update }: { readOnly?: boolean; draft: Pick<ConfigDraft, 'servers' | 'selectedCustomNodeIds'>; nodes: EditorNode[]; update: (patch: Partial<ConfigDraft>) => void }) {
   const { t, number } = useI18n()
+  const page = useEditorLayout() === 'page'
   const [manualOpen, setManualOpen] = useState(false)
   const [manualDraft, setManualDraft] = useState('')
   const [manualError, setManualError] = useState(false)
@@ -37,7 +39,7 @@ export function ManualNodesEditor({ readOnly, draft, nodes: assignedNodes, updat
   }
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-sm"><span>{t('editor.selectedNodes')}</span><span className="text-[var(--muted)]">{number(draft.selectedCustomNodeIds.length)} / {number(nodeIds.length)}</span></div>
+      {page ? <Form.Item label={t('editor.selectedNodes')} tooltip={t('editor.nodesHelp')}><Select mode="multiple" value={draft.selectedCustomNodeIds} options={assignedNodes.map(node => ({ value: node.id, label: node.label, tagLabel: node.name }))} disabled={readOnly} onChange={next => { if (!readOnly) update({ selectedCustomNodeIds: next as string[] }) }} showSearch placeholder={t('editor.nodesPlaceholder')} /></Form.Item> : <><div className="flex items-center gap-2 text-sm"><span>{t('editor.selectedNodes')}</span><span className="text-[var(--muted)]">{number(draft.selectedCustomNodeIds.length)} / {number(nodeIds.length)}</span></div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active, over }) => {
         if (readOnly || !over || active.id === over.id) return
         const next = arrayMove(nodeIds, nodeIds.indexOf(String(active.id)), nodeIds.indexOf(String(over.id)))
@@ -46,14 +48,14 @@ export function ManualNodesEditor({ readOnly, draft, nodes: assignedNodes, updat
       }}><SortableContext items={nodeIds} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">{nodeIds.map((id, index) => <SortableNode key={id} id={id} index={index} node={assignedNodes.find(node => node.id === id)} checked={draft.selectedCustomNodeIds.includes(id)} disabled={readOnly} onChange={checked => select(id, checked)} />)}</div>
       </SortableContext></DndContext>
-      {nodeIds.length === 0 ? <Empty description={t('common.noData')} /> : null}
-      <div className="flex items-center gap-2 border-t border-[var(--border)] pt-4 text-sm">
-        <span>{t('editor.manualServers')}</span>
-        <span className="rounded bg-[var(--surface)] px-2 py-0.5">{number(manualCount)}</span>
+      {nodeIds.length === 0 ? <Empty description={t('common.noData')} /> : null}</>}
+      <div className={page ? 'mt-6 flex items-center gap-2' : 'flex items-center gap-2 border-t border-[var(--border)] pt-4 text-sm'}>
+        <span className={page ? 'text-sm text-[var(--text-secondary)]' : undefined}>{t('editor.manualServers')}</span>
+        {page ? <Tag>{manualCount}</Tag> : <span className="rounded bg-[var(--surface)] px-2 py-0.5">{number(manualCount)}</span>}
         <Button size="small" variant="link" onClick={openManual}>{t('common.edit')}</Button>
       </div>
-      <Modal open={manualOpen} title={t('editor.manualServers')} onCancel={() => setManualOpen(false)} onOk={saveManual} okText={t('common.save')} cancelText={t('common.cancel')} size="large" style={{ height: 'min(760px, calc(100dvh - 32px))' }} bodyStyle={{ display: 'flex', flexDirection: 'column' }} destroyOnClose>
-        <div className="flex min-h-[20rem] flex-1 flex-col"><CodeEditor readOnly={readOnly} value={manualDraft} onChange={(next) => { setManualDraft(next); setManualError(false) }} ariaLabel={t('editor.manualServers')} height="100%" /></div>
+      <Modal open={manualOpen} title={t('editor.manualServers')} onCancel={() => setManualOpen(false)} onOk={saveManual} okText={t('common.save')} cancelText={t('common.cancel')} size="large" width={page ? 900 : undefined} style={page ? undefined : { height: 'min(760px, calc(100dvh - 32px))' }} bodyStyle={page ? undefined : { display: 'flex', flexDirection: 'column' }} destroyOnClose>
+        <div className={page ? undefined : 'flex min-h-[20rem] flex-1 flex-col'}><CodeEditor readOnly={readOnly} value={manualDraft} onChange={(next) => { setManualDraft(next); setManualError(false) }} ariaLabel={t('editor.manualServers')} appearance={page ? 'plain' : 'panel'} height={page ? 'calc(100vh - 280px)' : '100%'} /></div>
         {manualError ? <p role="alert" className="mt-2 text-sm text-red-600">{t('editor.invalidJsonc', { field: t('editor.manualServers') })}</p> : null}
       </Modal>
     </div>

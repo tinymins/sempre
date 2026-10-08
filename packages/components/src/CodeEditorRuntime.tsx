@@ -13,23 +13,25 @@ Object.assign(self, { MonacoEnvironment: {
 } })
 loader.config({ monaco })
 
-export default function CodeEditorRuntime({ value, onChange, readOnly = false, height = 320, language = 'json', ariaLabel }: CodeEditorProps) {
+export default function CodeEditorRuntime({ value, onChange, readOnly = false, height = 320, language = 'json', ariaLabel, appearance = 'panel' }: CodeEditorProps) {
   const theme = useCodeEditorTheme()
-
-  return <CodePanel language={language} padded={false} className={height === '100%' ? 'acme-code-panel--fill' : undefined}>
-    <div className={height === '100%' ? 'absolute inset-0' : undefined}>
-      <Editor
+  const plain = appearance === 'plain'
+  const editor = <Editor
         height={height}
         language={language}
         value={value}
-        theme={theme}
+        theme={plain ? 'sempre-subscription' : theme}
         beforeMount={(instance: Monaco) => {
           instance.languages.json.jsonDefaults.setDiagnosticsOptions({ validate: true, allowComments: true, trailingCommas: 'ignore' })
           defineCodeEditorThemes(instance)
+          instance.editor.defineTheme('sempre-subscription', { base: 'vs-dark', inherit: true, rules: [], colors: { 'editor.background': '#141414' } })
         }}
         onChange={(next) => { if (!readOnly) onChange?.(next ?? '') }}
-        options={{ automaticLayout: true, ariaLabel, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', lineHeight: 20, padding: { top: 12, bottom: 12 }, minimap: { enabled: false }, readOnly, scrollBeyondLastLine: false, tabSize: 2, wordWrap: 'on' }}
+        options={{ automaticLayout: true, ariaLabel, fontSize: plain ? 14 : 13, fontFamily: plain ? "Menlo, Monaco, 'Courier New', monospace" : 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', lineHeight: plain ? 0 : 20, padding: { top: plain ? 0 : 12, bottom: plain ? 0 : 12 }, ...(plain ? { selectOnLineNumbers: true, renderControlCharacters: true, renderWhitespace: 'all' as const } : {}), minimap: { enabled: false }, readOnly, scrollBeyondLastLine: false, tabSize: 2, wordWrap: 'on' }}
       />
+  if (plain) return <div className={`overflow-hidden rounded border ${readOnly ? 'border-gray-500 opacity-60 dark:border-gray-500' : 'border-gray-300 dark:border-gray-600'}`}>{editor}</div>
+  return <CodePanel language={language} padded={false} className={height === '100%' ? 'acme-code-panel--fill' : undefined}>
+    <div className={height === '100%' ? 'absolute inset-0' : undefined}>{editor}
     </div>
   </CodePanel>
 }

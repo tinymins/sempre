@@ -5,6 +5,8 @@ import { AutoComplete, Button, Checkbox, CodeEditor, Input, InputNumber, Select 
 import { ArrowDown, ArrowUp, Play, Plus, Trash2 } from 'lucide-react'
 import { createSource, moveSource, sourceText, type EditorSource as SubscriptionSource } from './sources'
 import { useEditorI18n as useI18n } from './i18n'
+import { useEditorLayout } from './layout'
+import { PageSourceFields } from './PageSourceFields'
 
 interface Props {
   readOnly?: boolean
@@ -25,6 +27,7 @@ const uaPresets = [
 
 export function SourceListEditor({ readOnly, value = [], onChange, onDebug }: Props) {
   const { t, number } = useI18n()
+  const page = useEditorLayout() === 'page'
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
   const update = (index: number, patch: Partial<SubscriptionSource>) => {
     if (readOnly) return
@@ -42,7 +45,7 @@ export function SourceListEditor({ readOnly, value = [], onChange, onDebug }: Pr
         if (!readOnly && over && active.id !== over.id) onChange?.(moveSource(value, value.findIndex(item => item.id === active.id), value.findIndex(item => item.id === over.id)))
       }}><SortableContext items={value.map(item => item.id)} strategy={verticalListSortingStrategy}>
       {value.map((item, index) => (
-        <SortableSource key={item.id} id={item.id} index={index} disabled={readOnly}>{handle => <>
+        <SortableSource key={item.id} id={item.id} index={index} disabled={readOnly} enabled={item.enabled} type={item.type}>{handle => page ? <PageSourceFields source={item} index={index} readOnly={readOnly} handle={handle} uaPresets={uaPresets} update={patch => update(index, patch)} remove={() => onChange?.(value.filter((_, position) => position !== index))} debug={onDebug && item.type === 'url' ? () => onDebug(item, index) : undefined} /> : <>
           <div className="flex items-center justify-between gap-2">
             <Checkbox disabled={readOnly} checked={item.enabled} onChange={(event) => update(index, { enabled: event.target.checked })}>{t('source.enabled', { index: number(index + 1) })}</Checkbox>
             <div className="flex gap-1">{handle}
@@ -75,8 +78,8 @@ export function SourceListEditor({ readOnly, value = [], onChange, onDebug }: Pr
         </>}</SortableSource>
       ))}
       </SortableContext></DndContext>
-      <Button disabled={readOnly} icon={<Plus size={15} />} onClick={() => onChange?.([...value, createSource()])}>{t('source.add')}</Button>
-      <Button disabled={readOnly} className="ml-2" icon={<Plus size={15} />} onClick={() => onChange?.([...value, createSource('raw')])}>{t('source.addRaw')}</Button>
+      <Button disabled={readOnly} variant={page ? 'dashed' : undefined} block={page} icon={<Plus size={15} />} onClick={() => onChange?.([...value, createSource()])}>{t('source.add')}</Button>
+      <Button disabled={readOnly} variant={page ? 'dashed' : undefined} block={page} className={page ? '!mt-3' : 'ml-2'} icon={<Plus size={15} />} onClick={() => onChange?.([...value, createSource('raw')])}>{t('source.addRaw')}</Button>
     </div>
   )
 }

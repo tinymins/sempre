@@ -4,6 +4,7 @@ import { readJsoncObject, objectAt } from "./jsonc";
 import type React from "react";
 import { useMemo } from "react";
 import { useEditorI18n as useTranslation } from "./i18n";
+import { useEditorLayout } from './layout';
 
 export interface SystemDnsListenHostOption {
   value: string;
@@ -21,6 +22,7 @@ export interface DnsConfigEditorProps {
 
 export const DnsEditor = ({ value, onChange, readOnly, features, systemDnsListenHostOptions = [], defaults = "" }: DnsConfigEditorProps) => {
   const { t } = useTranslation();
+  const page = useEditorLayout() === 'page';
   const current = readJsoncObject(value);
   const base = readJsoncObject(defaults);
   const shared = current.object ? objectAt(current.object, "shared") : {};
@@ -37,7 +39,7 @@ export const DnsEditor = ({ value, onChange, readOnly, features, systemDnsListen
     {invalid ? <p role="alert" className="text-sm text-red-600">{t("editor.invalidObject")}</p> : null}
     <SharedForm merged={merged} readOnly={readOnly || invalid} features={features} systemDnsListenHostOptions={systemDnsListenHostOptions} onFieldChange={change} />
     {hasOverrides ? <p className="text-xs text-[var(--muted)]">{t("dns.fallbackHint")}</p> : null}
-    {hasOverrides || hasAdditionalFields || invalid ? <Collapse items={[{ key: 'document', label: t('filter.advanced'), children: <CodeEditor ariaLabel={t('editor.tabDns')} value={value ?? ''} readOnly={readOnly} onChange={onChange} height={320} /> }]} /> : null}
+    {hasOverrides || hasAdditionalFields || invalid ? <Collapse items={[{ key: 'document', label: t('filter.advanced'), children: <CodeEditor ariaLabel={t('editor.tabDns')} value={value ?? ''} readOnly={readOnly} onChange={onChange} height={320} appearance={page ? 'plain' : 'panel'} /> }]} /> : null}
   </div>;
 };
 
