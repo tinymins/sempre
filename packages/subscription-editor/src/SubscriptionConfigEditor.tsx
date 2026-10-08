@@ -46,6 +46,7 @@ export function SubscriptionConfigEditor({ value, defaults, onChange: emitChange
   ]
   const requested = activeKey ?? localKey
   const current = tabs.some(tab => tab.key === requested) ? requested : 'basic'
+  const extraTabActive = extraTabs.some(tab => tab.key === current)
   const inherited = (field: InheritedField) => <InheritedSection readOnly={readOnly} field={field} value={value[field]} inherited={value[inheritedFields[field].flag]} defaultValue={defaults?.[field]}
     onChange={next => onChange({ [field]: next })} onInheritanceChange={next => onChange({ [inheritedFields[field].flag]: next, [field]: next ? null : defaults?.[field] ?? '' })}>
     {field === 'dnsConfig' ? (raw, inherited) => <DnsEditor value={raw} defaults={defaults?.dnsConfig} readOnly={readOnly || inherited} onChange={dnsConfig => onChange({ dnsConfig })} {...dnsOptions} /> : undefined}
@@ -54,7 +55,7 @@ export function SubscriptionConfigEditor({ value, defaults, onChange: emitChange
   return <div className="flex min-h-[24rem] min-w-0 flex-1 flex-col gap-5">
     <div className="shrink-0 overflow-x-auto"><Tabs items={tabs.map(({ key, label }) => ({ key, label }))} type="segment" activeKey={current} onChange={key => { setLocalKey(key); onActiveKeyChange?.(key) }} /></div>
     {current === 'dnsConfig' ? dnsPreviewControls : null}
-    <fieldset disabled={readOnly} className="m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0">
+    <fieldset disabled={readOnly} hidden={extraTabActive} className={extraTabActive ? 'hidden' : 'm-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0'}>
       <div hidden={current !== 'basic'} className={current === 'basic' ? 'space-y-4' : 'hidden'}>
         <label className="block space-y-1 text-sm">{t('editor.remark')}<TextArea rows={3} value={value.remark ?? ''} onChange={event => onChange({ remark: event.target.value })} /></label>
         {supports('logging.level') ? <label className="block space-y-1 text-sm">{t('editor.logLevel')}<Select value={value.logLevel} options={['off', 'error', 'warn', 'info', 'debug'].map(level => ({ value: level, label: level }))} onChange={level => onChange({ logLevel: level as EditorDraft['logLevel'] })} className="w-full" /></label> : null}
@@ -68,6 +69,6 @@ export function SubscriptionConfigEditor({ value, defaults, onChange: emitChange
       <div hidden={current !== 'privateAccess'} className={current === 'privateAccess' ? '' : 'hidden'}><PrivateAccessEditor readOnly={readOnly} value={value.privateAccessConfig ?? ''} onChange={privateAccessConfig => onChange({ privateAccessConfig })} {...privateAccessOptions} /></div>
       <div hidden={current !== 'servers'} className={current === 'servers' ? '' : 'hidden'}><ManualNodesEditor readOnly={readOnly} draft={value} nodes={nodes} update={onChange} /></div>
     </fieldset>
-    {extraTabs.map(tab => <div key={tab.key} hidden={current !== tab.key} className={current === tab.key ? '' : 'hidden'}>{current === tab.key ? tab.children : null}</div>)}
+    {extraTabs.map(tab => <div key={tab.key} hidden={current !== tab.key} className={current === tab.key ? 'min-h-0 min-w-0 flex-1' : 'hidden'}>{current === tab.key ? tab.children : null}</div>)}
   </div>
 }

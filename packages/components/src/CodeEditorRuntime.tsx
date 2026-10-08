@@ -17,17 +17,19 @@ export default function CodeEditorRuntime({ value, onChange, readOnly = false, h
   const theme = useCodeEditorTheme()
 
   return <CodePanel language={language} padded={false} className={height === '100%' ? 'acme-code-panel--fill' : undefined}>
-    <Editor
-      height={height}
-      language={language}
-      value={value}
-      theme={theme}
-      beforeMount={(instance: Monaco) => {
-        instance.languages.json.jsonDefaults.setDiagnosticsOptions({ validate: true, allowComments: true, trailingCommas: 'ignore' })
-        defineCodeEditorThemes(instance)
-      }}
-      onChange={(next) => { if (!readOnly) onChange?.(next ?? '') }}
-      options={{ automaticLayout: true, ariaLabel, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', lineHeight: 20, padding: { top: 12, bottom: 12 }, minimap: { enabled: false }, readOnly, scrollBeyondLastLine: false, tabSize: 2, wordWrap: 'on' }}
-    />
+    <div className={height === '100%' ? 'absolute inset-0' : undefined}>
+      <Editor
+        height={height}
+        language={language}
+        value={value}
+        theme={theme}
+        beforeMount={(instance: Monaco) => {
+          instance.languages.json.jsonDefaults.setDiagnosticsOptions({ validate: true, allowComments: true, trailingCommas: 'ignore' })
+          defineCodeEditorThemes(instance)
+        }}
+        onChange={(next) => { if (!readOnly) onChange?.(next ?? '') }}
+        options={{ automaticLayout: true, ariaLabel, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', lineHeight: 20, padding: { top: 12, bottom: 12 }, minimap: { enabled: false }, readOnly, scrollBeyondLastLine: false, tabSize: 2, wordWrap: 'on' }}
+      />
+    </div>
   </CodePanel>
 }

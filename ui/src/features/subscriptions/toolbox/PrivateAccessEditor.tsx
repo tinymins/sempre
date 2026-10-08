@@ -51,5 +51,5 @@ function TransportTunnelSelect({ session, value, onChange }: { session: NonNulla
   const { t } = useTranslation();
   const tunnels = useQuery({ queryKey: ["tunnels"], queryFn: () => api<TunnelStatus>(session!, "/tunnels") });
   const options = (tunnels.data?.forwards ?? []).map((forward) => ({ value: forward.forward_id, label: `${forward.instance_name} / ${forward.forward_name} · ${forward.host}:${forward.port}` }));
-  return <label className="space-y-1 md:col-span-3"><FieldLabel>{t("proxy.form.privateTunnelForward")}</FieldLabel><Select size="small" allowClear value={value || undefined} options={options} placeholder={t("proxy.form.privateTunnelDirect")} onChange={(forwardID) => onChange(forwardID || "")} className="w-full" /></label>;
+  return <label className="space-y-1 md:col-span-3"><FieldLabel>{t("proxy.form.privateTunnelForward")}</FieldLabel><Select allowClear value={value || undefined} options={options} placeholder={t("proxy.form.privateTunnelDirect")} onChange={(forwardID) => onChange(forwardID || "")} className="w-full" /></label>;
 }

@@ -296,7 +296,7 @@ export function Subscriptions() {
                 <div className="flex flex-wrap items-end gap-3">
                   <Field label={t('compilerTarget')}>
                     <Select
-                      className="h-9 min-w-56"
+                      className="min-w-56"
                       value={format}
                       options={(catalog.data?.targets ?? []).map((target) => ({ value: target.format, label: target.format }))}
                       onChange={(value) => setFormat(value as ProxyDebugFormat)}

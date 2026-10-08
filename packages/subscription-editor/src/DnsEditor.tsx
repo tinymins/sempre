@@ -81,10 +81,10 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
         <>
           <SectionTitle title={t("proxy.form.dnsLocalSection")} />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {supported.has("dns.local_transport") ? <FieldRow label={t("proxy.form.dnsLocalTransport")}><Select size="small" value={merged.localDnsTransport} disabled={disabled} options={[{ value: "udp", label: "UDP" }, { value: "tls", label: "TLS" }, { value: "system", label: t("proxy.form.dnsLocalTransportSystem") }]} onChange={(next) => onFieldChange("localDnsTransport", next)} /></FieldRow> : null}
-            {merged.localDnsTransport !== "system" ? <FieldRow label={t("proxy.form.dnsLocalDns")}><Input size="small" value={merged.localDns} disabled={disabled} onChange={(event) => onFieldChange("localDns", event.target.value)} /></FieldRow> : null}
-            {merged.localDnsTransport !== "system" ? <FieldRow label={t("proxy.form.dnsLocalDnsPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.localDnsPort} disabled={disabled} onChange={(next) => onFieldChange("localDnsPort", next)} /></FieldRow> : null}
-            {merged.localDnsTransport === "tls" ? <FieldRow label={t("proxy.form.dnsServerName")}><Input size="small" value={merged.localServerName} disabled={disabled} onChange={(event) => onFieldChange("localServerName", event.target.value)} /></FieldRow> : null}
+            {supported.has("dns.local_transport") ? <FieldRow label={t("proxy.form.dnsLocalTransport")}><Select value={merged.localDnsTransport} disabled={disabled} options={[{ value: "udp", label: "UDP" }, { value: "tls", label: "TLS" }, { value: "system", label: t("proxy.form.dnsLocalTransportSystem") }]} onChange={(next) => onFieldChange("localDnsTransport", next)} /></FieldRow> : null}
+            {merged.localDnsTransport !== "system" ? <FieldRow label={t("proxy.form.dnsLocalDns")}><Input value={merged.localDns} disabled={disabled} onChange={(event) => onFieldChange("localDns", event.target.value)} /></FieldRow> : null}
+            {merged.localDnsTransport !== "system" ? <FieldRow label={t("proxy.form.dnsLocalDnsPort")}><InputNumber className="w-full" min={1} max={65535} value={merged.localDnsPort} disabled={disabled} onChange={(next) => onFieldChange("localDnsPort", next)} /></FieldRow> : null}
+            {merged.localDnsTransport === "tls" ? <FieldRow label={t("proxy.form.dnsServerName")}><Input value={merged.localServerName} disabled={disabled} onChange={(event) => onFieldChange("localServerName", event.target.value)} /></FieldRow> : null}
           </div>
         </>
       ) : null}
@@ -93,9 +93,9 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
         <>
           <SectionTitle title={t("proxy.form.dnsBootstrapSection")} />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <FieldRow label={t("proxy.form.dnsBootstrapDns")}><Input size="small" value={merged.bootstrapDns} disabled={disabled} onChange={(event) => onFieldChange("bootstrapDns", event.target.value)} /></FieldRow>
-            {supported.has("dns.bootstrap_port") ? <FieldRow label={t("proxy.form.dnsPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.bootstrapDnsPort} disabled={disabled} onChange={(next) => onFieldChange("bootstrapDnsPort", next)} /></FieldRow> : null}
-            {supported.has("dns.bootstrap_server_name") ? <FieldRow label={t("proxy.form.dnsServerName")} span2><Input size="small" value={merged.bootstrapServerName} disabled={disabled} onChange={(event) => onFieldChange("bootstrapServerName", event.target.value)} /></FieldRow> : null}
+            <FieldRow label={t("proxy.form.dnsBootstrapDns")}><Input value={merged.bootstrapDns} disabled={disabled} onChange={(event) => onFieldChange("bootstrapDns", event.target.value)} /></FieldRow>
+            {supported.has("dns.bootstrap_port") ? <FieldRow label={t("proxy.form.dnsPort")}><InputNumber className="w-full" min={1} max={65535} value={merged.bootstrapDnsPort} disabled={disabled} onChange={(next) => onFieldChange("bootstrapDnsPort", next)} /></FieldRow> : null}
+            {supported.has("dns.bootstrap_server_name") ? <FieldRow label={t("proxy.form.dnsServerName")} span2><Input value={merged.bootstrapServerName} disabled={disabled} onChange={(event) => onFieldChange("bootstrapServerName", event.target.value)} /></FieldRow> : null}
           </div>
         </>
       ) : null}
@@ -104,10 +104,10 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
         <>
           <SectionTitle title={t("proxy.form.dnsRemoteSection")} />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <FieldRow label={t("proxy.form.dnsRemoteDns")}><Input size="small" value={merged.remoteDns} disabled={disabled} onChange={(event) => onFieldChange("remoteDns", event.target.value)} /></FieldRow>
-			{supported.has("dns.remote_port") ? <FieldRow label={t("proxy.form.dnsPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.remoteDnsPort} disabled={disabled} onChange={(next) => onFieldChange("remoteDnsPort", next)} /></FieldRow> : null}
-            {supported.has("dns.remote_server_name") ? <FieldRow label={t("proxy.form.dnsServerName")}><Input size="small" value={merged.remoteServerName} disabled={disabled} onChange={(event) => onFieldChange("remoteServerName", event.target.value)} /></FieldRow> : null}
-            {supported.has("dns.remote_detour") ? <FieldRow label={t("proxy.form.dnsRemoteDetour")}><Input size="small" value={merged.remoteDetour} disabled={disabled} onChange={(event) => onFieldChange("remoteDetour", event.target.value)} /></FieldRow> : null}
+            <FieldRow label={t("proxy.form.dnsRemoteDns")}><Input value={merged.remoteDns} disabled={disabled} onChange={(event) => onFieldChange("remoteDns", event.target.value)} /></FieldRow>
+			{supported.has("dns.remote_port") ? <FieldRow label={t("proxy.form.dnsPort")}><InputNumber className="w-full" min={1} max={65535} value={merged.remoteDnsPort} disabled={disabled} onChange={(next) => onFieldChange("remoteDnsPort", next)} /></FieldRow> : null}
+            {supported.has("dns.remote_server_name") ? <FieldRow label={t("proxy.form.dnsServerName")}><Input value={merged.remoteServerName} disabled={disabled} onChange={(event) => onFieldChange("remoteServerName", event.target.value)} /></FieldRow> : null}
+            {supported.has("dns.remote_detour") ? <FieldRow label={t("proxy.form.dnsRemoteDetour")}><Input value={merged.remoteDetour} disabled={disabled} onChange={(event) => onFieldChange("remoteDetour", event.target.value)} /></FieldRow> : null}
           </div>
         </>
       ) : null}
@@ -117,9 +117,9 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
           <SectionTitle title="FakeIP" />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <FieldRow label={t("proxy.form.dnsFakeipEnabled")}><Switch size="small" checked={merged.fakeipEnabled} disabled={disabled} onChange={(next) => onFieldChange("fakeipEnabled", next)} /></FieldRow>
-            <FieldRow label={t("proxy.form.dnsFakeipTtl")}><InputNumber size="small" className="w-full" min={0} value={merged.fakeipTtl} disabled={disabled} onChange={(next) => onFieldChange("fakeipTtl", next)} /></FieldRow>
-            <FieldRow label={t("proxy.form.dnsFakeipIpv4Range")}><Input size="small" value={merged.fakeipIpv4Range} disabled={disabled} onChange={(event) => onFieldChange("fakeipIpv4Range", event.target.value)} /></FieldRow>
-            <FieldRow label={t("proxy.form.dnsFakeipIpv6Range")}><Input size="small" value={merged.fakeipIpv6Range} disabled={disabled} onChange={(event) => onFieldChange("fakeipIpv6Range", event.target.value)} /></FieldRow>
+            <FieldRow label={t("proxy.form.dnsFakeipTtl")}><InputNumber className="w-full" min={0} value={merged.fakeipTtl} disabled={disabled} onChange={(next) => onFieldChange("fakeipTtl", next)} /></FieldRow>
+            <FieldRow label={t("proxy.form.dnsFakeipIpv4Range")}><Input value={merged.fakeipIpv4Range} disabled={disabled} onChange={(event) => onFieldChange("fakeipIpv4Range", event.target.value)} /></FieldRow>
+            <FieldRow label={t("proxy.form.dnsFakeipIpv6Range")}><Input value={merged.fakeipIpv6Range} disabled={disabled} onChange={(event) => onFieldChange("fakeipIpv6Range", event.target.value)} /></FieldRow>
           </div>
         </>
       ) : null}
@@ -152,7 +152,7 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
           <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t("proxy.form.dnsSystemDetail")}</p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <FieldRow label={t("proxy.form.dnsSystemTakeover")}><Switch size="small" checked={merged.systemDnsTakeoverEnabled} disabled={disabled} onChange={(next) => onFieldChange("systemDnsTakeoverEnabled", next)} /></FieldRow>
-            <FieldRow label={t("proxy.form.dnsSystemListenPort")}><InputNumber size="small" className="w-full" min={1} max={65535} value={merged.systemDnsListenPort} disabled={disabled || !merged.systemDnsTakeoverEnabled} onChange={(next) => onFieldChange("systemDnsListenPort", next)} /></FieldRow>
+            <FieldRow label={t("proxy.form.dnsSystemListenPort")}><InputNumber className="w-full" min={1} max={65535} value={merged.systemDnsListenPort} disabled={disabled || !merged.systemDnsTakeoverEnabled} onChange={(next) => onFieldChange("systemDnsListenPort", next)} /></FieldRow>
             <FieldRow label={t("proxy.form.dnsSystemListenHosts")} span2><Checkbox.Group options={listenHostOptions} value={merged.systemDnsListenHosts ?? []} disabled={disabled || !merged.systemDnsTakeoverEnabled} onChange={handleListenHostsChange} /></FieldRow>
           </div>
         </>
@@ -166,8 +166,8 @@ const GeoSourceFields = ({ label, enabled, url, detour, disabled, onEnabledChang
   return (
     <div className="space-y-3 rounded border border-gray-200 p-3 dark:border-gray-700">
       <FieldRow label={label}><Switch size="small" checked={enabled} disabled={disabled} onChange={onEnabledChange} /></FieldRow>
-      <FieldRow label={t("proxy.form.dnsGeoSourceUrl")}><Input size="small" value={url} disabled={disabled || !enabled} onChange={(event) => onUrlChange(event.target.value)} /></FieldRow>
-      <FieldRow label={t("proxy.form.dnsGeoSourceDetour")}><Input size="small" value={detour} disabled={disabled || !enabled} onChange={(event) => onDetourChange(event.target.value)} /></FieldRow>
+      <FieldRow label={t("proxy.form.dnsGeoSourceUrl")}><Input value={url} disabled={disabled || !enabled} onChange={(event) => onUrlChange(event.target.value)} /></FieldRow>
+      <FieldRow label={t("proxy.form.dnsGeoSourceDetour")}><Input value={detour} disabled={disabled || !enabled} onChange={(event) => onDetourChange(event.target.value)} /></FieldRow>
     </div>
   );
 };

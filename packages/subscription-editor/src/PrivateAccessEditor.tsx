@@ -113,7 +113,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 />
               </Tooltip>
               <Input
-                size="small"
                 value={connector.tag}
                 placeholder={`private-access-${index + 1}`}
                 onChange={(event) =>
@@ -122,7 +121,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 className="min-w-48 flex-1"
               />
               <Select
-                size="small"
                 value={connector.type}
                 options={connectorTypeOptions}
                 onChange={(nextType) =>
@@ -157,7 +155,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgAddress")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.address}
                     placeholder="192.0.2.2/32, 2001:db8::2/128"
                     onChange={(event) =>
@@ -168,7 +165,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1 md:col-span-2">
                   <FieldLabel>{t("proxy.form.privateWgPrivateKey")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.privateKey}
                     onChange={(event) =>
                       updateConnector(index, { privateKey: event.target.value })
@@ -178,7 +174,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgPeerAddress")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.peerAddress}
                     disabled={Boolean(connector.transportEndpointRef)}
                     placeholder="vpn.example.com"
@@ -192,7 +187,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgPeerPort")}</FieldLabel>
                   <InputNumber
-                    size="small"
                     min={1}
                     max={65535}
                     value={connector.peerPort}
@@ -207,7 +201,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgKeepalive")}</FieldLabel>
                   <InputNumber
-                    size="small"
                     min={0}
                     max={3600}
                     value={connector.persistentKeepaliveInterval}
@@ -222,7 +215,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1 md:col-span-2">
                   <FieldLabel>{t("proxy.form.privateWgPublicKey")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.publicKey}
                     onChange={(event) =>
                       updateConnector(index, { publicKey: event.target.value })
@@ -232,7 +224,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgPresharedKey")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.preSharedKey}
                     onChange={(event) =>
                       updateConnector(index, {
@@ -245,7 +236,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                   <FieldLabel>{t("proxy.form.privateWgAllowedIps")}</FieldLabel>
                   <TextArea
                     rows={2}
-                    size="small"
                     value={connector.allowedIps}
                     placeholder={"192.0.2.0/24, 2001:db8::/32"}
                     onChange={(event) =>
@@ -259,7 +249,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1 md:col-span-2">
                   <FieldLabel>{t("proxy.form.privateOutboundServer")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.server}
                     onChange={(event) =>
                       updateConnector(index, { server: event.target.value })
@@ -269,7 +258,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateOutboundPort")}</FieldLabel>
                   <InputNumber
-                    size="small"
                     min={1}
                     max={65535}
                     value={connector.serverPort}
@@ -282,7 +270,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateOutboundUuid")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.uuid}
                     onChange={(event) =>
                       updateConnector(index, { uuid: event.target.value })
@@ -292,7 +279,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateOutboundUsername")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.username}
                     onChange={(event) =>
                       updateConnector(index, { username: event.target.value })
@@ -302,7 +288,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateOutboundPassword")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.password}
                     onChange={(event) =>
                       updateConnector(index, { password: event.target.value })
@@ -320,7 +305,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <FieldLabel>{t("proxy.form.privateRouteCidrs")}</FieldLabel>
                 <TextArea
                   rows={2}
-                  size="small"
                   value={connector.routeCidrs}
                   placeholder={"198.51.100.0/24, 2001:db8:1::/48"}
                   onChange={(event) =>
@@ -332,7 +316,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <FieldLabel>{t("proxy.form.privateRouteDomains")}</FieldLabel>
                 <TextArea
                   rows={2}
-                  size="small"
                   value={connector.routeDomainSuffixes}
                   placeholder={"corp.example.com, internal.example.com\nhome.arpa"}
                   onChange={(event) =>
@@ -346,7 +329,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <FieldLabel>{t("proxy.form.privateDnsDomains")}</FieldLabel>
                 <TextArea
                   rows={2}
-                  size="small"
                   value={connector.dnsDomainSuffixes}
                   placeholder={"service.example.com, home.arpa"}
                   onChange={(event) =>
@@ -360,7 +342,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateDnsServer")}</FieldLabel>
                   <Input
-                    size="small"
                     value={connector.dnsServer}
                     placeholder="192.0.2.53"
                     onChange={(event) =>
@@ -371,7 +352,6 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateDnsPort")}</FieldLabel>
                   <InputNumber
-                    size="small"
                     min={1}
                     max={65535}
                     value={connector.dnsServerPort}

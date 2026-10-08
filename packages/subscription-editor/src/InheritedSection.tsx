@@ -27,6 +27,6 @@ export function InheritedSection({ readOnly, field, value, inherited, defaultVal
     {inherited ? <p className="text-xs text-[var(--muted)]">{t('editor.inheritHint')}</p> : null}
     {inherited && defaultValue == null ? <p className="text-sm text-[var(--muted)]">{t('common.unavailable')}</p> : children ? children(displayed, inherited) : field === 'filter' ?
       <FilterEditor value={displayed} readOnly={readOnly || inherited} onChange={onChange} /> :
-      <div className="min-h-[20rem] flex-1"><CodeEditor ariaLabel={label} value={displayed} readOnly={readOnly || inherited} onChange={onChange} height="100%" /></div>}
+      <div className="flex min-h-[20rem] flex-1 flex-col"><CodeEditor ariaLabel={label} value={displayed} readOnly={readOnly || inherited} onChange={onChange} height="100%" /></div>}
   </section>
 }
