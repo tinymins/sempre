@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, Save as SaveIcon, Trash2 } from 'lucide-react'
 import { Dropdown, Select, useToast } from '@acme/components'
@@ -41,14 +41,13 @@ export function Subscriptions() {
   const previewRef = useRef<ProxyPreviewModalRef>(null)
   const debugRef = useRef<ProxyDebugModalRef>(null)
   const editorRef = useRef<ProxySubscribeEditorRef>(null)
-  const activationAttempt = useRef('')
   const [editorSaveState, setEditorSaveState] = useState<ProxySubscribeSaveState>({ profileID: '', dirty: false, saving: false })
 
   const catalog = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<SubscriptionCatalogResponse>(session!, '/subscriptions') })
   const customNodes = useQuery({ queryKey: ['custom-nodes'], queryFn: () => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes') })
 	const networkInventory = useQuery({ queryKey: ['system', 'network'], queryFn: () => api<LinuxNetworkInventory>(session!, '/system/network') })
   const profiles = useMemo(() => catalog.data?.profiles ?? [], [catalog.data?.profiles])
-  const effectiveSelectedID = uiMode === 'simple' ? profiles[0]?.id || '' : selectedID || catalog.data?.active_profile_id || profiles[0]?.id || ''
+  const effectiveSelectedID = uiMode === 'simple' ? catalog.data?.active_profile_id || profiles[0]?.id || '' : selectedID || catalog.data?.active_profile_id || profiles[0]?.id || ''
   const storedProfile = profiles.find((item) => item.id === effectiveSelectedID) ?? null
   const currentProfile = drafts[effectiveSelectedID] ?? storedProfile
   const currentEditorSaveState = editorSaveState.profileID === currentProfile?.id
@@ -137,13 +136,6 @@ export function Subscriptions() {
     onError: (error) => toast.error(error.message),
   })
 
-  const firstProfileID = profiles[0]?.id || ''
-  useEffect(() => {
-    if (uiMode !== 'simple' || !firstProfileID || catalog.data?.active_profile_id === firstProfileID || action.isPending || activationAttempt.current === firstProfileID) return
-    activationAttempt.current = firstProfileID
-    action.mutate({ id: firstProfileID, operation: 'activate' })
-  }, [action, catalog.data?.active_profile_id, firstProfileID, uiMode])
-
   const schedule = useMutation({
     mutationFn: (body: Record<string, unknown>) => api(session!, '/subscription', { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: invalidate,
@@ -207,8 +199,8 @@ export function Subscriptions() {
 
   if (uiMode === 'simple') {
     return <div className="space-y-5">
-      <PageTitle title={t('navigationSubscriptions')} detail={locale === 'zh-CN' ? '添加一个或多个订阅 URL，系统会自动使用第一组配置。' : 'Add one or more subscription URLs. The first profile is used automatically.'} />
-      {currentProfile ? <SimpleSubscriptionEditor key={`${currentProfile.id}:${currentProfile.revision}`} profile={currentProfile} saving={save.isPending} supportsPrivateAccess={catalog.data?.configuration_context.capabilities.features.includes('private_access') ?? false} onSave={async (candidate) => { await save.mutateAsync({ candidate, contextKey: catalog.data?.configuration_context.key ?? 'common' }) }} /> : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
+      <PageTitle title={t('navigationSubscriptions')} detail={locale === 'zh-CN' ? '编辑当前激活配置的订阅 URL。' : 'Edit subscription URLs for the active profile.'} />
+      {currentProfile ? currentProfile.mode === 'remote' ? <RemoteSubscriptionPanel profile={currentProfile} /> : <SimpleSubscriptionEditor key={`${currentProfile.id}:${currentProfile.revision}`} profile={currentProfile} saving={save.isPending} supportsPrivateAccess={catalog.data?.configuration_context.capabilities.features.includes('private_access') ?? false} onSave={async (candidate) => { await save.mutateAsync({ candidate, contextKey: catalog.data?.configuration_context.key ?? 'common' }) }} /> : <Card className="grid min-h-52 place-items-center"><Spinner /></Card>}
     </div>
   }
 

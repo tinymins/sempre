@@ -162,13 +162,13 @@ describe('Subscriptions subscription sets', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses the first profile and only edits subscription URLs in simple mode', async () => {
+  it('uses the active profile and only edits subscription URLs in simple mode', async () => {
     profiles = [
-      { ...profile('primary', 'Primary'), sources: [
+      profile('primary', 'Primary'),
+      { ...profile('secondary', 'Secondary'), sources: [
         { id: 'url-1', type: 'url', enabled: true, url: 'https://old.example/sub', prefix: 'work-', user_agent: 'Sempre test' },
         { id: 'raw-1', type: 'raw', enabled: true, content: 'proxies: []' },
       ] },
-      profile('secondary', 'Secondary'),
     ]
     activeProfileID = 'secondary'
     uiMode = 'simple'
@@ -176,7 +176,8 @@ describe('Subscriptions subscription sets', () => {
 
     const first = await screen.findByRole('textbox', { name: 'Subscription URL 1' })
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
-    await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({ method: 'POST', url: 'http://sempre.test/api/v1/subscriptions/primary/activate' })))
+    expect(requests.some((item) => item.url.endsWith('/activate'))).toBe(false)
+    expect(activeProfileID).toBe('secondary')
 
     fireEvent.change(first, { target: { value: 'https://new.example/sub' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add subscription URL' }))
@@ -184,7 +185,7 @@ describe('Subscriptions subscription sets', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      const request = requests.find((item) => item.method === 'PUT' && item.url.endsWith('/subscriptions/primary'))
+      const request = requests.find((item) => item.method === 'PUT' && item.url.endsWith('/subscriptions/secondary'))
       const saved = request?.body as SubscriptionProfile
       expect(saved.sources).toEqual([
         expect.objectContaining({ id: 'url-1', url: 'https://new.example/sub', prefix: 'work-', user_agent: 'Sempre test' }),
@@ -202,7 +203,7 @@ describe('Subscriptions subscription sets', () => {
     expect(await screen.findByRole('textbox', { name: 'Subscription URL 1' })).toHaveValue('')
   })
 
-  it('edits private access in a responsive dialog and saves it with the first profile', async () => {
+  it('edits private access in a responsive dialog and saves it with the active profile', async () => {
     configurationFeatures = ['private_access']
     profiles = [{ ...profile('primary', 'Primary'), sources: [{ id: 'url-1', type: 'url', enabled: true, url: 'https://old.example/sub' }] }]
     uiMode = 'simple'
