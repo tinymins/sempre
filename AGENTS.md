@@ -27,6 +27,7 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 
 ## Implementation Rules
 
+- Published migration files are immutable, including comments, imports, and formatting. Never put test modules, test functions, fixtures, or test-only imports inside a migration file. Put tests in separate files and register new migration checksums in `rust/crates/sempre-state/tests/migration_policy.rs`; behavioral changes require a new migration. Do not update frozen checksums to make an existing migration edit pass validation.
 - Surface material assumptions and tradeoffs before implementation. Ask when ambiguity could materially change the result.
 - Prefer the smallest root-cause solution that follows the existing architecture. If a local fix would weaken a boundary, propose the cleaner design first.
 - Add abstractions only for real domain boundaries, meaningful duplication, or safer changes. Do not add speculative features, configuration, flexibility, or impossible error handling.

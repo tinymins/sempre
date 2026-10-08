@@ -40,6 +40,7 @@ pub struct JsonMigration {
     version: u32,
     id: &'static str,
     source: &'static str,
+    legacy_checksums: &'static [(&'static str, &'static str)],
     apply: fn(&mut Map<String, Value>) -> Result<(), MigrationError>,
 }
 
@@ -59,12 +60,25 @@ impl JsonMigration {
             version,
             id,
             source,
+            legacy_checksums: &[],
             apply,
         }
     }
 
     pub const fn id(&self) -> &'static str {
         self.id
+    }
+
+    /// Accept verified equivalent historical sources only while the current source
+    /// still matches the pinned canonical checksum. Configure this in the registry,
+    /// never in a migration's self-hashed source file.
+    #[must_use]
+    pub const fn with_legacy_checksums(
+        mut self,
+        checksums: &'static [(&'static str, &'static str)],
+    ) -> Self {
+        self.legacy_checksums = checksums;
+        self
     }
 }
 
@@ -93,6 +107,9 @@ pub fn validate_ledger(
         // representation as well as canonical LF, without accepting content changes.
         if actual.checksum != expected.checksum
             && actual.checksum != checksum(&normalized_source(migration).replace('\n', "\r\n"))
+            && !migration.legacy_checksums.iter().any(|(current, legacy)| {
+                expected.checksum == *current && actual.checksum == *legacy
+            })
         {
             return Err(MigrationError::ChecksumDrift {
                 id: actual.id.clone(),

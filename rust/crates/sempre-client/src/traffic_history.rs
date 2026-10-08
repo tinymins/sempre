@@ -91,6 +91,7 @@ struct Totals {
 }
 
 struct Inner {
+    applied_migrations: Vec<AppliedMigration>,
     settings: TrafficSettings,
     records: HashMap<RecordKey, Totals>,
     dirty: bool,
@@ -173,6 +174,7 @@ impl TrafficStore {
         Ok(Self {
             path,
             inner: Mutex::new(Inner {
+                applied_migrations: document.applied_migrations,
                 settings: document.settings,
                 records,
                 dirty: false,
@@ -368,7 +370,7 @@ fn encoded(inner: &Inner) -> Result<Vec<u8>, TrafficError> {
     });
     Ok(serde_json::to_vec(&Document {
         schema: traffic_history_migrations::CURRENT_SCHEMA,
-        applied_migrations: traffic_history_migrations::current_ledger(),
+        applied_migrations: inner.applied_migrations.clone(),
         settings: inner.settings.clone(),
         records,
     })?)
