@@ -7,6 +7,16 @@ use crate::ManagerError;
 
 pub(crate) type CaptureError = Arc<RwLock<Option<String>>>;
 
+pub(crate) async fn cleanup_for_deployment(
+    resources: &Path,
+    transaction: &sempre_bundle::RestoreTransaction,
+) -> Result<(), ManagerError> {
+    if transaction.replaces_path(&resources.join("dns-capture/WinDivert64.sys")) {
+        cleanup(resources).await?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(
     not(all(target_os = "windows", target_arch = "x86_64")),
     allow(clippy::unused_async)

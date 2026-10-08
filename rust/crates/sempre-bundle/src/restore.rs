@@ -137,6 +137,13 @@ impl RestoreTransaction {
         }
     }
 
+    /// Whether activation replaces or removes this path, including its parent directory.
+    pub fn replaces_path(&self, path: &Path) -> bool {
+        self.operations
+            .iter()
+            .any(|operation| path.starts_with(&operation.target))
+    }
+
     pub fn activate(&mut self) -> Result<(), BundleError> {
         for operation in &mut self.operations {
             if let Err(error) = operation.activate() {
@@ -390,6 +397,8 @@ mod tests {
         fs::write(&target.state, b"old state").expect("target state");
 
         let mut rollback = stage_restore(&source, &target).expect("stage rollback");
+        assert!(rollback.replaces_path(&target.resources.join("dns-capture/WinDivert64.sys")));
+        assert!(!rollback.replaces_path(&target.root.join("resources-other/WinDivert64.sys")));
         rollback.activate().expect("activate rollback");
         assert_eq!(
             fs::read(&target.service_executable).expect("active executable"),

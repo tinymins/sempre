@@ -94,6 +94,9 @@ mod tests {
         let state = fs::read(&target.state).expect("existing state");
 
         let mut transaction = stage_install(&source, &target).expect("stage upgrade");
+        assert!(transaction.replaces_path(&target.service_executable));
+        assert!(transaction.replaces_path(&target.resources.join("resource")));
+        assert!(!transaction.replaces_path(&target.state));
         transaction.activate().expect("activate upgrade");
         transaction.commit().expect("commit upgrade");
 

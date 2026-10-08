@@ -111,6 +111,8 @@ mod tests {
             .open(target.resources.join("driver.sys"))
             .unwrap();
         let mut transaction = crate::stage_install(&source, &target).unwrap();
+        assert!(!transaction.replaces_path(&target.resources.join("driver.sys")));
+        assert!(transaction.replaces_path(&target.resources.join("helper.exe")));
         transaction.activate().unwrap();
         transaction.commit().unwrap();
         assert_eq!(
@@ -140,6 +142,7 @@ mod tests {
             .open(target.resources.join("driver.sys"))
             .unwrap();
         let mut transaction = crate::stage_install(&source, &target).unwrap();
+        assert!(transaction.replaces_path(&target.resources.join("driver.sys")));
         assert!(transaction.activate().is_err());
         drop(transaction);
         assert_eq!(

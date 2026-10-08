@@ -72,7 +72,9 @@ impl<R: VersionRunner> Manager<R> {
         if !matches!(previous_service, State::NotInstalled | State::Stopped) {
             sempre_service::stop().await?;
         }
-        if let Err(error) = crate::dns_capture::cleanup(&target.resources).await {
+        if let Err(error) =
+            crate::dns_capture::cleanup_for_deployment(&target.resources, &transaction).await
+        {
             restore_service_state(previous_service).await;
             return Err(error);
         }
