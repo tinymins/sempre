@@ -52,6 +52,7 @@ fn default_groups() -> Vec<ProxyGroup> {
         group("🎮 SeasunGame", &[DIRECT, FOREIGN], true, false),
         group("🎮 Discord", &[FOREIGN, DIRECT], true, false),
         group("🤖 ChatGPT-IOS", &[FOREIGN, DIRECT], true, false),
+        group("🤖 Claude", &[FOREIGN, DIRECT], true, false),
         group("🤖 AI", &[FOREIGN, DIRECT], true, false),
         group("🐙 GitHub", &[FOREIGN, DIRECT], true, false),
         group("🪙 Crypto", &[FOREIGN, DIRECT], true, false),
@@ -76,6 +77,11 @@ fn default_rule_providers() -> Vec<RuleProvider> {
 
 fn default_rule_providers_primary() -> Vec<RuleProvider> {
     vec![
+        provider(
+            "Claude",
+            "🤖 Claude",
+            "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/classical/anthropic.yaml",
+        ),
         provider(
             "AI",
             "🤖 AI",
@@ -342,13 +348,13 @@ mod tests {
     #[test]
     fn defaults_match_the_ohmywrt_policy_shape() {
         let defaults = system_defaults();
-        assert_eq!(defaults.groups.len(), 24);
-        assert_eq!(defaults.rule_providers.len(), 23);
+        assert_eq!(defaults.groups.len(), 25);
+        assert_eq!(defaults.rule_providers.len(), 24);
         assert_eq!(defaults.filters, ["官网", "客服", "qq群"]);
         assert_eq!(defaults.groups[0].name, FOREIGN);
-        assert_eq!(defaults.groups[23].name, "⚓️ 其他流量");
-        assert_eq!(defaults.rule_providers[0].tag, "AI");
-        assert_eq!(defaults.rule_providers[22].tag, "AD");
+        assert_eq!(defaults.groups[24].name, "⚓️ 其他流量");
+        assert_eq!(defaults.rule_providers[0].tag, "Claude");
+        assert_eq!(defaults.rule_providers[23].tag, "AD");
     }
 
     #[test]
@@ -369,7 +375,7 @@ mod tests {
             .extra
             .insert("use_system_groups".into(), json!(true));
         let effective = effective_profile(profile, &Target::parse("clash-meta").expect("target"));
-        assert_eq!(effective.groups.len(), 24);
+        assert_eq!(effective.groups.len(), 25);
         assert!(effective.rule_providers.is_empty());
         assert!(effective.filters.is_empty());
     }
