@@ -67,7 +67,7 @@ async fn subscription_catalog_supports_authenticated_local_and_remote_creation()
     assert_eq!(catalog["schedule"]["interval"], "24h");
     assert_eq!(
         catalog["defaults"]["groups"].as_array().map(Vec::len),
-        Some(24)
+        Some(25)
     );
     assert_eq!(
         catalog["editor_defaults"]["by_core"]
