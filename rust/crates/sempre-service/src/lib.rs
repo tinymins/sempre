@@ -66,6 +66,8 @@ pub enum Action {
 
 #[derive(Debug, Error)]
 pub enum ServiceError {
+    #[error("report service readiness: {0}")]
+    Readiness(String),
     #[error("service action must be restart or stop")]
     InvalidAction,
     #[error("service path must be absolute and valid Unicode: {0}")]
@@ -90,6 +92,8 @@ pub enum ServiceError {
         output: String,
     },
 }
+
+pub type ServiceReady = Box<dyn FnOnce() -> Result<(), ServiceError> + Send>;
 
 impl Action {
     pub fn parse(value: &str) -> Result<Self, ServiceError> {

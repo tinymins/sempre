@@ -25,17 +25,24 @@ impl<R: VersionRunner> Manager<R> {
         &self,
         target: &Layout,
         allow_replace: bool,
+        expected_version: &str,
     ) -> Result<(), ManagerError> {
-        self.deploy_bundle(target, allow_replace, BundleKind::Snapshot)
-            .await
+        self.deploy_bundle(
+            target,
+            allow_replace,
+            BundleKind::Snapshot,
+            expected_version,
+        )
+        .await
     }
 
     pub async fn install_release(
         &self,
         target: &Layout,
         allow_replace: bool,
+        expected_version: &str,
     ) -> Result<(), ManagerError> {
-        self.deploy_bundle(target, allow_replace, BundleKind::Release)
+        self.deploy_bundle(target, allow_replace, BundleKind::Release, expected_version)
             .await
     }
 
@@ -44,6 +51,7 @@ impl<R: VersionRunner> Manager<R> {
         target: &Layout,
         allow_replace: bool,
         kind: BundleKind,
+        expected_version: &str,
     ) -> Result<(), ManagerError> {
         let source = self.store.layout();
         if source.mode != Mode::Portable {
@@ -92,10 +100,17 @@ impl<R: VersionRunner> Manager<R> {
             sempre_service::install(&target.service_executable, &target.home).await?;
             command_created = register_command(target)?;
             sempre_service::start().await?;
+            crate::service_readiness::wait_for_health(
+                target,
+                expected_version,
+                std::time::Duration::from_secs(30),
+            )
+            .await?;
             Ok::<(), ManagerError>(())
         }
         .await;
         if let Err(error) = result {
+            let _ = sempre_service::stop().await;
             if command_created {
                 let _ = unregister_command(target);
             }

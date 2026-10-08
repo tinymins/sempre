@@ -2616,6 +2616,7 @@ dependencies = [
  "chrono",
  "humantime",
  "ipnet",
+ "reqwest",
  "sempre-artifact",
  "sempre-bundle",
  "sempre-control",

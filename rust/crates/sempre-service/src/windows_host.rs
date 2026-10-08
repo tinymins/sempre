@@ -16,9 +16,9 @@ use windows_service::{
     service_dispatcher,
 };
 
-use crate::NAME;
+use crate::{NAME, ServiceError, ServiceReady};
 
-type Runner = fn(watch::Receiver<bool>) -> Result<(), Box<dyn Error>>;
+type Runner = fn(watch::Receiver<bool>, ServiceReady) -> Result<(), Box<dyn Error>>;
 
 static RUNNER: OnceLock<Runner> = OnceLock::new();
 
@@ -44,7 +44,9 @@ fn run_service() -> Result<(), Box<dyn Error>> {
     let handler_status = Arc::clone(&status_slot);
     let event_handler = move |event| match event {
         ServiceControl::Stop | ServiceControl::Shutdown => {
-            if let Some(handle) = handler_status.lock().expect("service status lock").as_ref() {
+            let slot = handler_status.lock().expect("service status lock");
+            let _ = shutdown.send(true);
+            if let Some(handle) = slot.as_ref() {
                 let _ = handle.set_service_status(service_status(
                     ServiceState::StopPending,
                     ServiceControlAccept::empty(),
@@ -52,7 +54,6 @@ fn run_service() -> Result<(), Box<dyn Error>> {
                     Duration::from_secs(20),
                 ));
             }
-            let _ = shutdown.send(true);
             ServiceControlHandlerResult::NoError
         }
         ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -61,14 +62,30 @@ fn run_service() -> Result<(), Box<dyn Error>> {
     let status_handle = service_control_handler::register(NAME, event_handler)?;
     *status_slot.lock().expect("service status lock") = Some(status_handle);
     status_handle.set_service_status(service_status(
-        ServiceState::Running,
-        ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
+        ServiceState::StartPending,
+        ServiceControlAccept::empty(),
         ServiceExitCode::Win32(0),
-        Duration::ZERO,
+        Duration::from_secs(20),
     ))?;
+    let ready_receiver = receiver.clone();
+    let ready: ServiceReady = Box::new(move || {
+        let slot = status_slot.lock().expect("service status lock");
+        if *ready_receiver.borrow() {
+            return Err(ServiceError::Readiness("service is stopping".into()));
+        }
+        slot.as_ref()
+            .expect("registered service status")
+            .set_service_status(service_status(
+                ServiceState::Running,
+                ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
+                ServiceExitCode::Win32(0),
+                Duration::ZERO,
+            ))
+            .map_err(|error| ServiceError::Readiness(error.to_string()))
+    });
     let result = RUNNER
         .get()
-        .ok_or("Windows service runner is not configured")?(receiver);
+        .ok_or("Windows service runner is not configured")?(receiver, ready);
     let exit_code = if result.is_ok() {
         ServiceExitCode::Win32(0)
     } else {
@@ -94,7 +111,7 @@ fn service_status(
         current_state: state,
         controls_accepted: accepted,
         exit_code,
-        checkpoint: 0,
+        checkpoint: u32::from(state == ServiceState::StartPending),
         wait_hint,
         process_id: None,
     }

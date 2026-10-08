@@ -24,6 +24,7 @@ mod runtime_args;
 mod runtime_cli;
 mod runtime_control_api;
 mod runtime_events_api;
+mod service_deploy_cli;
 mod service_update;
 mod service_update_proxy;
 mod service_update_schedule;
@@ -57,6 +58,7 @@ use sempre_control::ControlError;
 use sempre_manager::{Manager, ManagerError};
 use sempre_state::{Layout, LayoutError, Mode, StateError, Store};
 use sempre_subscription::SubscriptionError;
+use service_deploy_cli::deploy_bundle;
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
@@ -327,45 +329,6 @@ async fn run_bundle(mode: Mode, command: BundleCommand) -> Result<(), ClientErro
             Ok(())
         }
     }
-}
-
-async fn deploy_bundle(
-    manager: &Manager,
-    target: &Layout,
-    kind: sempre_bundle::BundleKind,
-    allow_replace: bool,
-) -> Result<(), ClientError> {
-    let result = match kind {
-        sempre_bundle::BundleKind::Release => manager.install_release(target, allow_replace).await,
-        sempre_bundle::BundleKind::Snapshot => manager.restore_bundle(target, allow_replace).await,
-    };
-    let Err(ManagerError::ConfirmationRequired(message)) = result else {
-        return result.map_err(ClientError::from);
-    };
-    if allow_replace || !confirm_replacement(&message)? {
-        return Err(ClientError::Cancelled);
-    }
-    match kind {
-        sempre_bundle::BundleKind::Release => manager.install_release(target, true).await?,
-        sempre_bundle::BundleKind::Snapshot => manager.restore_bundle(target, true).await?,
-    }
-    Ok(())
-}
-
-fn confirm_replacement(message: &str) -> Result<bool, ClientError> {
-    eprint!("{message}. Replace it? [y/N]: ");
-    let mut answer = String::new();
-    io::stdin()
-        .read_line(&mut answer)
-        .map_err(|source| ClientError::Io {
-            operation: "read deployment confirmation",
-            path: PathBuf::from("stdin"),
-            source,
-        })?;
-    Ok(matches!(
-        answer.trim().to_ascii_lowercase().as_str(),
-        "y" | "yes"
-    ))
 }
 
 fn current_executable(operation: &'static str) -> Result<PathBuf, ClientError> {

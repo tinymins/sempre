@@ -45,7 +45,7 @@ pub(crate) async fn run(mode: Mode) -> Result<(), ClientError> {
         }
     });
     println!("Starting portable Sempre. Press Ctrl+C to stop.");
-    daemon::run_with_layout(layout, None, None).await
+    daemon::run_with_layout(layout, None, None, None).await
 }
 
 async fn announce_when_ready(layout: &Layout) -> Result<(), String> {

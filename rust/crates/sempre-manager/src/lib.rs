@@ -33,6 +33,7 @@ mod runtime_ports;
 mod scheduler;
 mod selection_config;
 mod service_deploy;
+mod service_readiness;
 mod source_loading;
 mod subscription;
 mod subscription_mutation;

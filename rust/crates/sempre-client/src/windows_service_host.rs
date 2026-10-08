@@ -8,7 +8,10 @@ pub(crate) fn dispatch() -> Result<(), Box<dyn Error>> {
     sempre_service::dispatch_windows_service(run_daemon)
 }
 
-fn run_daemon(receiver: watch::Receiver<bool>) -> Result<(), Box<dyn Error>> {
+fn run_daemon(
+    receiver: watch::Receiver<bool>,
+    ready: sempre_service::ServiceReady,
+) -> Result<(), Box<dyn Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -17,6 +20,7 @@ fn run_daemon(receiver: watch::Receiver<bool>) -> Result<(), Box<dyn Error>> {
         layout.clone(),
         None,
         Some(receiver),
+        Some(ready),
     ));
     if let Err(error) = &result
         && let Ok(mut log) = OpenOptions::new()

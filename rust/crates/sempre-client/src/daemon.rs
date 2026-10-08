@@ -16,21 +16,25 @@ use tracing::info;
 
 use crate::{ClientError, VERSION, api, listener};
 
+#[cfg(test)]
+mod readiness_tests;
+
 pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(), ClientError> {
-    run_with_layout(Layout::for_mode(mode)?, listen_override, None).await
+    run_with_layout(Layout::for_mode(mode)?, listen_override, None, None).await
 }
 
 pub(crate) async fn run_development(
     root: &Path,
     listen_override: Option<&str>,
 ) -> Result<(), ClientError> {
-    run_with_layout(Layout::development_at(root), listen_override, None).await
+    run_with_layout(Layout::development_at(root), listen_override, None, None).await
 }
 
 pub(crate) async fn run_with_layout(
     layout: Layout,
     listen_override: Option<&str>,
     external_shutdown: Option<watch::Receiver<bool>>,
+    ready: Option<sempre_service::ServiceReady>,
 ) -> Result<(), ClientError> {
     let store = Store::new(layout.clone());
     let _instance = store.acquire_instance()?;
@@ -70,6 +74,7 @@ pub(crate) async fn run_with_layout(
     let endpoint_state = app_state.endpoint.clone();
     let state = Arc::new(app_state);
     let app = api::router(Arc::clone(&state));
+    ready.map_or(Ok(()), |report| report())?;
     info!(%bind, %local_url, mode = ?layout.mode, "Sempre Rust client daemon listening");
     let (shutdown_sender, shutdown_receiver) = watch::channel(false);
     let signal_sender = shutdown_sender.clone();
@@ -262,7 +267,7 @@ mod tests {
         let occupied = TcpListener::bind("127.0.0.1:0").await.expect("listener");
         let listen = occupied.local_addr().expect("address").to_string();
 
-        let result = run_with_layout(layout.clone(), Some(&listen), None).await;
+        let result = run_with_layout(layout.clone(), Some(&listen), None, None).await;
 
         assert!(matches!(
             result,
@@ -283,7 +288,7 @@ mod tests {
         let occupied = TcpListener::bind("127.0.0.1:0").await.expect("listener");
         let listen = occupied.local_addr().expect("address").to_string();
 
-        let result = run_with_layout(layout.clone(), Some(&listen), None).await;
+        let result = run_with_layout(layout.clone(), Some(&listen), None, None).await;
 
         assert!(matches!(
             result,
