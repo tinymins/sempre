@@ -1,8 +1,4 @@
-import { Button, Checkbox, CodeEditor, Empty, Form, Modal, Select, Tag } from '@acme/components'
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
-import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { GripVertical } from 'lucide-react'
+import { Button, CodeEditor, Form, Modal, Table, Tag } from '@acme/components'
 import { parse, type ParseError } from 'jsonc-parser'
 import { useState } from 'react'
 import { useEditorI18n as useI18n } from './i18n'
@@ -18,9 +14,9 @@ export function ManualNodesEditor({ readOnly, draft, nodes: assignedNodes, updat
   const [manualDraft, setManualDraft] = useState('')
   const [manualError, setManualError] = useState(false)
   const [order, setOrder] = useState(draft.selectedCustomNodeIds)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
   const nodeIds = [...new Set([...order, ...draft.selectedCustomNodeIds, ...assignedNodes.map(node => node.id)])]
     .filter(id => assignedNodes.some(node => node.id === id) || draft.selectedCustomNodeIds.includes(id))
+  const nodes = nodeIds.map(id => assignedNodes.find(node => node.id === id) ?? { id, name: id, label: id })
   const parsed = parse(draft.servers || '[]') as unknown
   const manualCount = Array.isArray(parsed) ? parsed.length : 0
   const openManual = () => { setManualDraft(draft.servers || '[]'); setManualError(false); setManualOpen(true) }
@@ -33,22 +29,20 @@ export function ManualNodesEditor({ readOnly, draft, nodes: assignedNodes, updat
     setManualOpen(false)
     return undefined
   }
-  const select = (id: string, checked: boolean) => {
-    if (readOnly) return
-    update({ selectedCustomNodeIds: nodeIds.filter(nodeId => nodeId === id ? checked : draft.selectedCustomNodeIds.includes(nodeId)) })
-  }
+  const nodeTable = <Table<EditorNode> rowKey="id" dataSource={nodes} pagination={false}
+    columns={[{ title: t('common.name'), dataIndex: 'label', render: label => <span className="break-all">{label}</span> }]}
+    rowSelection={{ selectedRowKeys: draft.selectedCustomNodeIds, getCheckboxProps: () => ({ disabled: readOnly }), onChange: keys => {
+      if (!readOnly) update({ selectedCustomNodeIds: nodeIds.filter(id => keys.includes(id)) })
+    } }}
+    onReorder={next => {
+      if (readOnly) return
+      const ids = next.map(node => node.id)
+      setOrder(ids)
+      update({ selectedCustomNodeIds: ids.filter(id => draft.selectedCustomNodeIds.includes(id)) })
+    }} sortDisabled={readOnly} locale={{ emptyText: t('common.noData') }} />
   return (
     <div className="space-y-4">
-      {page ? <Form.Item label={t('editor.selectedNodes')} tooltip={t('editor.nodesHelp')}><Select mode="multiple" value={draft.selectedCustomNodeIds} options={assignedNodes.map(node => ({ value: node.id, label: node.label, tagLabel: node.name }))} disabled={readOnly} onChange={next => { if (!readOnly) update({ selectedCustomNodeIds: next as string[] }) }} showSearch placeholder={t('editor.nodesPlaceholder')} /></Form.Item> : <><div className="flex items-center gap-2 text-sm"><span>{t('editor.selectedNodes')}</span><span className="text-[var(--muted)]">{number(draft.selectedCustomNodeIds.length)} / {number(nodeIds.length)}</span></div>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active, over }) => {
-        if (readOnly || !over || active.id === over.id) return
-        const next = arrayMove(nodeIds, nodeIds.indexOf(String(active.id)), nodeIds.indexOf(String(over.id)))
-        setOrder(next)
-        update({ selectedCustomNodeIds: next.filter(id => draft.selectedCustomNodeIds.includes(id)) })
-      }}><SortableContext items={nodeIds} strategy={verticalListSortingStrategy}>
-        <div className="space-y-2">{nodeIds.map((id, index) => <SortableNode key={id} id={id} index={index} node={assignedNodes.find(node => node.id === id)} checked={draft.selectedCustomNodeIds.includes(id)} disabled={readOnly} onChange={checked => select(id, checked)} />)}</div>
-      </SortableContext></DndContext>
-      {nodeIds.length === 0 ? <Empty description={t('common.noData')} /> : null}</>}
+      {page ? <Form.Item label={t('editor.selectedNodes')} tooltip={t('editor.nodesHelp')}>{nodeTable}</Form.Item> : <><div className="flex items-center gap-2 text-sm"><span>{t('editor.selectedNodes')}</span><span className="text-[var(--muted)]">{number(draft.selectedCustomNodeIds.length)} / {number(nodeIds.length)}</span></div>{nodeTable}</>}
       <div className={page ? 'mt-6 flex items-center gap-2' : 'flex items-center gap-2 border-t border-[var(--border)] pt-4 text-sm'}>
         <span className={page ? 'text-sm text-[var(--text-secondary)]' : undefined}>{t('editor.manualServers')}</span>
         {page ? <Tag>{manualCount}</Tag> : <span className="rounded bg-[var(--surface)] px-2 py-0.5">{number(manualCount)}</span>}
@@ -60,13 +54,4 @@ export function ManualNodesEditor({ readOnly, draft, nodes: assignedNodes, updat
       </Modal>
     </div>
   )
-}
-
-function SortableNode({ id, index, node, checked, disabled, onChange }: { id: string; index: number; node?: EditorNode; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
-  const { t, number } = useI18n()
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
-  return <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1 }} className="flex min-w-0 items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-2 text-sm">
-    <Button size="small" variant="text" disabled={disabled} icon={<GripVertical size={16} />} className="touch-none shrink-0" aria-label={t('editor.reorderNode', { index: number(index + 1) })} {...attributes} {...listeners} />
-    <Checkbox checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} className="min-w-0 flex-1"><span className="break-all">{node?.label ?? id}</span></Checkbox>
-  </div>
 }
