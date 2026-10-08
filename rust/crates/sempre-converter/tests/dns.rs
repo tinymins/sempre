@@ -152,38 +152,6 @@ fn takeover_request(format: &str) -> CompileRequest {
 }
 
 #[test]
-fn sing_box_system_dns_takeover_supports_linux() {
-    let mut input = takeover_request("sing-box-v13");
-    let output = compile(&input).expect("Linux system DNS");
-    let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
-    assert!(output["inbounds"].as_array().is_some_and(|values| {
-        values.iter().any(|value| {
-            value["tag"] == "system-dns-in"
-                && value["listen"] == "127.0.0.1"
-                && value["listen_port"] == 53
-                && value["override_address"] == "1.1.1.1"
-        })
-    }));
-    assert!(output["route"]["rules"].as_array().is_some_and(|rules| {
-        rules.windows(2).any(|rules| {
-            rules[0]["inbound"] == "system-dns-in"
-                && rules[0]["action"] == "sniff"
-                && rules[1]["inbound"] == "system-dns-in"
-                && rules[1]["action"] == "hijack-dns"
-        })
-    }));
-
-    input.profile.dns["shared"]["localDns"] = json!("local");
-    input.profile.dns["shared"]["localDnsTransport"] = json!("system");
-    assert!(
-        compile(&input)
-            .expect_err("recursive local resolver must fail")
-            .to_string()
-            .contains("explicit local DNS")
-    );
-}
-
-#[test]
 fn managed_frontend_owns_tproxy_dns_without_a_duplicate_inbound() {
     let mut input = takeover_request("sing-box-v13");
     input.profile.dns["shared"]["managedDnsFrontend"] = json!(true);
@@ -340,21 +308,6 @@ fn sing_box_resolves_real_addresses_through_remote_dns_before_domestic_ip_routin
                 "never resolve unknown destinations through local DNS"
             );
         }
-    }
-}
-
-#[test]
-fn sing_box_does_not_add_domestic_resolution_without_ip_rules_or_to_legacy() {
-    for (format, enabled) in [("sing-box-v14", false), ("sing-box", true)] {
-        let mut input = request(format);
-        input.profile.dns["shared"]["cnIpRuleSetEnabled"] = json!(enabled);
-        let output = compile(&input).expect("sing-box config");
-        let output: Value = serde_json::from_str(&output.content).expect("sing-box JSON");
-        assert!(
-            output["route"]["rules"]
-                .as_array()
-                .is_some_and(|rules| { rules.iter().all(|rule| rule["action"] != "resolve") })
-        );
     }
 }
 

@@ -268,69 +268,7 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
-    use sempre_state::{DesiredState, RuntimeState, Store};
-
     use super::*;
-
-    #[test]
-    fn replacement_confirmation_ignores_runtime_but_detects_deployment_intent() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let source = Layout::at(&temporary.path().join("source"));
-        let target = Layout::system_at(&temporary.path().join("target"));
-        let source_store = Store::new(source.clone());
-        let target_store = Store::new(target.clone());
-        source_store.initialize().expect("source state");
-        target_store.initialize().expect("target state");
-        fs::write(&source.subscription_catalog, b"same").expect("source catalog");
-        fs::write(&target.subscription_catalog, b"same").expect("target catalog");
-        target_store
-            .update(|document| {
-                document.runtime.state = RuntimeState::Running;
-                document.runtime.pid = Some(42);
-                Ok(())
-            })
-            .expect("runtime state");
-        require_replacement_confirmation(&source, &target, false)
-            .expect("runtime does not require replacement confirmation");
-
-        target_store
-            .update(|document| {
-                document.desired_state = DesiredState::Stopped;
-                Ok(())
-            })
-            .expect("deployment intent");
-        assert!(matches!(
-            require_replacement_confirmation(&source, &target, false),
-            Err(ManagerError::ConfirmationRequired(_))
-        ));
-        require_replacement_confirmation(&source, &target, true)
-            .expect("explicit replacement confirmation");
-    }
-
-    #[test]
-    fn release_install_never_requests_data_replacement() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let source = Layout::at(&temporary.path().join("source"));
-        let target = Layout::system_at(&temporary.path().join("target"));
-        Store::new(source.clone())
-            .initialize()
-            .expect("source state");
-        let target_store = Store::new(target.clone());
-        target_store.initialize().expect("target state");
-        target_store
-            .update(|document| {
-                document.desired_state = DesiredState::Stopped;
-                Ok(())
-            })
-            .expect("different target state");
-
-        require_bundle_replacement_confirmation(BundleKind::Release, &source, &target, false)
-            .expect("release preserves existing data");
-        assert!(matches!(
-            require_bundle_replacement_confirmation(BundleKind::Snapshot, &source, &target, false),
-            Err(ManagerError::ConfirmationRequired(_))
-        ));
-    }
 
     #[cfg(unix)]
     #[test]

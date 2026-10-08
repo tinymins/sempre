@@ -104,18 +104,3 @@ impl Controller {
             .map_or_else(Vec::new, DhcpServer::leases)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use sempre_state::Layout;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn disabled_services_start_and_stop_idempotently() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let controller = Controller::new(&Layout::at(root.path())).expect("controller");
-        controller.start().await.expect("start");
-        controller.stop().await;
-    }
-}

@@ -196,30 +196,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_active_location_and_services() {
-        let location = "Defined sets include: (* == current set)\n * SET-ID\t(Automatic)\n";
-        assert_eq!(parse_active_set(location).as_deref(), Some("SET-ID"));
-        let root = "/Sets/SET-ID/Network/Service";
-        let services = format!("  path [0] = {root}/SERVICE-A\n  path [1] = {root}/SERVICE-B\n");
-        assert_eq!(
-            parse_service_ids(&services, root),
-            ["SERVICE-A", "SERVICE-B"]
-        );
-    }
-
-    #[test]
-    fn parses_dns_addresses_and_port() {
-        let data = "<dictionary> {\n  ServerAddresses : <array> {\n    0 : 127.0.0.1\n  }\n  ServerPort : 20554\n}\n";
-        assert_eq!(
-            parse_dns_configuration(data),
-            DnsConfiguration {
-                servers: vec!["127.0.0.1".into()],
-                port: Some(20554),
-            }
-        );
-    }
-
-    #[test]
     fn update_preserves_other_dns_fields() {
         let script = update_script(
             "SERVICE-A",

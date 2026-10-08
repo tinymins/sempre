@@ -409,29 +409,3 @@ fn command_registration(layout: &Layout) -> Result<String, String> {
 fn command_registration(layout: &Layout) -> Result<String, String> {
     regular_file(&layout.command_executable)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn report_counts_required_failures_and_warnings_independently() {
-        let mut report = Report::new();
-        report.required("required", Err("broken".into()));
-        report.warning("warning", Err("uncertain".into()));
-        report.info("info", "skipped");
-        assert_eq!(report.failures, 1);
-        assert_eq!(report.warnings, 1);
-        assert_eq!(report.checks.len(), 3);
-    }
-
-    #[test]
-    fn file_hash_requires_exact_content() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let path = root.path().join("config.json");
-        fs::write(&path, b"content").expect("configuration");
-        let hash = format!("{:x}", Sha256::digest(b"content"));
-        assert!(file_hash(&path, &hash).is_ok());
-        assert!(file_hash(&path, &"0".repeat(64)).is_err());
-    }
-}

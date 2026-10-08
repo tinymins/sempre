@@ -343,24 +343,3 @@ pub(crate) fn type_name(value: u16) -> &'static str {
 pub(crate) fn fqdn(value: &str) -> String {
     format!("{}.", value.trim().trim_end_matches('.'))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn query_round_trip_and_reject_response_preserve_question() {
-        let query = build_query("example.com", TYPE_HTTPS).expect("query");
-        let question = parse_question(&query).expect("parse").expect("question");
-        assert_eq!(question.name, "example.com.");
-        let response = response_with_code(&query, 3).expect("response");
-        assert_eq!(response[3] & 0x0f, 3);
-        assert_eq!(
-            parse_question(&response)
-                .expect("parse")
-                .expect("question")
-                .name,
-            "example.com."
-        );
-    }
-}

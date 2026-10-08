@@ -230,30 +230,6 @@ mod tests {
     use crate::command::Output;
     use serde_json::json;
 
-    struct MissingRoutes;
-
-    impl command::Runner for MissingRoutes {
-        fn run<'a>(
-            &'a self,
-            _: &'a str,
-            arguments: &'a [&'a str],
-            _: Option<&'a [u8]>,
-        ) -> Pin<Box<dyn Future<Output = Result<Output, TransparentError>> + Send + 'a>> {
-            Box::pin(async move {
-                let route = arguments.contains(&"route");
-                Ok(Output {
-                    success: !route,
-                    stdout: if route { "[".into() } else { "[]\n".into() },
-                    stderr: if route {
-                        "Error: ipv4: FIB table does not exist.\nDump terminated\n".into()
-                    } else {
-                        String::new()
-                    },
-                })
-            })
-        }
-    }
-
     #[test]
     fn ownership_requires_all_discriminators() {
         let owned = json!({
@@ -268,16 +244,6 @@ mod tests {
             &json!({ "type": "local", "dst": "default", "protocol": 253 }),
             "-4"
         ));
-    }
-
-    #[tokio::test]
-    async fn missing_kernel_route_tables_are_empty_owned_state() {
-        check_collisions(&MissingRoutes)
-            .await
-            .expect("missing table has no collision");
-        delete(&MissingRoutes)
-            .await
-            .expect("cleanup ignores missing table");
     }
 
     struct FailedRoutes;

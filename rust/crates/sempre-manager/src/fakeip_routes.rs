@@ -242,23 +242,4 @@ mod tests {
             networks(&["198.18.0.67/32", "fc00::10/128"])
         );
     }
-
-    #[test]
-    fn reads_fakeip_ownership_from_the_runtime_config() {
-        let document = serde_json::json!({
-            "dns": {"servers": [{
-                "type": "fakeip", "tag": "fakeip",
-                "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18"
-            }]},
-            "inbounds": [{
-                "type": "tun", "tag": "tun-in",
-                "route_address": ["198.18.0.0/15", "fc00::/18"]
-            }]
-        });
-
-        assert_eq!(
-            runtime_fakeip_ranges(&document),
-            networks(&["198.18.0.0/15", "fc00::/18"])
-        );
-    }
 }

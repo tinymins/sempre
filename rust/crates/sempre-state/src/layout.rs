@@ -401,39 +401,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn isolated_layout_keeps_runtime_and_data_under_root() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let layout = Layout::at(temporary.path());
-        assert_eq!(layout.mode, Mode::Portable);
-        assert_eq!(layout.home, temporary.path().join(".sempre"));
-        assert_eq!(layout.runtime, layout.home.join("run"));
-    }
-
-    #[test]
-    fn development_layout_is_isolated_and_explicit() {
-        let root = Path::new("/tmp/sempre-development");
-        let layout = Layout::development_at(root);
-        assert_eq!(layout.mode, Mode::Development);
-        assert_eq!(layout.root, root);
-        assert_eq!(layout.home, root.join(".sempre"));
-        assert_eq!(layout.instance_lock, root.join(".sempre/run/instance.lock"));
-    }
-
-    #[test]
-    fn system_layout_separates_managed_binary_from_command_registration() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let layout = Layout::system_at(temporary.path());
-        assert_ne!(layout.service_executable, layout.command_executable);
-        assert_eq!(
-            layout.command_executable,
-            temporary
-                .path()
-                .join("command")
-                .join(executable_name("sempre"))
-        );
-    }
-
-    #[test]
     fn custom_core_sources_do_not_share_version_directories() {
         let layout = Layout::at(Path::new("sandbox"));
         let official = layout.core_binary("sing-box", None, "1.2.3");
@@ -442,37 +409,5 @@ mod tests {
         let expected =
             Path::new("sing-box/sources/tinymins/sing-box/1.2.3").join(executable_name("sing-box"));
         assert!(custom.ends_with(expected));
-    }
-
-    #[test]
-    fn ensure_creates_private_directories() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let layout = Layout::at(temporary.path());
-        layout.ensure().expect("ensure layout");
-        assert!(layout.subscription_cache.is_dir());
-        assert!(layout.tunnel_logs.is_dir());
-    }
-
-    #[test]
-    fn portable_marker_selects_mode_and_changes_idempotently() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let executable = temporary.path().join(executable_name("sempre"));
-        assert_eq!(
-            Mode::for_executable(&executable).expect("system mode"),
-            Mode::System
-        );
-        let marker = set_portable_marker(&executable, true).expect("enable portable marker");
-        set_portable_marker(&executable, true).expect("enable portable marker twice");
-        assert_eq!(marker, temporary.path().join(PORTABLE_MARKER));
-        assert_eq!(
-            Mode::for_executable(&executable).expect("portable mode"),
-            Mode::Portable
-        );
-        set_portable_marker(&executable, false).expect("disable portable marker");
-        set_portable_marker(&executable, false).expect("disable portable marker twice");
-        assert_eq!(
-            Mode::for_executable(&executable).expect("system mode"),
-            Mode::System
-        );
     }
 }

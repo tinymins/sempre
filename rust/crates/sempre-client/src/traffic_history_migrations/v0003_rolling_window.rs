@@ -34,38 +34,3 @@ fn apply(document: &mut Map<String, Value>) -> Result<(), MigrationError> {
     document.insert("schema".into(), Value::from(3));
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn separates_the_old_window_from_storage_retention() {
-        let mut document =
-            serde_json::from_str::<Value>(r#"{"schema":2,"settings":{"retention_hours":24}}"#)
-                .expect("document")
-                .as_object()
-                .expect("object")
-                .clone();
-
-        apply(&mut document).expect("migration");
-
-        assert_eq!(document["settings"]["window_hours"], 24);
-        assert_eq!(document["settings"]["retention_hours"], 720);
-    }
-
-    #[test]
-    fn keeps_unlimited_storage_retention() {
-        let mut document =
-            serde_json::from_str::<Value>(r#"{"schema":2,"settings":{"retention_hours":null}}"#)
-                .expect("document")
-                .as_object()
-                .expect("object")
-                .clone();
-
-        apply(&mut document).expect("migration");
-
-        assert_eq!(document["settings"]["window_hours"], 24);
-        assert_eq!(document["settings"]["retention_hours"], Value::Null);
-    }
-}

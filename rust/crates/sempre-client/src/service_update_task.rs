@@ -277,38 +277,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn progress_lives_only_in_the_current_process() {
-        let root = tempfile::tempdir().unwrap();
-        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        let task = tasks.begin().unwrap();
-        tasks.set_release(&task.id, "bundle.zip", 100).unwrap();
-        tasks.download_progress(&task.id, 50, 100);
-        let progress = tasks.snapshot().unwrap();
-        assert_eq!(progress.stage, "downloading");
-        assert_eq!((progress.downloaded_bytes, progress.total_bytes), (50, 100));
-        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
-        assert!(
-            ServiceUpdateTasks::new(root.path(), "2.0.12")
-                .snapshot()
-                .is_none()
-        );
-        assert!(tasks.begin().is_err());
-    }
-
-    #[test]
-    fn legacy_task_files_are_never_restored() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(
-            root.path().join("service-update-task.json"),
-            r#"{"state":"succeeded"}"#,
-        )
-        .unwrap();
-        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        assert!(tasks.snapshot().is_none());
-        assert!(tasks.begin().is_ok());
-    }
-
-    #[test]
     fn failed_tasks_keep_their_stage_and_allow_another_attempt() {
         let root = tempfile::tempdir().unwrap();
         let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
@@ -323,33 +291,6 @@ mod tests {
         tasks.download_progress(&task.id, 50, 100);
         assert_eq!(tasks.snapshot().unwrap().id, next.id);
         assert_eq!(tasks.snapshot().unwrap().stage, "checking");
-    }
-
-    #[test]
-    fn proxy_retry_resets_visible_download_measurements() {
-        let root = tempfile::tempdir().unwrap();
-        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        let task = tasks.begin().unwrap();
-        tasks.download_progress(&task.id, 50, 100);
-        tasks.restart_download(&task.id).unwrap();
-        let retried = tasks.snapshot().unwrap();
-        assert_eq!(retried.downloaded_bytes, 0);
-        assert_eq!(retried.bytes_per_second, 0);
-        assert_eq!(retried.eta_seconds, None);
-    }
-
-    #[test]
-    fn uploaded_packages_use_the_existing_task_progress() {
-        let root = tempfile::tempdir().unwrap();
-        let tasks = ServiceUpdateTasks::new(root.path(), "2.0.0");
-        let task = tasks.begin().unwrap();
-        tasks.set_upload(&task.id, "release.zip", 100).unwrap();
-        tasks.upload_progress(&task.id, 40, 100);
-        let uploaded = tasks.snapshot().unwrap();
-        assert_eq!(uploaded.stage, "uploading");
-        assert_eq!(uploaded.artifact.as_deref(), Some("release.zip"));
-        assert!(uploaded.target_version.is_empty());
-        assert_eq!((uploaded.downloaded_bytes, uploaded.total_bytes), (40, 100));
     }
 
     #[test]

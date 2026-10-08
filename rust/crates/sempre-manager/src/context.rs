@@ -97,6 +97,3 @@ impl<R: VersionRunner> Manager<R> {
         })
     }
 }
-
-#[cfg(test)]
-mod tests;

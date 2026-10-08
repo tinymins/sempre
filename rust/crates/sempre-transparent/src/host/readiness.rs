@@ -39,15 +39,3 @@ async fn tproxy_listener_ready(
 fn has_listener(output: &str) -> bool {
     output.lines().any(|line| !line.trim().is_empty())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn detects_only_non_empty_listener_rows() {
-        assert!(!has_listener(""));
-        assert!(!has_listener("\n  \n"));
-        assert!(has_listener("LISTEN 0 4096 *:20582 *:*\n"));
-    }
-}

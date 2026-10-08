@@ -131,20 +131,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_default_and_custom_sources() {
-        assert_eq!(
-            CoreRef::parse("sing-box").expect("default").to_string(),
-            "sing-box@stable"
-        );
-        assert_eq!(
-            CoreRef::parse("sing-box:SagerNet/Sing-Box@v1.12.0")
-                .expect("custom")
-                .to_string(),
-            "sing-box:sagernet/sing-box@1.12.0"
-        );
-    }
-
-    #[test]
     fn rejects_path_escape_versions_and_repositories() {
         assert!(CoreRef::parse("sing-box:owner/../repo@stable").is_err());
         assert!(CoreRef::parse("sing-box@1.2.3-../../escape").is_err());

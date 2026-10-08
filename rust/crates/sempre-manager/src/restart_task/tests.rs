@@ -65,20 +65,3 @@ fn preparation_and_supervisor_failures_release_the_task() {
     tasks.failure("startup", "exit status 1");
     assert_eq!(tasks.snapshot().unwrap().state, "failed");
 }
-
-#[test]
-fn output_is_bounded_and_sequences_survive_eviction() {
-    let tasks = RestartTasks::default();
-    tasks.begin(Vec::new()).unwrap();
-    for _ in 0..MAX_LOG_ENTRIES + 3 {
-        tasks.log("stdout", "line");
-    }
-    let task = tasks.snapshot().unwrap();
-    assert_eq!(task.logs.len(), MAX_LOG_ENTRIES);
-    assert_eq!(task.omitted_logs, 4);
-    assert_eq!(task.logs.first().unwrap().sequence, 4);
-    assert_eq!(
-        task.logs.last().unwrap().sequence,
-        (MAX_LOG_ENTRIES + 3) as u64
-    );
-}

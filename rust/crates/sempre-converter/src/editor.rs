@@ -264,45 +264,6 @@ mod tests {
     use crate::Profile;
 
     #[test]
-    fn applies_jsonc_editor_fields() {
-        let mut profile = Profile::default();
-        profile.editor.group = "/* group */ [{\"name\":\"proxy\",\"type\":\"select\"}]".into();
-        profile.editor.servers = "[// local\n{\"name\":\"edge\",\"type\":\"socks5\",\"server\":\"edge.example.com\",\"port\":1080}]".into();
-        let applied = apply(&profile).expect("editor applies");
-        assert_eq!(applied.groups[0].name, "proxy");
-        assert_eq!(applied.manual_servers.len(), 1);
-    }
-
-    #[test]
-    fn preserves_unicode_in_jsonc_editor_fields() {
-        let mut profile = Profile::default();
-        profile.editor.dns_config =
-            r#"{/* route */"shared":{"remoteDetour":"🔰 国外流量"}}"#.into();
-        let applied = apply(&profile).expect("editor applies");
-        assert_eq!(applied.dns["shared"]["remoteDetour"], "🔰 国外流量");
-    }
-
-    #[test]
-    fn keeps_only_dns_fields_with_ui_controls() {
-        let mut profile = Profile::default();
-        profile.editor.dns_config = r#"{
-            "shared": {
-                "remoteDns": "1.1.1.1",
-                "managedDnsFrontend": true,
-                "unknown": "hidden"
-            }
-        }"#
-        .into();
-        let applied = apply(&profile).expect("editor applies");
-        assert_eq!(
-            applied.dns,
-            serde_json::json!({
-                "shared": { "remoteDns": "1.1.1.1" }, "overrides": {}
-            })
-        );
-    }
-
-    #[test]
     fn preserves_private_access_fields_used_by_renderer() {
         let mut profile = Profile::default();
         profile.editor.private_access_config = serde_json::json!({

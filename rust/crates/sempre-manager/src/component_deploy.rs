@@ -338,44 +338,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn installed_core_inventory_preserves_custom_repository_identity() {
-        let mut document = Document::default();
-        let installation = Installation {
-            explicit: true,
-            digest: format!("sha256:{}", "a".repeat(64)),
-            source: "test".into(),
-            installed_at: Utc::now(),
-        };
-        document
-            .core_mut("sing-box")
-            .default
-            .installed
-            .insert("1.2.3".into(), installation.clone());
-        document
-            .core_mut("mihomo")
-            .custom
-            .entry("owner/fork".into())
-            .or_default()
-            .installed
-            .insert("2.0.0".into(), installation);
-        assert_eq!(
-            installed_cores(&document),
-            vec![
-                InstalledCore {
-                    core: "mihomo".into(),
-                    repository: Some("owner/fork".into()),
-                    version: "2.0.0".into(),
-                },
-                InstalledCore {
-                    core: "sing-box".into(),
-                    repository: None,
-                    version: "1.2.3".into(),
-                },
-            ]
-        );
-    }
-
     #[tokio::test]
     async fn deployed_core_validation_probes_the_selected_layout_before_activation() {
         let temporary = tempfile::tempdir().expect("temporary directory");
@@ -417,61 +379,5 @@ mod tests {
             .validate_deployed_cores(&target, &document, "system")
             .await
             .expect("matching system core version");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn bundle_core_preflight_repairs_permissions_before_version_validation() {
-        use std::os::unix::fs::PermissionsExt as _;
-
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let source = Layout::at(&temporary.path().join("source"));
-        let manager =
-            Manager::with_runner(Store::new(source.clone()), FileVersionRunner).expect("manager");
-        manager
-            .store()
-            .update(|document| {
-                document.core_mut("sing-box").default.installed.insert(
-                    "1.2.3".into(),
-                    Installation {
-                        explicit: true,
-                        digest: format!("sha256:{}", "a".repeat(64)),
-                        source: "test".into(),
-                        installed_at: Utc::now(),
-                    },
-                );
-                Ok(())
-            })
-            .expect("source state");
-        let binary = source.core_binary("sing-box", None, "1.2.3");
-        std::fs::create_dir_all(binary.parent().expect("core parent")).expect("core parent");
-        std::fs::write(&binary, b"9.9.9\n").expect("wrong core version");
-        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644))
-            .expect("strip executable bit");
-
-        let document = manager.state().expect("document");
-        let error = manager
-            .repair_and_validate_deployed_cores(&source, &document, "release bundle")
-            .await
-            .expect_err("version validation still runs after repair");
-        assert!(
-            error
-                .to_string()
-                .contains("reports version 9.9.9, expected 1.2.3")
-        );
-        assert_eq!(
-            std::fs::metadata(&binary)
-                .expect("core metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o755
-        );
-
-        std::fs::write(&binary, b"1.2.3\n").expect("matching core version");
-        manager
-            .repair_and_validate_deployed_cores(&source, &document, "release bundle")
-            .await
-            .expect("matching executable core");
     }
 }

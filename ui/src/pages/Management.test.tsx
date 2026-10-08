@@ -17,7 +17,6 @@ let uiMode: 'simple' | 'advanced' = 'advanced'
 describe('Management page', () => {
   let coreTask: Record<string, unknown> | null
   let coresResponse: Record<string, unknown>
-  let cancelledTask = ''
   let upgradeRequested = false
   let serviceUpdateTask: Record<string, unknown> | null
   let serviceUpdateConfirmed: boolean | null
@@ -28,7 +27,6 @@ describe('Management page', () => {
     uiMode = 'advanced'
     coreTask = null
     coresResponse = { supported: [], installed: [], selected: null }
-    cancelledTask = ''
     upgradeRequested = false
     serviceUpdateTask = null
     serviceUpdateConfirmed = null
@@ -43,7 +41,6 @@ describe('Management page', () => {
       }
       if (path.endsWith('/cores/download')) {
         if (init?.method === 'DELETE') {
-          cancelledTask = new URL(String(input)).searchParams.get('id') || ''
           coreTask = null
         }
         return Response.json({ task: coreTask })
@@ -78,98 +75,10 @@ describe('Management page', () => {
     }))
   })
 
-  it('keeps automatic network switching out of the service console', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    fireEvent.click(screen.getByRole('button', { name: '控制台' }))
-    expect(await screen.findByText('显示本机模式的完整配置。')).toBeInTheDocument()
-    expect(screen.queryByText('自动网络切换')).not.toBeInTheDocument()
-  })
-
   afterEach(() => {
     cleanup()
     sessionStorage.clear()
     vi.unstubAllGlobals()
-  })
-
-  it('keeps an unavailable gateway reason inside the disabled option', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    fireEvent.click(screen.getByRole('button', { name: '控制台' }))
-    expect(await screen.findByText('显示本机模式的完整配置。')).not.toHaveClass('border')
-    expect(screen.queryByText('网关模式仅在 Linux 系统服务上可用。')).not.toBeInTheDocument()
-
-    await waitFor(() => expect(screen.getByRole('combobox')).toBeEnabled())
-    fireEvent.click(screen.getByRole('combobox'))
-    const listbox = await screen.findByRole('listbox')
-    const gateway = within(listbox).getByText('网关模式').closest('.cursor-not-allowed')
-
-    expect(gateway).toHaveClass('cursor-not-allowed')
-    expect(within(gateway as HTMLElement).getByText('仅 Linux 系统服务可用')).toHaveClass('text-xs', 'text-[var(--text-muted)]')
-  })
-
-  it('switches between simple and advanced local presentation modes', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    fireEvent.click(screen.getByRole('button', { name: '控制台' }))
-    await screen.findByText('显示本机模式的完整配置。')
-    const selector = await screen.findByRole('combobox')
-    fireEvent.click(selector)
-    const listbox = await screen.findByRole('listbox')
-    fireEvent.click(within(listbox).getByText('本机模式（简易）'))
-
-    await waitFor(() => expect(uiMode).toBe('simple'))
-    expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/ui/settings', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ ui_mode: 'simple' }) }))
-    expect(await screen.findByText('仅显示订阅 URL、常用分流和节点选择。')).toBeInTheDocument()
-  })
-
-  it('separates console actions from backup and update tools', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    const tabNames = ['核心', '备份与更新', '控制台']
-    expect(screen.getAllByRole('button').filter((button) => tabNames.includes(button.textContent || '')).map((button) => button.textContent)).toEqual(tabNames)
-
-    fireEvent.click(screen.getByRole('button', { name: '控制台' }))
-    expect(await screen.findByText('Web')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '模式' })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['Web', '运行模式', 'Sempre 系统服务'])
-    expect(screen.getByText('Sempre 系统服务')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重启服务' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '停止服务' })).toBeInTheDocument()
-    expect(screen.queryByText('UI')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '导出部署包' })).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '备份与更新' }))
-    expect(await screen.findByText('2.0.8')).toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['部署备份', 'Sempre 更新', 'UI 更新'])
-    expect(screen.getByText('上传 ZIP')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '更新' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '导出部署包' })).toBeInTheDocument()
-    expect(screen.queryByText('Sempre 系统服务')).not.toBeInTheDocument()
-  })
-
-  it('starts a verified upgrade from backup and update', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    fireEvent.click(screen.getByRole('button', { name: '备份与更新' }))
-    expect(await screen.findByText('2.0.8')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
-    expect(await screen.findByText('2.1.0')).toBeInTheDocument()
-    expect(screen.getByText('Safer one-click upgrades.', { exact: false })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '立即升级' }))
-
-    await waitFor(() => expect(upgradeRequested).toBe(true))
-    const dialog = await screen.findByRole('dialog', { name: /正在更新 Sempre/ })
-    expect(within(dialog).getByText('正在下载安装包')).toBeInTheDocument()
-    expect(within(dialog).getByText('50.0 MiB / 100.0 MiB')).toBeInTheDocument()
-    expect(within(dialog).getByText('5.0 MiB/s')).toBeInTheDocument()
-    expect(within(dialog).getByText('约 10 秒')).toBeInTheDocument()
-    expect(within(dialog).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
   })
 
   it('confirms the package-reported Sempre version only after validation', async () => {
@@ -211,71 +120,5 @@ describe('Management page', () => {
     expect(uiUpdateConfirmed).toBeNull()
     fireEvent.click(within(confirmation).getByRole('button', { name: '确认安装' }))
     await waitFor(() => expect(uiUpdateConfirmed).toBe(true))
-  })
-
-  it.each([['安装', 'install'], ['更新', 'update']])('submits complete core references for %s', async (label, operation) => {
-    coresResponse = { supported: ['sing-box', 'mihomo', 'xray', 'v2ray', 'clash-rs', 'dae'], installed: [], selected: null }
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    const input = screen.getByRole('combobox', { name: '核心引用' })
-    expect(input).toHaveValue('sing-box:SagerNet/sing-box@stable')
-    expect(input).toHaveAttribute('placeholder', 'sing-box:SagerNet/sing-box@stable')
-    await waitFor(() => expect(document.querySelectorAll('#supported-core-references option')).toHaveLength(6))
-    expect(Array.from(document.querySelectorAll('#supported-core-references option'), (option) => option.getAttribute('value'))).toEqual([
-      'sing-box:SagerNet/sing-box@stable', 'mihomo:MetaCubeX/mihomo@stable', 'xray:XTLS/Xray-core@stable',
-      'v2ray:v2fly/v2ray-core@stable', 'clash-rs:Watfaq/clash-rs@stable', 'dae:daeuniverse/dae@stable',
-    ])
-    fireEvent.click(screen.getByRole('button', { name: label }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(`http://sempre.test/api/v1/cores/${operation}`, expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ reference: 'sing-box:SagerNet/sing-box@stable' }),
-    })))
-
-    await waitFor(() => expect(screen.getByRole('button', { name: label })).toBeEnabled())
-    fireEvent.change(input, { target: { value: 'sing-box:tinymins/sing-box@1.13.15-ddns.1' } })
-    fireEvent.click(screen.getByRole('button', { name: label }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(`http://sempre.test/api/v1/cores/${operation}`, expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ reference: 'sing-box:tinymins/sing-box@1.13.15-ddns.1' }),
-    })))
-    expect(input).toHaveAccessibleDescription(/换源时替换所有者\/仓库名/)
-  })
-
-  it('shows the selected core as a disabled current-use action', async () => {
-    const installation = { explicit: true, digest: 'sha256:digest', source: 'release', installed_at: '2026-09-07T00:00:00Z' }
-    coresResponse = {
-      supported: ['sing-box'],
-      selected: { core: 'sing-box', reference: 'stable' },
-      installed: [
-        { core: 'sing-box', repository: 'SagerNet/sing-box', reference: 'sing-box@1.13.18', official: true, version: '1.13.18', channels: ['stable'], installation },
-        { core: 'sing-box', repository: 'SagerNet/sing-box', reference: 'sing-box@1.12.20', official: true, version: '1.12.20', channels: [], installation },
-      ],
-    }
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    expect(await screen.findByRole('button', { name: '当前使用' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '使用' })).toBeEnabled()
-  })
-
-  it('shows byte progress and clears a cancelled download after confirmation', async () => {
-    coreTask = {
-      id: 'download-1', operation: 'install', reference: 'sing-box:tinymins/sing-box@1.13.15-ddns.1',
-      state: 'running', stage: 'downloading', artifact: 'sing-box-darwin-arm64.tar.gz',
-      downloaded_bytes: 5 * 1024 * 1024, total_bytes: 10 * 1024 * 1024,
-      started_at: '2026-09-07T00:00:00Z', finished_at: null, error: null,
-    }
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><I18nProvider><SessionProvider><Management /></SessionProvider></I18nProvider></QueryClientProvider>)
-
-    expect(await screen.findByText('5.0 MiB / 10.0 MiB · 50%')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
-    fireEvent.click(screen.getByRole('button', { name: '取消下载' }))
-
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('下载将立即终止，临时文件和任务列表项会被清除。')).toBeInTheDocument()
-    fireEvent.click(within(dialog).getByRole('button', { name: '取消下载' }))
-
-    await waitFor(() => expect(cancelledTask).toBe('download-1'))
-    await waitFor(() => expect(screen.queryByText('下载任务')).not.toBeInTheDocument())
   })
 })

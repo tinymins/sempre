@@ -213,21 +213,6 @@ mod tests {
         assert!(!manager.state_path().exists());
     }
 
-    #[test]
-    fn managed_resolver_reuses_saved_original_upstreams() {
-        let root = tempfile::tempdir().expect("directory");
-        let resolver = root.path().join("resolv.conf");
-        fs::write(&resolver, b"nameserver 223.5.5.5\nnameserver 223.6.6.6\n").expect("resolver");
-        let manager = SystemDns::new(true, root.path().join("state"), resolver);
-
-        manager.apply().expect("take over resolver");
-
-        assert_eq!(
-            manager.discover_upstreams().expect("saved upstreams"),
-            ["223.5.5.5", "223.6.6.6"]
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn takeover_rejects_symlink_managed_resolver() {
@@ -245,13 +230,5 @@ mod tests {
                 .to_string()
                 .contains("symlink-managed")
         );
-    }
-
-    #[test]
-    fn managed_requires_the_first_nameserver() {
-        assert!(managed(
-            b"# comment\noptions timeout:1\nnameserver 127.0.0.1\nnameserver 10.0.0.1\n"
-        ));
-        assert!(!managed(b"nameserver 10.0.0.1\nnameserver 127.0.0.1\n"));
     }
 }

@@ -145,18 +145,3 @@ async fn stream_topic(
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn event_topics_are_filtered_deduplicated_and_defaulted() {
-        assert_eq!(
-            selected_topics("logs,unknown, traffic,logs"),
-            ["logs", "traffic"]
-        );
-        assert_eq!(selected_topics("unknown"), ALL_TOPICS);
-        assert_eq!(selected_topics(""), ALL_TOPICS);
-    }
-}

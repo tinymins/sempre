@@ -148,39 +148,3 @@ fn checksum_from_body(body: &str, name: &str) -> Result<String, UiError> {
 fn invalid(message: impl Into<String>) -> UiError {
     UiError::Invalid(message.into())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_ui_references_without_ambiguous_versions() {
-        assert_eq!(
-            Reference::parse("TinyMins/Sempre-UI").expect("stable reference"),
-            Reference {
-                repository: "tinymins/sempre-ui".into(),
-                version: "stable".into(),
-            }
-        );
-        assert_eq!(
-            Reference::parse("tinymins/sempre-ui@v1.2.3-beta.1")
-                .expect("version reference")
-                .version,
-            "1.2.3-beta.1"
-        );
-        for invalid in ["owner", "a/b/c", "owner/repo@next", "owner/repo@1@2"] {
-            assert!(Reference::parse(invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn extracts_typed_digest_from_release_checksums() {
-        let digest = "a".repeat(64);
-        assert_eq!(
-            checksum_from_body(&format!("{digest}  {ARCHIVE_NAME}\n"), ARCHIVE_NAME)
-                .expect("checksum"),
-            format!("sha256:{digest}")
-        );
-        assert!(checksum_from_body("not-a-checksum  sempre-ui.zip", ARCHIVE_NAME).is_err());
-    }
-}

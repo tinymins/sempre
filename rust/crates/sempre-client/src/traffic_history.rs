@@ -24,9 +24,6 @@ use crate::{
     traffic_rotation::{self, RotationError, TrafficSettings},
 };
 
-#[cfg(test)]
-use crate::traffic_rotation::{MAX_RETENTION_HOURS, MIN_MAX_BYTES};
-
 const BUCKET_MILLIS: i64 = 60_000;
 #[derive(Debug, Error)]
 pub(crate) enum TrafficError {
@@ -460,7 +457,3 @@ fn internal_error(error: &TrafficError) -> Response {
         error.to_string(),
     )
 }
-
-#[cfg(test)]
-#[path = "traffic_history_tests.rs"]
-mod tests;

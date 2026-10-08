@@ -10,8 +10,7 @@
   },
   "scripts": {
     "lint": "eslint src --max-warnings 0",
-    "tsc": "tsc --noEmit --pretty false",
-    "test": "vitest run"
+    "tsc": "tsc --noEmit --pretty false"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

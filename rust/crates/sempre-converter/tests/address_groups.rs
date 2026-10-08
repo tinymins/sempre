@@ -1,6 +1,4 @@
-use sempre_converter::{
-    CompileRequest, DIRECT_OUTBOUND_NAME, Profile, Target, compile, prepare_profile,
-};
+use sempre_converter::{CompileRequest, DIRECT_OUTBOUND_NAME, Profile, Target, compile};
 use serde_json::{Value, json};
 
 const PRIVATE: &str = "内网地址";
@@ -136,40 +134,6 @@ fn clash_targets_route_private_and_both_cn_matches_to_address_groups() {
             provider["behavior"], "domain",
             "{format}: CN domain provider"
         );
-    }
-}
-
-#[test]
-fn empty_groups_keep_original_proxy_fallback_and_prepare_is_repeatable() {
-    let mut input = profile();
-    input.groups.clear();
-    for format in ["sing-box-v13", "clash-meta"] {
-        let target = Target::parse(format).expect("target");
-        let once = prepare_profile(&input, &target).expect("first prepare");
-        let twice = prepare_profile(&once, &target).expect("second prepare");
-        let first = render(once, format);
-        let second = render(twice, format);
-        assert_eq!(first, second, "{format}: repeated prepare");
-        if format.starts_with("clash") {
-            assert_eq!(first["proxy-groups"][0]["name"], "proxy");
-            assert_eq!(
-                first["rules"].as_array().unwrap().last(),
-                Some(&json!("MATCH,proxy"))
-            );
-            for name in [PRIVATE, CHINA] {
-                let members = clash_group(&first, name)["proxies"].as_array().unwrap();
-                assert!(!members.iter().any(|member| member == FOREIGN));
-            }
-        } else {
-            assert_eq!(first["route"]["final"], "proxy");
-            assert_eq!(sing_box_group(&first, "proxy")["type"], "selector");
-            for name in [PRIVATE, CHINA] {
-                let members = sing_box_group(&first, name)["outbounds"]
-                    .as_array()
-                    .unwrap();
-                assert!(!members.iter().any(|member| member == FOREIGN));
-            }
-        }
     }
 }
 

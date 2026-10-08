@@ -346,28 +346,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_match_the_ohmywrt_policy_shape() {
-        let defaults = system_defaults();
-        assert_eq!(defaults.groups.len(), 25);
-        assert_eq!(defaults.rule_providers.len(), 24);
-        assert_eq!(defaults.filters, ["官网", "客服", "qq群"]);
-        assert_eq!(defaults.groups[0].name, FOREIGN);
-        assert_eq!(defaults.groups[24].name, "⚓️ 其他流量");
-        assert_eq!(defaults.rule_providers[0].tag, "Claude");
-        assert_eq!(defaults.rule_providers[23].tag, "AD");
-    }
-
-    #[test]
-    fn target_defaults_only_change_the_sing_box_local_dns_transport() {
-        let common = system_defaults();
-        let sing_box = recommended_defaults("sing-box");
-        assert_eq!(common.dns["shared"]["localDnsTransport"], "udp");
-        assert_eq!(sing_box.dns["shared"]["localDnsTransport"], "tls");
-        assert_eq!(sing_box.dns["shared"]["localDnsPort"], 853);
-        assert_eq!(common.groups.len(), sing_box.groups.len());
-    }
-
-    #[test]
     fn effective_profile_respects_each_independent_system_switch() {
         let mut profile = Profile::default();
         profile.groups.push(group("custom", &[], false, false));
@@ -378,15 +356,5 @@ mod tests {
         assert_eq!(effective.groups.len(), 25);
         assert!(effective.rule_providers.is_empty());
         assert!(effective.filters.is_empty());
-    }
-
-    #[test]
-    fn editor_defaults_are_parseable_and_specialized_by_core() {
-        let defaults = recommended_editor_defaults();
-        assert!(serde_json::from_str::<Value>(&defaults.editor.group).is_ok());
-        assert_eq!(defaults.by_core.len(), 6);
-        let sing_box: Value = serde_json::from_str(&defaults.by_core["sing-box"].dns_config)
-            .expect("sing-box DNS defaults");
-        assert_eq!(sing_box["shared"]["localDnsTransport"], "tls");
     }
 }

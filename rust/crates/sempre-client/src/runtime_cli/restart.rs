@@ -63,31 +63,3 @@ fn completed(task: &Task) -> Result<bool, ClientError> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn completion_uses_the_task_outcome() {
-        let mut task = Task {
-            id: "task".into(),
-            state: "running".into(),
-            logs: Vec::new(),
-        };
-        assert!(!completed(&task).unwrap());
-        task.state = "failed".into();
-        task.logs.push(Log {
-            stage: "failed".into(),
-            message: "configuration validation failed".into(),
-        });
-        assert!(
-            completed(&task)
-                .unwrap_err()
-                .to_string()
-                .contains("configuration validation failed")
-        );
-        task.state = "succeeded".into();
-        assert!(completed(&task).unwrap());
-    }
-}

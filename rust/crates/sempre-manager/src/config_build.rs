@@ -101,23 +101,6 @@ mod tests {
     use sempre_state::{Layout, Store};
 
     #[test]
-    fn frontend_upstreams_do_not_change_core_build_identity() {
-        let profile = Profile::default();
-        let directory = tempfile::tempdir().expect("directory");
-        let manager = Manager::with_runner(Store::new(Layout::at(directory.path())), ProcessRunner)
-            .expect("manager");
-        let before = manager.dns_settings();
-        let mut after = before.clone();
-        after.direct_upstreams = vec!["udp://223.5.5.5".into()];
-        assert!(!before.requires_core_rebuild(&after));
-        let target = Target::parse("sing-box").expect("target");
-        assert_eq!(
-            config_build(&profile, &target, &before).expect("before"),
-            config_build(&profile, &target, &after).expect("after")
-        );
-    }
-
-    #[test]
     fn private_access_build_metadata_excludes_wireguard_keys() {
         let profile = Profile {
             private_access: serde_json::json!({

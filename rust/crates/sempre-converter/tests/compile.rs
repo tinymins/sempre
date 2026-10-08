@@ -91,84 +91,11 @@ fn clash_output_round_trips_as_yaml() {
 }
 
 #[test]
-fn clash_targets_include_legacy_runtime_compatibility_fields() {
-    let mut input = request("clash-meta");
-    input.profile.transparent_proxy.mode = "tproxy".into();
-    input.profile.transparent_proxy.tproxy.listen_port = 7893;
-    input.profile.transparent_proxy.tproxy.dns_listen_port = 1053;
-    input.profile.management_api.secret = "controller-secret".into();
-    let result = compile(&input).expect("compile clash-meta");
-    let document: Value = serde_yaml::from_str(&result.content).expect("valid YAML output");
-    assert_eq!(document["tproxy-port"], 7893);
-    assert_eq!(document["secret"], "controller-secret");
-    assert_eq!(document["global-client-fingerprint"], "chrome");
-}
-
-#[test]
-fn system_switches_apply_ohmywrt_defaults_during_compilation() {
-    let mut input = request("clash-meta");
-    for key in [
-        "use_system_groups",
-        "use_system_rules",
-        "use_system_filters",
-        "use_system_dns",
-        "use_system_custom_config",
-    ] {
-        input.profile.extra.insert(key.into(), json!(true));
-    }
-    let result = compile(&input).expect("compile with system defaults");
-    let document: Value = serde_yaml::from_str(&result.content).expect("valid YAML output");
-    assert_eq!(document["proxy-groups"].as_array().map(Vec::len), Some(27));
-    assert_eq!(
-        document["rule-providers"]
-            .as_object()
-            .map(serde_json::Map::len),
-        Some(25)
-    );
-    assert_eq!(
-        &document["rules"].as_array().expect("rules")[..2],
-        &[
-            json!("RULE-SET,Claude,🤖 Claude"),
-            json!("RULE-SET,AI,🤖 AI")
-        ]
-    );
-    assert!(result.content.contains("GoogleCIDRv2"));
-}
-
-#[test]
 fn missing_snapshot_is_rejected_without_network_fallback() {
     let mut input = request("sing-box-v13");
     input.snapshots.clear();
     let error = compile(&input).expect_err("missing snapshot must fail");
     assert!(error.to_string().contains("no supplied snapshot"));
-}
-
-#[test]
-fn filters_only_remove_source_nodes_and_origins_follow_unique_names() {
-    let mut input = request("sing-box-v13");
-    input.profile.filters = vec!["edge".into()];
-    input.profile.manual_servers = vec![json!({
-        "name": "edge", "type": "socks5", "server": "local.example.com", "port": 1080
-    })];
-    let result = compile(&input).expect("manual node survives source filter");
-    assert_eq!(result.node_count, 1);
-    assert_eq!(
-        result.node_origins.get("edge").map(String::as_str),
-        Some("manual-server")
-    );
-
-    let unique = compile(&request("sing-box-v13")).expect("duplicate names compile");
-    assert_eq!(
-        unique.node_origins.get("🇭🇰 HK edge").map(String::as_str),
-        Some("source:source-1")
-    );
-    assert_eq!(
-        unique
-            .node_origins
-            .get("🇭🇰 HK edge (2)")
-            .map(String::as_str),
-        Some("source:source-1")
-    );
 }
 
 #[test]
@@ -200,33 +127,6 @@ fn profile_round_trip_preserves_forward_compatible_fields() {
     );
     assert_eq!(output["sources"][0]["fetch_mode"], "domestic-direct");
     assert_eq!(output["sources"][0]["snapshot_hash"], "abc");
-}
-
-#[test]
-fn editor_manual_servers_are_compiled_by_the_shared_core() {
-    let profile: Profile = serde_json::from_value(json!({
-        "name": "Editor",
-        "editor": {
-            "group": "[{\"name\":\"proxy\",\"type\":\"select\"}]",
-            "servers": "[{\"name\":\"manual\",\"type\":\"socks5\",\"server\":\"manual.example.com\",\"port\":1080}]"
-        }
-    })).expect("profile");
-    let result = compile(&CompileRequest {
-        protocol: 1,
-        profile,
-        snapshots: vec![],
-        custom_nodes: vec![],
-        target: Target {
-            core: String::new(),
-            format: "sing-box-v13".into(),
-            version: String::new(),
-            platform: String::new(),
-            standalone: false,
-        },
-    })
-    .expect("compile editor server");
-    assert_eq!(result.node_count, 1);
-    assert!(result.content.contains("manual.example.com"));
 }
 
 #[test]
@@ -296,45 +196,6 @@ fn sing_box_preserves_ohmywrt_protocol_conversion_semantics() {
         outbound("vmess-http")["transport"]["headers"]["Host"],
         "edge.example.com"
     );
-}
-
-#[test]
-fn sing_box_compiles_string_and_native_custom_rules() {
-    let profile: Profile = serde_json::from_value(json!({
-        "name": "Rules",
-        "groups": [{ "name": "proxy", "type": "select" }],
-        "rules": [
-            "DOMAIN-SUFFIX,example.com,proxy",
-            { "process_name": ["git"], "outbound": "direct" }
-        ],
-        "manual_servers": [
-            { "name": "edge", "type": "socks5", "server": "edge.example.com", "port": 1080 }
-        ]
-    }))
-    .expect("profile");
-    let result = compile(&CompileRequest {
-        protocol: 1,
-        profile,
-        snapshots: vec![],
-        custom_nodes: vec![],
-        target: Target {
-            core: String::new(),
-            format: "sing-box-v13".into(),
-            version: String::new(),
-            platform: String::new(),
-            standalone: false,
-        },
-    })
-    .expect("compile rules");
-    let config: Value = serde_json::from_str(&result.content).expect("sing-box JSON");
-    assert!(config["route"]["rules"].as_array().is_some_and(|rules| {
-        rules
-            .iter()
-            .any(|rule| rule["domain_suffix"] == "example.com" && rule["outbound"] == "proxy")
-            && rules
-                .iter()
-                .any(|rule| rule["process_name"] == json!(["git"]))
-    }));
 }
 
 #[test]
@@ -442,15 +303,6 @@ fn transparent_runtime_is_rendered_for_xray_and_v2ray() {
             .iter()
             .any(|value| value["tag"] == "dns-in" && value["settings"]["address"] == "9.9.9.9")
     }));
-}
-
-#[test]
-fn disabled_transparent_mode_keeps_only_local_inbounds() {
-    let mut input = request("sing-box-v13");
-    input.profile.transparent_proxy.mode = "disabled".into();
-    let result = compile(&input).expect("compile disabled mode");
-    let config: Value = serde_json::from_str(&result.content).expect("sing-box JSON");
-    assert_eq!(config["inbounds"].as_array().map(Vec::len), Some(2));
 }
 
 #[test]

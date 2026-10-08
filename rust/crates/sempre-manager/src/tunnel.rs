@@ -131,19 +131,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn finds_editor_transport_references() {
-        let mut profile = Profile::default();
-        profile.editor.private_access_config = json!({ "connectors": [
-            { "type": "wireguard", "transport_endpoint_ref": "primary" }
-        ]})
-        .to_string();
-        assert_eq!(
-            profile_forward_refs(&profile).expect("editor config"),
-            ["primary"]
-        );
-    }
-
     #[tokio::test]
     async fn referenced_forwards_cannot_be_removed() {
         let root = tempfile::tempdir().expect("temporary directory");

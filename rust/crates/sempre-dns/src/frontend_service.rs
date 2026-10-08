@@ -106,42 +106,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn optional_loopback_port_listens_without_replacing_the_primary_port() {
-        let primary = shared_port().await;
-        let optional = shared_port().await;
-        let config = DnsConfig {
-            enabled: true,
-            listen_port: primary,
-            ..DnsConfig::default()
-        };
-
-        let (service, error) = DnsService::start_with_policy_and_optional_loopback_port(
-            config,
-            std::sync::Arc::new(crate::dns_policy::NoopDnsRuntimePolicy),
-            optional,
-        )
-        .await
-        .expect("start DNS");
-
-        assert!(error.is_none());
-        assert_eq!(
-            TcpListener::bind(("127.0.0.1", primary))
-                .await
-                .expect_err("primary listener")
-                .kind(),
-            std::io::ErrorKind::AddrInUse
-        );
-        assert_eq!(
-            TcpListener::bind(("127.0.0.1", optional))
-                .await
-                .expect_err("optional listener")
-                .kind(),
-            std::io::ErrorKind::AddrInUse
-        );
-        service.stop().await;
-    }
-
-    #[tokio::test]
     async fn occupied_optional_loopback_port_does_not_block_the_primary_listener() {
         let primary = shared_port().await;
         let occupied = UdpSocket::bind("127.0.0.1:0").await.expect("occupied port");

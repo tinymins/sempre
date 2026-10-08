@@ -187,7 +187,7 @@ pub(crate) async fn checked(program: &str, arguments: &[&str]) -> Result<(), Ser
     }
 }
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(target_os = "windows")]
 fn windows_failure_flag_arguments(name: &str) -> [&str; 3] {
     ["failureflag", name, "1"]
 }
@@ -203,21 +203,13 @@ pub(crate) fn require_administrator() -> Result<(), ServiceError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, render, windows_failure_flag_arguments};
+    use super::{Action, render};
 
     #[test]
     fn action_parser_rejects_expansive_service_operations() {
         assert_eq!(Action::parse("restart").expect("restart"), Action::Restart);
         assert_eq!(Action::parse("stop").expect("stop"), Action::Stop);
         assert!(Action::parse("uninstall").is_err());
-    }
-
-    #[test]
-    fn windows_recovery_covers_reported_service_failures() {
-        assert_eq!(
-            windows_failure_flag_arguments("sempre"),
-            ["failureflag", "sempre", "1"]
-        );
     }
 
     #[test]

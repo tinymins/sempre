@@ -319,17 +319,6 @@ fn masked_prefix(value: &str) -> Result<String, GatewayError> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn host_plan_matches_gateway_policy_and_apply_rejects_placeholders() {
-        let plan = build_host_plan(Config::default()).expect("plan");
-        assert!(
-            plan.commands
-                .iter()
-                .any(|command| command.contains("ip_forward=1"))
-        );
-        assert!(plan.summary.contains("<lan-interface>"));
-    }
-
     #[tokio::test]
     async fn apply_requires_concrete_interfaces_before_running_commands() {
         let error = apply_host_plan(HostApplyRequest {

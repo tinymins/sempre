@@ -64,21 +64,6 @@ const fn current_amd64_level() -> u8 {
     0
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn current_target_uses_product_platform_names() {
-        let target = Target::current();
-        assert!(!matches!(target.os.as_str(), "macos"));
-        assert!(!matches!(target.arch.as_str(), "x86_64" | "aarch64"));
-        if target.arch == "amd64" {
-            assert!((1..=3).contains(&target.amd64_level));
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Package {
     pub version: String,

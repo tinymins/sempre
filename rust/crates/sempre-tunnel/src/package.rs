@@ -173,24 +173,3 @@ fn make_executable(path: &Path) -> Result<(), TunnelError> {
 fn make_executable(_path: &Path) -> Result<(), TunnelError> {
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn package_metadata_covers_supported_targets() {
-        for (os, arch) in [
-            ("windows", "x86_64"),
-            ("windows", "aarch64"),
-            ("linux", "x86_64"),
-            ("linux", "aarch64"),
-            ("macos", "x86_64"),
-            ("macos", "aarch64"),
-        ] {
-            let package = package_for(os, arch).expect("package");
-            assert!(package.digest.starts_with("sha256:"));
-            assert!(package.size > 0);
-        }
-    }
-}

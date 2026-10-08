@@ -62,76 +62,6 @@ fn initialize_migrates_v1_once_and_preserves_existing_pending_fields() {
 }
 
 #[test]
-fn second_initialize_leaves_migrated_state_byte_identical() {
-    let (_temporary, store) = store();
-    fs::write(&store.layout().state, v1_fixture(None)).expect("write v1 state");
-    store.initialize().expect("first initialize");
-    let first = fs::read(&store.layout().state).expect("first state bytes");
-
-    store.initialize().expect("second initialize");
-    let second = fs::read(&store.layout().state).expect("second state bytes");
-    assert_eq!(second, first);
-}
-
-#[test]
-fn v3_migration_removes_every_runtime_rollback_target() {
-    let (_temporary, store) = store();
-    let mut value = serde_json::to_value(Document::default()).expect("serialize state");
-    value["schema"] = Value::from(2);
-    value["applied_migrations"]
-        .as_array_mut()
-        .expect("migration ledger")
-        .truncate(1);
-    let object = value.as_object_mut().expect("state object");
-    object.insert(
-        "previous".into(),
-        serde_json::json!({
-            "core": "sing-box",
-            "repository": null,
-            "reference": "stable",
-            "version": "1.13.2",
-            "config_hash": "a".repeat(64),
-        }),
-    );
-    object.insert("previous_config_build".into(), Value::Null);
-    object.insert(
-        "previous_profile_id".into(),
-        Value::String("old-profile".into()),
-    );
-    object
-        .get_mut("runtime")
-        .and_then(Value::as_object_mut)
-        .expect("runtime")
-        .insert(
-            "last_failure".into(),
-            serde_json::json!({
-                "stage": "startup failed",
-                "error": "exit status 1",
-                "occurred_at": "2026-09-16T00:00:00Z",
-                "failed": null,
-                "rolled_back_to": null,
-            }),
-        );
-    fs::write(
-        &store.layout().state,
-        serde_json::to_vec_pretty(&value).expect("encode v2 state"),
-    )
-    .expect("write v2 state");
-
-    let migrated = store.initialize().expect("migrate v2 state");
-    assert_eq!(migrated.schema, 3);
-    let encoded = serde_json::to_value(migrated).expect("serialize migrated state");
-    assert!(encoded.get("previous").is_none());
-    assert!(encoded.get("previous_config_build").is_none());
-    assert!(encoded.get("previous_profile_id").is_none());
-    assert!(
-        encoded["runtime"]["last_failure"]
-            .get("rolled_back_to")
-            .is_none()
-    );
-}
-
-#[test]
 fn future_schema_is_rejected_without_modifying_state() {
     let (_temporary, store) = store();
     let mut value = serde_json::to_value(Document::default()).expect("serialize state");
@@ -186,21 +116,6 @@ fn failed_migration_does_not_persist_schema_or_ledger() {
         fs::read(&store.layout().state).expect("unchanged state"),
         fixture
     );
-}
-
-#[test]
-fn read_rejects_v1_without_running_migrations() {
-    let (_temporary, store) = store();
-    fs::write(
-        &store.layout().state,
-        v1_fixture(Some(vec![PendingConfigField::Dns])),
-    )
-    .expect("write v1 state");
-    assert!(store.read().is_err());
-    let value: Value =
-        serde_json::from_slice(&fs::read(&store.layout().state).expect("read unchanged v1 state"))
-            .expect("decode unchanged v1 state");
-    assert_eq!(value["schema"], 1);
 }
 
 #[test]

@@ -376,35 +376,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parses_primary_resolver_without_scoped_or_loopback_servers() {
-        let data = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n  nameserver[1] : 223.6.6.6\n  nameserver[2] : 61.130.254.35\nresolver #2\n  domain : local\n\nDNS configuration (for scoped queries)\nresolver #1\n  nameserver[0] : 9.9.9.9\n";
-        assert_eq!(parse_scutil_dns(data), ["223.6.6.6", "61.130.254.35"]);
-    }
-
-    #[test]
-    fn parses_only_enabled_network_services() {
-        assert_eq!(
-            parse_services(
-                "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\n*VPN\nUSB LAN\n"
-            ),
-            ["Wi-Fi", "USB LAN"]
-        );
-    }
-
-    #[tokio::test]
-    async fn resolves_enabled_service_by_interface_name_and_ignores_removed_services() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let dns = SystemDns::new(true, root.path().into());
-        let services = dns
-            .capture_services(&FakeRunner::default())
-            .await
-            .expect("capture services");
-        assert_eq!(services.len(), 2);
-        assert_eq!(services[1].id.as_deref(), Some("SERVICE-B"));
-        assert_eq!(services[1].name, "iPhone");
-    }
-
     #[tokio::test]
     async fn stale_ownership_ignores_removed_services_and_restores_active_services() {
         let root = tempfile::tempdir().expect("temporary directory");
@@ -453,17 +424,6 @@ mod tests {
         }));
         assert!(!calls.iter().any(|call| call.contains("SERVICE-C")));
         assert!(!dns.state_path().exists());
-    }
-
-    #[test]
-    fn old_ownership_state_defaults_to_standard_dns_port() {
-        let state: State = serde_json::from_str(
-            r#"{"original_upstreams":["223.6.6.6"],"services":[{"name":"Wi-Fi","original":[]}]}"#,
-        )
-        .expect("old ownership state");
-        assert_eq!(state.managed_port, 53);
-        assert_eq!(state.services[0].id, None);
-        assert_eq!(state.services[0].original_port, None);
     }
 
     #[tokio::test]

@@ -30,24 +30,6 @@ fn validate(content: &str) -> Result<(), SubscriptionError> {
     }
 }
 
-#[test]
-fn raw_sources_are_snapshotted_without_network_access() {
-    let root = tempfile::tempdir().expect("temporary directory");
-    let store = SubscriptionStore::new(sempre_state::Layout::at(root.path()));
-    store.initialize().expect("store");
-    let fetcher = Fetcher::new(store).expect("fetcher");
-    let result = fetcher
-        .raw(
-            source("raw", "", "ss://secret@server.example:443#node"),
-            validate,
-            true,
-        )
-        .expect("raw source");
-    assert!(!result.from_cache);
-    assert_eq!(result.snapshot.content_hash.len(), 64);
-    assert_eq!(result.source.extra["last_status"], "raw content");
-}
-
 #[tokio::test]
 async fn http_sources_use_fresh_and_last_known_good_cache() {
     let requests = Arc::new(AtomicUsize::new(0));

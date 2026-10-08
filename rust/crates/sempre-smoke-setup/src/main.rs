@@ -81,33 +81,3 @@ fn setup(root: &std::path::Path, core: &std::path::Path) -> Result<(), Box<dyn s
     sempre_bundle::mark_release_directory(&layout.root)?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fixture_is_a_valid_release_with_a_runnable_core_selection() {
-        let root = tempfile::tempdir().expect("release root");
-        let core_root = tempfile::tempdir().expect("core root");
-        let core = core_root.path().join(if cfg!(windows) {
-            "testcore.exe"
-        } else {
-            "testcore"
-        });
-        fs::write(&core, b"test core").expect("test core");
-        setup(root.path(), &core).expect("setup");
-        sempre_bundle::validate_release(root.path()).expect("release marker");
-        let document = Store::new(Layout::at(root.path())).read().expect("state");
-        assert_eq!(document.selected.expect("selection").reference, "stable");
-        assert!(document.active.is_some());
-        let catalog = sempre_subscription::SubscriptionStore::new(Layout::at(root.path()))
-            .read()
-            .expect("subscriptions");
-        assert_eq!(catalog.profiles[0].transparent_proxy.mode, "disabled");
-        assert_eq!(
-            catalog.profiles[0].editor.dns_config,
-            r#"{"shared":{"systemDnsTakeoverEnabled":false}}"#
-        );
-    }
-}

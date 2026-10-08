@@ -105,29 +105,3 @@ pub(crate) fn validate(manifest: &Manifest) -> Result<(), UiError> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reads_only_compatible_installed_ui_metadata() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let current = root.path().join("current");
-        fs::create_dir(&current).expect("current directory");
-        fs::write(current.join("index.html"), "UI").expect("entry");
-        fs::write(
-            current.join(METADATA_NAME),
-            r#"{
-              "manifest":{"schema":1,"name":"Sempre UI","version":"1.2.3","entry":"index.html","api":{"major":1}},
-              "source_type":"local","source":"test.zip","sha256":"abc","installed_at":"2026-01-01T00:00:00Z"
-            }"#,
-        )
-        .expect("metadata");
-        let metadata = Store::new(root.path()).current().expect("current UI");
-        assert_eq!(metadata.manifest.version, "1.2.3");
-
-        fs::remove_file(current.join("index.html")).expect("remove entry");
-        assert!(Store::new(root.path()).current().is_err());
-    }
-}

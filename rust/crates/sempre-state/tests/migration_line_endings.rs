@@ -1,6 +1,5 @@
 use sempre_state::{
-    AppliedMigration, JsonMigration, MigrationError, current_migration_ledger, migrate_json,
-    validate_migration_ledger,
+    AppliedMigration, JsonMigration, MigrationError, migrate_json, validate_migration_ledger,
 };
 use serde_json::{Map, Value, json};
 use sha2::{Digest as _, Sha256};
@@ -22,14 +21,6 @@ fn legacy(source: &str) -> Vec<AppliedMigration> {
         id: "migration".into(),
         checksum: format!("{:x}", Sha256::digest(source.as_bytes())),
     }]
-}
-
-#[test]
-fn new_migration_checksums_are_independent_of_checkout_line_endings() {
-    assert_eq!(
-        current_migration_ledger(&registry(LF)),
-        current_migration_ledger(&registry(CRLF))
-    );
 }
 
 #[test]

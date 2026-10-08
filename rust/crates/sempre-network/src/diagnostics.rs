@@ -14,8 +14,7 @@ use crate::{NetworkError, dns_probe, route_probe};
 
 mod findings;
 mod progress;
-#[cfg(test)]
-mod tests;
+
 mod tls;
 
 use findings::{

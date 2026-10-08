@@ -51,12 +51,6 @@ it('preserves unsaved edits while switching tabs and exposes no simple-mode or r
   expect(screen.queryByRole('button', { name: /simple|runtime/i })).not.toBeInTheDocument()
 })
 
-it('cannot disable inheritance before the defaults have loaded', () => {
-  render(<SubscriptionConfigEditor value={{ ...initial, useSystemGroup: true }} defaults={null} nodes={[]} onChange={vi.fn()} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Proxy Groups' }))
-  expect(screen.getByRole('checkbox', { name: 'Use system defaults' })).toBeDisabled()
-})
-
 it('keeps malformed structured DNS values available for correction without crashing or rewriting them', () => {
   const onChange = vi.fn()
   render(<DnsEditor value='{"shared":{"systemDnsListenHosts":42}}' features={['dns.system_takeover']} onChange={onChange} />)

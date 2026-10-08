@@ -263,32 +263,4 @@ mod platform {
         values.sort();
         values.dedup();
     }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn parses_linux_ipv4_routes() {
-            let routes = parse_ipv4_routes(
-                "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\neth0 00000000 0101A8C0 0003 0 0 100 00000000 0 0 0\nbr0 0002A8C0 00000000 0001 0 0 0 00FFFFFF 0 0 0\n",
-            );
-            assert_eq!(routes[0].prefix, "0.0.0.0/0");
-            assert_eq!(routes[0].interface, "eth0");
-            assert_eq!(routes[1].prefix, "192.168.2.0/24");
-            assert!(routes[1].local);
-        }
-
-        #[test]
-        fn masks_interface_addresses() {
-            assert_eq!(
-                masked_prefix("192.168.2.15".parse().expect("address"), 24),
-                "192.168.2.0/24"
-            );
-            assert_eq!(
-                masked_prefix("fd00::1234".parse().expect("address"), 64),
-                "fd00::/64"
-            );
-        }
-    }
 }

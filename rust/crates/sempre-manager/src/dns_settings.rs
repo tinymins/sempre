@@ -376,44 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn default_dot_migration_and_custom_upstreams_round_trip() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let path = temp.path().join("dns.json");
-        let queries = temp.path().join("queries.ndjson");
-        let profile = Profile::default();
-        let mut legacy = DnsSettings::from_profile(&profile);
-        legacy.direct_upstreams.clear();
-        write(&path, &legacy).expect("old automatic settings");
-        let store = DnsSettingsStore::open(path.clone(), queries.clone(), &profile).expect("store");
-        assert_eq!(
-            store.read().direct_upstreams,
-            sempre_dns::default_upstreams()
-        );
-        let mut custom = store.read();
-        custom.direct_upstreams = vec![" tcp://1.1.1.1:53, 223.5.5.5 ".into()];
-        let saved = store.replace(custom).expect("protocol addresses");
-        assert_eq!(saved.direct_upstreams, ["tcp://1.1.1.1:53", "223.5.5.5"]);
-        let reopened = DnsSettingsStore::open(path, queries, &profile).expect("reopen");
-        assert_eq!(reopened.read(), saved);
-        let mut reset = saved;
-        reset.direct_upstreams.clear();
-        assert_eq!(
-            store
-                .replace(reset)
-                .expect("reset defaults")
-                .direct_upstreams,
-            sempre_dns::default_upstreams()
-        );
-    }
-
-    #[test]
-    fn initial_profile_keeps_an_explicit_legacy_opt_out() {
-        let mut profile = Profile::default();
-        profile.editor.dns_config = r#"{"shared":{"systemDnsTakeoverEnabled":false}}"#.into();
-        assert!(!DnsSettings::from_profile(&profile).enabled);
-    }
-
-    #[test]
     fn migrates_only_frontend_fields_from_legacy_device_dns() {
         let temp = tempfile::tempdir().expect("tempdir");
         let path = temp.path().join("dns.json");

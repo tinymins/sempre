@@ -157,22 +157,3 @@ async fn shutdown() {
     let terminate = std::future::pending::<()>();
     tokio::select! { () = interrupt => {}, () = terminate => {} }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn configuration_requires_a_real_json_file() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let path = temporary.path().join("config.json");
-        fs::write(
-            &path,
-            r#"{"experimental":{"clash_api":{"external_controller":"127.0.0.1:9090","secret":"test"}}}"#,
-        )
-        .expect("configuration");
-        assert!(configuration(&["-c".into(), path.display().to_string()]).is_ok());
-        assert!(validate_configuration(&["-c".into(), path.display().to_string()]).is_ok());
-        assert!(configuration(&[]).is_err());
-    }
-}

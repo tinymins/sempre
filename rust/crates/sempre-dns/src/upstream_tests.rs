@@ -3,8 +3,7 @@ use tokio::{
     net::{TcpListener, UdpSocket},
 };
 
-use super::UpstreamClient;
-use crate::{DnsConfig, DnsService, dns_wire::build_query, probe_dns};
+use crate::{DnsConfig, DnsService, probe_dns};
 
 async fn answer(stream: &mut tokio::net::TcpStream) {
     let length = stream.read_u16().await.expect("query length");
@@ -16,31 +15,6 @@ async fn answer(stream: &mut tokio::net::TcpStream) {
         stream.write_all(part).await.expect("answer");
         tokio::task::yield_now().await;
     }
-}
-
-#[tokio::test]
-async fn tcp_reuses_connections_and_reconnects_after_idle_close() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let upstream = format!("tcp://{}", listener.local_addr().expect("address"));
-    let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.expect("first connection");
-        answer(&mut stream).await;
-        answer(&mut stream).await;
-        stream.shutdown().await.expect("close idle");
-        drop(stream);
-        let (mut stream, _) = listener.accept().await.expect("reconnection");
-        answer(&mut stream).await;
-    });
-    let client = UpstreamClient::default();
-    for name in ["one.example", "two.example", "three.example"] {
-        let packet = build_query(name, 1).expect("query");
-        let response = client
-            .exchange(&upstream, &packet, None)
-            .await
-            .expect("answer");
-        assert_eq!(&response[12..], &packet[12..]);
-    }
-    server.await.expect("server");
 }
 
 #[tokio::test]

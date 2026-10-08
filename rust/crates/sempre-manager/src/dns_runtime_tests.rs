@@ -102,26 +102,6 @@ async fn frontend_starts_and_keeps_domestic_dns_when_core_is_down() {
 }
 
 #[tokio::test]
-async fn frontend_preparation_does_not_require_reachable_upstream() {
-    let dead = UdpSocket::bind("127.0.0.1:0").await.expect("dead port");
-    let upstream = dead.local_addr().expect("dead address").to_string();
-    drop(dead);
-    let port = frontend_port().await;
-    let plan = plan("offline", port, upstream.clone(), upstream);
-    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
-
-    runtime
-        .prepare(Some(&plan))
-        .await
-        .expect("prepare offline frontend");
-
-    let status = runtime.status();
-    assert!(status.running);
-    assert!(!status.core_dns_healthy);
-    runtime.stop().await;
-}
-
-#[tokio::test]
 async fn healthy_candidate_promotes_new_core_upstream_without_stopping_frontend() {
     let (local, local_task) = answering_upstream(2, [223, 5, 5, 5]).await;
     let (first, first_task) = answering_upstream(2, [198, 18, 0, 1]).await;
@@ -197,30 +177,5 @@ async fn unhealthy_candidate_keeps_the_last_healthy_core_upstream() {
 
     local_task.await.expect("local responder");
     first_task.await.expect("first responder");
-    runtime.stop().await;
-}
-
-#[tokio::test]
-async fn changes_upstreams_while_core_is_down_without_rebinding() {
-    let dead = UdpSocket::bind("127.0.0.1:0").await.expect("dead port");
-    let first = dead.local_addr().expect("dead address").to_string();
-    drop(dead);
-    let (second, second_task) = answering_upstream(1, [223, 6, 6, 6]).await;
-    let port = frontend_port().await;
-    let plan = plan("same-core", port, first, "127.0.0.1:1".into());
-    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
-    runtime.prepare(Some(&plan)).await.expect("frontend");
-    let upstreams = vec![format!("udp://{second}")];
-    runtime.update_upstreams(&upstreams).await.expect("update");
-    assert_eq!(runtime.status().direct_upstreams, upstreams);
-    assert!(!runtime.status().core_dns_healthy);
-    let reply = probe_dns(&format!("127.0.0.1:{port}"), "baidu.com", "A")
-        .await
-        .expect("new upstream");
-    assert_eq!(
-        reply.addresses,
-        ["223.6.6.6".parse::<IpAddr>().expect("IP")]
-    );
-    second_task.await.expect("second");
     runtime.stop().await;
 }

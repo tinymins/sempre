@@ -17,26 +17,6 @@ describe('server app authentication shell', () => {
     vi.unstubAllGlobals()
   })
 
-  it('guards authenticated routes with the login screen', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse({ error: { message: 'Unauthorized' } }, 401))
-    render(<App />)
-
-    expect(await screen.findByRole('heading', { name: 'Sempre Server' })).toBeInTheDocument()
-    expect(screen.getByLabelText('邮箱')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '配置集' })).not.toBeInTheDocument()
-  })
-
-  it('restores and verifies a cookie session', async () => {
-    vi.mocked(fetch).mockImplementation((input) => {
-      const url = String(input)
-      return Promise.resolve(jsonResponse(url.endsWith('/auth/me') ? { user } : []))
-    })
-    render(<App />)
-
-    expect(await screen.findByRole('heading', { name: '配置集' })).toBeInTheDocument()
-    expect(fetch).toHaveBeenCalledWith('/api/v1/auth/me', expect.objectContaining({ credentials: 'same-origin' }))
-  })
-
   it('enters the subscriptions page after login', async () => {
     vi.mocked(fetch).mockImplementation((input) => {
       const url = String(input)

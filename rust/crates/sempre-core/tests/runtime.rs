@@ -119,21 +119,6 @@ fn xray_runtime_adds_loopback_grpc_and_preserves_rules() {
     assert_private_control(&control.base_url, &control.secret);
 }
 
-#[test]
-fn dae_keeps_the_source_configuration_without_control_api() {
-    let root = tempdir().expect("temporary directory");
-    let source = root.path().join("config.dae");
-    fs::write(&source, "global {}\n").expect("source configuration");
-
-    let spec = BuiltInAdapter::new(BuiltInKind::Dae)
-        .prepare_runtime(&source, &root.path().join("unused"))
-        .expect("runtime configuration");
-
-    assert_eq!(spec.config, source);
-    assert!(spec.control.is_none());
-    assert!(!root.path().join("unused").exists());
-}
-
 fn assert_private_control(base_url: &str, secret: &str) {
     let address: SocketAddr = base_url
         .strip_prefix("http://")

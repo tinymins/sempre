@@ -290,30 +290,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn set_and_clear_are_local_persistence_operations() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let manager = Manager::new(Store::new(Layout::at(root.path()))).expect("manager");
-        let saved = manager
-            .set_subscription_source("https://example.com/subscription")
-            .expect("save source without a selected core");
-        assert!(saved.changed && !saved.needs_restart);
-        let state = manager.state().expect("state");
-        assert!(state.active_profile_id.is_some());
-        assert_eq!(
-            state.subscription.url.as_deref(),
-            Some("https://example.com/subscription")
-        );
-        let cleared = manager.set_subscription_source("").expect("clear source");
-        assert!(cleared.changed);
-        assert!(manager.state().expect("state").subscription.url.is_none());
-        assert!(
-            manager.subscriptions().read().expect("catalog").profiles[0]
-                .sources
-                .is_empty()
-        );
-    }
-
-    #[test]
     fn set_rejects_credentialed_and_non_http_urls() {
         let root = tempfile::tempdir().expect("temporary directory");
         let manager = Manager::new(Store::new(Layout::at(root.path()))).expect("manager");

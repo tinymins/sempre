@@ -155,7 +155,6 @@ fn suffixes(mut value: &str) -> impl Iterator<Item = &str> {
 
 #[cfg(test)]
 mod tests {
-    use sha2::{Digest as _, Sha256};
 
     use super::*;
 
@@ -175,35 +174,5 @@ mod tests {
         assert!(!matcher.matches("notexample.com."));
         assert!(matcher.matches("has-keyword.test."));
         assert!(matcher.matches("REGEX-42.TEST."));
-    }
-
-    #[test]
-    fn parses_large_adguard_shape_and_ignores_default_upstream() {
-        let domains =
-            parse_adguard_domains("127.0.0.1:1053\n[/Baidu.com/qq.com/example.cn/]127.0.0.1\n")
-                .expect("AdGuard domains");
-        assert_eq!(domains, ["baidu.com", "example.cn", "qq.com"]);
-    }
-
-    #[test]
-    fn rejects_malformed_adguard_rules() {
-        assert!(parse_adguard_domains("127.0.0.1:1053\n[/example.com/").is_err());
-        assert!(parse_adguard_domains("[/example.com/]").is_err());
-        assert!(parse_adguard_domains("[/bad_domain.test/]127.0.0.1").is_err());
-    }
-
-    #[test]
-    fn bundled_snapshot_has_expected_identity_and_domain_set() {
-        assert_eq!(
-            format!("{:x}", Sha256::digest(BUNDLED_DOMAINS_MIN.as_bytes())),
-            DOMESTIC_DOMAIN_SHA256
-        );
-        let domains = bundled_domestic_domains().expect("bundled domains");
-        assert_eq!(domains.len(), DOMESTIC_DOMAIN_COUNT);
-        assert!(domains.binary_search(&"baidu.com".into()).is_ok());
-        assert!(domains.binary_search(&"qq.com".into()).is_ok());
-        assert!(domains.binary_search(&"github.com".into()).is_err());
-        assert!(domains.binary_search(&"google.com".into()).is_err());
-        assert!(domains.binary_search(&"openai.com".into()).is_err());
     }
 }

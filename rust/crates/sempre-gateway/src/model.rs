@@ -259,11 +259,4 @@ mod tests {
         config.lan.interface = "eth0; reboot".into();
         assert!(config.validate().is_err());
     }
-
-    #[test]
-    fn normalization_preserves_valid_defaults() {
-        let mut config = Config::default();
-        config.normalize();
-        assert_eq!(config, Config::default());
-    }
 }

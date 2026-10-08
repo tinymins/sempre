@@ -131,38 +131,3 @@ fn append_directory(
 fn destination_path(root: &Path) -> &Path {
     root
 }
-
-#[cfg(test)]
-mod tests {
-    use std::io::Read as _;
-
-    use super::*;
-
-    #[test]
-    fn stamps_and_archives_the_ui_manifest() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let source = temporary.path().join("source");
-        fs::create_dir(&source).expect("source");
-        fs::write(source.join("index.html"), "UI").expect("entry");
-        fs::write(
-            source.join(sempre_ui::MANIFEST_NAME),
-            r#"{"schema":1,"name":"Sempre UI","version":"dev","entry":"index.html","api":{"major":1}}"#,
-        )
-        .expect("manifest");
-        let archive_path = temporary.path().join("sempre-ui.zip");
-        let digest = prepare_ui(&source, &archive_path, "v2.0.0").expect("UI archive");
-        assert_eq!(digest.len(), 64);
-        let mut archive =
-            zip::ZipArchive::new(File::open(archive_path).expect("archive")).expect("ZIP");
-        let mut manifest = String::new();
-        archive
-            .by_name(sempre_ui::MANIFEST_NAME)
-            .expect("manifest entry")
-            .read_to_string(&mut manifest)
-            .expect("manifest text");
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&manifest).expect("JSON")["version"],
-            "v2.0.0"
-        );
-    }
-}

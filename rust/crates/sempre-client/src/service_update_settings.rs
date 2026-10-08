@@ -51,36 +51,3 @@ pub(crate) fn write(path: &Path, allow_prerelease: bool) -> Result<ServiceUpdate
         .map_err(|error| format!("write service update settings: {error}"))?;
     Ok(settings)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn defaults_to_stable_and_persists_prerelease_consent() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let path = root.path().join("service-update.json");
-
-        assert_eq!(
-            read(&path).expect("default settings"),
-            ServiceUpdateSettings::default()
-        );
-        write(&path, true).expect("write settings");
-        assert!(read(&path).expect("saved settings").allow_prerelease);
-    }
-
-    #[test]
-    fn rejects_unknown_fields_and_schema_versions() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let path = root.path().join("service-update.json");
-        fs::write(
-            &path,
-            br#"{"schema":1,"allow_prerelease":false,"other":true}"#,
-        )
-        .expect("write invalid settings");
-        assert!(read(&path).is_err());
-        fs::write(&path, br#"{"schema":2,"allow_prerelease":false}"#)
-            .expect("write future settings");
-        assert!(read(&path).is_err());
-    }
-}

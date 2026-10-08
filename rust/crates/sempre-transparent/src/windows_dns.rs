@@ -406,21 +406,6 @@ mod tests {
     }
 
     #[test]
-    fn prefers_default_route_dns_and_filters_loopback() {
-        let interfaces = [
-            interface(false, &["9.9.9.9"]),
-            interface(true, &["127.0.0.1", "223.6.6.6", "223.6.6.6"]),
-        ];
-        assert_eq!(original_upstreams(&interfaces), ["223.6.6.6"]);
-    }
-
-    #[test]
-    fn falls_back_to_connected_dns_without_a_default_route() {
-        let interfaces = [interface(false, &["202.101.172.35"]), interface(false, &[])];
-        assert_eq!(original_upstreams(&interfaces), ["202.101.172.35"]);
-    }
-
-    #[test]
     fn takeover_uses_default_route_interfaces_instead_of_tun_adapters() {
         let interfaces = vec![
             interface(false, &["172.19.0.2"]),

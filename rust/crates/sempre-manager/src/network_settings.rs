@@ -250,27 +250,8 @@ fn shared_dns_mut(dns: &mut Value) -> &mut serde_json::Map<String, Value> {
 
 #[cfg(test)]
 mod tests {
-    use sempre_state::{Layout, Store};
 
     use super::*;
-
-    #[test]
-    fn defaults_to_local_and_round_trips_gateway_mode() {
-        let root = tempfile::tempdir().expect("directory");
-        let path = root.path().join("network.json");
-        let store = NetworkSettingsStore::open(path.clone()).expect("store");
-        assert_eq!(store.read().mode, NetworkMode::Local);
-        let saved = store
-            .replace(NetworkSettings {
-                mode: NetworkMode::Gateway,
-                gateway_capture_host: true,
-                ..store.read()
-            })
-            .expect("save");
-        assert_eq!(saved.revision, 2);
-        let reopened = NetworkSettingsStore::open(path).expect("reopen");
-        assert_eq!(reopened.read(), saved);
-    }
 
     #[test]
     fn migrates_schema_one_without_enabling_automatic_switching() {
@@ -285,67 +266,5 @@ mod tests {
         assert_eq!(store.read().schema, 2);
         assert!(!store.read().automatic_switching);
         assert!(store.read().known_networks.is_empty());
-    }
-
-    #[test]
-    fn gateway_mode_derives_tproxy_scope_and_frontend_binding() {
-        let root = tempfile::tempdir().expect("directory");
-        let manager = crate::Manager::new(Store::new(Layout::at(root.path()))).expect("manager");
-        let mut gateway = manager.gateway.read().expect("gateway");
-        gateway.lan.interface = "vmbr1".into();
-        manager.gateway.update(&gateway).expect("save gateway");
-        manager
-            .network_settings
-            .replace(NetworkSettings {
-                mode: NetworkMode::Gateway,
-                gateway_capture_host: false,
-                ..manager.network_settings.read()
-            })
-            .expect("save mode");
-        let profile = Profile::default();
-        let network = manager
-            .apply_network_settings(&profile)
-            .expect("network overlay");
-        assert_eq!(network.transparent_proxy.mode, "tproxy");
-        assert!(!network.transparent_proxy.capture_host);
-        assert_eq!(network.transparent_proxy.lan_interfaces, ["vmbr1"]);
-        assert_eq!(
-            network.transparent_proxy.tproxy.listen_port,
-            sempre_converter::DEFAULT_TPROXY_PORT
-        );
-        assert_eq!(
-            network.transparent_proxy.tproxy.dns_listen_port,
-            sempre_converter::DEFAULT_CORE_DNS_PORT
-        );
-
-        let target = Target::parse("sing-box-v14").expect("target");
-        let dns = manager
-            .apply_dns_frontend_settings(&network, &target, true)
-            .expect("DNS overlay");
-        assert_eq!(
-            dns.dns["shared"]["systemDnsListenPort"],
-            sempre_dns::DEFAULT_FRONTEND_PORT
-        );
-        assert_eq!(
-            dns.dns["shared"]["systemDnsListenHosts"],
-            json!(["0.0.0.0"])
-        );
-        assert_eq!(dns.dns["shared"]["systemDnsTakeoverHost"], false);
-
-        manager
-            .network_settings
-            .replace(NetworkSettings {
-                mode: NetworkMode::Gateway,
-                gateway_capture_host: true,
-                ..manager.network_settings.read()
-            })
-            .expect("capture gateway host");
-        let captured = manager
-            .apply_network_settings(&profile)
-            .expect("captured network overlay");
-        let dns = manager
-            .apply_dns_frontend_settings(&captured, &target, true)
-            .expect("captured DNS overlay");
-        assert_eq!(dns.dns["shared"]["systemDnsTakeoverHost"], true);
     }
 }

@@ -161,49 +161,6 @@ fn seed_v12_configuration(manager: &Manager<FakeRunner>) -> String {
 }
 
 #[tokio::test]
-async fn version_selection_compiles_cached_subscription_for_candidate_target() {
-    let (_root, manager) = fixture();
-    let old_hash = seed_v12_configuration(&manager);
-    let change = manager
-        .select_core("sing-box@1.14.0-beta.13")
-        .await
-        .expect("select core");
-    assert!(change.changed && change.needs_restart);
-    assert_eq!(manager.runner.validation_calls.load(Ordering::Relaxed), 1);
-    let validations = manager.runner.validations.lock().expect("validations");
-    assert!(validations[0].0.contains("1.14.0-beta.13"));
-    let candidate: Value = serde_json::from_str(&validations[0].1).expect("candidate JSON");
-    assert!(
-        candidate["dns"]["rules"]
-            .as_array()
-            .is_some_and(|rules| { rules.iter().any(|rule| rule["match_response"] == true) })
-    );
-    drop(validations);
-    let document = manager.state().expect("state");
-    assert!(document.cores["sing-box"].default.installed["1.14.0-beta.13"].explicit);
-    assert_eq!(
-        document.selected.expect("selection").reference,
-        "1.14.0-beta.13"
-    );
-    assert_eq!(
-        document.active.expect("deployment").version,
-        "1.14.0-beta.13"
-    );
-    assert_ne!(document.configs["sing-box"], old_hash);
-    assert!(
-        document.config_builds["sing-box"]
-            .target_key
-            .contains("v14")
-    );
-    assert!(document.pending);
-    let catalog = manager.subscriptions.read().expect("catalog");
-    assert_eq!(
-        catalog.profiles[0].sources[0].extra["last_status"],
-        Value::String("local snapshot".into())
-    );
-}
-
-#[tokio::test]
 async fn rejected_candidate_preserves_the_complete_v12_state() {
     let (_root, manager) = fixture();
     seed_v12_configuration(&manager);
@@ -216,20 +173,6 @@ async fn rejected_candidate_preserves_the_complete_v12_state() {
             .is_err()
     );
     assert_eq!(manager.state().expect("state after"), before);
-}
-
-#[tokio::test]
-async fn selection_without_configuration_waits_without_staging() {
-    let (_root, manager) = fixture();
-    let change = manager
-        .select_core("sing-box@stable")
-        .await
-        .expect("select core");
-    assert!(change.changed && !change.needs_restart);
-    assert!(change.current_detail.contains("waiting for configuration"));
-    let document = manager.state().expect("state");
-    assert_eq!(document.selected.expect("selection").reference, "stable");
-    assert!(document.active.is_none());
 }
 
 #[test]

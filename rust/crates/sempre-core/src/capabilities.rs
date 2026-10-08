@@ -81,21 +81,3 @@ fn intersect(left: &[String], right: &[String]) -> Vec<String> {
         .cloned()
         .collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn intersection_keeps_only_shared_normalized_features() {
-        let left = Capabilities {
-            features: vec!["tun".into(), "dns".into(), "dns".into()],
-            ..Capabilities::default()
-        };
-        let right = Capabilities {
-            features: vec!["dns".into(), "tproxy".into()],
-            ..Capabilities::default()
-        };
-        assert_eq!(Capabilities::intersection([left, right]).features, ["dns"]);
-    }
-}

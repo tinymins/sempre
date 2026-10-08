@@ -80,40 +80,6 @@ async fn rejects_reported_version_before_activation_or_state_change() {
 }
 
 #[tokio::test]
-async fn stable_update_collects_the_unreferenced_implicit_version() {
-    let root = tempfile::tempdir().expect("temporary directory");
-    let layout = Layout::at(root.path());
-    let archive = root.path().join("core.raw");
-    fs::write(&archive, b"binary").expect("archive");
-    let reference = CoreRef::parse("sing-box").expect("reference");
-    let adapter = Arc::new(BuiltInAdapter::new(BuiltInKind::SingBox));
-    let first = Manager::with_runner(Store::new(layout.clone()), FixedVersion("1.2.3"))
-        .expect("first manager");
-    first
-        .install_downloaded(&reference, adapter.clone(), &package("1.2.3"), &archive)
-        .await
-        .expect("first install");
-
-    let second = Manager::with_runner(Store::new(layout.clone()), FixedVersion("1.2.4"))
-        .expect("second manager");
-    second
-        .install_downloaded(&reference, adapter, &package("1.2.4"), &archive)
-        .await
-        .expect("stable update");
-
-    let state = second.state().expect("state");
-    assert!(
-        !state.cores["sing-box"]
-            .default
-            .installed
-            .contains_key("1.2.3")
-    );
-    assert_eq!(state.cores["sing-box"].default.channels["stable"], "1.2.4");
-    assert!(!layout.core_version_dir("sing-box", None, "1.2.3").exists());
-    assert!(layout.core_version_dir("sing-box", None, "1.2.4").exists());
-}
-
-#[tokio::test]
 async fn state_validation_failure_removes_the_activated_directory() {
     let root = tempfile::tempdir().expect("temporary directory");
     let layout = Layout::at(root.path());

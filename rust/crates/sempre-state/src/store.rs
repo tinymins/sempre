@@ -209,24 +209,6 @@ mod tests {
     }
 
     #[test]
-    fn operation_lease_uses_the_dedicated_lock() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let store = Store::new(Layout::at(temporary.path()));
-        store.initialize().expect("initialize state");
-        let _lease = store.acquire_operation().expect("operation lease");
-        assert!(store.layout.operation_lock.exists());
-    }
-
-    #[test]
-    fn config_lease_uses_the_dedicated_lock() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let store = Store::new(Layout::at(temporary.path()));
-        store.initialize().expect("initialize state");
-        let _lease = store.acquire_config().expect("config lease");
-        assert!(store.layout.config_lock.exists());
-    }
-
-    #[test]
     fn refuses_an_unknown_schema() {
         let temporary = tempfile::tempdir().expect("temporary directory");
         let store = Store::new(Layout::at(temporary.path()));

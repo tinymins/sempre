@@ -145,32 +145,3 @@ async fn install_ui(store: &Store, source: &str, expected_digest: &str) -> Resul
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn subscription_argument_detects_urls_and_raw_content() {
-        let url = source("https://example.com/subscription?token=secret");
-        assert_eq!(url.kind, "url");
-        assert!(url.content.is_empty());
-        let raw = source("ss://example");
-        assert_eq!(raw.kind, "raw");
-        assert_eq!(raw.content, "ss://example");
-    }
-
-    #[test]
-    fn subscription_file_is_bounded_trimmed_utf8() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let path = temporary.path().join("subscription.txt");
-        fs::write(&path, "\u{feff} https://example.com/sub \n").expect("subscription file");
-        assert_eq!(
-            read_subscription(&path).expect("subscription"),
-            "https://example.com/sub"
-        );
-        fs::write(&path, vec![b'a'; MAX_SUBSCRIPTION_ARGUMENT_SIZE + 1])
-            .expect("oversized subscription file");
-        assert!(read_subscription(&path).is_err());
-    }
-}

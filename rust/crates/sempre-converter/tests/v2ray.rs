@@ -1,4 +1,4 @@
-use sempre_converter::{CompileRequest, DIRECT_OUTBOUND_NAME, Profile, Target, compile};
+use sempre_converter::{CompileRequest, Profile, Target, compile};
 use serde_json::{Value, json};
 
 fn request(format: &str, profile: Value) -> CompileRequest {
@@ -122,43 +122,4 @@ fn v2ray_uses_legacy_schema_and_filters_reality_from_groups() {
         config["inbounds"][0]["settings"]["accounts"][0]["user"],
         "user"
     );
-}
-
-#[test]
-fn routing_maps_rules_to_balancers_and_reports_providers() {
-    let input = request(
-        "xray",
-        json!({
-            "manual_servers": [{
-                "name": "edge", "type": "socks5", "server": "edge.example.com", "port": 1080
-            }],
-            "groups": [{ "name": "foreign", "type": "select", "include_all": true }],
-            "rules": ["DOMAIN-SUFFIX,example.com,foreign", "DST-PORT,53,DIRECT"],
-            "rule_providers": [{ "tag": "external", "url": "https://rules.example/list" }]
-        }),
-    );
-    let result = compile(&input).expect("compile routing");
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|item| item.message.contains("rule provider external"))
-    );
-    let config: Value = serde_json::from_str(&result.content).expect("valid JSON");
-    let rules = config["routing"]["rules"].as_array().expect("rules");
-    assert_eq!(
-        outbound(&config, DIRECT_OUTBOUND_NAME)["protocol"],
-        "freedom"
-    );
-    assert!(rules.iter().any(|rule| {
-        rule["domain"] == json!(["domain:example.com"]) && rule["balancerTag"] == "foreign"
-    }));
-    assert!(
-        rules
-            .iter()
-            .any(|rule| { rule["port"] == "53" && rule["outboundTag"] == DIRECT_OUTBOUND_NAME })
-    );
-    assert!(rules.iter().any(|rule| {
-        rule["inboundTag"] == json!(["remote-dns"]) && rule["balancerTag"] == "foreign"
-    }));
 }

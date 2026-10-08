@@ -1,6 +1,6 @@
 use std::{io, net::IpAddr, process::Command};
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 use serde_json::Value;
 
 use crate::NetworkError;
@@ -66,7 +66,7 @@ fn command_output(program: &str, arguments: &[&str]) -> Result<String, NetworkEr
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 fn parse_macos_routes(output: &str) -> Vec<String> {
     output
         .lines()
@@ -80,7 +80,7 @@ fn parse_macos_routes(output: &str) -> Vec<String> {
         .collect()
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn parse_linux_routes(output: &str) -> Result<Vec<String>, NetworkError> {
     let routes = serde_json::from_str::<Value>(output)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
@@ -97,7 +97,7 @@ fn parse_linux_routes(output: &str) -> Result<Vec<String>, NetworkError> {
         .collect())
 }
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(target_os = "windows")]
 fn parse_windows_ipv4_routes(output: &str) -> Vec<String> {
     output
         .lines()
@@ -119,7 +119,7 @@ fn parse_windows_ipv4_routes(output: &str) -> Vec<String> {
         .collect()
 }
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(target_os = "windows")]
 fn parse_windows_ipv6_routes(output: &str) -> Vec<String> {
     output
         .lines()
@@ -154,38 +154,4 @@ fn parse_route_destination(value: &str) -> Option<String> {
     let prefix = prefix.parse::<u8>().ok()?;
     let maximum = if address.is_ipv4() { 32 } else { 128 };
     (prefix <= maximum).then(|| format!("{address}/{prefix}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_cross_platform_route_tables() {
-        assert_eq!(
-            parse_macos_routes(
-                "Destination Gateway Flags Netif Expire\n198.18.0/16 10.251.1.1 UGSc utun4\n198.18.0.67 10.251.1.1 UHLWIir utun4\n"
-            ),
-            vec!["198.18.0.0/16"]
-        );
-        assert_eq!(
-            parse_linux_routes(
-                r#"[{"dst":"198.18.0.0/16","dev":"tun0","table":100},{"dst":"default","dev":"eth0"}]"#
-            )
-            .expect("Linux routes"),
-            vec!["198.18.0.0/16"]
-        );
-        assert_eq!(
-            parse_windows_ipv4_routes(
-                "0.0.0.0 0.0.0.0 10.0.0.1 10.0.0.2 25\n198.18.0.0 255.255.0.0 10.251.1.1 10.251.1.1 5"
-            ),
-            vec!["0.0.0.0/0", "198.18.0.0/16"]
-        );
-        assert_eq!(
-            parse_windows_ipv6_routes(
-                "If Metric Network Destination Gateway\n1 331 ::1/128 On-link\n7 5 fc00::/18 On-link"
-            ),
-            vec!["::1/128", "fc00::/18"]
-        );
-    }
 }

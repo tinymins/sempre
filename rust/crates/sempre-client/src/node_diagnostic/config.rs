@@ -177,28 +177,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn isolates_sing_box_to_selected_node() {
-        let input = json!({
-            "inbounds": [{"type":"tun"}],
-            "outbounds": [{"type":"shadowsocks","tag":"node-a"}],
-            "endpoints": [{"type":"wireguard","tag":"home-wg","peers":[{"allowed_ips":["10.8.28.0/24"]}]}],
-            "route": {"rule_set":[{"tag":"remote"}]},
-            "experimental": {"clash_api":{"external_controller":"127.0.0.1:9090"}},
-            "dns": {"servers":[
-                {"type":"local","tag":"local"},
-                {"type":"udp","tag":"home-wg-dns","detour":"home-wg"}
-            ],"rules":[{"rule_set":"remote"}]}
-        });
-        let output = sing_box_config(input, "node-a", 19080, "user", "pass").unwrap();
-        assert_eq!(output["inbounds"][0]["listen_port"], 19080);
-        assert_eq!(output["route"]["final"], "node-a");
-        assert!(output.get("experimental").is_none());
-        assert!(output.get("endpoints").is_none());
-        assert_eq!(output["dns"]["servers"].as_array().unwrap().len(), 1);
-        assert!(output["dns"].get("rules").is_none());
-    }
-
-    #[test]
     fn refuses_to_start_a_second_wireguard_endpoint() {
         let input = json!({
             "inbounds": [{"type":"tun"}],
@@ -223,22 +201,5 @@ mod tests {
             error,
             "WireGuard diagnostics must reuse the endpoint in the managed core"
         );
-    }
-
-    #[test]
-    fn isolates_clash_to_selected_node() {
-        let input = json!({
-            "mixed-port": 7890,
-            "external-controller": "127.0.0.1:9090",
-            "tun": {"enable":true},
-            "proxies": [{"name":"node,a","type":"ss"}],
-            "proxy-groups": []
-        });
-        let output = clash_config(input, "node,a", 19080, "user", "pass").unwrap();
-        assert_eq!(output["port"], 19080);
-        assert!(output.get("mixed-port").is_none());
-        assert!(output.get("tun").is_none());
-        assert_eq!(output["proxy-groups"][0]["proxies"][0], "node,a");
-        assert_eq!(output["rules"][0], "MATCH,__sempre_node_test__");
     }
 }

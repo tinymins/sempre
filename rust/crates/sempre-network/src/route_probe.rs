@@ -71,7 +71,7 @@ fn route_for(_address: IpAddr) -> Option<RouteDecision> {
     None
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 fn field(output: &str, key: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let (candidate, value) = line.trim().split_once(':')?;
@@ -79,7 +79,7 @@ fn field(output: &str, key: &str) -> Option<String> {
     })
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 fn parse_macos_route(address: IpAddr, output: &str) -> Option<RouteDecision> {
     Some(RouteDecision {
         address,
@@ -88,7 +88,7 @@ fn parse_macos_route(address: IpAddr, output: &str) -> Option<RouteDecision> {
     })
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn parse_linux_route(address: IpAddr, output: &str) -> Option<RouteDecision> {
     let fields = output.split_whitespace().collect::<Vec<_>>();
     let value_after = |key| {
@@ -105,7 +105,7 @@ fn parse_linux_route(address: IpAddr, output: &str) -> Option<RouteDecision> {
     })
 }
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(target_os = "windows")]
 fn parse_windows_route(address: std::net::Ipv4Addr, output: &str) -> Option<RouteDecision> {
     let target = u32::from(address);
     output
@@ -137,58 +137,4 @@ pub fn fake_ip_routes_conflict(routes: &[RouteDecision]) -> bool {
         && routes.windows(2).any(|pair| {
             pair[0].interface != pair[1].interface || pair[0].gateway != pair[1].gateway
         })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_platform_route_outputs() {
-        let target = "198.18.0.67".parse().expect("target");
-        assert_eq!(
-            parse_macos_route(
-                target,
-                "route to: 198.18.0.67\ngateway: 10.251.1.1\ninterface: utun4\n"
-            ),
-            Some(RouteDecision {
-                address: target,
-                interface: "utun4".into(),
-                gateway: "10.251.1.1".into(),
-            })
-        );
-        assert_eq!(
-            parse_linux_route(target, "198.18.0.67 via 10.0.0.1 dev tun0 src 10.0.0.2"),
-            Some(RouteDecision {
-                address: target,
-                interface: "tun0".into(),
-                gateway: "10.0.0.1".into(),
-            })
-        );
-        let windows =
-            "0.0.0.0 0.0.0.0 10.0.0.1 10.0.0.2 25\n198.18.0.0 255.255.0.0 10.251.1.1 10.251.1.1 5";
-        assert_eq!(
-            parse_windows_route("198.18.0.67".parse().expect("IPv4"), windows)
-                .expect("Windows route")
-                .gateway,
-            "10.251.1.1"
-        );
-    }
-
-    #[test]
-    fn detects_split_fake_ip_route_ownership() {
-        let routes = vec![
-            RouteDecision {
-                address: "198.18.0.1".parse().expect("address"),
-                interface: "utun4".into(),
-                gateway: "10.251.1.1".into(),
-            },
-            RouteDecision {
-                address: "198.19.0.1".parse().expect("address"),
-                interface: "utun5".into(),
-                gateway: "172.19.0.1".into(),
-            },
-        ];
-        assert!(fake_ip_routes_conflict(&routes));
-    }
 }

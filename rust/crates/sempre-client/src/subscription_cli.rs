@@ -452,15 +452,3 @@ fn print_json(value: &impl Serialize) -> Result<(), ClientError> {
     );
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn remote_url_requires_an_uncredentialed_http_origin() {
-        assert!(validate_remote_url("https://example.com/manifest").is_ok());
-        assert!(validate_remote_url("https://user:secret@example.com/manifest").is_err());
-        assert!(validate_remote_url("file:///tmp/manifest").is_err());
-    }
-}

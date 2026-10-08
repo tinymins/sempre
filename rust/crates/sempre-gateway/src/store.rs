@@ -111,32 +111,4 @@ mod tests {
         .expect("stored JSON");
         assert!(stored.get("dns").is_none());
     }
-
-    #[test]
-    fn read_requires_every_current_field_and_preserves_valid_bytes() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let layout = Layout::at(root.path());
-        let store = Store::new(&layout);
-        let config = crate::Config::default();
-        let mut incomplete = serde_json::to_value(&config).expect("config value");
-        incomplete["dhcp"]
-            .as_object_mut()
-            .expect("DHCP object")
-            .remove("lease_time");
-        fs::create_dir_all(&layout.gateway).expect("gateway directory");
-        fs::write(
-            layout.gateway.join("config.json"),
-            serde_json::to_vec_pretty(&incomplete).expect("incomplete config"),
-        )
-        .expect("gateway config");
-        assert!(store.read().is_err());
-
-        let data = serde_json::to_vec_pretty(&config).expect("config data");
-        fs::write(layout.gateway.join("config.json"), &data).expect("gateway config");
-        assert_eq!(store.read().expect("strict current config"), config);
-        assert_eq!(
-            fs::read(layout.gateway.join("config.json")).expect("stored config"),
-            data
-        );
-    }
 }

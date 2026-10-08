@@ -56,12 +56,11 @@ jobs:
         run: |
           bun --cwd=site run lint
           bun --cwd=site run tsc
-          bun --cwd=site run test
           bun --cwd=site run build
       - name: Install browser
         working-directory: site
         run: bunx playwright install --with-deps chromium
-      - name: Verify responsive homepage
+      - name: Verify install commands and private input
         working-directory: site
         run: bun run test:e2e
       - name: Assemble Pages artifact

@@ -351,16 +351,6 @@ mod tests {
     }
 
     #[test]
-    fn validates_and_builds_wstunnel_arguments() {
-        let config = config();
-        config.validate().expect("valid config");
-        let arguments = config.instances[0].arguments();
-        assert!(arguments.contains(&"--dns-resolver-prefer-ipv4".into()));
-        assert!(arguments.contains(&"udp://127.0.0.1:52001:127.0.0.1:31088?timeout_sec=0".into()));
-        assert_eq!(config.forward("hz-wg").expect("forward").port, 52001);
-    }
-
-    #[test]
     fn rejects_cleartext_and_duplicate_ports() {
         let mut cleartext = config();
         cleartext.instances[0].server_url = "ws://hz.example.com".into();

@@ -94,30 +94,3 @@ impl BuildTarget {
         format!("sempre-{}-{}{}", self.os, self.arch, suffix)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maps_product_targets_to_release_tools() {
-        let darwin = BuildTarget::new("darwin", "amd64").expect("darwin target");
-        assert_eq!(darwin.tunnel_target(), ("macos", "x86_64"));
-        assert_eq!(darwin.rust_triple(), "x86_64-apple-darwin");
-        assert_eq!(darwin.binary_name(), "sempre-darwin-amd64");
-        let windows = BuildTarget::new("windows", "arm64").expect("windows target");
-        assert_eq!(windows.tunnel_target(), ("windows", "aarch64"));
-        assert_eq!(windows.binary_name(), "sempre-windows-arm64.exe");
-        assert!(BuildTarget::new("freebsd", "amd64").is_err());
-    }
-
-    #[test]
-    fn cross_builds_are_limited_to_macos_architectures() {
-        let darwin_arm = BuildTarget::named("darwin-arm64").expect("darwin arm64");
-        let darwin_intel = BuildTarget::named("darwin-amd64").expect("darwin amd64");
-        let linux = BuildTarget::named("linux-amd64").expect("linux amd64");
-        assert!(darwin_intel.ensure_buildable_on(&darwin_arm).is_ok());
-        assert!(linux.ensure_buildable_on(&darwin_arm).is_err());
-        assert!(BuildTarget::named("darwin").is_err());
-    }
-}

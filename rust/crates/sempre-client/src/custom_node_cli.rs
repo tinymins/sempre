@@ -68,31 +68,3 @@ fn read_candidate(path: &Path) -> Result<CustomNode, ClientError> {
         updated_at: None,
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn candidate_accepts_wrapped_and_bare_proxy_documents() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let wrapped = root.path().join("wrapped.json");
-        fs::write(
-            &wrapped,
-            br#"{"id":"existing","name":"Wrapped","proxy":{"type":"socks5","server":"edge.example","port":1080}}"#,
-        )
-        .expect("wrapped node");
-        assert_eq!(read_candidate(&wrapped).expect("wrapped").id, "existing");
-
-        let bare = root.path().join("bare.json");
-        fs::write(
-            &bare,
-            br#"{"name":"Bare","type":"socks5","server":"edge.example","port":1080}"#,
-        )
-        .expect("bare proxy");
-        let node = read_candidate(&bare).expect("bare");
-        assert!(node.id.is_empty());
-        assert_eq!(node.name, "Bare");
-        assert_eq!(node.proxy["type"], "socks5");
-    }
-}

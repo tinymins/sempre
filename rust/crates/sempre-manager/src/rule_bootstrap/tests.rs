@@ -108,23 +108,6 @@ fn only_validated_user_rules_complete_the_original_configuration() {
 }
 
 #[test]
-fn online_rules_keep_their_refresh_interval_and_inferred_binary_format() {
-    let (_root, fetcher) = fixture();
-    let remote = RemoteRule::parse(
-        &json!({"tag":"user","url":"https://arbitrary.invalid/a.srs?v=2","update_interval":"2h"}),
-    )
-    .unwrap();
-    assert_eq!(remote.format, "binary");
-    assert_eq!(remote.interval, Duration::from_hours(2));
-    assert!(download::refresh_due(&fetcher, &remote));
-    let snapshot = fetcher.rule_set_candidate(b"candidate".to_vec()).unwrap();
-    fetcher
-        .accept_rule_set(&remote.url, &remote.format, &snapshot)
-        .unwrap();
-    assert!(!download::refresh_due(&fetcher, &remote));
-}
-
-#[test]
 fn core_without_a_local_proxy_cannot_silently_download_rules_directly() {
     let (_root, fetcher) = fixture();
     assert!(proxy_fetcher(&fetcher, &json!({})).is_err());

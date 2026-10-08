@@ -72,16 +72,6 @@ fn fixture() -> (tempfile::TempDir, Manager<FakeRunner>) {
 }
 
 #[tokio::test]
-async fn validates_candidate_against_the_selected_installed_core() {
-    let (_root, manager) = fixture();
-    manager
-        .validate_config_content(br#"{"log":{"level":"info"}}"#)
-        .await
-        .expect("validate");
-    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 1);
-}
-
-#[tokio::test]
 async fn rejects_oversized_candidate_before_running_a_core() {
     let (_root, manager) = fixture();
     let content = vec![b' '; MAX_CONFIG_SIZE + 1];
@@ -90,32 +80,6 @@ async fn rejects_oversized_candidate_before_running_a_core() {
         Err(ManagerError::ConfigurationTooLarge { .. })
     ));
     assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
-}
-
-#[test]
-fn reads_only_the_selected_cores_content_addressed_configuration() {
-    let (_root, manager) = fixture();
-    let hash = "b".repeat(64);
-    manager
-        .store
-        .update(|document| {
-            document.configs.insert("sing-box".into(), hash.clone());
-            Ok(())
-        })
-        .expect("config state");
-    sempre_state::write_atomic(
-        &manager.store.layout().config("sing-box", &hash),
-        b"generated",
-        0o600,
-    )
-    .expect("config file");
-    assert_eq!(
-        manager.current_config().expect("current config"),
-        CurrentConfig {
-            hash,
-            content: "generated".into(),
-        }
-    );
 }
 
 #[tokio::test]

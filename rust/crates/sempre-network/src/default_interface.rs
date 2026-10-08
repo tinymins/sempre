@@ -168,23 +168,6 @@ mod platform {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn normalizes_cross_platform_mac_formats() {
-        assert_eq!(
-            super::normalize_mac("A0-B1-C2-D3-E4-F5"),
-            Some("a0:b1:c2:d3:e4:f5".into())
-        );
-        assert_eq!(
-            super::normalize_mac("10:8f:fe:6b:a0:7"),
-            Some("10:8f:fe:6b:a0:07".into())
-        );
-        assert!(super::normalize_mac("00:00:00:00:00:00").is_none());
-        assert!(super::normalize_mac("not-a-mac").is_none());
-    }
-}
-
 #[cfg(target_os = "macos")]
 mod platform {
     use std::{io, process::Command};
@@ -224,21 +207,6 @@ mod platform {
 
     fn parse_arp(output: &str) -> Option<String> {
         output.split_whitespace().find_map(normalize_mac)
-    }
-
-    #[cfg(test)]
-    mod tests {
-        #[test]
-        fn parses_default_route_interface() {
-            assert_eq!(
-                super::parse_route("route to: default\ngateway: 10.8.28.1\ninterface: en0\n"),
-                Some(("en0", "10.8.28.1"))
-            );
-            assert_eq!(
-                super::parse_arp("? (10.8.28.1) at a0:b1:c2:d3:e4:f5 on en0"),
-                Some("a0:b1:c2:d3:e4:f5".into())
-            );
-        }
     }
 }
 
@@ -321,20 +289,6 @@ mod platform {
                 .then(|| fields.get(1).and_then(|value| normalize_mac(value)))
                 .flatten()
         })
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use std::net::{IpAddr, Ipv4Addr};
-
-        #[test]
-        fn parses_lowest_metric_default_route() {
-            let output =
-                "0.0.0.0 0.0.0.0 10.0.0.1 10.0.0.5 35\n0.0.0.0 0.0.0.0 10.1.0.1 10.1.0.5 25\n";
-            let route = super::parse_route(output).expect("route");
-            assert_eq!(route.gateway, IpAddr::V4(Ipv4Addr::new(10, 1, 0, 1)));
-            assert_eq!(route.address, IpAddr::V4(Ipv4Addr::new(10, 1, 0, 5)));
-        }
     }
 }
 

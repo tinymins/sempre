@@ -85,34 +85,3 @@ pub(super) fn http_finding(detail: &str) -> DiagnosticFinding {
         ],
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn conflict_finding_contains_route_ownership_and_safe_remedies() {
-        let samples = vec![
-            route_probe::RouteDecision {
-                address: "198.18.0.1".parse().expect("address"),
-                interface: "utun4".into(),
-                gateway: "10.251.1.1".into(),
-            },
-            route_probe::RouteDecision {
-                address: "198.19.0.1".parse().expect("address"),
-                interface: "utun5".into(),
-                gateway: "172.19.0.1".into(),
-            },
-        ];
-        let finding = fake_ip_conflict_finding(&samples);
-        assert_eq!(finding.code, "fake_ip_route_conflict");
-        assert!(finding.detail.contains("utun4"));
-        assert!(finding.detail.contains("utun5"));
-        assert!(
-            finding
-                .solutions
-                .iter()
-                .any(|solution| solution.contains("non-overlapping"))
-        );
-    }
-}

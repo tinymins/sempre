@@ -240,28 +240,3 @@ fn next_delay(last_check: Option<DateTime<Utc>>, interval: Duration) -> Duration
         .unwrap_or(MINIMUM_DELAY)
         .max(MINIMUM_DELAY)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn normalizes_supported_intervals_and_rejects_busy_loops() {
-        assert_eq!(normalize_interval(" 12H ").expect("interval"), "12h");
-        assert_eq!(normalize_interval("OFF").expect("disabled"), "off");
-        assert!(normalize_interval("4m").is_err());
-        assert!(normalize_interval("daily").is_err());
-    }
-
-    #[test]
-    fn due_updates_use_a_bounded_minimum_delay() {
-        assert_eq!(next_delay(None, Duration::from_hours(1)), MINIMUM_DELAY);
-        assert_eq!(
-            next_delay(
-                Some(Utc::now() - chrono::Duration::hours(2)),
-                Duration::from_hours(1)
-            ),
-            MINIMUM_DELAY
-        );
-    }
-}

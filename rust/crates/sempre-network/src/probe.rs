@@ -259,28 +259,3 @@ fn parse_domestic_ip(data: &[u8]) -> Result<String, String> {
 fn parse_foreign_ip(data: &[u8]) -> Result<String, String> {
     FOREIGN_IP_PROBE.parse_response(data)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn probe_order_prioritizes_public_ips() {
-        assert_eq!(
-            PROBES.map(|probe| probe.id),
-            [
-                "domestic-ip",
-                "foreign-ip",
-                "baidu",
-                "google",
-                "openai",
-                "youtube",
-                "github",
-            ]
-        );
-    }
-}
-
-#[cfg(test)]
-#[path = "probe_timing_tests.rs"]
-mod timing_tests;

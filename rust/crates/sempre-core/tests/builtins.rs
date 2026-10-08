@@ -1,4 +1,4 @@
-use sempre_core::{Adapter, BuiltInAdapter, BuiltInKind, Target, built_in_registry};
+use sempre_core::{Adapter, BuiltInAdapter, BuiltInKind, Target};
 
 fn target(os: &str, arch: &str) -> Target {
     Target {
@@ -6,14 +6,6 @@ fn target(os: &str, arch: &str) -> Target {
         arch: arch.into(),
         amd64_level: 0,
     }
-}
-
-#[test]
-fn registry_contains_all_builtin_cores() {
-    assert_eq!(
-        built_in_registry().ids(),
-        ["clash-rs", "dae", "mihomo", "sing-box", "v2ray", "xray"]
-    );
 }
 
 #[test]

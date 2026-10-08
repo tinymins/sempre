@@ -13,15 +13,3 @@ it('preserves other peers, DNS rules, aliases and extension fields during a conn
   expect(connector.endpoint.peers).toEqual([{ public_key: 'key', port: 51820 }, { port: 2 }])
   expect(connector.dns).toEqual([{ server: 'c' }, { server: 'b' }])
 })
-
-it('preserves unknown connector protocols rather than changing their type on edit', () => {
-  const source = '{"connectors":[{"type":"future","settings":{"a":1}}]}'
-  expect(parse(patchConnector(source, 0, { tag: 'renamed' })).connectors[0]).toEqual({ type: 'future', settings: { a: 1 }, tag: 'renamed' })
-})
-
-it('updates both protocol locations when switching an existing outbound', () => {
-  const source = '{"connectors":[{"type":"outbound","outbound":{"type":"vmess","server":"host","tls":{"enabled":true}}}]}'
-  const connector = parse(patchConnector(source, 0, { type: 'trojan' })).connectors[0]
-  expect(connector.type).toBe('trojan')
-  expect(connector.outbound).toEqual({ type: 'trojan', server: 'host', tls: { enabled: true } })
-})

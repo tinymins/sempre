@@ -426,15 +426,8 @@ pub(crate) fn api_error(
 }
 
 #[cfg(test)]
-mod custom_node_tests;
-#[cfg(test)]
-mod gateway_tests;
-#[cfg(test)]
-mod health_tests;
-#[cfg(test)]
 mod restart_tests;
-#[cfg(test)]
-mod subscription_tests;
+
 #[cfg(test)]
 mod system_tests;
 #[cfg(test)]

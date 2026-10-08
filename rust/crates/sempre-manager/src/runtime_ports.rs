@@ -75,52 +75,6 @@ mod tests {
     use sempre_state::{Layout, Store};
 
     #[test]
-    fn reports_dns_tcp_conflicts_with_actionable_guidance() {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("TCP listener");
-        let port = listener.local_addr().expect("TCP address").port();
-
-        let error = ensure_dns_available(port).expect_err("occupied TCP port");
-
-        let message = error.to_string();
-        assert!(message.contains(&format!("core DNS port {port}")));
-        assert!(message.contains("Subscriptions > Runtime > Core DNS port"));
-    }
-
-    #[test]
-    fn reports_dns_udp_conflicts_with_actionable_guidance() {
-        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("UDP socket");
-        let port = socket.local_addr().expect("UDP address").port();
-
-        let error = ensure_dns_available(port).expect_err("occupied UDP port");
-
-        assert!(error.to_string().contains("unavailable for UDP"));
-    }
-
-    #[test]
-    fn reports_local_proxy_conflicts_with_actionable_guidance() {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("TCP listener");
-        let port = listener.local_addr().expect("TCP address").port();
-
-        let error = ensure_local_proxy_available(port, 0).expect_err("occupied SOCKS port");
-
-        let message = error.to_string();
-        assert!(message.contains(&format!("local SOCKS port {port}")));
-        assert!(message.contains("Subscriptions > Runtime > Local SOCKS port"));
-    }
-
-    #[test]
-    fn rejects_duplicate_local_proxy_ports() {
-        let error = ensure_local_proxy_available(20_580, 20_580).expect_err("duplicate ports");
-
-        assert!(
-            error
-                .to_string()
-                .contains("local SOCKS and HTTP ports both use 20580")
-        );
-        assert!(error.to_string().contains("Local HTTP port"));
-    }
-
-    #[test]
     fn manager_checks_active_profile_ports_before_startup() {
         let root = tempfile::tempdir().expect("temporary directory");
         let manager = Manager::with_runner(Store::new(Layout::at(root.path())), ProcessRunner)

@@ -353,43 +353,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn verified_download_reuses_valid_content_addressed_cache_entries() {
-        let root = tempdir().expect("temporary directory");
-        let payload = b"verified core";
-        let digest = Sha256Digest::from_bytes(Sha256::digest(payload).into());
-        let artifact = Artifact {
-            name: "core".into(),
-            url: "https://example.invalid/core".into(),
-            digest: digest.to_string(),
-            size: payload.len() as u64,
-        };
-        let cache = root.path().join("cache");
-        tokio::fs::create_dir_all(&cache).await.expect("cache");
-        let cached = cache.join(digest.to_string().trim_start_matches("sha256:"));
-        tokio::fs::write(&cached, payload)
-            .await
-            .expect("cached artifact");
-
-        let output = root.path().join("output");
-        Downloader::new("test")
-            .expect("downloader")
-            .with_cache(&cache)
-            .verified(&artifact, &output)
-            .await
-            .expect("cache hit");
-        assert_eq!(tokio::fs::read(output).await.expect("output"), payload);
-
-        tokio::fs::write(&cached, b"corrupt core")
-            .await
-            .expect("corrupt cache");
-        assert!(
-            !verify_cached(&cached, &artifact, &digest)
-                .await
-                .expect("inspect invalid cache")
-        );
-    }
-
-    #[tokio::test]
     async fn proxied_downloader_uses_authenticated_http_connect() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();

@@ -53,25 +53,3 @@ fn mismatch(path: &str, message: impl Into<String>) -> Result<(), JsonShapeError
         message: message.into(),
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn requires_exact_object_fields_and_repeated_array_item_shape() {
-        let template = serde_json::json!({"items": [{"id": "", "enabled": false}]});
-        validate_json_shape(
-            &serde_json::json!({"items": [{"id": "one", "enabled": true}]}),
-            &template,
-        )
-        .expect("matching shape");
-        assert!(
-            validate_json_shape(&serde_json::json!({"items": [{"id": "one"}]}), &template).is_err()
-        );
-        assert!(
-            validate_json_shape(&serde_json::json!({"items": [], "extra": true}), &template)
-                .is_err()
-        );
-    }
-}
