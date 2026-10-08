@@ -91,13 +91,20 @@ export function useProxySubscribeEditor({
     const buildCandidate = async (): Promise<SubscriptionProfile> => {
       const values = form.getFieldsValue();
       const cleanedItems = ((values.subscribeItems as EditorSource[]) || [])
-        .filter((item: EditorSource) => sourceText(item).trim());
-      const sources: SubscriptionSource[] = cleanedItems.map((item: EditorSource) => ({
+        .filter((item: EditorSource) => item.type === "raw" || sourceText(item).trim());
+      const sources: SubscriptionSource[] = cleanedItems.map((item: EditorSource) => item.type === "raw" ? {
+        ...profileRef.current.sources.find(source => source.id === item.id),
+        id: item.id || randomUuid(),
+        type: "raw",
+        content: item.content,
+        enabled: item.enabled,
+        prefix: item.prefix || undefined,
+        remark: item.remark || undefined,
+      } : ({
         id: item.id || randomUuid(),
         type: item.type,
-        content: item.type === "raw" ? item.content : undefined,
         enabled: item.enabled,
-        url: item.type === "url" ? item.url.trim() : undefined,
+        url: item.url.trim(),
         prefix: item.prefix || undefined,
         remark: item.remark || undefined,
         user_agent: item.fetchUa || "clash.meta",

@@ -26,6 +26,14 @@ the shared editor and keep local runtime or multi-user operations in the host
 adapters. Shared controls use `@acme/components`; host styles must scan the shared
 package's source directory.
 
+The client passes the `page` layout and its existing message labels. Page layout
+retains the client tab typography, save status position, compact source controls,
+node multiselect and plain dark JSONC presentation. The default `dialog` layout
+keeps Server modal sizing and presentation. Layout does not select a different
+settings model or save policy; automatic and explicit saving remain host-owned.
+Client saves retain empty RAW sources and their stored metadata; URL fetch
+defaults apply only to URL sources.
+
 ## Settings and output
 
 There is one set of settings plus generated output. Inherited fields contain no

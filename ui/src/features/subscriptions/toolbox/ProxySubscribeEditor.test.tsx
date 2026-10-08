@@ -118,7 +118,13 @@ describe('ProxySubscribeEditor', () => {
     localStorage.setItem('sempre.locale', 'en')
     let resolveFirst: (() => void) | undefined
     const firstSave = new Promise<void>((resolve) => { resolveFirst = resolve })
-    const { onSave } = renderEditor({ onSave: vi.fn().mockReturnValueOnce(firstSave).mockResolvedValue(undefined) })
+    const sources: SubscriptionProfile['sources'] = [
+      { id: 'raw-empty', type: 'raw', enabled: false, content: '', remark: 'Keep empty RAW', snapshot_hash: 'raw-snapshot' },
+      { ...profile.sources[0], prefix: 'Home', cache_ttl_minutes: 30, user_agent: 'custom-agent', fetch_mode: 'domestic-direct' },
+      { id: 'raw-content', type: 'raw', enabled: true, content: 'proxies: []', prefix: 'RAW' },
+    ]
+    const editableProfile = { ...profile, sources, custom_node_ids: ['custom-1'], use_system_groups: false, use_system_rules: false, use_system_filters: false, use_system_custom_config: false, use_system_dns: false }
+    const { onSave } = renderEditor({ profile: editableProfile, onSave: vi.fn().mockReturnValueOnce(firstSave).mockResolvedValue(undefined) })
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Remark' }), { target: { value: 'First' } })
     await act(async () => vi.advanceTimersByTime(800))
@@ -130,6 +136,15 @@ describe('ProxySubscribeEditor', () => {
     await act(async () => resolveFirst?.())
     expect(onSave).toHaveBeenCalledTimes(2)
     expect(onSave.mock.calls[1][0]).toMatchObject({ remark: 'Newest' })
+    for (const [candidate] of onSave.mock.calls) {
+      expect(candidate.sources).toEqual(sources)
+      expect(candidate.custom_node_ids).toEqual(['custom-1'])
+      expect(candidate.local_proxy).toEqual(profile.local_proxy)
+      expect(candidate.management_api).toEqual(profile.management_api)
+      expect(candidate.editor).toEqual(profile.editor)
+      expect(candidate.use_system_groups).toBe(editableProfile.use_system_groups)
+      expect(candidate.use_system_rules).toBe(editableProfile.use_system_rules)
+    }
   })
 
   it('shows save failures inline without discarding the edited value', async () => {
