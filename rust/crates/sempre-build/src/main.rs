@@ -113,8 +113,7 @@ async fn verify(root: &Path, rust: &Path) -> Result<(), BuildError> {
     for script in ["lint", "tsc"] {
         run_command(root, "bun", ["run", script], &[])?;
     }
-    run_command(&root.join("ui"), "bun", ["run", "test"], &[])?;
-    run_command(&root.join("site"), "bun", ["run", "test"], &[])?;
+    run_command(root, "bun", ["run", "test"], &[])?;
     Ok(())
 }
 
