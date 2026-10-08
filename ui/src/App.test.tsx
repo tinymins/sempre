@@ -96,6 +96,7 @@ describe('App', () => {
   it('enters the lazy shell after login under StrictMode when the core is unavailable', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (path === '/api/v1/auth/login') {
         return Response.json({ token: 'session', expires_at: '2099-01-01T00:00:00Z', warning: 'PASSWORD_EMPTY' })
       }

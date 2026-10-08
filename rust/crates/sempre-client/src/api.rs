@@ -1,3 +1,5 @@
+mod ui_settings;
+
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
@@ -93,6 +95,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .merge(crate::gateway_api::router())
         .merge(crate::bundle_api::router())
         .merge(crate::web_ui_api::router())
+        .merge(ui_settings::router())
         .layer(middleware::from_fn_with_state(state.clone(), security))
         .fallback(crate::web_ui_api::static_file)
         .with_state(state)

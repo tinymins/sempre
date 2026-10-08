@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { UIModeBoundary } from './components/UIModeBoundary'
 import { Login } from './components/Login'
 import { AcmeContentBoundary } from './components/AcmeContentBoundary'
 import { Spinner } from './components/ui'
@@ -8,7 +9,7 @@ import { useSession } from './lib/session'
 import { api } from './lib/api'
 import type { NetworkSettingsResponse } from './lib/types'
 import { ThemeProvider } from './lib/theme'
-import { useLocalUIMode } from './lib/uiMode'
+import { useUIMode } from './lib/uiMode'
 import { NetworkTest } from './pages/NetworkTest'
 import { NetworkDiagnostics } from './pages/NetworkDiagnostics'
 import { NodeTest } from './pages/NodeTest'
@@ -43,11 +44,11 @@ export function AppContent({ serverMode = serverBuild }: { serverMode?: boolean 
   const { session } = useSession()
   if (serverMode || window.location.hash.startsWith('#/server')) return <Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><ServerApp /></Suspense>
   const isDevShowcase = Boolean(AcmeShowcase) && window.location.hash.startsWith('#/components')
-  return <><ServiceVersionReload /><ServiceUpdateFlow>{!session && !isDevShowcase ? <AcmeContentBoundary><Login /></AcmeContentBoundary> : <Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><HashRouter><Shell><Routes><Route path="/" element={<Overview />} /><Route path="/custom-nodes" element={<CustomNodes />} /><Route path="/subscriptions" element={<Subscriptions />} /><Route path="/network-automation" element={<AdvancedRoute><NetworkAutomation /></AdvancedRoute>} /><Route path="/tunnels" element={<AdvancedRoute><Tunnels /></AdvancedRoute>} /><Route path="/proxies" element={<Proxies />} /><Route path="/connections" element={<Connections />} /><Route path="/routing-rules" element={<RoutingRules />} /><Route path="/rules" element={<Rules />} /><Route path="/dns" element={<AdvancedRoute><Dns /></AdvancedRoute>} /><Route path="/traffic" element={<Traffic />} /><Route path="/logs" element={<Logs />} /><Route path="/network-test" element={<NetworkTest />} /><Route path="/network-diagnostics" element={<NetworkDiagnostics />} /><Route path="/node-test" element={<NodeTest />} /><Route path="/runtime-status" element={<RuntimeStatus />} /><Route path="/gateway" element={<GatewayRoute />} /><Route path="/management" element={<Management />} />{AcmeShowcase ? <Route path="/components" element={<AcmeShowcase />} /> : null}<Route path="*" element={<Navigate to="/" replace />} /></Routes></Shell></HashRouter></Suspense>}</ServiceUpdateFlow></>
+  return <><ServiceVersionReload /><ServiceUpdateFlow>{!session && !isDevShowcase ? <AcmeContentBoundary><Login /></AcmeContentBoundary> : <Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><UIModeBoundary><HashRouter><Shell><Routes><Route path="/" element={<Overview />} /><Route path="/custom-nodes" element={<CustomNodes />} /><Route path="/subscriptions" element={<Subscriptions />} /><Route path="/network-automation" element={<AdvancedRoute><NetworkAutomation /></AdvancedRoute>} /><Route path="/tunnels" element={<AdvancedRoute><Tunnels /></AdvancedRoute>} /><Route path="/proxies" element={<Proxies />} /><Route path="/connections" element={<Connections />} /><Route path="/routing-rules" element={<RoutingRules />} /><Route path="/rules" element={<Rules />} /><Route path="/dns" element={<AdvancedRoute><Dns /></AdvancedRoute>} /><Route path="/traffic" element={<Traffic />} /><Route path="/logs" element={<Logs />} /><Route path="/network-test" element={<NetworkTest />} /><Route path="/network-diagnostics" element={<NetworkDiagnostics />} /><Route path="/node-test" element={<NodeTest />} /><Route path="/runtime-status" element={<RuntimeStatus />} /><Route path="/gateway" element={<GatewayRoute />} /><Route path="/management" element={<Management />} />{AcmeShowcase ? <Route path="/components" element={<AcmeShowcase />} /> : null}<Route path="*" element={<Navigate to="/" replace />} /></Routes></Shell></HashRouter></UIModeBoundary></Suspense>}</ServiceUpdateFlow></>
 }
 
 function AdvancedRoute({ children }: { children: ReactNode }) {
-  const { mode } = useLocalUIMode()
+  const { mode } = useUIMode()
   return mode === 'advanced' ? children : <Navigate to="/" replace />
 }
 

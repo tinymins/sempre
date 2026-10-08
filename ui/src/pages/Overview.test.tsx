@@ -34,6 +34,7 @@ describe('Overview', () => {
   it('keeps the six metrics and realtime chart for a configured running core', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (path.endsWith('/runtime/events')) return new Response('')
       if (path.endsWith('/runtime/overview')) return Response.json({ core: 'sing-box', version: '1.13.18', connections: 12, download: 4096, upload: 2048 })
       return Response.json(configuredSystem)
@@ -60,6 +61,7 @@ describe('Overview', () => {
   it('shows service and managed core memory separately', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (path.endsWith('/runtime/events')) {
         return new Response('event: memory\ndata: {"topic":"memory","timestamp":"2026-09-02T00:00:00Z","sequence":1,"data":{"inuse":20971520}}\n\n')
       }
@@ -74,6 +76,7 @@ describe('Overview', () => {
   it('hides home-network direct access when it is not applicable', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (path.endsWith('/runtime/events')) return new Response('')
       if (path.endsWith('/runtime/overview')) return Response.json({ core: 'sing-box', version: '1.13.18', connections: 0, download: 0, upload: 0 })
       return Response.json({ ...configuredSystem, private_access: { ...configuredSystem.private_access, connectors: [] } })
@@ -89,6 +92,7 @@ describe('Overview', () => {
   it('shows a recognized network as pending until its route change is applied', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (path.endsWith('/runtime/events')) return new Response('')
       if (path.endsWith('/runtime/overview')) return Response.json({ core: 'sing-box', version: '1.13.18', connections: 0, download: 0, upload: 0 })
       return Response.json({
@@ -107,6 +111,7 @@ describe('Overview', () => {
   it('omits network automation when automatic switching is disabled', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (path.endsWith('/runtime/events')) return new Response('')
       if (path.endsWith('/runtime/overview')) return Response.json({ core: 'sing-box', version: '1.13.18', connections: 0, download: 0, upload: 0 })
       return Response.json({ ...configuredSystem, network_automation: { enabled: false, active: false, path: 'inactive' } })
@@ -118,7 +123,7 @@ describe('Overview', () => {
   })
 
   it('shows smart diagnosis only while initial core setup is incomplete', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ...configuredSystem, runtime: { state: 'idle' }, selected: undefined, active: undefined })))
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).endsWith('/ui/settings') ? { ui_mode: 'advanced' } : { ...configuredSystem, runtime: { state: 'idle' }, selected: undefined, active: undefined })))
     renderOverview()
 
     expect(await screen.findByText('Smart diagnosis & configuration')).toBeInTheDocument()

@@ -65,6 +65,7 @@ describe('RuntimeControlPanel', () => {
     let current = runningStatus
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      if (url.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (url.endsWith('/api/v1/runtime/stop') && init?.method === 'POST') {
         current = {
           ...runningStatus,
@@ -97,7 +98,7 @@ describe('RuntimeControlPanel', () => {
   })
 
   it('shows the active home-network decision and its evidence', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json(runningStatus)))
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).endsWith('/ui/settings') ? { ui_mode: 'advanced' } : runningStatus)))
     renderRuntimePanel()
 
     expect(await screen.findByText('Home network auto-direct')).toBeInTheDocument()
@@ -112,6 +113,7 @@ describe('RuntimeControlPanel', () => {
   it('keeps all lifecycle actions available after a retryable startup failure', async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      if (url.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (url.endsWith('/api/v1/runtime/restart') && init?.method === 'POST') {
         return new Response(JSON.stringify({
           action: 'restart',
@@ -145,6 +147,7 @@ describe('RuntimeControlPanel', () => {
     let current = runningStatus
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      if (url.endsWith('/ui/settings')) return Response.json({ ui_mode: 'advanced' })
       if (url.endsWith('/api/v1/runtime/restart') && init?.method === 'POST') {
         current = { ...runningStatus, restart_count: 1, last_exit: 'exit status 1', last_failure: failure }
         return new Response(JSON.stringify({

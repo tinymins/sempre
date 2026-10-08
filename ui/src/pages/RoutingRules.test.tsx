@@ -34,13 +34,16 @@ function response(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 
+let uiMode: 'simple' | 'advanced' = 'advanced'
+
 describe('RoutingRules', () => {
   beforeEach(() => {
-    localStorage.removeItem('sempre.ui-mode:http://sempre.test')
+    uiMode = 'advanced'
     localStorage.setItem('sempre.locale', 'en')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      if (url.endsWith('/api/v1/ui/settings')) return response({ ui_mode: uiMode })
       if (url.endsWith('/api/v1/dns/settings') && init?.method === 'PUT') return response({})
       if (url.endsWith('/api/v1/dns/settings')) return response({ settings, status: { domestic_domain_count: 77072 } })
       if (url.endsWith('/api/v1/runtime/proxies')) return response([])
@@ -113,9 +116,10 @@ describe('RoutingRules', () => {
     })])
     expect(result.selections).toEqual({ 'DNS · Streaming': 'HK-01' })
 
-    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    uiMode = 'simple'
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url.endsWith('/api/v1/ui/settings')) return response({ ui_mode: uiMode })
       if (url.endsWith('/api/v1/dns/settings')) return response({ settings: proxySettings, status: { domestic_domain_count: 77072 } })
       if (url.endsWith('/api/v1/runtime/proxies')) return response(groups)
       return response({})
@@ -130,6 +134,7 @@ describe('RoutingRules', () => {
     const proxySettings = { ...settings, rule_sets: [{ ...settings.rule_sets[0], name: 'Streaming', mode: 'proxy' }] }
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url.endsWith('/api/v1/ui/settings')) return response({ ui_mode: uiMode })
       if (url.endsWith('/api/v1/dns/settings')) return response({ settings: proxySettings, status: { domestic_domain_count: 77072 } })
       if (url.endsWith('/api/v1/runtime/proxies/select')) return response({})
       if (url.endsWith('/api/v1/runtime/proxies')) return response([{ name: 'DNS · Streaming', type: 'Selector', all: ['HK-01', 'JP-01'], now: 'HK-01' }])
@@ -154,6 +159,7 @@ describe('RoutingRules', () => {
     const proxySettings = { ...settings, rule_sets: [{ ...settings.rule_sets[0], name: 'Changed name', mode: 'proxy' }] }
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url.endsWith('/api/v1/ui/settings')) return response({ ui_mode: uiMode })
       if (url.endsWith('/api/v1/dns/settings')) return response({ settings: proxySettings, status: { domestic_domain_count: 77072 } })
       if (url.endsWith('/api/v1/runtime/proxies')) return response([])
       if (url.endsWith('/api/v1/runtime/status')) return response({ pending: true, pending_changes: [], runtime_state: 'running' })

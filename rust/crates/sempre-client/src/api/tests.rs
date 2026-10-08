@@ -45,7 +45,7 @@ pub(super) fn request(method: &str, path: &str, body: Body, remote: &str) -> Req
 }
 
 #[tokio::test]
-async fn health_is_public_and_inventory_requires_authentication() {
+async fn health_is_public_and_ui_settings_require_authentication() {
     let root = tempfile::tempdir().expect("temporary directory");
     let (state, token) = test_state(&root);
     let app = router(state);
@@ -64,21 +64,35 @@ async fn health_is_public_and_inventory_requires_authentication() {
         .clone()
         .oneshot(request(
             "GET",
-            "/api/v1/cores",
+            "/api/v1/ui/settings",
             Body::empty(),
             "127.0.0.1:1",
         ))
         .await
-        .expect("inventory");
+        .expect("UI settings");
     assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
 
-    let mut authenticated = request("GET", "/api/v1/cores", Body::empty(), "127.0.0.1:1");
+    let mut authenticated = request(
+        "PUT",
+        "/api/v1/ui/settings",
+        Body::from(r#"{"ui_mode":"simple"}"#),
+        "127.0.0.1:1",
+    );
+    authenticated.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
     authenticated.headers_mut().insert(
         DAEMON_TOKEN_HEADER,
         HeaderValue::from_str(&token).expect("token"),
     );
-    let response = app.oneshot(authenticated).await.expect("inventory");
+    let response = app.oneshot(authenticated).await.expect("UI settings");
     assert_eq!(response.status(), StatusCode::OK);
+    let path = Layout::at(root.path()).home.join("ui-settings.json");
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path).expect("settings file"))
+            .expect("settings JSON");
+    assert_eq!(saved["ui_mode"], "simple");
 }
 
 #[tokio::test]

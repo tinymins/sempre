@@ -7,7 +7,7 @@ import { formatBytes } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { useRuntimeEvents } from '../lib/useRuntimeEvents'
 import { useSession } from '../lib/session'
-import { useLocalUIMode } from '../lib/uiMode'
+import { useUIMode } from '../lib/uiMode'
 import type { Overview as OverviewData, RuntimeEvent, SystemStatus } from '../lib/types'
 import { Card, EmptyState, Badge, PageTitle } from '../components/ui'
 import { RuntimeChart, type ChartPoint } from '../components/RuntimeChart'
@@ -19,7 +19,7 @@ import { privateAccessMode } from '../lib/privateAccess'
 export function Overview() {
   const { t } = useI18n()
   const { session } = useSession()
-  const { mode: uiMode } = useLocalUIMode()
+  const { mode: uiMode } = useUIMode()
   const [points, setPoints] = useState<ChartPoint[]>([])
   const [rates, setRates] = useState({ download: 0, upload: 0, memory: 0, connections: 0 })
   const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemStatus>(session!, '/system'), refetchInterval: 5000 })

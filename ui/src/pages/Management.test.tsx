@@ -12,6 +12,8 @@ function Management() {
   return <AcmeContentBoundary><ServiceUpdateFlow><ManagementPage /></ServiceUpdateFlow></AcmeContentBoundary>
 }
 
+let uiMode: 'simple' | 'advanced' = 'advanced'
+
 describe('Management page', () => {
   let coreTask: Record<string, unknown> | null
   let coresResponse: Record<string, unknown>
@@ -23,7 +25,7 @@ describe('Management page', () => {
 
   beforeEach(() => {
     clearServiceUpdateMarker()
-    localStorage.removeItem('sempre.ui-mode:http://sempre.test')
+    uiMode = 'advanced'
     coreTask = null
     coresResponse = { supported: [], installed: [], selected: null }
     cancelledTask = ''
@@ -35,6 +37,10 @@ describe('Management page', () => {
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input)).pathname
+      if (String(input).endsWith('/api/v1/ui/settings')) {
+        if (init?.method === 'PUT') uiMode = JSON.parse(String(init.body)).ui_mode
+        return Response.json({ ui_mode: uiMode })
+      }
       if (path.endsWith('/cores/download')) {
         if (init?.method === 'DELETE') {
           cancelledTask = new URL(String(input)).searchParams.get('id') || ''
@@ -95,6 +101,7 @@ describe('Management page', () => {
     expect(await screen.findByText('显示本机模式的完整配置。')).not.toHaveClass('border')
     expect(screen.queryByText('网关模式仅在 Linux 系统服务上可用。')).not.toBeInTheDocument()
 
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeEnabled())
     fireEvent.click(screen.getByRole('combobox'))
     const listbox = await screen.findByRole('listbox')
     const gateway = within(listbox).getByText('网关模式').closest('.cursor-not-allowed')
@@ -114,8 +121,9 @@ describe('Management page', () => {
     const listbox = await screen.findByRole('listbox')
     fireEvent.click(within(listbox).getByText('本机模式（简易）'))
 
-    expect(localStorage.getItem('sempre.ui-mode:http://sempre.test')).toBe('simple')
-    expect(screen.getByText('仅显示订阅 URL、常用分流和节点选择。')).toBeInTheDocument()
+    await waitFor(() => expect(uiMode).toBe('simple'))
+    expect(fetch).toHaveBeenCalledWith('http://sempre.test/api/v1/ui/settings', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ ui_mode: 'simple' }) }))
+    expect(await screen.findByText('仅显示订阅 URL、常用分流和节点选择。')).toBeInTheDocument()
   })
 
   it('separates console actions from backup and update tools', async () => {

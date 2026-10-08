@@ -15,7 +15,7 @@ import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribe
 import { RemoteSubscriptionPanel } from '../features/subscriptions/RemoteSubscriptionPanel'
 import { SubscriptionProfileDialog, type SubscriptionMode } from '../features/subscriptions/SubscriptionProfileDialog'
 import { SimpleSubscriptionEditor } from '../features/subscriptions/SimpleSubscriptionEditor'
-import { useLocalUIMode } from '../lib/uiMode'
+import { useUIMode } from '../lib/uiMode'
 
 type SaveResponse = { change: { Changed: boolean; NeedsRestart: boolean; Message: string }; profile?: SubscriptionProfile; render?: { warnings?: string[] } }
 type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: SubscriptionProfile }
@@ -23,7 +23,7 @@ type NameDialogState = { mode: 'create' } | { mode: 'rename'; profile: Subscript
 export function Subscriptions() {
   const { t, locale } = useI18n()
   const { session } = useSession()
-  const { mode: uiMode } = useLocalUIMode()
+  const { mode: uiMode } = useUIMode()
   const queryClient = useQueryClient()
   const toast = useToast()
   const [selectedID, setSelectedID] = useState('')

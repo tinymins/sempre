@@ -15,7 +15,7 @@ import { Badge, Button } from './ui'
 import { modeLabel } from './PrivateAccessRuntimePanel'
 import { privateAccessMode } from '../lib/privateAccess'
 import { networkAutomationDisplayPath } from '../lib/networkAutomation'
-import { useLocalUIMode } from '../lib/uiMode'
+import { useUIMode } from '../lib/uiMode'
 import { PrivateAccessStatusTag } from './PrivateAccessStatusTag'
 import { NetworkAutomationStatusTag } from './NetworkAutomationStatusTag'
 
@@ -46,7 +46,7 @@ export interface ShellChrome {
 export function Shell({ children, navigation, chrome }: { children: ReactNode; navigation?: ShellNavigationItem[]; chrome?: ShellChrome }) {
   const { t, locale, setLocale } = useI18n()
   const { session, setSession } = useSession()
-  const { mode: uiMode } = useLocalUIMode()
+  const { mode: uiMode } = useUIMode()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [passwordWarningDismissed, setPasswordWarningDismissed] = useState(false)

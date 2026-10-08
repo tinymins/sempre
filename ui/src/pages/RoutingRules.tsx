@@ -12,7 +12,7 @@ import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
 import type { ProxyNode } from '../lib/types'
 import { SimpleRoutingRules, type SimpleRoutingSave } from '../features/dns/SimpleRoutingRules'
-import { useLocalUIMode } from '../lib/uiMode'
+import { useUIMode } from '../lib/uiMode'
 
 const BUILTIN_ID = 'builtin-domains-min'
 
@@ -25,7 +25,7 @@ export function RoutingRules() {
   const message = useToast()
   const { locale } = useI18n()
   const { session } = useSession()
-  const { mode: uiMode } = useLocalUIMode()
+  const { mode: uiMode } = useUIMode()
   const queryClient = useQueryClient()
   const zh = locale === 'zh-CN'
   const [draft, setDraft] = useState<DnsSettings | null>(null)

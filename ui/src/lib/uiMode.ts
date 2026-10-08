@@ -1,34 +1,28 @@
-import { useSyncExternalStore } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { api } from './api'
 import { useSession } from './session'
 
-export type LocalUIMode = 'simple' | 'advanced'
+export type UIMode = 'simple' | 'advanced'
+type UISettings = { ui_mode: UIMode }
 
-const CHANGE_EVENT = 'sempre-ui-mode-change'
-
-function storageKey(baseURL: string) {
-  return `sempre.ui-mode:${baseURL}`
-}
-
-export function useLocalUIMode() {
+export function useUIMode() {
   const { session } = useSession()
-  const key = storageKey(session?.baseURL ?? 'local')
-  const mode = useSyncExternalStore(
-    (onChange) => {
-      window.addEventListener(CHANGE_EVENT, onChange)
-      window.addEventListener('storage', onChange)
-      return () => {
-        window.removeEventListener(CHANGE_EVENT, onChange)
-        window.removeEventListener('storage', onChange)
-      }
-    },
-    () => localStorage.getItem(key) === 'simple' ? 'simple' : 'advanced',
-  )
+  const queryClient = useQueryClient()
+  const queryKey = ['ui-settings', session?.baseURL]
+  const query = useQuery({
+    queryKey,
+    queryFn: () => api<UISettings>(session!, '/ui/settings'),
+    enabled: Boolean(session),
+    staleTime: 5000,
+    refetchInterval: 5000,
+  })
 
   return {
-    mode,
-    setMode(next: LocalUIMode) {
-      localStorage.setItem(key, next)
-      window.dispatchEvent(new Event(CHANGE_EVENT))
+    ...query,
+    mode: query.data?.ui_mode,
+    async setMode(mode: UIMode) {
+      const settings = await api<UISettings>(session!, '/ui/settings', { method: 'PUT', body: JSON.stringify({ ui_mode: mode }) })
+      queryClient.setQueryData(queryKey, settings)
     },
   }
 }

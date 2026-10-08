@@ -81,9 +81,11 @@ function renderPage() {
   )
 }
 
+let uiMode: 'simple' | 'advanced' = 'advanced'
+
 describe('Subscriptions subscription sets', () => {
   beforeEach(() => {
-    localStorage.removeItem('sempre.ui-mode:http://sempre.test')
+    uiMode = 'advanced'
     localStorage.setItem('sempre.locale', 'en')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     profiles = [profile('primary', 'Primary')]
@@ -94,6 +96,7 @@ describe('Subscriptions subscription sets', () => {
     configurationFeatures = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
+      if (url.endsWith('/api/v1/ui/settings')) return jsonResponse({ ui_mode: uiMode })
       const method = init.method || 'GET'
       const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, string> : undefined
       requests.push({ url, method, body })
@@ -168,7 +171,7 @@ describe('Subscriptions subscription sets', () => {
       profile('secondary', 'Secondary'),
     ]
     activeProfileID = 'secondary'
-    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    uiMode = 'simple'
     renderPage()
 
     const first = await screen.findByRole('textbox', { name: 'Subscription URL 1' })
@@ -192,7 +195,7 @@ describe('Subscriptions subscription sets', () => {
   })
 
   it('renders an empty URL row when randomUUID is unavailable on HTTP', async () => {
-    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    uiMode = 'simple'
     vi.stubGlobal('crypto', {})
     renderPage()
 
@@ -202,7 +205,7 @@ describe('Subscriptions subscription sets', () => {
   it('edits private access in a responsive dialog and saves it with the first profile', async () => {
     configurationFeatures = ['private_access']
     profiles = [{ ...profile('primary', 'Primary'), sources: [{ id: 'url-1', type: 'url', enabled: true, url: 'https://old.example/sub' }] }]
-    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    uiMode = 'simple'
     renderPage()
 
     const privateAccessButton = await screen.findByRole('button', { name: /Private Access.*Not configured/ })

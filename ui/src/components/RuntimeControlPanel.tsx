@@ -10,7 +10,7 @@ import { useSession } from '../lib/session'
 import { formatRuntimeFailure, useRuntimeActionFeedback, type RuntimeActionNotice } from '../lib/useRuntimeActionFeedback'
 import type { ManagedRuntimeStatus } from '../lib/types'
 import { networkAutomationDisplayPath } from '../lib/networkAutomation'
-import { useLocalUIMode } from '../lib/uiMode'
+import { useUIMode } from '../lib/uiMode'
 import { Badge, Button, Card, ConfirmDialog, Spinner } from './ui'
 import { PrivateAccessRuntimePanel } from './PrivateAccessRuntimePanel'
 import { RuntimeRestartButton } from './RuntimeRestartButton'
@@ -23,7 +23,7 @@ export function RuntimeControlPanel() {
   const message = useToast()
   const { t } = useI18n()
   const { session } = useSession()
-  const { mode: uiMode } = useLocalUIMode()
+  const { mode: uiMode } = useUIMode()
   const queryClient = useQueryClient()
   const [confirmStop, setConfirmStop] = useState(false)
   const [notice, setNotice] = useState<RuntimeActionNotice | null>(null)

@@ -41,14 +41,18 @@ const networkSettings = (mode: 'local' | 'gateway' = 'local') => ({ settings: { 
 
 const restartTask = { id: 'restart', state: 'running', started_at: '2026-09-03T00:00:00Z', finished_at: null, logs: [{ sequence: 0, timestamp: '2026-09-03T00:00:00Z', stage: 'begin', message: '' }], omitted_logs: 0, config_available: false }
 
+let uiMode: 'simple' | 'advanced' = 'advanced'
+
 describe('Shell sidebar', () => {
   beforeEach(() => {
+    uiMode = 'advanced'
     localStorage.clear()
     sessionStorage.clear()
     localStorage.setItem('sempre.locale', 'en')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : systemStatus)
     }))
   })
@@ -108,6 +112,7 @@ describe('Shell sidebar', () => {
     const proxyStatus = { ...systemStatus, network_automation: { ...systemStatus.network_automation, path: 'proxy' } }
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : proxyStatus)
     }))
     renderShell()
@@ -132,6 +137,7 @@ describe('Shell sidebar', () => {
     }
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : mixedStatus)
     }))
     renderShell()
@@ -151,6 +157,7 @@ describe('Shell sidebar', () => {
   it('shows that automatic switching is waiting when the core is stopped', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : { ...systemStatus, runtime: { state: 'idle' }, network_automation: { ...systemStatus.network_automation, active: false, path: 'inactive' } })
     }))
     renderShell()
@@ -161,6 +168,7 @@ describe('Shell sidebar', () => {
   it('shows pending instead of unknown after recognizing a staged network', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       const staged = { ...systemStatus, pending: true, network_automation: { ...systemStatus.network_automation, path: 'unknown', gateway_mac: 'aa:bb:cc:dd:ee:ff' } }
       return Response.json(path.endsWith('/network/settings') ? networkSettings() : path.endsWith('/runtime/status') ? runtimeStatus : staged)
     }))
@@ -189,7 +197,7 @@ describe('Shell sidebar', () => {
   })
 
   it('hides advanced network navigation and status in simple mode', async () => {
-    localStorage.setItem('sempre.ui-mode:http://sempre.test', 'simple')
+    uiMode = 'simple'
     renderShell()
     await screen.findByText('0.2.0')
 
@@ -203,6 +211,7 @@ describe('Shell sidebar', () => {
   it('shows the gateway entry only in gateway mode', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       return Response.json(path.endsWith('/network/settings') ? networkSettings('gateway') : path.endsWith('/runtime/status') ? runtimeStatus : systemStatus)
     }))
     renderShell()
@@ -253,6 +262,7 @@ describe('Shell sidebar', () => {
     }
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       if (path.endsWith('/runtime/restart') && init.method === 'POST') {
         accepted = true
         return Response.json({ action: 'restart', status: pendingStatus, task: restartTask }, { status: 202 })
@@ -284,6 +294,7 @@ describe('Shell sidebar', () => {
   it('shows restart failures from the global control', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       if (path.endsWith('/runtime/restart') && init.method === 'POST') {
         return Response.json({ error: { code: 'RUNTIME_ERROR', message: 'Managed core is unavailable' } }, { status: 503 })
       }
@@ -309,6 +320,7 @@ describe('Shell sidebar', () => {
     let statusReads = 0
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: uiMode })
       if (path.endsWith('/runtime/restart') && init.method === 'POST') {
         return Response.json({ action: 'restart', task: restartTask, status: { ...runtimeStatus, runtime_state: 'stopping', active: failed, pending: true } }, { status: 202 })
       }
