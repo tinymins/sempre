@@ -2,8 +2,8 @@ import { useToast } from '@acme/components'
 import { I18nCodeBlock as CodeBlock } from '../components/I18nCodeBlock'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Network, Play, RefreshCw, Save, Terminal, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Empty, Input, InputNumber, Select, Switch, Table, Tabs, Tag, TextArea, type TableColumn } from '@acme/components'
+import { Copy, Network, Play, Pencil, Terminal, Trash2 } from 'lucide-react'
+import { Alert, Button, Card, Empty, Input, InputNumber, Modal, Select, Switch, Table, Tabs, Tag, TextArea, type TableColumn } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
@@ -29,12 +29,13 @@ export function Gateway() {
   const { locale, t } = useI18n()
   const { session } = useSession()
   const queryClient = useQueryClient()
-  const [draft, setDraft] = useState<GatewayConfig | null>(null)
+  const [editing, setEditing] = useState<GatewayConfig | null>(null)
+  const [editingTab, setEditingTab] = useState('network')
   const [plan, setPlan] = useState<GatewayHostPlan | null>(null)
   const [sshKey, setSSHKey] = useState('')
   const status = useQuery({
     queryKey: ['gateway'],
-    queryFn: () => api<GatewayStatus>(session!, '/gateway'),
+    queryFn: ({ signal }) => api<GatewayStatus>(session!, '/gateway', { signal }),
     enabled: Boolean(session),
     refetchInterval: 5000,
   })
@@ -43,7 +44,8 @@ export function Gateway() {
     queryFn: () => api<NetworkSettingsResponse>(session!, '/network/settings'),
     enabled: Boolean(session),
   })
-  const config = draft ?? status.data?.config ?? emptyStatus.config
+  const persisted = status.data?.config ?? emptyStatus.config
+  const config = editing ?? persisted
   const inventory = status.data?.inventory ?? emptyStatus.inventory
   const runtime = status.data?.runtime ?? emptyStatus.runtime
   const validation = status.data?.validation_errors ?? []
@@ -54,10 +56,13 @@ export function Gateway() {
   const save = useMutation({
     onError: (error) => message.error(error.message),
     mutationFn: (next: GatewayConfig) => api<{ config: GatewayConfig; reload_requested: boolean }>(session!, '/gateway', { method: 'PUT', body: JSON.stringify(next) }),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      await queryClient.cancelQueries({ queryKey: ['gateway'] })
+      queryClient.setQueryData<GatewayStatus>(['gateway'], (current) => current ? { ...current, config: result.config } : current)
+      setEditing(null)
+      setPlan(null)
       message.success(t('operationDone'))
-      setDraft(result.config)
-      queryClient.invalidateQueries({ queryKey: ['gateway'] })
+      void queryClient.invalidateQueries({ queryKey: ['gateway'] })
     },
   })
   const buildPlan = useMutation({
@@ -85,7 +90,7 @@ export function Gateway() {
     mutationFn: (mac: string) => api(session!, '/gateway/dhcp/leases/revoke', { method: 'POST', body: JSON.stringify({ mac }) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gateway'] }),
   })
-  const update = (change: (current: GatewayConfig) => GatewayConfig) => setDraft(change(config))
+  const update = (change: (current: GatewayConfig) => GatewayConfig) => setEditing(change(config))
   const leaseColumns = useMemo<Array<TableColumn<GatewayLease>>>(() => [
     { title: 'MAC', dataIndex: 'mac', minWidth: 180, sorter: (left, right) => compareText(left.mac, right.mac) },
     { title: 'IP', dataIndex: 'ip', width: 150, sorter: (left, right) => compareText(left.ip, right.ip) },
@@ -99,25 +104,12 @@ export function Gateway() {
       key: 'network',
       label: locale === 'zh-CN' ? '网络设置' : 'Network settings',
       children: <div className="space-y-5 pt-4">
-        <Section title="Topology and LAN">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Field label="Topology"><Select value={config.topology} options={[{ value: 'local-pve', label: 'PVE host local' }, { value: 'remote-pve', label: 'Gateway VM/LXC + PVE SSH/manual' }]} onChange={(value) => update((current) => ({ ...current, topology: value }))} /></Field>
-            <Field label="LAN interface" labelControl={false}><Select aria-label="LAN interface" showSearch allowClear popupMatchSelectWidth className="w-full max-w-full" value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
-            <Field label="Gateway CIDR"><Input value={config.lan.gateway_cidr} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, gateway_cidr: event.target.value } }))} /></Field>
-            <Field label="WAN interface">{config.topology === 'local-pve'
-              ? <Select showSearch popupMatchSelectWidth className="w-full max-w-full" value={localConfig.lan.wan_interface} options={lanOptions} placeholder="Select the local outbound interface" onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: String(value) } }))} />
-              : <Input value={config.lan.wan_interface} placeholder="Remote PVE interface name" onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: event.target.value } }))} />}
-            </Field>
-            <Field label="NAT masquerade"><Switch checked={config.lan.nat_enabled} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, nat_enabled: value } }))} /></Field>
-            <Field label="Proxy this host"><Switch checked={network.data?.settings.gateway_capture_host ?? false} loading={captureHost.isPending} onChange={(value) => captureHost.mutate(value)} /></Field>
-            <Field label="PVE host"><Input value={config.pve.host || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, host: event.target.value } }))} /></Field>
-            <Field label="SSH user"><Input value={config.pve.user || 'root'} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, user: event.target.value } }))} /></Field>
-            <Field label="SSH port"><InputNumber className="w-full" min={1} max={65535} value={config.pve.port || 22} disabled={config.topology === 'local-pve'} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, port: value ?? 22 } }))} /></Field>
-            <Field label="SSH key path"><Input value={config.pve.key_path || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, key_path: event.target.value } }))} /></Field>
-            <Field label="Host fingerprint"><Input value={config.pve.fingerprint || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, fingerprint: event.target.value } }))} /></Field>
-            <Field label="Persistent apply"><Switch checked={config.pve.apply_persistent} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, apply_persistent: value } }))} /></Field>
-          </div>
-        </Section>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-[var(--muted)]">{persisted.lan.interface || '—'} · {persisted.lan.gateway_cidr}</p>
+          <Button icon={<Pencil size={16} />} disabled={!status.data || save.isPending} onClick={() => { setEditingTab('network'); setEditing(persisted) }}>{locale === 'zh-CN' ? '编辑网络配置' : 'Edit network configuration'}</Button>
+        </div>
+
+        <Field label="Proxy this host"><Switch checked={network.data?.settings.gateway_capture_host ?? false} loading={captureHost.isPending} onChange={(value) => captureHost.mutate(value)} /></Field>
 
         <Alert type="info" showIcon message="LAN DNS entry is automatic" description="LAN clients use the gateway on TCP/UDP port 53. Sempre forwards those queries to the DNS frontend configured on the DNS page." />
 
@@ -142,15 +134,10 @@ export function Gateway() {
       key: 'dhcp',
       label: 'DHCP',
       children: <div className="space-y-5 pt-4">
-        <Section title="DHCP settings">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Enabled"><Switch checked={config.dhcp.enabled} onChange={(value) => update((current) => ({ ...current, dhcp: { ...current.dhcp, enabled: value } }))} /></Field>
-            <Field label="Lease time"><Input value={config.dhcp.lease_time} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, lease_time: event.target.value } }))} /></Field>
-            <Field label="Range start"><Input value={config.dhcp.range_start} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, range_start: event.target.value } }))} /></Field>
-            <Field label="Range end"><Input value={config.dhcp.range_end} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, range_end: event.target.value } }))} /></Field>
-            <Field label="Domain"><Input value={config.dhcp.domain || ''} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, domain: event.target.value } }))} /></Field>
-          </div>
-        </Section>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-[var(--muted)]">{persisted.dhcp.range_start} – {persisted.dhcp.range_end} · {persisted.dhcp.lease_time}</p>
+          <Button icon={<Pencil size={16} />} disabled={!status.data || save.isPending} onClick={() => { setEditingTab('dhcp'); setEditing(persisted) }}>{locale === 'zh-CN' ? '编辑 DHCP 配置' : 'Edit DHCP configuration'}</Button>
+        </div>
 
         <div className="border-t border-[var(--border)] pt-5">
           <Section title="DHCP leases">
@@ -164,23 +151,50 @@ export function Gateway() {
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
       <div><h1 className="text-xl font-semibold">{t('gateway')}</h1><p className="mt-1 text-sm text-[var(--muted)]">LAN transparent proxy, DHCP, and PVE host preparation.</p></div>
-      <div className="flex gap-2">
-        <Button icon={<RefreshCw size={16} />} disabled={status.isFetching} onClick={() => status.refetch()}>{t('refresh')}</Button>
-        <Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(localConfig)}>{t('save')}</Button>
-      </div>
     </div>
 
     {validation.length ? <Alert type="warning" showIcon message="Configuration needs attention" description={validation.join('; ')} /> : null}
 
     <div className="grid gap-3 md:grid-cols-3">
-      <Metric icon={Network} label="Topology" value={config.topology === 'local-pve' ? 'Local PVE' : 'Remote PVE'} tone="blue" />
-      <Metric icon={Play} label="DHCP" value={runtime.dhcp_running ? 'Running' : config.dhcp.enabled ? 'Pending' : 'Disabled'} tone="amber" />
+      <Metric icon={Network} label="Topology" value={persisted.topology === 'local-pve' ? 'Local PVE' : 'Remote PVE'} tone="blue" />
+      <Metric icon={Play} label="DHCP" value={runtime.dhcp_running ? 'Running' : persisted.dhcp.enabled ? 'Pending' : 'Disabled'} tone="amber" />
       <Metric icon={Terminal} label="Host plan" value={plan ? 'Generated' : 'Ready'} tone="cyan" />
     </div>
 
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
       <Tabs items={tabs} defaultActiveKey="network" destroyInactiveTabPane={false} />
     </Card>
+    <Modal open={Boolean(editing)} title={locale === 'zh-CN' ? '编辑网关配置' : 'Edit gateway configuration'} size="large" okText={locale === 'zh-CN' ? '保存配置' : 'Save configuration'} cancelText={t('cancel')} confirmLoading={save.isPending} cancelButtonProps={{ disabled: save.isPending }} onOk={() => save.mutateAsync(localConfig).catch(() => undefined)} onCancel={() => { if (!save.isPending) setEditing(null) }} destroyOnClose>
+      <div inert={save.isPending}><Tabs key={editingTab} defaultActiveKey={editingTab} items={[
+        { key: 'network', label: locale === 'zh-CN' ? '网络设置' : 'Network settings', children: <Section title="Topology and LAN">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Topology"><Select value={config.topology} options={[{ value: 'local-pve', label: 'PVE host local' }, { value: 'remote-pve', label: 'Gateway VM/LXC + PVE SSH/manual' }]} onChange={(value) => update((current) => ({ ...current, topology: value }))} /></Field>
+            <Field label="LAN interface" labelControl={false}><Select aria-label="LAN interface" showSearch allowClear popupMatchSelectWidth className="w-full max-w-full" value={config.lan.interface} options={lanOptions} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, interface: value || '' } }))} /></Field>
+            <Field label="Gateway CIDR"><Input value={config.lan.gateway_cidr} onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, gateway_cidr: event.target.value } }))} /></Field>
+            <Field label="WAN interface">{config.topology === 'local-pve'
+              ? <Select showSearch popupMatchSelectWidth className="w-full max-w-full" value={localConfig.lan.wan_interface} options={lanOptions} placeholder="Select the local outbound interface" onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: String(value) } }))} />
+              : <Input value={config.lan.wan_interface} placeholder="Remote PVE interface name" onChange={(event) => update((current) => ({ ...current, lan: { ...current.lan, wan_interface: event.target.value } }))} />}
+            </Field>
+            <Field label="NAT masquerade"><Switch checked={config.lan.nat_enabled} onChange={(value) => update((current) => ({ ...current, lan: { ...current.lan, nat_enabled: value } }))} /></Field>
+            <Field label="PVE host"><Input value={config.pve.host || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, host: event.target.value } }))} /></Field>
+            <Field label="SSH user"><Input value={config.pve.user || 'root'} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, user: event.target.value } }))} /></Field>
+            <Field label="SSH port"><InputNumber className="w-full" min={1} max={65535} value={config.pve.port || 22} disabled={config.topology === 'local-pve'} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, port: value ?? 22 } }))} /></Field>
+            <Field label="SSH key path"><Input value={config.pve.key_path || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, key_path: event.target.value } }))} /></Field>
+            <Field label="Host fingerprint"><Input value={config.pve.fingerprint || ''} disabled={config.topology === 'local-pve'} onChange={(event) => update((current) => ({ ...current, pve: { ...current.pve, fingerprint: event.target.value } }))} /></Field>
+            <Field label="Persistent apply"><Switch checked={config.pve.apply_persistent} onChange={(value) => update((current) => ({ ...current, pve: { ...current.pve, apply_persistent: value } }))} /></Field>
+          </div>
+        </Section> },
+        { key: 'dhcp', label: 'DHCP', children: <Section title="DHCP settings">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Enabled"><Switch checked={config.dhcp.enabled} onChange={(value) => update((current) => ({ ...current, dhcp: { ...current.dhcp, enabled: value } }))} /></Field>
+            <Field label="Lease time"><Input value={config.dhcp.lease_time} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, lease_time: event.target.value } }))} /></Field>
+            <Field label="Range start"><Input value={config.dhcp.range_start} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, range_start: event.target.value } }))} /></Field>
+            <Field label="Range end"><Input value={config.dhcp.range_end} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, range_end: event.target.value } }))} /></Field>
+            <Field label="Domain"><Input value={config.dhcp.domain || ''} onChange={(event) => update((current) => ({ ...current, dhcp: { ...current.dhcp, domain: event.target.value } }))} /></Field>
+          </div>
+        </Section> },
+      ]} /></div>
+    </Modal>
   </div>
 }
 
