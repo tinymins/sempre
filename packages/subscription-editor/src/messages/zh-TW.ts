@@ -1,4 +1,12 @@
 export default {
+  "dns.routeConflict": "FakeIP 網段與系統路由重疊",
+  "dns.conflictingRoutes": "衝突路由：{routes}",
+  "dns.recommendedRange": "建議網段：{range}",
+  "dns.useRecommendedRange": "填入建議網段",
+  "dns.noAvailableRange": "候選範圍內沒有找到足夠大的可用網段。",
+  "dns.fallbackRange": "198.18.0.0/15 內無可用子網，目前建議為私網備用段。",
+  "dns.routeCheckFailed": "路由檢查失敗，請檢查 CIDR 格式和服務連線。",
+
   "source.reorder": "拖曳排序來源 {index}",
   "source.addRaw": "新增原始來源",
   "editor.remark": "備註",

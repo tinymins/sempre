@@ -1,4 +1,12 @@
 export default {
+  "dns.routeConflict": "FakeIP-Bereich überschneidet sich mit Systemrouten",
+  "dns.conflictingRoutes": "Konflikte: {routes}",
+  "dns.recommendedRange": "Empfohlener Bereich: {range}",
+  "dns.useRecommendedRange": "Empfohlenen Bereich eintragen",
+  "dns.noAvailableRange": "Kein ausreichend großes freies Subnetz in den Kandidatenbereichen gefunden.",
+  "dns.fallbackRange": "198.18.0.0/15 ist belegt; dies ist ein privater Ersatzbereich.",
+  "dns.routeCheckFailed": "Routenprüfung fehlgeschlagen. CIDR und Dienstverbindung prüfen.",
+
   "source.reorder": "Quelle {index} verschieben",
   "source.addRaw": "RAW-Quelle hinzufügen",
   "editor.remark": "Anmerkung",

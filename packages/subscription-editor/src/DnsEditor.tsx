@@ -4,6 +4,7 @@ import { readJsoncObject, objectAt } from "./jsonc";
 import type React from "react";
 import { useMemo } from "react";
 import { useEditorI18n as useTranslation } from "./i18n";
+import { FakeIpRangeInput, type CheckFakeIpRange } from "./FakeIpRangeInput";
 import { useEditorLayout } from './layout';
 
 export interface SystemDnsListenHostOption {
@@ -17,10 +18,12 @@ export interface DnsConfigEditorProps {
   onChange?: (value: string) => void;
   readOnly?: boolean;
   features?: string[];
+  checkFakeIpRange?: CheckFakeIpRange;
+  onUseRecommendedRange?: (field: "fakeipIpv4Range" | "fakeipIpv6Range", range: string) => void;
   systemDnsListenHostOptions?: SystemDnsListenHostOption[];
 }
 
-export const DnsEditor = ({ value, onChange, readOnly, features, systemDnsListenHostOptions = [], defaults = "" }: DnsConfigEditorProps) => {
+export const DnsEditor = ({ value, onChange, readOnly, features, checkFakeIpRange, onUseRecommendedRange, systemDnsListenHostOptions = [], defaults = "" }: DnsConfigEditorProps) => {
   const { t } = useTranslation();
   const page = useEditorLayout() === 'page';
   const current = readJsoncObject(value);
@@ -37,7 +40,7 @@ export const DnsEditor = ({ value, onChange, readOnly, features, systemDnsListen
     || Object.keys(current.object ?? {}).some((field) => field !== "shared" && field !== "overrides");
   return <div className="space-y-4">
     {invalid ? <p role="alert" className="text-sm text-red-600">{t("editor.invalidObject")}</p> : null}
-    <SharedForm merged={merged} readOnly={readOnly || invalid} features={features} systemDnsListenHostOptions={systemDnsListenHostOptions} onFieldChange={change} />
+    <SharedForm merged={merged} readOnly={readOnly || invalid} features={features} checkFakeIpRange={checkFakeIpRange} onUseRecommendedRange={invalid ? undefined : onUseRecommendedRange} systemDnsListenHostOptions={systemDnsListenHostOptions} onFieldChange={change} />
     {hasOverrides ? <p className="text-xs text-[var(--muted)]">{t("dns.fallbackHint")}</p> : null}
     {hasOverrides || hasAdditionalFields || invalid ? <Collapse items={[{ key: 'document', label: t('filter.advanced'), children: <CodeEditor ariaLabel={t('editor.tabDns')} value={value ?? ''} readOnly={readOnly} onChange={onChange} height={320} appearance={page ? 'plain' : 'panel'} /> }]} /> : null}
   </div>;
@@ -47,11 +50,13 @@ interface SharedFormProps {
   merged: Required<DnsSharedConfig>;
   readOnly?: boolean;
   features?: string[];
+  checkFakeIpRange?: CheckFakeIpRange;
+  onUseRecommendedRange?: (field: "fakeipIpv4Range" | "fakeipIpv6Range", range: string) => void;
   systemDnsListenHostOptions: SystemDnsListenHostOption[];
   onFieldChange: (field: keyof DnsSharedConfig, value: unknown) => void;
 }
 
-const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, onFieldChange }: SharedFormProps) => {
+const SharedForm = ({ merged, readOnly, features, checkFakeIpRange, onUseRecommendedRange, systemDnsListenHostOptions, onFieldChange }: SharedFormProps) => {
   const { t } = useTranslation();
   const disabled = readOnly ?? false;
   const supported = { has: (feature: string) => features ? features.includes(feature) : feature !== "dns.system_takeover" };
@@ -120,8 +125,8 @@ const SharedForm = ({ merged, readOnly, features, systemDnsListenHostOptions, on
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <FieldRow label={t("proxy.form.dnsFakeipEnabled")}><Switch size="small" checked={merged.fakeipEnabled} disabled={disabled} onChange={(next) => onFieldChange("fakeipEnabled", next)} /></FieldRow>
             <FieldRow label={t("proxy.form.dnsFakeipTtl")}><InputNumber className="w-full" min={0} value={merged.fakeipTtl} disabled={disabled} onChange={(next) => onFieldChange("fakeipTtl", next)} /></FieldRow>
-            <FieldRow label={t("proxy.form.dnsFakeipIpv4Range")}><Input value={merged.fakeipIpv4Range} disabled={disabled} onChange={(event) => onFieldChange("fakeipIpv4Range", event.target.value)} /></FieldRow>
-            <FieldRow label={t("proxy.form.dnsFakeipIpv6Range")}><Input value={merged.fakeipIpv6Range} disabled={disabled} onChange={(event) => onFieldChange("fakeipIpv6Range", event.target.value)} /></FieldRow>
+            <FieldRow label={t("proxy.form.dnsFakeipIpv4Range")}><FakeIpRangeInput label={t("proxy.form.dnsFakeipIpv4Range")} value={merged.fakeipIpv4Range} enabled={merged.fakeipEnabled !== false} disabled={disabled} check={checkFakeIpRange} onApplyRecommendation={onUseRecommendedRange ? next => onUseRecommendedRange("fakeipIpv4Range", next) : undefined} onChange={next => onFieldChange("fakeipIpv4Range", next)} /></FieldRow>
+            <FieldRow label={t("proxy.form.dnsFakeipIpv6Range")}><FakeIpRangeInput label={t("proxy.form.dnsFakeipIpv6Range")} value={merged.fakeipIpv6Range} enabled={merged.fakeipEnabled !== false} disabled={disabled} check={checkFakeIpRange} onApplyRecommendation={onUseRecommendedRange ? next => onUseRecommendedRange("fakeipIpv6Range", next) : undefined} onChange={next => onFieldChange("fakeipIpv6Range", next)} /></FieldRow>
           </div>
         </>
       ) : null}

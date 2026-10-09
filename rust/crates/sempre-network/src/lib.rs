@@ -18,7 +18,7 @@ pub use probe::{NetworkTestReport, NetworkTestResult, run_network_test};
 pub use public_ip::{
     DOMESTIC_IP_PROBE, FOREIGN_IP_PROBE, IpMetadata, PublicIpProbe, lookup_ip_metadata,
 };
-pub use routes::route_prefixes;
+pub use routes::{route_prefixes, route_prefixes_excluding};
 
 use std::io;
 

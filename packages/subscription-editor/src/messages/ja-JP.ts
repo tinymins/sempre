@@ -1,4 +1,12 @@
 export default {
+  "dns.routeConflict": "FakeIP 範囲がシステムルートと重複しています",
+  "dns.conflictingRoutes": "競合するルート: {routes}",
+  "dns.recommendedRange": "推奨範囲: {range}",
+  "dns.useRecommendedRange": "推奨範囲を入力",
+  "dns.noAvailableRange": "候補の範囲に十分な大きさの空きサブネットがありません。",
+  "dns.fallbackRange": "198.18.0.0/15 に空きがないため、プライベートネットワークを推奨します。",
+  "dns.routeCheckFailed": "ルートの確認に失敗しました。CIDR とサービス接続を確認してください。",
+
   "source.reorder": "ソース {index} を並べ替え",
   "source.addRaw": "RAW ソースを追加",
   "editor.remark": "メモ",

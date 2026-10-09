@@ -9,6 +9,7 @@ import { usePrivateAccessOptions } from './PrivateAccessEditor'
 import { ProxyRuntimeFields } from './ProxyRuntimeFields'
 import { dnsOptions } from './editor-options'
 import SourceDebugModal from './SourceDebugModal'
+import { useFakeIpRouteCheck } from './FakeIpRouteCheck'
 import { clientEditorMessages } from './editor-messages'
 
 export type { ProxySubscribeSaveState } from './ProxySubscribeModel'
@@ -20,6 +21,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
   const { t, form, queueAutosave, saveNow, configurationContext, defaults, features, networkInventory } = state
   const [draft, setDraft] = useState(() => profileFormValues(props.profile) as EditorDraft)
   const [debugSource, setDebugSource] = useState<Extract<EditorSource, { type: 'url' }> | null>(null)
+  const checkFakeIpRange = useFakeIpRouteCheck()
   const privateAccessOptions = usePrivateAccessOptions(props.profile.id)
   const recommended = recommendedEditorDefaults(defaults, configurationContext)
   useImperativeHandle(ref, () => ({ saveNow }), [saveNow])
@@ -43,7 +45,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
         defaults={{ ruleList: recommended.rule_list, group: recommended.group, filter: recommended.filter, customConfig: recommended.custom_config, dnsConfig: recommended.dns_config }}
         features={configurationContext.capabilities.features} protocolCount={configurationContext.capabilities.protocols.length}
         nodes={props.customNodes.map(node => ({ id: node.id, name: node.name, label: `${node.name} · ${String(node.proxy.type || '')} · ${String(node.proxy.server || '')}:${String(node.proxy.port || '')}` }))}
-        basicExtension={schedule} dnsOptions={dnsOptions(configurationContext, networkInventory)} privateAccessOptions={privateAccessOptions}
+        basicExtension={schedule} dnsOptions={{ ...dnsOptions(configurationContext, networkInventory), checkFakeIpRange }} privateAccessOptions={privateAccessOptions}
         onDebugSource={state.sourceDebug ? source => { if (source.type === 'url') setDebugSource(source) } : undefined}
         extraTabs={[...(state.runtimeVisible ? [{ key: 'runtime', before: 'servers', label: t('proxy.tabs.runtime'), children: runtime }] : []), { key: 'diagnostics', label: t('proxy.tabs.diagnostics'), children: props.diagnostics }]}
       />

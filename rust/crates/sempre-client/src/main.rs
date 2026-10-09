@@ -11,6 +11,7 @@ mod direct_cli;
 mod dns_api;
 mod doctor_cli;
 mod elevate;
+mod fakeip_api;
 mod gateway_api;
 mod listener;
 mod local_api;

@@ -1,4 +1,12 @@
 export default {
+  "dns.routeConflict": "FakeIP range overlaps system routes",
+  "dns.conflictingRoutes": "Conflicting routes: {routes}",
+  "dns.recommendedRange": "Recommended range: {range}",
+  "dns.useRecommendedRange": "Use recommended range",
+  "dns.noAvailableRange": "No free range of sufficient size was found in the candidate pools.",
+  "dns.fallbackRange": "198.18.0.0/15 has no available subnet; this is a private-network fallback.",
+  "dns.routeCheckFailed": "Route check failed. Enter a valid CIDR and check the service connection.",
+
   "source.reorder": "Reorder source {index}",
   "source.addRaw": "Add raw source",
   "editor.remark": "Remark",

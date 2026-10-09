@@ -5,17 +5,22 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use serde_json::json;
 
 use crate::api::{AppState, api_error};
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
-    Router::new().route(
-        "/api/v1/network/settings",
-        get(settings).put(update_settings),
-    )
+    Router::new()
+        .route(
+            "/api/v1/network/fake-ip/check",
+            post(crate::fakeip_api::check),
+        )
+        .route(
+            "/api/v1/network/settings",
+            get(settings).put(update_settings),
+        )
 }
 
 async fn settings(State(state): State<Arc<AppState>>) -> Response {
