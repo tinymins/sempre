@@ -43,7 +43,7 @@ export function SimpleRoutingRules({ settings, proxyGroups, saving, pendingSelec
   }
 
   return <div className="space-y-4">
-    <div className="flex min-h-10 items-start justify-between gap-4"><div><h1 className="text-xl font-semibold">{zh ? '分流规则' : 'Routing rules'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '为域名选择直连或指定节点。相同目标会在保存时自动归入同一规则集。' : 'Choose direct access or a node for each domain. Matching targets are grouped automatically when saved.'}</p></div><Button variant="primary" disabled={!dirty || saving} onClick={() => void submit()}>{saving ? <Spinner /> : <Save size={16} />}{zh ? '保存' : 'Save'}</Button></div>
+    <div className="flex min-h-10 items-start justify-between gap-4"><div><h1 className="text-xl font-semibold">{zh ? '域名分流' : 'Domain routing'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '为域名选择直连或指定节点。相同目标会在保存时自动归入同一规则集。' : 'Choose direct access or a node for each domain. Matching targets are grouped automatically when saved.'}</p></div><Button variant="primary" disabled={!dirty || saving} onClick={() => void submit()}>{saving ? <Spinner /> : <Save size={16} />}{zh ? '保存' : 'Save'}</Button></div>
     {pendingSelection ? <Alert type="info" showIcon message={zh ? '待重启核心以应用新规则对应的节点选择。' : 'Restart the core to apply the pending node selections.'} action={<RuntimeRestartButton showLabel />} /> : null}
     <Card className="p-4 md:p-5">
       <div className="space-y-3">

@@ -51,7 +51,7 @@ export function RoutingRules() {
   const save = useMutation({
     mutationFn: (candidate: DnsSettings) => api(session!, '/dns/settings', { method: 'PUT', body: JSON.stringify(candidate) }),
     onSuccess: () => {
-      message.success(zh ? '分流规则已保存并暂存；重启核心后应用新的核心规则和前置 DNS。' : 'Routing rules saved and staged. Restart the core to apply the core and frontend DNS changes.')
+      message.success(zh ? '域名分流已保存并暂存；重启核心后应用新的核心规则和前置 DNS。' : 'Domain routing saved and staged. Restart the core to apply the core and frontend DNS changes.')
       setDraft(null)
       queryClient.invalidateQueries({ queryKey: ['dns'] })
       queryClient.invalidateQueries({ queryKey: ['system'] })
@@ -145,12 +145,12 @@ export function RoutingRules() {
     setPendingSelections(remaining)
   }
 
-  if (!current) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载分流规则…' : 'Loading routing rules…'}</div>
+  if (!current) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载域名分流…' : 'Loading domain routing…'}</div>
   if (uiMode === 'simple' && proxies.isLoading) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载分流节点…' : 'Loading routing nodes…'}</div>
   if (uiMode === 'simple') return <SimpleRoutingRules key={`${current.schema}:${current.revision}`} settings={current} proxyGroups={proxies.data ?? []} saving={save.isPending || selectProxy.isPending} pendingSelection={Object.keys(pendingSelections).length > 0} onSave={saveSimple} />
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
-      <div><h1 className="text-xl font-semibold">{zh ? '分流规则' : 'Routing rules'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '前置 DNS 决定解析路径；同一规则集同时注入 sing-box 路由。' : 'Frontend DNS selects the resolver path while the same rule set is injected into sing-box routing.'}</p></div>
+      <div><h1 className="text-xl font-semibold">{zh ? '域名分流' : 'Domain routing'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '前置 DNS 决定解析路径；同一规则集同时注入 sing-box 路由。' : 'Frontend DNS selects the resolver path while the same rule set is injected into sing-box routing.'}</p></div>
       <div className="flex gap-2"><Button icon={<Plus size={16} />} onClick={addSet}>{zh ? '新增规则集' : 'Add rule set'}</Button><Button variant="primary" icon={<Save size={16} />} loading={save.isPending} onClick={() => save.mutate(current)}>{zh ? '保存' : 'Save'}</Button></div>
     </div>
     <div className="grid min-h-[34rem] gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
