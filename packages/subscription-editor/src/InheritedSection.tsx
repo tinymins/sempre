@@ -1,6 +1,7 @@
 import { Checkbox, CodeEditor } from '@acme/components'
 import type { ReactNode } from 'react'
 import { FilterEditor } from './FilterEditor'
+import { RuleListEditor } from './RuleListEditor'
 import { useEditorI18n } from './i18n'
 import { inheritedFields, type InheritedField } from './model'
 import { useEditorLayout } from './layout'
@@ -27,7 +28,8 @@ export function InheritedSection({ readOnly, field, value, inherited, defaultVal
       <Checkbox disabled={readOnly || (inherited && defaultValue == null)} checked={inherited} onChange={event => onInheritanceChange(event.target.checked)}>{t('editor.inherit')}</Checkbox>
     </div>
     {inherited && !page ? <p className="text-xs text-[var(--muted)]">{t('editor.inheritHint')}</p> : null}
-    {inherited && defaultValue == null ? <p className="text-sm text-[var(--muted)]">{t('common.unavailable')}</p> : children ? children(displayed, inherited) : field === 'filter' ?
+    {inherited && defaultValue == null ? <p className="text-sm text-[var(--muted)]">{t('common.unavailable')}</p> : children ? children(displayed, inherited) : field === 'ruleList' ?
+      <RuleListEditor value={displayed} readOnly={readOnly || inherited} onChange={onChange} /> : field === 'filter' ?
       <FilterEditor value={displayed} readOnly={readOnly || inherited} onChange={onChange} /> :
       page ? <CodeEditor ariaLabel={label} value={displayed} readOnly={readOnly || inherited} onChange={onChange} appearance="plain" height="calc(100vh - 280px)" /> : <div className="flex min-h-[20rem] flex-1 flex-col"><CodeEditor ariaLabel={label} value={displayed} readOnly={readOnly || inherited} onChange={onChange} height="100%" /></div>}
   </section>
