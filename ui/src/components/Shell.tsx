@@ -72,14 +72,14 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   }, [desktopCollapsed])
   const defaultNavigation: ShellNavigationSection[] = [
     { key: 'overview', items: [{ path: '/', label: t('overview'), icon: CircleGauge }] },
-    { key: 'strategy', label: t('navigationStrategy'), items: [
-      { path: '/proxies', label: t('proxies'), icon: Network },
-      { path: '/routing-rules', label: t('routingRules'), icon: ListFilter },
-    ] },
     { key: 'configuration', label: t('navigationConfiguration'), items: [
       { path: '/subscriptions', label: t('navigationSubscriptions'), icon: Rss },
       { path: '/custom-nodes', label: t('customNodes'), icon: Library },
       { path: '/network-automation', label: t('networkAutomation'), icon: Radar },
+    ] },
+    { key: 'strategy', label: t('navigationStrategy'), items: [
+      { path: '/proxies', label: t('proxies'), icon: Network },
+      { path: '/routing-rules', label: t('routingRules'), icon: ListFilter },
     ] },
     { key: 'network', label: t('navigationNetwork'), items: [
       { path: '/dns', label: t('dns'), icon: DatabaseZap },
