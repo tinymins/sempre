@@ -80,6 +80,7 @@ mod tests {
             vec![local_address.to_string()],
             dead_address.to_string(),
             Vec::new(),
+            &crate::DomesticDomainPolicy::default(),
         )
         .expect("config");
         let service = DnsService::start(config).await.expect("frontend");
@@ -110,9 +111,14 @@ mod tests {
             .expect("frontend port");
         let frontend_port = listener.local_addr().expect("frontend address").port();
         drop(listener);
-        let mut config =
-            DnsConfig::managed_frontend(frontend_port, vec![first.clone()], first, Vec::new())
-                .expect("config");
+        let mut config = DnsConfig::managed_frontend(
+            frontend_port,
+            vec![first.clone()],
+            first,
+            Vec::new(),
+            &crate::DomesticDomainPolicy::default(),
+        )
+        .expect("config");
         let service = DnsService::start(config.clone()).await.expect("frontend");
         let endpoint = format!("127.0.0.1:{frontend_port}");
         let initial = probe_dns(&endpoint, "example.com", "A")

@@ -39,8 +39,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_or_else(default_upstreams, |value| {
             value.split(',').map(str::to_owned).collect()
         });
-    let config =
-        DnsConfig::managed_frontend(port, upstreams.clone(), upstreams[0].clone(), Vec::new())?;
+    let config = DnsConfig::managed_frontend(
+        port,
+        upstreams.clone(),
+        upstreams[0].clone(),
+        Vec::new(),
+        &sempre_dns::DomesticDomainPolicy::default(),
+    )?;
     let service = DnsService::start_with_policy(config, Arc::new(FixturePolicy)).await?;
     println!("READY {port}");
     std::io::stdout().flush()?;

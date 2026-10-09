@@ -53,8 +53,14 @@ async fn answering_upstream(count: usize, address: [u8; 4]) -> (String, JoinHand
 async fn managed_frontend_routes_only_domestic_domains_before_the_core() {
     let (local, local_task) = answering_upstream(1, [10, 0, 0, 1]).await;
     let (remote, remote_task) = answering_upstream(1, [198, 18, 0, 1]).await;
-    let config = DnsConfig::managed_frontend(1054, vec![local], remote, Vec::new())
-        .expect("managed frontend");
+    let config = DnsConfig::managed_frontend(
+        1054,
+        vec![local],
+        remote,
+        Vec::new(),
+        &crate::DomesticDomainPolicy::default(),
+    )
+    .expect("managed frontend");
     for (name, answer, detail) in [
         ("baidu.com", "10.0.0.1", "rule-set:domestic-domains"),
         ("github.com", "198.18.0.1", "default-remote"),

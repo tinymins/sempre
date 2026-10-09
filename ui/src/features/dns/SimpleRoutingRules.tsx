@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Alert, Button, Card, Input, Modal, Select } from '@acme/components'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { RuntimeRestartButton } from '../../components/RuntimeRestartButton'
@@ -22,7 +22,7 @@ export interface SimpleRoutingSave {
   selections: Record<string, string>
 }
 
-export function SimpleRoutingRules({ settings, proxyGroups, saving, pendingSelection, onSave }: { settings: DnsSettings; proxyGroups: ProxyNode[]; saving: boolean; pendingSelection: boolean; onSave: (value: SimpleRoutingSave) => Promise<void> }) {
+export function SimpleRoutingRules({ builtin, settings, proxyGroups, saving, pendingSelection, onSave }: { builtin?: ReactNode; settings: DnsSettings; proxyGroups: ProxyNode[]; saving: boolean; pendingSelection: boolean; onSave: (value: SimpleRoutingSave) => Promise<void> }) {
   const { locale } = useI18n()
   const zh = locale === 'zh-CN'
   const rows = useMemo(() => flattenRules(settings, proxyGroups), [settings, proxyGroups])
@@ -47,6 +47,7 @@ export function SimpleRoutingRules({ settings, proxyGroups, saving, pendingSelec
 
   return <div className="space-y-4">
     <div className="flex min-h-10 items-start justify-between gap-4"><div><h1 className="text-xl font-semibold">{zh ? '域名分流' : 'Domain routing'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '为域名选择直连或指定节点，修改后直接保存。' : 'Choose direct access or a node for each domain. Changes are saved directly.'}</p></div></div>
+    {builtin ? <Card>{builtin}</Card> : null}
     {pendingSelection ? <Alert type="info" showIcon message={zh ? '待重启核心以应用新规则对应的节点选择。' : 'Restart the core to apply the pending node selections.'} action={<RuntimeRestartButton showLabel />} /> : null}
     <Card className="p-4 md:p-5">
       <div className="space-y-3">

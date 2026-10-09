@@ -33,6 +33,7 @@ async fn frontend_falls_back_between_protocols() {
         vec!["tcp://127.0.0.1:1".into(), upstream],
         "127.0.0.1:1".into(),
         Vec::new(),
+        &crate::DomesticDomainPolicy::default(),
     )
     .expect("config");
     let service = DnsService::start(config).await.expect("frontend");

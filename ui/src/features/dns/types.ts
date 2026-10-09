@@ -25,6 +25,7 @@ export interface DnsSettings {
   schema: number
   revision: number
   enabled: boolean
+  domestic_domains: { enabled: boolean; mode: 'direct' | 'proxy' }
   direct_upstreams: string[]
   rule_sets: DnsRoutingRuleSet[]
   reject_https: boolean

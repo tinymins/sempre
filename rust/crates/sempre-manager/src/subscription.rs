@@ -363,7 +363,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             self.apply_dns_frontend_settings(&network_profile, &target, dns_settings.enabled)?;
         loaded.for_compile(&mut compile_profile, &target, &catalog.custom_nodes)?;
         let overlay = if dns_settings.enabled && target.core == "sing-box" {
-            dns_settings.routing_overlay(&mut snapshots)
+            dns_settings.routing_overlay(&mut snapshots)?
         } else {
             sempre_converter::CompileOverlay::default()
         };

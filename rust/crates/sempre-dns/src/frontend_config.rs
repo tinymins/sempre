@@ -1,5 +1,5 @@
 use crate::{
-    DnsError,
+    DnsError, DomesticDomainMode, DomesticDomainPolicy,
     domain_matcher::bundled_domestic_domains,
     model::{DnsConfig, DnsRuleSet, validate},
 };
@@ -10,18 +10,24 @@ impl DnsConfig {
         local_upstreams: Vec<String>,
         remote_upstream: String,
         mut rule_sets: Vec<DnsRuleSet>,
+        domestic_domains: &DomesticDomainPolicy,
     ) -> Result<Self, DnsError> {
         if local_upstreams.is_empty() {
             return Err(DnsError::invalid(
                 "managed DNS frontend requires at least one direct DNS upstream",
             ));
         }
-        push_inline_rules(
-            &mut rule_sets,
-            "domestic-domains",
-            bundled_domestic_domains()?,
-            "local",
-        );
+        if domestic_domains.enabled {
+            push_inline_rules(
+                &mut rule_sets,
+                "domestic-domains",
+                bundled_domestic_domains()?,
+                match domestic_domains.mode {
+                    DomesticDomainMode::Direct => "local",
+                    DomesticDomainMode::Proxy => "remote",
+                },
+            );
+        }
         let config = Self {
             enabled: true,
             listen_hosts: vec!["127.0.0.1".into()],
@@ -71,6 +77,7 @@ mod tests {
             vec!["192.0.2.53:53".into()],
             "127.0.0.1:1053".into(),
             Vec::new(),
+            &crate::DomesticDomainPolicy::default(),
         )
         .expect("managed frontend");
         assert_eq!(config.listen_port, 1054);
@@ -90,8 +97,14 @@ mod tests {
     #[test]
     fn requires_usable_upstreams() {
         assert!(
-            DnsConfig::managed_frontend(1054, Vec::new(), "127.0.0.1:1053".into(), Vec::new(),)
-                .is_err()
+            DnsConfig::managed_frontend(
+                1054,
+                Vec::new(),
+                "127.0.0.1:1053".into(),
+                Vec::new(),
+                &crate::DomesticDomainPolicy::default()
+            )
+            .is_err()
         );
         assert!(
             DnsConfig::managed_frontend(
@@ -99,6 +112,7 @@ mod tests {
                 vec!["223.5.5.5:not-a-port".into()],
                 "127.0.0.1:1053".into(),
                 Vec::new(),
+                &crate::DomesticDomainPolicy::default()
             )
             .is_err()
         );

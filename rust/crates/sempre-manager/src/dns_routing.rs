@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use crate::{DnsSettings, ManagerError};
 
+mod builtin;
 mod outbounds;
 use outbounds::{compiled_direct_outbound, compiled_proxy_names};
 
@@ -29,11 +30,14 @@ pub struct DnsRoutingDomain {
 }
 
 impl DnsSettings {
-    pub(crate) fn routing_overlay(&self, snapshots: &mut Vec<SourceSnapshot>) -> CompileOverlay {
+    pub(crate) fn routing_overlay(
+        &self,
+        snapshots: &mut Vec<SourceSnapshot>,
+    ) -> Result<CompileOverlay, ManagerError> {
         let mut groups = Vec::new();
         let mut providers = Vec::new();
-        for rule_set in self
-            .rule_sets
+        let rule_sets = self.routing_rule_sets()?;
+        for rule_set in rule_sets
             .iter()
             .filter(|rule_set| !rule_set.domains.is_empty())
         {
@@ -61,10 +65,10 @@ impl DnsSettings {
                 ..RuleProvider::default()
             });
         }
-        CompileOverlay {
+        Ok(CompileOverlay {
             groups,
             rule_providers: providers,
-        }
+        })
     }
 
     pub(crate) fn frontend_rule_sets(&self) -> Vec<sempre_dns::DnsRuleSet> {
@@ -95,8 +99,8 @@ impl DnsSettings {
         &self,
         content: &str,
     ) -> Result<String, ManagerError> {
-        let active = self
-            .rule_sets
+        let rule_sets = self.routing_rule_sets()?;
+        let active = rule_sets
             .iter()
             .filter(|rule_set| !rule_set.domains.is_empty())
             .collect::<Vec<_>>();
@@ -213,6 +217,13 @@ pub(crate) fn validate(settings: &DnsSettings) -> Result<(), ManagerError> {
         if !valid_id(&rule_set.id) || rule_set.name.trim().is_empty() {
             return Err(ManagerError::InvalidOperation(
                 "DNS routing rule set id and name are required".into(),
+            ));
+        }
+        if rule_set.id == builtin::BUILTIN_ID
+            || rule_set.name.eq_ignore_ascii_case(builtin::BUILTIN_NAME)
+        {
+            return Err(ManagerError::InvalidOperation(
+                "DNS routing rule set id or name is reserved for Mainland China domains".into(),
             ));
         }
         if !matches!(rule_set.mode.as_str(), "direct" | "proxy") {

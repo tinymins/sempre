@@ -56,13 +56,19 @@ async fn frontend_port() -> u16 {
 fn plan(hash: &str, port: u16, local: String, remote: String) -> DnsFrontendPlan {
     DnsFrontendPlan {
         deployment_hash: hash.into(),
-        config: DnsConfig::managed_frontend(port, vec![local], remote.clone(), Vec::new())
-            .expect("config"),
+        config: DnsConfig::managed_frontend(
+            port,
+            vec![local],
+            remote.clone(),
+            Vec::new(),
+            &sempre_dns::DomesticDomainPolicy::default(),
+        )
+        .expect("config"),
         fakeip_enabled: true,
         fakeip_ranges: vec!["198.18.0.0/15".parse::<IpNet>().expect("range")],
         core_upstream: remote,
         original_upstreams: Vec::new(),
-        local_probe: "baidu.com".into(),
+        local_probe: Some("baidu.com".into()),
         remote_probe: "example.com".into(),
     }
 }

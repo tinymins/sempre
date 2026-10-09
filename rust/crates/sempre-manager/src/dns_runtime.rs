@@ -39,7 +39,7 @@ pub(crate) struct DnsFrontendPlan {
     fakeip_ranges: Vec<IpNet>,
     core_upstream: String,
     original_upstreams: Vec<String>,
-    local_probe: String,
+    local_probe: Option<String>,
     remote_probe: String,
 }
 
@@ -249,7 +249,9 @@ impl DnsFrontendRuntime {
         timeout: Duration,
     ) -> Result<(), ManagerError> {
         let upstream = dns_endpoint("127.0.0.1", plan.config.listen_port);
-        wait_for_answer(plan, &upstream, &plan.local_probe, false, timeout).await?;
+        if let Some(name) = &plan.local_probe {
+            wait_for_answer(plan, &upstream, name, false, timeout).await?;
+        }
         Ok(())
     }
 
@@ -397,6 +399,7 @@ impl DnsFrontendPlan {
             local_upstreams,
             dns_endpoint("127.0.0.1", policy.core_listen_port),
             settings.frontend_rule_sets(),
+            &settings.domestic_domains,
         )?;
         config.listen_hosts = listen_hosts.to_vec();
         config.outbound_mark = cfg!(target_os = "linux").then_some(sempre_transparent::BYPASS_MARK);

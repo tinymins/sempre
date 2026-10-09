@@ -23,6 +23,8 @@ pub struct DnsSettings {
     pub schema: u32,
     pub revision: u64,
     pub enabled: bool,
+    #[serde(default)]
+    pub domestic_domains: sempre_dns::DomesticDomainPolicy,
     #[serde(default = "sempre_dns::default_upstreams")]
     pub direct_upstreams: Vec<String>,
     #[serde(default)]
@@ -55,6 +57,7 @@ impl DnsSettings {
             enabled: boolean(shared, "systemDnsTakeoverEnabled", true),
             direct_upstreams: sempre_dns::default_upstreams(),
             rule_sets: Vec::new(),
+            domestic_domains: sempre_dns::DomesticDomainPolicy::default(),
             reject_https: boolean(shared, "rejectHttps", true),
             rewrites: Vec::new(),
             query_log_enabled: true,
@@ -63,7 +66,9 @@ impl DnsSettings {
     }
 
     pub(crate) fn requires_core_rebuild(&self, candidate: &Self) -> bool {
-        self.enabled != candidate.enabled || self.rule_sets != candidate.rule_sets
+        self.enabled != candidate.enabled
+            || self.rule_sets != candidate.rule_sets
+            || self.domestic_domains != candidate.domestic_domains
     }
 }
 
@@ -247,6 +252,7 @@ fn migrate_v2(value: Value) -> Result<DnsSettings, ManagerError> {
         enabled: previous.enabled,
         direct_upstreams: sempre_dns::default_upstreams(),
         rule_sets: Vec::new(),
+        domestic_domains: sempre_dns::DomesticDomainPolicy::default(),
         reject_https: previous.reject_https,
         rewrites: previous.rewrites,
         query_log_enabled: previous.query_log_enabled,
@@ -266,6 +272,7 @@ fn migrate_legacy(value: Value) -> Result<DnsSettings, ManagerError> {
         enabled: boolean(shared, "systemDnsTakeoverEnabled", false),
         direct_upstreams: sempre_dns::default_upstreams(),
         rule_sets: Vec::new(),
+        domestic_domains: sempre_dns::DomesticDomainPolicy::default(),
         reject_https: boolean(shared, "rejectHttps", true),
         rewrites: legacy.rewrites,
         query_log_enabled: legacy.query_log_enabled,

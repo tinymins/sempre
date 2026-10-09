@@ -2,6 +2,7 @@ mod dns;
 mod dns_policy;
 mod dns_wire;
 mod domain_matcher;
+mod domestic_policy;
 mod error;
 mod frontend_config;
 mod frontend_service;
@@ -19,6 +20,7 @@ pub use dns_policy::{DnsQueryEvent, DnsRewrite, DnsRuntimePolicy};
 pub use domain_matcher::{
     DOMESTIC_DOMAIN_COUNT, DOMESTIC_DOMAIN_SHA256, DOMESTIC_DOMAIN_SOURCE, bundled_domestic_domains,
 };
+pub use domestic_policy::{DomesticDomainMode, DomesticDomainPolicy};
 pub use error::DnsError;
 pub use frontend_service::DnsService;
 pub use model::{DEFAULT_FRONTEND_PORT, DnsConfig, DnsRuleSet};

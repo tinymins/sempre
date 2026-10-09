@@ -132,7 +132,7 @@ pub async fn debug_query(
         .await
 }
 
-pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), DnsError> {
+pub fn managed_probe_names(config: &DnsConfig) -> Result<(Option<String>, String), DnsError> {
     let resolver = Resolver::new(config.clone(), Arc::new(NoopDnsRuntimePolicy))?;
     let local = [
         "baidu.com",
@@ -143,7 +143,7 @@ pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), DnsEr
     ]
     .into_iter()
     .find(|name| resolver.selected_upstream(name) == "local")
-    .ok_or_else(|| DnsError::invalid("managed DNS policy has no local probe domain"))?;
+    .map(str::to_owned);
     let remote = [
         "example.com",
         "github.com",
@@ -154,7 +154,7 @@ pub fn managed_probe_names(config: &DnsConfig) -> Result<(String, String), DnsEr
     .into_iter()
     .find(|name| resolver.selected_upstream(name) == "remote")
     .ok_or_else(|| DnsError::invalid("managed DNS policy has no core probe domain"))?;
-    Ok((local.into(), remote.into()))
+    Ok((local, remote.into()))
 }
 
 async fn serve_udp(socket: UdpSocket, resolver: Resolver, mut shutdown: watch::Receiver<bool>) {
