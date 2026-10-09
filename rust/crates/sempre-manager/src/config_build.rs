@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{DnsSettings, ManagerError};
 
-const CONFIG_BUILD_SCHEMA: u32 = 13;
+const CONFIG_BUILD_SCHEMA: u32 = 14;
 
 pub(crate) fn config_build(
     profile: &Profile,
@@ -26,7 +26,7 @@ pub(crate) fn config_build(
             "{}|{}|{}|front-dns:{dns_frontend_enabled}|build:{CONFIG_BUILD_SCHEMA}",
             target.format, target.version, target.platform
         ),
-        runtime_key: Some(runtime_key(profile, dns_settings)?),
+        runtime_key: Some(runtime_key(profile, target, dns_settings)?),
         private_access_policy,
     })
 }
@@ -62,14 +62,24 @@ fn private_access_policy(profile: &Profile, target: &Target) -> Result<Value, Ma
     }))
 }
 
-fn runtime_key(profile: &Profile, dns_settings: &DnsSettings) -> Result<String, ManagerError> {
+fn runtime_key(
+    profile: &Profile,
+    target: &Target,
+    dns_settings: &DnsSettings,
+) -> Result<String, ManagerError> {
+    let mut rule_sets = dns_settings.rule_sets.clone();
+    if target.core == "sing-box" {
+        for rule_set in &mut rule_sets {
+            rule_set.domains.clear();
+        }
+    }
     let value = json!({
         "transparent_proxy": profile.transparent_proxy,
         "local_proxy": profile.local_proxy,
         "management_api": profile.management_api,
         "dns_frontend": {
             "enabled": dns_settings.enabled,
-            "rule_sets": dns_settings.rule_sets,
+            "rule_sets": rule_sets,
         },
     });
     let data = serde_json::to_vec(&canonical(value)).map_err(|error| {

@@ -48,6 +48,16 @@ const fn default_max_entries() -> usize {
 }
 
 impl DnsSettings {
+    pub(crate) fn normalize_and_validate(&mut self) -> Result<(), ManagerError> {
+        if self.schema != SCHEMA_VERSION {
+            return Err(ManagerError::InvalidOperation(format!(
+                "DNS settings schema must be {SCHEMA_VERSION}"
+            )));
+        }
+        crate::dns_routing::normalize(self);
+        validate(self)
+    }
+
     fn from_profile(profile: &Profile) -> Self {
         let dns = effective_dns(profile);
         let shared = dns.get("shared").unwrap_or(&dns);
@@ -142,22 +152,25 @@ impl DnsSettingsStore {
     }
 
     pub(crate) fn replace(&self, mut candidate: DnsSettings) -> Result<DnsSettings, ManagerError> {
-        if candidate.schema != SCHEMA_VERSION {
-            return Err(ManagerError::InvalidOperation(format!(
-                "DNS settings schema must be {SCHEMA_VERSION}"
-            )));
-        }
-        crate::dns_routing::normalize(&mut candidate);
-        validate(&candidate)?;
+        candidate.normalize_and_validate()?;
         let mut current = self.settings.lock().expect("DNS settings lock");
         candidate.revision = current.revision.saturating_add(1);
-        write(&self.path, &candidate)?;
-        *current = candidate.clone();
         let mut queries = self.queries.lock().expect("DNS query log lock");
-        while queries.len() > candidate.query_log_max_entries {
-            queries.pop_front();
+        let mut next_queries = queries.clone();
+        while next_queries.len() > candidate.query_log_max_entries {
+            next_queries.pop_front();
         }
-        write_queries(&self.query_path, &queries)?;
+        write_queries(&self.query_path, &next_queries)?;
+        if let Err(error) = write(&self.path, &candidate) {
+            return match write(&self.path, &current) {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(ManagerError::InvalidOperation(format!(
+                    "DNS settings persistence failed: {error}; restoring saved settings failed: {rollback}"
+                ))),
+            };
+        }
+        *current = candidate.clone();
+        *queries = next_queries;
         Ok(candidate)
     }
 

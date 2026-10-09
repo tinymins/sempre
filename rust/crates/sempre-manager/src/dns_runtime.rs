@@ -1,3 +1,5 @@
+mod update;
+
 use std::{
     net::IpAddr,
     path::{Path, PathBuf},
@@ -44,24 +46,6 @@ pub(crate) struct DnsFrontendPlan {
 }
 
 impl DnsFrontendRuntime {
-    pub(crate) async fn update_upstreams(&self, upstreams: &[String]) -> Result<(), ManagerError> {
-        let mut running = self.running.lock().await;
-        if let Some(current) = running.as_mut() {
-            if current.plan.config.local_upstreams == upstreams {
-                return Ok(());
-            }
-            let mut config = current.plan.config.clone();
-            config.local_upstreams = upstreams.to_vec();
-            current.service.update(config.clone())?;
-            current.plan.config = config;
-            self.status
-                .write()
-                .expect("DNS frontend status")
-                .direct_upstreams = upstreams.to_vec();
-        }
-        Ok(())
-    }
-
     pub(crate) fn new(policy: Arc<dyn DnsRuntimePolicy>, resources: Option<PathBuf>) -> Arc<Self> {
         Arc::new(Self {
             running: Mutex::new(None),

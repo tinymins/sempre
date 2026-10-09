@@ -12,6 +12,7 @@ mod dns_capture;
 mod dns_frontend;
 mod dns_listener;
 mod dns_routing;
+mod dns_rule_files;
 mod dns_runtime;
 mod dns_settings;
 mod error;
@@ -98,6 +99,7 @@ pub struct Manager<R = ProcessRunner> {
     remote: RemoteClient,
     gateway: Arc<sempre_gateway::Controller>,
     runtime_reload: Arc<Notify>,
+    runtime_rules_gate: Arc<tokio::sync::Mutex<()>>,
     fakeip_route_cache: fakeip_selection::RouteCache,
     restart_tasks: Arc<restart_task::RestartTasks>,
     core_download_tasks: Arc<core_download_task::CoreDownloadTasks>,
@@ -167,6 +169,7 @@ impl<R: VersionRunner> Manager<R> {
             remote,
             gateway,
             runtime_reload: Arc::new(Notify::new()),
+            runtime_rules_gate: Arc::default(),
             fakeip_route_cache: fakeip_selection::RouteCache::default(),
             restart_tasks: Arc::default(),
             core_download_tasks: Arc::default(),

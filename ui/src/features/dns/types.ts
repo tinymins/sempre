@@ -54,4 +54,9 @@ export interface DnsFrontendStatus {
 export interface DnsSettingsResponse {
   settings: DnsSettings
   status: DnsFrontendStatus
+  change?: {
+    Changed: boolean
+    NeedsRestart: boolean
+    Message: string
+  }
 }

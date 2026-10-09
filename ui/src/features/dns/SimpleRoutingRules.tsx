@@ -70,6 +70,23 @@ export function SimpleRoutingRules({ builtin, settings, proxyGroups, saving, pen
 }
 
 export function composeSimpleRouting(settings: DnsSettings, rows: SimpleRoutingRow[], proxyGroups: ProxyNode[]): { settings: DnsSettings; selections: Record<string, string> } {
+  const assignments = rows.map((row) => {
+    const original = settings.rule_sets.find((item) => item.id === row.ruleSetID && targetMatches(item, row.target, proxyGroups))
+    return original ?? settings.rule_sets.find((item) => targetMatches(item, row.target, proxyGroups))
+  })
+  if (assignments.every(Boolean)) {
+    const selections: Record<string, string> = {}
+    rows.forEach((row, index) => {
+      if (row.target.startsWith(NODE_PREFIX)) selections[`DNS · ${assignments[index]!.name}`] = row.target.slice(NODE_PREFIX.length)
+    })
+    return {
+      settings: { ...settings, rule_sets: settings.rule_sets.map((ruleSet) => ({
+        ...ruleSet,
+        domains: rows.filter((_, index) => assignments[index]!.id === ruleSet.id).map((row) => ({ id: row.id, domain: row.domain, include_subdomains: row.include_subdomains })),
+      })) },
+      selections,
+    }
+  }
   const grouped = new Map<string, SimpleRoutingRow[]>()
   rows.forEach((row) => grouped.set(row.target, [...(grouped.get(row.target) ?? []), row]))
   const used = new Set<string>()
@@ -127,6 +144,7 @@ function pickRuleSet(target: string, rows: SimpleRoutingRow[], ruleSets: DnsRout
 
 function targetMatches(ruleSet: DnsRoutingRuleSet, target: string, proxyGroups: ProxyNode[]) {
   if (target === DIRECT) return ruleSet.mode === 'direct'
+  if (target === `${GROUP_PREFIX}${ruleSet.id}`) return ruleSet.mode === 'proxy'
   if (ruleSet.mode !== 'proxy' || !target.startsWith(NODE_PREFIX)) return false
   return proxyGroups.find((group) => group.name === `DNS · ${ruleSet.name}`)?.now === target.slice(NODE_PREFIX.length)
 }

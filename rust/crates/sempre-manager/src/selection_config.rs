@@ -77,6 +77,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     reference: reference.to_string(),
                     source: Box::new(source),
                 })?;
+            self.save_rendered_runtime_policy(&compilation_item.1)?;
             candidate_hash = Some(candidate.hash.clone());
             candidate_build = Some(build);
             compilation = Some(compilation_item);

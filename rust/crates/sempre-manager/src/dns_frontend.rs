@@ -1,16 +1,25 @@
 use sempre_converter::DnsFrontendPolicy;
 
-use crate::{Manager, ManagerError, VersionRunner};
+use crate::{Manager, ManagerError, VersionRunner, subscription::RenderedProfile};
 
 impl<R: VersionRunner> Manager<R> {
-    pub(crate) fn save_optional_dns_frontend_policy(
+    pub(crate) fn save_rendered_runtime_policy(
         &self,
-        config_hash: &str,
-        policy: Option<&DnsFrontendPolicy>,
+        rendered: &RenderedProfile,
     ) -> Result<(), ManagerError> {
-        policy.map_or(Ok(()), |policy| {
-            self.save_dns_frontend_policy(config_hash, policy)
-        })
+        let hash = &rendered.render.artifact_hash;
+        if let Some(policy) = &rendered.dns_frontend_policy {
+            self.save_dns_frontend_policy(hash, policy)?;
+        }
+        let settings = self.dns_settings.read();
+        if rendered.target.core == "sing-box" && settings.enabled {
+            crate::dns_rule_files::save_snapshot(
+                &self.store.layout().config("sing-box", hash),
+                &rendered.render.content,
+                &settings,
+            )?;
+        }
+        Ok(())
     }
 
     pub(crate) fn save_dns_frontend_policy(

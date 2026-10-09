@@ -33,13 +33,14 @@ impl DnsSettings {
     pub(crate) fn routing_overlay(
         &self,
         snapshots: &mut Vec<SourceSnapshot>,
+        preserve_empty: bool,
     ) -> Result<CompileOverlay, ManagerError> {
         let mut groups = Vec::new();
         let mut providers = Vec::new();
         let rule_sets = self.routing_rule_sets()?;
         for rule_set in rule_sets
             .iter()
-            .filter(|rule_set| !rule_set.domains.is_empty())
+            .filter(|rule_set| preserve_empty || !rule_set.domains.is_empty())
         {
             let provider_tag = format!("sempre-dns-rule-set:{}", rule_set.id);
             let outbound = if rule_set.mode == "direct" {
@@ -55,7 +56,11 @@ impl DnsSettings {
             };
             snapshots.push(SourceSnapshot {
                 source_id: rule_provider_snapshot_id(&provider_tag),
-                content: compile_domains(rule_set, true),
+                content: if rule_set.domains.is_empty() {
+                    "DOMAIN-REGEX,$a".into()
+                } else {
+                    compile_domains(rule_set, true)
+                },
                 content_hash: String::new(),
             });
             providers.push(RuleProvider {
@@ -100,10 +105,7 @@ impl DnsSettings {
         content: &str,
     ) -> Result<String, ManagerError> {
         let rule_sets = self.routing_rule_sets()?;
-        let active = rule_sets
-            .iter()
-            .filter(|rule_set| !rule_set.domains.is_empty())
-            .collect::<Vec<_>>();
+        let active = rule_sets.iter().collect::<Vec<_>>();
         if active.is_empty() {
             return Ok(content.into());
         }
@@ -319,7 +321,11 @@ fn compile_domains(rule_set: &DnsRoutingRuleSet, clash: bool) -> String {
         .join("\n")
 }
 
-fn inline_rule(rule_set: &DnsRoutingRuleSet) -> Value {
+pub(crate) fn inline_rule(rule_set: &DnsRoutingRuleSet) -> Value {
+    if rule_set.domains.is_empty() {
+        // Empty inline sets are invalid; this regex cannot match any domain.
+        return json!({ "domain_regex": ["$a"] });
+    }
     let exact = rule_set
         .domains
         .iter()

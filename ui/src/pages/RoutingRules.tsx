@@ -137,7 +137,7 @@ export function RoutingRules() {
   if (uiMode === 'simple') return <SimpleRoutingRules builtin={builtin} settings={current} proxyGroups={proxies.data ?? []} saving={save.isPending || selectProxy.isPending} pendingSelection={Object.keys(pendingSelections).length > 0} onSave={saveSimple} />
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
-      <div><h1 className="text-xl font-semibold">{zh ? '域名分流' : 'Domain routing'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '修改直接保存；重启核心后应用新的核心规则和前置 DNS。' : 'Changes are saved directly. Restart the core to apply core routing and frontend DNS changes.'}</p></div>
+      <div><h1 className="text-xl font-semibold">{zh ? '域名分流' : 'Domain routing'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '修改直接保存；sing-box 已启用自动重载的规则集可免重启更新域名，规则集结构变更仍需重启核心。' : 'Changes are saved directly. Domain edits in sing-box rule sets with automatic reload enabled need no restart; rule-set structure changes still require a core restart.'}</p></div>
       <Button icon={<Plus size={16} />} loading={save.isPending} onClick={() => void addSet().catch(() => undefined)}>{zh ? '新增规则集' : 'Add rule set'}</Button>
     </div>
     <div className="grid min-h-[34rem] gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">

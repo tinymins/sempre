@@ -192,10 +192,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let active = activate || document.active_profile_id.as_deref() == Some(id);
         let profile_changed = activate && document.active_profile_id.as_deref() != Some(id);
         let build = self.rendered_config_build(&rendered)?;
-        self.save_optional_dns_frontend_policy(
-            &rendered.render.artifact_hash,
-            rendered.dns_frontend_policy.as_ref(),
-        )?;
+        if !self.reuse_applied_dns_rules(&document, &mut rendered)? {
+            self.save_rendered_runtime_policy(&rendered)?;
+        }
         let mut change = if active {
             let profile_id = id.to_owned();
             self.activate_config_content_updating(
@@ -363,7 +362,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             self.apply_dns_frontend_settings(&network_profile, &target, dns_settings.enabled)?;
         loaded.for_compile(&mut compile_profile, &target, &catalog.custom_nodes)?;
         let overlay = if dns_settings.enabled && target.core == "sing-box" {
-            dns_settings.routing_overlay(&mut snapshots)?
+            dns_settings.routing_overlay(&mut snapshots, target.core == "sing-box")?
         } else {
             sempre_converter::CompileOverlay::default()
         };
