@@ -2,8 +2,8 @@ import { useToast } from '@acme/components'
 import { I18nCodeBlock as CodeBlock } from '../components/I18nCodeBlock'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CirclePlus, Download, FileText, Play, RefreshCw, RotateCw, Save, Square, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Collapse, Empty, Input, InputNumber, Select, Switch } from '@acme/components'
+import { CirclePlus, Download, FileText, Play, Pencil, RotateCw, Square, Trash2 } from 'lucide-react'
+import { Alert, Button, Card, Collapse, Empty, Input, InputNumber, Modal, Select, Switch } from '@acme/components'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { randomUuid } from '../lib/randomUuid'
@@ -23,18 +23,22 @@ export function Tunnels() {
   const { locale } = useI18n()
   const copy = locale === 'zh-CN' ? zh : en
   const queryClient = useQueryClient()
-  const [draft, setDraft] = useState<TunnelConfig | null>(null)
-  const [resolverDraftTypes, setResolverDraftTypes] = useState<Record<string, ResolverType>>({})
-  const [resolverDraftValues, setResolverDraftValues] = useState<Record<string, string>>({})
-  const [advancedDraftValues, setAdvancedDraftValues] = useState<Record<string, AdvancedDraft>>({})
+  const [editing, setEditing] = useState<TunnelConfig | null>(null)
+  const [resolverTypes, setResolverTypes] = useState<Record<string, ResolverType>>({})
+  const [resolverInputs, setResolverInputs] = useState<Record<string, string>>({})
+  const [advancedInputs, setAdvancedInputs] = useState<Record<string, AdvancedInput>>({})
   const [log, setLog] = useState<{ name: string; content: string } | null>(null)
-  const status = useQuery({ queryKey: ['tunnels'], queryFn: () => api<TunnelStatus>(session!, '/tunnels'), enabled: Boolean(session), refetchInterval: 3000 })
-  const config = draft ?? status.data?.config ?? emptyStatus.config
-  const dirty = JSON.stringify(config) !== JSON.stringify(status.data?.config ?? emptyStatus.config)
+  const status = useQuery({ queryKey: ['tunnels'], queryFn: ({ signal }) => api<TunnelStatus>(session!, '/tunnels', { signal }), enabled: Boolean(session), refetchInterval: 3000 })
+  const persisted = status.data?.config ?? emptyStatus.config
+  const config = editing ?? persisted
   const save = useMutation({
     onError: (error) => message.error(error.message),
     mutationFn: (next: TunnelConfig) => api<{ status: TunnelStatus }>(session!, '/tunnels', { method: 'PUT', body: JSON.stringify(next) }),
-    onSuccess: (result) => { setDraft(null); setResolverDraftValues({}); setAdvancedDraftValues({}); queryClient.setQueryData(['tunnels'], result.status) },
+    onSuccess: async (result) => {
+      await queryClient.cancelQueries({ queryKey: ['tunnels'] })
+      queryClient.setQueryData(['tunnels'], result.status)
+      setEditing(null)
+    },
   })
   const install = useMutation({
     onError: (error) => message.error(error.message),
@@ -44,43 +48,63 @@ export function Tunnels() {
   const action = useMutation({
     onError: (error) => message.error(error.message),
     mutationFn: ({ id, value }: { id: string; value: string }) => api<{ status: TunnelStatus }>(session!, `/tunnels/${encodeURIComponent(id)}/${value}`, { method: 'POST' }),
-    onSuccess: (result) => { setDraft(null); queryClient.setQueryData(['tunnels'], result.status) },
+    onSuccess: (result) => queryClient.setQueryData(['tunnels'], result.status),
   })
   const loadLog = useMutation({
     onError: (error) => message.error(error.message),
     mutationFn: async (instance: TunnelInstance) => ({ name: instance.name, ...(await api<{ content: string }>(session!, `/tunnels/${encodeURIComponent(instance.id)}/log`)) }),
     onSuccess: setLog,
   })
-  const update = (next: TunnelConfig) => setDraft(next)
+  const update = (next: TunnelConfig) => setEditing(next)
+  const openEditor = (next: TunnelConfig) => {
+    setResolverTypes({})
+    setResolverInputs({})
+    setAdvancedInputs({})
+    setEditing(next)
+  }
   const runtimeByID = new Map((status.data?.instances ?? []).map((item) => [item.id, item]))
-  const invalidResolverDraft = Object.entries(resolverDraftValues).some(([id, value]) => {
+  const invalidResolverInput = Object.entries(resolverInputs).some(([id, value]) => {
     const instance = config.instances.find((item) => item.id === id)
     if (!instance) return false
-    const type = resolverDraftTypes[id] ?? parseResolver(instance.dns_resolvers[0] || '').type
+    const type = resolverTypes[id] ?? parseResolver(instance.dns_resolvers[0] || '').type
     return resolverList(type, value) === null
   })
 
   return <div className="space-y-5">
     <div className="flex min-h-10 flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-xl font-semibold">{copy.title}</h1><p className="mt-1 text-sm text-[var(--muted)]">{copy.detail}</p></div>
-      <div className="flex gap-2"><Button icon={<RefreshCw size={16} />} onClick={() => status.refetch()}>{copy.refresh}</Button><Button variant="primary" icon={<Save size={16} />} loading={save.isPending} disabled={invalidResolverDraft} onClick={() => save.mutate(config)}>{copy.save}</Button></div>
     </div>
     <Alert type="info" showIcon message={copy.safetyTitle} description={copy.safetyDetail} />
     {(status.data?.binary ?? emptyStatus.binary).installed ? null : <Alert type="warning" showIcon message={`wstunnel ${status.data?.binary.version ?? emptyStatus.binary.version} ${copy.notInstalled}`} description={<Button className="mt-2" size="small" icon={<Download size={14} />} loading={install.isPending} onClick={() => install.mutate()}>{copy.download}</Button>} />}
     {status.isError ? <Alert type="error" showIcon message={status.error instanceof Error ? status.error.message : copy.failed} /> : null}
-    {dirty ? <Alert type="warning" showIcon message={copy.unsaved} /> : null}
-    {invalidResolverDraft ? <Alert type="error" showIcon message={copy.invalidResolver} /> : null}
-    <div className="flex justify-end"><Button icon={<CirclePlus size={16} />} onClick={() => update({ ...config, instances: [...config.instances, newInstance()] })}>{copy.addInstance}</Button></div>
-    {config.instances.length === 0 ? <Card><Empty description={copy.empty} /></Card> : config.instances.map((instance, index) => {
+    <div className="flex justify-end gap-2"><Button icon={<Pencil size={16} />} disabled={!status.data || save.isPending || action.isPending} onClick={() => openEditor(persisted)}>{copy.edit}</Button><Button icon={<CirclePlus size={16} />} disabled={!status.data || save.isPending || action.isPending} onClick={() => openEditor({ ...persisted, instances: [...persisted.instances, newInstance()] })}>{copy.addInstance}</Button></div>
+    {persisted.instances.length === 0 ? <Card><Empty description={copy.empty} /></Card> : persisted.instances.map((instance, index) => {
       const runtime = runtimeByID.get(instance.id)
+      const busy = save.isPending || action.isPending
+      return <Card key={instance.id} className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
+        <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold">{instance.name || `${copy.instance} ${index + 1}`}</h2><p className="mt-1 text-xs text-[var(--muted)]">{stateLabel(copy, runtime?.state ?? 'stopped')} · {copy.restarts} {runtime?.restart_count ?? 0}</p></div><div className="flex flex-wrap gap-1">
+          <Button size="small" icon={<Play size={14} />} disabled={busy || instance.desired_state === 'running'} onClick={() => action.mutate({ id: instance.id, value: 'start' })}>{copy.start}</Button>
+          <Button size="small" icon={<Square size={14} />} disabled={busy || instance.desired_state === 'stopped'} onClick={() => action.mutate({ id: instance.id, value: 'stop' })}>{copy.stop}</Button>
+          <Button size="small" icon={<RotateCw size={14} />} disabled={busy || instance.desired_state === 'stopped'} onClick={() => action.mutate({ id: instance.id, value: 'restart' })}>{copy.restart}</Button>
+          <Button size="small" icon={<FileText size={14} />} disabled={loadLog.isPending} onClick={() => loadLog.mutate(instance)}>{copy.log}</Button>
+          <Button size="small" variant="danger" icon={<Trash2 size={14} />} disabled={busy} onClick={() => save.mutate({ ...persisted, instances: persisted.instances.filter((item) => item.id !== instance.id) })}>{copy.remove}</Button>
+        </div></div>
+        {runtime?.last_error ? <Alert className="mt-3" type="error" showIcon message={runtime.last_error} /> : null}
+        <p className="mt-3 break-all text-sm text-[var(--muted)]">{instance.server_url}</p>
+        <div className="mt-3 space-y-1 font-mono text-xs">{instance.forwards.map((forward) => <p key={forward.id}>{forward.name ? `${forward.name} · ` : ''}127.0.0.1:{forward.listen_port} → {forward.remote_host}:{forward.remote_port}</p>)}</div>
+      </Card>
+    })}
+    <Modal open={Boolean(editing)} title={copy.edit} size="large" okText={copy.save} cancelText={copy.close} confirmLoading={save.isPending} cancelButtonProps={{ disabled: save.isPending }} okButtonProps={{ disabled: invalidResolverInput }} onOk={() => save.mutateAsync(config).catch(() => undefined)} onCancel={() => { if (!save.isPending) setEditing(null) }} destroyOnClose>
+      {invalidResolverInput ? <Alert className="mb-3" type="error" showIcon message={copy.invalidResolver} /> : null}
+      <div className="space-y-4" inert={save.isPending}>
+    {config.instances.length === 0 ? <Card><Empty description={copy.empty} /></Card> : config.instances.map((instance, index) => {
       const server = parseEndpoint(instance.server_url, 'wss', 443)
       const resolver = parseResolver(instance.dns_resolvers[0] || '')
-      const resolverType = resolverDraftTypes[instance.id] ?? resolver.type
-      const resolverInput = resolverDraftValues[instance.id] ?? formatResolverInput(resolver, resolverType)
-      const advancedDraft = advancedDraftValues[instance.id]
+      const resolverType = resolverTypes[instance.id] ?? resolver.type
+      const resolverInput = resolverInputs[instance.id] ?? formatResolverInput(resolver, resolverType)
+      const advancedInput = advancedInputs[instance.id]
       return <Card key={instance.id} className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
-        <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold">{instance.name || `${copy.instance} ${index + 1}`}</h2><p className="mt-1 text-xs text-[var(--muted)]">{stateLabel(copy, runtime?.state ?? 'stopped')} · {copy.restarts} {runtime?.restart_count ?? 0}</p></div><div className="flex gap-1"><Button size="small" icon={<Play size={14} />} disabled={dirty || instance.desired_state === 'running'} onClick={() => action.mutate({ id: instance.id, value: 'start' })}>{copy.start}</Button><Button size="small" icon={<Square size={14} />} disabled={dirty || instance.desired_state === 'stopped'} onClick={() => action.mutate({ id: instance.id, value: 'stop' })}>{copy.stop}</Button><Button size="small" icon={<RotateCw size={14} />} disabled={dirty || instance.desired_state === 'stopped'} onClick={() => action.mutate({ id: instance.id, value: 'restart' })}>{copy.restart}</Button><Button size="small" icon={<FileText size={14} />} disabled={dirty} onClick={() => loadLog.mutate(instance)}>{copy.log}</Button><Button size="small" variant="danger" icon={<Trash2 size={14} />} onClick={() => update({ ...config, instances: config.instances.filter((_, itemIndex) => itemIndex !== index) })}>{copy.remove}</Button></div></div>
-        {runtime?.last_error ? <Alert className="mt-3" type="error" showIcon message={runtime.last_error} /> : null}
+        <div className="flex items-center justify-between gap-2"><h2 className="font-semibold">{instance.name || `${copy.instance} ${index + 1}`}</h2><Button size="small" variant="danger" icon={<Trash2 size={14} />} onClick={() => update({ ...config, instances: config.instances.filter((item) => item.id !== instance.id) })}>{copy.remove}</Button></div>
         <div className="mt-4 grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[1fr_2fr_120px_auto]">
           <Field label={copy.remark}><Input value={instance.name} onChange={(event) => updateInstance(config, index, { name: event.target.value }, update)} /></Field>
           <Field label={copy.serverHost}><Input value={server.host} placeholder="hz.example.com" onChange={(event) => updateInstance(config, index, { server_url: endpointURL('wss', event.target.value, server.port) }, update)} /></Field>
@@ -88,15 +112,18 @@ export function Tunnels() {
           <Field label={copy.desiredRunning}><Switch checked={instance.desired_state === 'running'} onChange={(checked) => updateInstance(config, index, { desired_state: checked ? 'running' : 'stopped' }, update)} /></Field>
         </div>
         <Collapse className="mt-4" size="small" items={[{ key: 'advanced', label: copy.advancedSettings, children: <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_1fr]">
-          <div className="grid gap-2 sm:grid-cols-[100px_minmax(0,1fr)]"><Field label={copy.resolverType}><Select value={resolverType} options={resolverTypeOptions} onChange={(value) => { const nextType = value as ResolverType; const nextInput = formatResolverInput(resolver, nextType); setResolverDraftTypes((current) => ({ ...current, [instance.id]: nextType })); setResolverDraftValues((current) => ({ ...current, [instance.id]: nextInput })); const nextResolvers = resolverList(nextType, nextInput); if (nextResolvers !== null) updateInstance(config, index, { dns_resolvers: nextResolvers }, update) }} /></Field><Field label={copy.resolverServer}><Input value={resolverInput} aria-invalid={resolverList(resolverType, resolverInput) === null} placeholder={resolverPlaceholder(resolverType)} onChange={(event) => { const value = event.target.value; setResolverDraftValues((current) => ({ ...current, [instance.id]: value })); const nextResolvers = resolverList(resolverType, value); if (nextResolvers !== null) updateInstance(config, index, { dns_resolvers: nextResolvers }, update) }} /></Field></div>
-          <Field label="WebSocket ping"><Input value={advancedDraft?.websocketPing ?? defaultPlaceholderValue(instance.websocket_ping, '15s')} placeholder="15s" onChange={(event) => { const value = event.target.value; setAdvancedDraftValues((current) => ({ ...current, [instance.id]: { ...current[instance.id], websocketPing: value } })); updateInstance(config, index, { websocket_ping: value }, update) }} /></Field>
-          <Field label={copy.retryBackoff}><Input value={advancedDraft?.retryBackoff ?? defaultPlaceholderValue(instance.connection_retry_max_backoff, '30s')} placeholder="30s" onChange={(event) => { const value = event.target.value; setAdvancedDraftValues((current) => ({ ...current, [instance.id]: { ...current[instance.id], retryBackoff: value } })); updateInstance(config, index, { connection_retry_max_backoff: value }, update) }} /></Field>
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3"><Field label="Upgrade path"><Input value={advancedDraft?.upgradePath ?? defaultPlaceholderValue(instance.upgrade_path_prefix || '', 'v1')} placeholder="v1" onChange={(event) => { const value = event.target.value; setAdvancedDraftValues((current) => ({ ...current, [instance.id]: { ...current[instance.id], upgradePath: value } })); updateInstance(config, index, { upgrade_path_prefix: value }, update) }} /></Field><Field label={copy.preferIPv4}><Switch checked={instance.prefer_ipv4} onChange={(checked) => updateInstance(config, index, { prefer_ipv4: checked }, update)} /></Field></div>
+          <div className="grid gap-2 sm:grid-cols-[100px_minmax(0,1fr)]"><Field label={copy.resolverType}><Select value={resolverType} options={resolverTypeOptions} onChange={(value) => { const nextType = value as ResolverType; const nextInput = formatResolverInput(resolver, nextType); setResolverTypes((current) => ({ ...current, [instance.id]: nextType })); setResolverInputs((current) => ({ ...current, [instance.id]: nextInput })); const nextResolvers = resolverList(nextType, nextInput); if (nextResolvers !== null) updateInstance(config, index, { dns_resolvers: nextResolvers }, update) }} /></Field><Field label={copy.resolverServer}><Input value={resolverInput} aria-invalid={resolverList(resolverType, resolverInput) === null} placeholder={resolverPlaceholder(resolverType)} onChange={(event) => { const value = event.target.value; setResolverInputs((current) => ({ ...current, [instance.id]: value })); const nextResolvers = resolverList(resolverType, value); if (nextResolvers !== null) updateInstance(config, index, { dns_resolvers: nextResolvers }, update) }} /></Field></div>
+          <Field label="WebSocket ping"><Input value={advancedInput?.websocketPing ?? defaultPlaceholderValue(instance.websocket_ping, '15s')} placeholder="15s" onChange={(event) => { const value = event.target.value; setAdvancedInputs((current) => ({ ...current, [instance.id]: { ...current[instance.id], websocketPing: value } })); updateInstance(config, index, { websocket_ping: value }, update) }} /></Field>
+          <Field label={copy.retryBackoff}><Input value={advancedInput?.retryBackoff ?? defaultPlaceholderValue(instance.connection_retry_max_backoff, '30s')} placeholder="30s" onChange={(event) => { const value = event.target.value; setAdvancedInputs((current) => ({ ...current, [instance.id]: { ...current[instance.id], retryBackoff: value } })); updateInstance(config, index, { connection_retry_max_backoff: value }, update) }} /></Field>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3"><Field label="Upgrade path"><Input value={advancedInput?.upgradePath ?? defaultPlaceholderValue(instance.upgrade_path_prefix || '', 'v1')} placeholder="v1" onChange={(event) => { const value = event.target.value; setAdvancedInputs((current) => ({ ...current, [instance.id]: { ...current[instance.id], upgradePath: value } })); updateInstance(config, index, { upgrade_path_prefix: value }, update) }} /></Field><Field label={copy.preferIPv4}><Switch checked={instance.prefer_ipv4} onChange={(checked) => updateInstance(config, index, { prefer_ipv4: checked }, update)} /></Field></div>
         </div> }]} />
         <div className="mt-5 flex items-center justify-between"><h3 className="text-sm font-semibold">{copy.udpForwards}</h3><Button size="small" icon={<CirclePlus size={14} />} onClick={() => updateInstance(config, index, { forwards: [...instance.forwards, newForward(config)] }, update)}>{copy.addForward}</Button></div>
         <div className="mt-2 space-y-2">{instance.forwards.map((forward, forwardIndex) => <ForwardRow key={forward.id} forward={forward} copy={copy} onChange={(change) => updateInstance(config, index, { forwards: instance.forwards.map((item, itemIndex) => itemIndex === forwardIndex ? { ...item, ...change } : item) }, update)} onRemove={() => updateInstance(config, index, { forwards: instance.forwards.filter((_, itemIndex) => itemIndex !== forwardIndex) }, update)} />)}</div>
       </Card>
     })}
+        <Button icon={<CirclePlus size={16} />} onClick={() => update({ ...config, instances: [...config.instances, newInstance()] })}>{copy.addInstance}</Button>
+      </div>
+    </Modal>
     {log ? <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold">{log.name} {copy.log}</h2><Button size="small" onClick={() => setLog(null)}>{copy.close}</Button></div><CodeBlock value={log.content || copy.noLog} maxHeight={360} wrap /></Card> : null}
   </div>
 }
@@ -114,7 +141,7 @@ function ForwardRow({ forward, copy, onChange, onRemove }: { forward: TunnelForw
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block min-w-0 space-y-1"><span className="block text-xs font-medium text-[var(--muted)]">{label}</span>{children}</label> }
 type ResolverType = 'dns' | 'doh' | 'dot'
-type AdvancedDraft = { websocketPing?: string; retryBackoff?: string; upgradePath?: string }
+type AdvancedInput = { websocketPing?: string; retryBackoff?: string; upgradePath?: string }
 const resolverTypeOptions = [{ value: 'dns', label: 'DNS' }, { value: 'doh', label: 'DoH' }, { value: 'dot', label: 'DoT' }]
 function parseEndpoint(value: string, scheme: string, defaultPort: number) { try { const parsed = new URL(value); if (parsed.protocol !== `${scheme}:`) return { host: '', port: defaultPort }; return { host: parsed.hostname.replace(/^\[|\]$/g, ''), port: Number(parsed.port) || defaultPort } } catch { return { host: '', port: defaultPort } } }
 function endpointURL(scheme: string, host: string, port: number) { const clean = host.trim().replace(/^\[|\]$/g, ''); return clean ? `${scheme}://${clean.includes(':') ? `[${clean}]` : clean}:${port}` : '' }
@@ -157,5 +184,5 @@ function newForward(config: TunnelConfig): TunnelForward { const used = new Set(
 function updateInstance(config: TunnelConfig, index: number, change: Partial<TunnelInstance>, apply: (next: TunnelConfig) => void) { apply({ ...config, instances: config.instances.map((item, itemIndex) => itemIndex === index ? { ...item, ...change } : item) }) }
 function stateLabel(copy: Record<keyof typeof en, string>, state: string) { return state === 'running' ? copy.stateRunning : state === 'starting' ? copy.stateStarting : state === 'installing' ? copy.stateInstalling : state === 'restarting' ? copy.stateRestarting : state === 'stopping' ? copy.stateStopping : copy.stateStopped }
 
-const zh = { title: '隧道', detail: '管理本机 wstunnel 客户端。Sempre 不会连接或配置远端 OpenWrt。', refresh: '刷新', save: '保存', safetyTitle: '安全边界', safetyDetail: '这里只启动本机客户端并监听 127.0.0.1。远端 wstunnel server、证书、防火墙和 OpenWrt 服务必须由你人工配置。', notInstalled: '尚未安装', download: '下载并校验', failed: '操作失败', unsaved: '请先保存当前修改，再执行启动、停止、重启或查看日志。', invalidResolver: 'DNS 服务器格式无效，请修正后再保存。', addInstance: '新增远端实例', empty: '尚未配置隧道。每台远端 OpenWrt 添加一个客户端实例。', instance: '实例', restarts: '重启次数', start: '启动', stop: '停止', restart: '重启', log: '日志', remove: '删除', remark: '备注', serverHost: '对端域名', serverPort: '服务端口', desiredRunning: '保持运行', advancedSettings: '高级参数', resolverType: 'DNS 类型', resolverServer: 'DNS 服务器', preferIPv4: 'IPv4 优先', retryBackoff: '最大重连退避', udpForwards: 'UDP 转发', addForward: '新增转发', close: '关闭', noLog: '暂无日志', localPort: '本地 UDP 端口', remoteHost: '远端主机', remotePort: '远端 UDP 端口', timeout: 'UDP 超时秒', stateRunning: '运行中', stateStarting: '启动中', stateInstalling: '安装中', stateRestarting: '重启中', stateStopping: '停止中', stateStopped: '已停止' }
-const en = { title: 'Tunnels', detail: 'Manage local wstunnel clients. Sempre never connects to or configures remote OpenWrt hosts.', refresh: 'Refresh', save: 'Save', safetyTitle: 'Safety boundary', safetyDetail: 'Only local clients listening on 127.0.0.1 are managed here. Configure the remote wstunnel server, certificates, firewall, and OpenWrt service manually.', notInstalled: 'is not installed', download: 'Download and verify', failed: 'Operation failed', unsaved: 'Save the current changes before starting, stopping, restarting, or viewing logs.', invalidResolver: 'The DNS server format is invalid. Correct it before saving.', addInstance: 'Add remote instance', empty: 'No tunnels configured. Add one client instance for each remote OpenWrt host.', instance: 'Instance', restarts: 'Restarts', start: 'Start', stop: 'Stop', restart: 'Restart', log: 'Log', remove: 'Remove', remark: 'Remark', serverHost: 'Remote domain', serverPort: 'Service port', desiredRunning: 'Keep running', advancedSettings: 'Advanced settings', resolverType: 'DNS type', resolverServer: 'DNS server', preferIPv4: 'Prefer IPv4', retryBackoff: 'Maximum retry backoff', udpForwards: 'UDP forwards', addForward: 'Add forward', close: 'Close', noLog: 'No log output', localPort: 'Local UDP port', remoteHost: 'Remote host', remotePort: 'Remote UDP port', timeout: 'UDP timeout (seconds)', stateRunning: 'Running', stateStarting: 'Starting', stateInstalling: 'Installing', stateRestarting: 'Restarting', stateStopping: 'Stopping', stateStopped: 'Stopped' }
+const zh = { title: '隧道', detail: '管理本机 wstunnel 客户端。Sempre 不会连接或配置远端 OpenWrt。', edit: '编辑配置', save: '保存配置', safetyTitle: '安全边界', safetyDetail: '这里只启动本机客户端并监听 127.0.0.1。远端 wstunnel server、证书、防火墙和 OpenWrt 服务必须由你人工配置。', notInstalled: '尚未安装', download: '下载并校验', failed: '操作失败', invalidResolver: 'DNS 服务器格式无效，请修正后再保存。', addInstance: '新增远端实例', empty: '尚未配置隧道。每台远端 OpenWrt 添加一个客户端实例。', instance: '实例', restarts: '重启次数', start: '启动', stop: '停止', restart: '重启', log: '日志', remove: '删除', remark: '备注', serverHost: '对端域名', serverPort: '服务端口', desiredRunning: '保持运行', advancedSettings: '高级参数', resolverType: 'DNS 类型', resolverServer: 'DNS 服务器', preferIPv4: 'IPv4 优先', retryBackoff: '最大重连退避', udpForwards: 'UDP 转发', addForward: '新增转发', close: '关闭', noLog: '暂无日志', localPort: '本地 UDP 端口', remoteHost: '远端主机', remotePort: '远端 UDP 端口', timeout: 'UDP 超时秒', stateRunning: '运行中', stateStarting: '启动中', stateInstalling: '安装中', stateRestarting: '重启中', stateStopping: '停止中', stateStopped: '已停止' }
+const en = { title: 'Tunnels', detail: 'Manage local wstunnel clients. Sempre never connects to or configures remote OpenWrt hosts.', edit: 'Edit configuration', save: 'Save configuration', safetyTitle: 'Safety boundary', safetyDetail: 'Only local clients listening on 127.0.0.1 are managed here. Configure the remote wstunnel server, certificates, firewall, and OpenWrt service manually.', notInstalled: 'is not installed', download: 'Download and verify', failed: 'Operation failed', invalidResolver: 'The DNS server format is invalid. Correct it before saving.', addInstance: 'Add remote instance', empty: 'No tunnels configured. Add one client instance for each remote OpenWrt host.', instance: 'Instance', restarts: 'Restarts', start: 'Start', stop: 'Stop', restart: 'Restart', log: 'Log', remove: 'Remove', remark: 'Remark', serverHost: 'Remote domain', serverPort: 'Service port', desiredRunning: 'Keep running', advancedSettings: 'Advanced settings', resolverType: 'DNS type', resolverServer: 'DNS server', preferIPv4: 'Prefer IPv4', retryBackoff: 'Maximum retry backoff', udpForwards: 'UDP forwards', addForward: 'Add forward', close: 'Close', noLog: 'No log output', localPort: 'Local UDP port', remoteHost: 'Remote host', remotePort: 'Remote UDP port', timeout: 'UDP timeout (seconds)', stateRunning: 'Running', stateStarting: 'Starting', stateInstalling: 'Installing', stateRestarting: 'Restarting', stateStopping: 'Stopping', stateStopped: 'Stopped' }
