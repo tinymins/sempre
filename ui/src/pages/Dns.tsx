@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, Empty, Input, InputNumber, Popover, Select, Switch, Table, Tabs, Tag, type TableColumn } from '@acme/components'
+import { Alert, Button, Card, Empty, Input, InputNumber, Modal, Popover, Select, Switch, Table, Tabs, Tag, type TableColumn } from '@acme/components'
 import { DnsUpstreamsInput } from '../features/dns/DnsUpstreamsInput'
 import type { DnsFrontendStatus, DnsRewrite, DnsSettings } from '../features/dns/types'
 import { api } from '../lib/api'
@@ -32,7 +32,7 @@ export function Dns() {
   const queryClient = useQueryClient()
   const zh = locale === 'zh-CN'
   const [filter, setFilter] = useState('')
-  const [rewrite, setRewrite] = useState<DnsRewrite>(emptyRewrite)
+  const [rewrite, setRewrite] = useState<DnsRewrite | null>(null)
   const { settings, save } = useDnsSettings()
   const queries = useQuery({
     queryKey: ['dns', 'queries'],
@@ -50,10 +50,10 @@ export function Dns() {
     return (queries.data?.queries ?? []).filter((item) => !needle || `${item.name} ${item.client} ${item.answers.join(' ')} ${item.detail}`.toLowerCase().includes(needle))
   }, [filter, queries.data?.queries])
   const addRewrite = async () => {
-    if (!current || !rewrite.domain.trim() || !rewrite.answer.trim()) return
+    if (!current || !rewrite || !rewrite.domain.trim() || !rewrite.answer.trim()) return
     const entry = { ...rewrite, domain: rewrite.domain.trim(), answer: rewrite.answer.trim() }
     await save.mutateAsync((latest) => ({ ...latest, rewrites: [...latest.rewrites.filter((item) => item.id !== entry.id), entry] }))
-    setRewrite(emptyRewrite())
+    setRewrite(null)
   }
   const queryColumns = useMemo<Array<TableColumn<DnsQueryEvent>>>(() => [
     { title: zh ? '时间' : 'Time', dataIndex: 'time', width: 180, sorter: (left, right) => compareNumber(left.time, right.time), render: (value) => new Date(Number(value)).toLocaleString() },
@@ -79,7 +79,7 @@ export function Dns() {
   const status = settings.data?.status
   const tabs = [
     { key: 'queries', label: zh ? '查询日志' : 'Query log', children: <QueryLog filter={filter} setFilter={setFilter} rows={visibleQueries} columns={queryColumns} clear={() => clear.mutate()} exporting={() => exportQueries(visibleQueries)} zh={zh} /> },
-    { key: 'rewrites', label: zh ? 'DNS 重写' : 'DNS rewrites', children: <Rewrites current={current} rewrite={rewrite} setRewrite={setRewrite} saving={save.isPending} add={() => void addRewrite().catch(() => undefined)} columns={rewriteColumns} zh={zh} /> },
+    { key: 'rewrites', label: zh ? 'DNS 重写' : 'DNS rewrites', children: <Rewrites current={current} saving={save.isPending} onAdd={() => setRewrite(emptyRewrite())} columns={rewriteColumns} zh={zh} /> },
     { key: 'settings', label: zh ? '设置与状态' : 'Settings & status', children: <Settings current={current} saving={save.isPending} update={(patch) => save.mutate((latest) => ({ ...latest, ...patch }))} status={status} zh={zh} /> },
   ]
   return <div className="space-y-5">
@@ -87,6 +87,15 @@ export function Dns() {
       <div><h1 className="text-xl font-semibold">DNS</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '设备级前置 DNS，修改自动保存；核心 DNS 仍由当前订阅配置。' : 'Device-level DNS frontend. Changes are saved automatically. Core DNS remains owned by the active subscription.'}</p></div>
     </div>
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><Tabs items={tabs} defaultActiveKey="queries" destroyInactiveTabPane={false} /></Card>
+    <Modal open={Boolean(rewrite)} title={zh ? '添加 DNS 重写' : 'Add DNS rewrite'} okText={zh ? '确认' : 'Confirm'} cancelText={zh ? '取消' : 'Cancel'} confirmLoading={save.isPending} okButtonProps={{ disabled: !rewrite?.domain.trim() || !rewrite?.answer.trim() }} cancelButtonProps={{ disabled: save.isPending }} onOk={() => addRewrite().catch(() => undefined)} onCancel={() => { if (!save.isPending) setRewrite(null) }} destroyOnClose>
+      {rewrite ? <div className="grid gap-4 sm:grid-cols-2" inert={save.isPending}>
+        <label className="text-sm sm:col-span-2"><span className="mb-2 block font-medium">{zh ? '域名' : 'Domain'}</span><Input autoFocus value={rewrite.domain} placeholder="example.com / *.example.com" onChange={(event) => setRewrite({ ...rewrite, domain: event.target.value })} /></label>
+        <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '记录类型' : 'Record type'}</span><Select className="w-full" value={rewrite.type} options={['A', 'AAAA', 'CNAME'].map((value) => ({ value, label: value }))} onChange={(type) => setRewrite({ ...rewrite, type })} /></label>
+        <label className="text-sm"><span className="mb-2 block font-medium">TTL</span><InputNumber className="w-full" min={0} value={rewrite.ttl} onChange={(ttl) => setRewrite({ ...rewrite, ttl: ttl ?? 300 })} /></label>
+        <label className="text-sm sm:col-span-2"><span className="mb-2 block font-medium">{zh ? '应答' : 'Answer'}</span><Input value={rewrite.answer} placeholder={zh ? 'IP 或目标域名' : 'IP or target domain'} onChange={(event) => setRewrite({ ...rewrite, answer: event.target.value })} /></label>
+        <label className="text-sm sm:col-span-2"><span className="mb-2 block font-medium">{zh ? '备注（可选）' : 'Comment (optional)'}</span><Input value={rewrite.comment} onChange={(event) => setRewrite({ ...rewrite, comment: event.target.value })} /></label>
+      </div> : null}
+    </Modal>
   </div>
 }
 
@@ -115,8 +124,11 @@ function answerTargets(answers: string[]) {
   return [...new Set(records.map((record) => record.value))]
 }
 
-function Rewrites({ saving, current, rewrite, setRewrite, add, columns, zh }: { saving: boolean; current: DnsSettings; rewrite: DnsRewrite; setRewrite: (value: DnsRewrite) => void; add: () => void; columns: Array<TableColumn<DnsRewrite>>; zh: boolean }) {
-  return <div className="space-y-4 pt-4"><div className="grid gap-2 rounded-md border border-[var(--border)] p-3 md:grid-cols-6"><Input value={rewrite.domain} placeholder={zh ? '域名或 *.example.com' : 'Domain or *.example.com'} onChange={(event) => setRewrite({ ...rewrite, domain: event.target.value })} /><Select value={rewrite.type} options={['A', 'AAAA', 'CNAME'].map((value) => ({ value, label: value }))} onChange={(type) => setRewrite({ ...rewrite, type })} /><Input className="md:col-span-2" value={rewrite.answer} placeholder={zh ? 'IP 或目标域名' : 'IP or target name'} onChange={(event) => setRewrite({ ...rewrite, answer: event.target.value })} /><InputNumber className="w-full" min={0} value={rewrite.ttl} onChange={(ttl) => setRewrite({ ...rewrite, ttl: ttl ?? 300 })} /><Button variant="primary" icon={<Plus size={15} />} loading={saving} disabled={!rewrite.domain.trim() || !rewrite.answer.trim()} onClick={add}>{zh ? '添加' : 'Add'}</Button><Input className="md:col-span-6" value={rewrite.comment} placeholder={zh ? '备注（可选）' : 'Comment (optional)'} onChange={(event) => setRewrite({ ...rewrite, comment: event.target.value })} /></div><Table<DnsRewrite> rowKey="id" size="middle" pagination={false} columns={columns} dataSource={current.rewrites} scroll={{ x: 900 }} locale={{ emptyText: <Empty description={zh ? '暂无 DNS 重写' : 'No DNS rewrites'} /> }} /></div>
+function Rewrites({ saving, current, onAdd, columns, zh }: { saving: boolean; current: DnsSettings; onAdd: () => void; columns: Array<TableColumn<DnsRewrite>>; zh: boolean }) {
+  return <div className="space-y-4 pt-4">
+    <div className="flex justify-end"><Button variant="primary" icon={<Plus size={15} />} disabled={saving} onClick={onAdd}>{zh ? '添加重写' : 'Add rewrite'}</Button></div>
+    <Table<DnsRewrite> rowKey="id" size="middle" pagination={false} columns={columns} dataSource={current.rewrites} scroll={{ x: 900 }} locale={{ emptyText: <Empty description={zh ? '暂无 DNS 重写' : 'No DNS rewrites'} /> }} />
+  </div>
 }
 
 function Settings({ current, update, saving, status, zh }: { current: DnsSettings; update: (patch: Partial<DnsSettings>) => void; saving: boolean; status?: DnsFrontendStatus; zh: boolean }) {
