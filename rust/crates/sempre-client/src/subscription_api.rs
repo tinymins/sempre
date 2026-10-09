@@ -80,6 +80,10 @@ async fn list(State(state): State<Arc<AppState>>) -> Response {
         Ok(context) => context,
         Err(error) => return internal(error.to_string()),
     };
+    let editor_defaults = match state.manager.recommended_editor_defaults() {
+        Ok(defaults) => defaults,
+        Err(error) => return internal(error.to_string()),
+    };
     Json(CatalogOutput {
         profiles: catalog.profiles,
         custom_nodes: catalog.custom_nodes,
@@ -88,18 +92,22 @@ async fn list(State(state): State<Arc<AppState>>) -> Response {
         auto_restart: document.subscription_auto_restart,
         targets: sempre_converter::available_targets(),
         defaults: sempre_converter::system_defaults(),
-        editor_defaults: sempre_converter::recommended_editor_defaults(),
+        editor_defaults,
         configuration_context,
     })
     .into_response()
 }
 
-async fn defaults() -> Response {
+async fn defaults(State(state): State<Arc<AppState>>) -> Response {
+    let editor_defaults = match state.manager.recommended_editor_defaults() {
+        Ok(defaults) => defaults,
+        Err(error) => return internal(error.to_string()),
+    };
     let profile = new_profile("");
     Json(json!({
         "profile": profile,
         "defaults": sempre_converter::system_defaults(),
-        "editor_defaults": sempre_converter::recommended_editor_defaults(),
+        "editor_defaults": editor_defaults,
         "targets": sempre_converter::available_targets(),
         "source_defaults": {
             "id": "", "type": "url", "enabled": true,

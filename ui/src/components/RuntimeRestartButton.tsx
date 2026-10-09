@@ -7,7 +7,7 @@ import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import { useRestartTask } from '../lib/useRestartTask'
 import type { ManagedRuntimeStatus } from '../lib/types'
-import { pendingChangeCount, RestartChangeSummary, type RuntimePendingChange } from './RestartChangeSummary'
+import { formatPendingChange, pendingChangeCount, RestartChangeSummary, type RuntimePendingChange } from './RestartChangeSummary'
 import { RuntimeRestartModal } from './RuntimeRestartModal'
 import { ConfirmDialog } from './ui'
 
@@ -33,7 +33,8 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
   const pendingCount = pendingChangeCount(runtimeStatus.data?.pending_changes ?? [])
   const showPendingCount = needsRestart && pendingCount > 0 && !restarting && !showLabel && !panel
   const label = restarting ? (locale === 'zh-CN' ? '正在重启核心 · 查看日志' : 'Restarting core · view log') : t(panel ? 'restartCore' : 'restartNow')
-  const title = showPendingCount
+  const pendingFakeIp = runtimeStatus.data?.pending_changes?.find(change => change.type === 'fake_ip')
+  const title = pendingFakeIp ? formatPendingChange(pendingFakeIp, t, locale) : showPendingCount
     ? locale === 'zh-CN' ? `有 ${pendingCount} 项改动待应用，点击重启核心` : `${pendingCount} changes pending. Click to restart the core.`
     : label
   const visibleTask = mutation.error && task && task.started_at < submittedAt ? null : task

@@ -17,6 +17,8 @@ pub struct DnsFrontendStatus {
     pub enabled: bool,
     pub running: bool,
     pub core_dns_healthy: bool,
+    #[serde(skip)]
+    pub(crate) fakeip_ranges: Vec<ipnet::IpNet>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port_53: Option<DnsPort53Status>,
     pub mode: String,

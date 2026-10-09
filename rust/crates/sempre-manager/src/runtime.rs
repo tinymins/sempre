@@ -443,7 +443,7 @@ fn failure_value(failure: RuntimeFailure) -> RuntimeFailureOutput {
     }
 }
 
-fn process_alive(pid: u32) -> bool {
+pub(crate) fn process_alive(pid: u32) -> bool {
     let pid = Pid::from_u32(pid);
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);

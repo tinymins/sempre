@@ -43,7 +43,7 @@ export function Subscriptions() {
   const editorRef = useRef<ProxySubscribeEditorRef>(null)
   const [editorSaveState, setEditorSaveState] = useState<ProxySubscribeSaveState>({ profileID: '', dirty: false, saving: false })
 
-  const catalog = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<SubscriptionCatalogResponse>(session!, '/subscriptions') })
+  const catalog = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<SubscriptionCatalogResponse>(session!, '/subscriptions'), refetchInterval: 10000 })
   const customNodes = useQuery({ queryKey: ['custom-nodes'], queryFn: () => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes') })
 	const networkInventory = useQuery({ queryKey: ['system', 'network'], queryFn: () => api<LinuxNetworkInventory>(session!, '/system/network') })
   const profiles = useMemo(() => catalog.data?.profiles ?? [], [catalog.data?.profiles])

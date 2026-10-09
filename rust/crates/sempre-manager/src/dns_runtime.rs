@@ -139,6 +139,11 @@ impl DnsFrontendRuntime {
             enabled: true,
             running: true,
             core_dns_healthy,
+            fakeip_ranges: if plan.fakeip_enabled {
+                plan.fakeip_ranges.clone()
+            } else {
+                Vec::new()
+            },
             port_53,
             mode: if plan.fakeip_enabled {
                 "fake-ip"
@@ -284,6 +289,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .ok_or_else(|| ManagerError::ProfileNotFound(profile_id.into()))?;
         let (target, _) = self.subscription_target_for(reference, &deployment.version)?;
         let network_profile = self.apply_network_settings(profile)?;
+        let network_profile = self.apply_runtime_fakeip(&network_profile, &target, deployment)?;
         let profile = self.apply_dns_frontend_settings(
             &network_profile,
             &target,
@@ -331,6 +337,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .ok_or_else(|| ManagerError::ProfileNotFound(profile_id.into()))?;
         let (target, _) = self.subscription_target_for(reference, &deployment.version)?;
         let network_profile = self.apply_network_settings(profile)?;
+        let network_profile = self.apply_runtime_fakeip(&network_profile, &target, deployment)?;
         let profile = self.apply_dns_frontend_settings(
             &network_profile,
             &target,

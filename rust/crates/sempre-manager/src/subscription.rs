@@ -15,9 +15,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::{
-    CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner, config_build::config_build,
-};
+use crate::{CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SubscriptionRender {
@@ -193,11 +191,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let now = Utc::now();
         let active = activate || document.active_profile_id.as_deref() == Some(id);
         let profile_changed = activate && document.active_profile_id.as_deref() != Some(id);
-        let build = config_build(
-            &rendered.updated,
-            &rendered.target,
-            &self.dns_settings.read(),
-        )?;
+        let build = self.rendered_config_build(&rendered)?;
         self.save_optional_dns_frontend_policy(
             &rendered.render.artifact_hash,
             rendered.dns_frontend_policy.as_ref(),
@@ -257,7 +251,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let catalog = self.subscriptions.read()?;
         let profile = find_profile(&catalog, id)?;
         let (target, _) = self.subscription_target(&document)?;
-        let expected = config_build(profile, &target, &self.dns_settings.read())?;
+        let expected = self.subscription_config_build(profile, &target, None)?;
         if document
             .selected
             .as_ref()
@@ -285,8 +279,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let Ok((target, _)) = self.subscription_target(document) else {
             return false;
         };
-        config_build(profile, &target, &self.dns_settings.read())
-            .is_ok_and(|expected| document.config_builds.get(&selected.core) != Some(&expected))
+        self.fakeip_pending_change(document).is_some()
+            || self
+                .subscription_config_build(profile, &target, None)
+                .is_ok_and(|expected| document.config_builds.get(&selected.core) != Some(&expected))
     }
 
     async fn render_subscription(
@@ -362,6 +358,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         adapter_warnings.extend(provider_warnings);
         let dns_settings = self.dns_settings.read();
         let network_profile = self.apply_network_settings(&updated)?;
+        let network_profile = self.apply_recommended_fakeip(&network_profile, &target)?;
         let mut compile_profile =
             self.apply_dns_frontend_settings(&network_profile, &target, dns_settings.enabled)?;
         loaded.for_compile(&mut compile_profile, &target, &catalog.custom_nodes)?;
@@ -397,7 +394,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         })
     }
 
-    fn subscription_target(
+    pub(crate) fn subscription_target(
         &self,
         document: &Document,
     ) -> Result<(Target, Vec<String>), ManagerError> {

@@ -6,7 +6,7 @@ use sempre_state::{Deployment, Document, PendingConfigField};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{Manager, ManagerError, VersionRunner};
+use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -14,13 +14,17 @@ pub enum RuntimePendingChange {
     Core {
         current: String,
     },
+    FakeIp {
+        current: Vec<String>,
+        next: Vec<String>,
+    },
     Configuration {
         fields: Vec<PendingConfigField>,
         current_revision: Option<u64>,
     },
 }
 
-impl<R: VersionRunner> Manager<R> {
+impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub(crate) fn runtime_pending_changes(
         &self,
         document: &Document,
@@ -30,7 +34,10 @@ impl<R: VersionRunner> Manager<R> {
             return Vec::new();
         }
 
-        let mut changes = Vec::new();
+        let mut changes = self
+            .fakeip_pending_change(document)
+            .into_iter()
+            .collect::<Vec<_>>();
         if document.pending
             && runtime_deployment_identity(document)
                 != deployment_identity(document.active.as_ref())

@@ -16,6 +16,7 @@ mod dns_runtime;
 mod dns_settings;
 mod error;
 mod fakeip_routes;
+mod fakeip_selection;
 mod gateway;
 mod install;
 mod inventory;
@@ -25,6 +26,7 @@ mod network_settings;
 mod pending_changes;
 mod private_access_status;
 mod process;
+mod recommended_fakeip;
 mod restart_task;
 mod rule_bootstrap;
 mod rule_provider;
@@ -62,6 +64,7 @@ pub use dns_listener::{DnsFrontendStatus, DnsPort53Status};
 pub use dns_routing::{DnsRoutingDomain, DnsRoutingRuleSet};
 pub use dns_settings::DnsSettings;
 pub use error::ManagerError;
+pub use fakeip_selection::{FakeIpRangeCheck, RangeRecommendation};
 pub use install::InstallResult;
 pub use inventory::{CoreInventory, InstalledCore};
 pub use lifecycle::CoreChange;
@@ -95,6 +98,7 @@ pub struct Manager<R = ProcessRunner> {
     remote: RemoteClient,
     gateway: Arc<sempre_gateway::Controller>,
     runtime_reload: Arc<Notify>,
+    fakeip_route_cache: fakeip_selection::RouteCache,
     restart_tasks: Arc<restart_task::RestartTasks>,
     core_download_tasks: Arc<core_download_task::CoreDownloadTasks>,
     subscription_schedule_changed: Arc<Notify>,
@@ -163,6 +167,7 @@ impl<R: VersionRunner> Manager<R> {
             remote,
             gateway,
             runtime_reload: Arc::new(Notify::new()),
+            fakeip_route_cache: fakeip_selection::RouteCache::default(),
             restart_tasks: Arc::default(),
             core_download_tasks: Arc::default(),
             subscription_schedule_changed: Arc::new(Notify::new()),

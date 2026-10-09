@@ -125,7 +125,7 @@ fn tun_route_addresses_mut(document: &mut Value) -> Option<&mut Vec<Value>> {
         .as_array_mut()
 }
 
-fn runtime_fakeip_ranges(document: &Value) -> Vec<IpNet> {
+pub(crate) fn runtime_fakeip_ranges(document: &Value) -> Vec<IpNet> {
     let mut ranges = BTreeSet::new();
     if let Some(fakeip) = document.pointer("/dns/fakeip")
         && fakeip.get("enabled").and_then(Value::as_bool) != Some(false)
@@ -138,6 +138,20 @@ fn runtime_fakeip_ranges(document: &Value) -> Vec<IpNet> {
                 || server.get("address").and_then(Value::as_str) == Some("fakeip")
         }) {
             collect_ranges(server, &mut ranges);
+        }
+    }
+    if document
+        .pointer("/dns/enhanced-mode")
+        .and_then(Value::as_str)
+        == Some("fake-ip")
+    {
+        for key in ["fake-ip-range", "fake-ip-range6"] {
+            if let Some(range) = document["dns"][key]
+                .as_str()
+                .and_then(|range| range.parse().ok())
+            {
+                ranges.insert(range);
+            }
         }
     }
     ranges.into_iter().collect()

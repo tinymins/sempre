@@ -58,8 +58,8 @@ export function SubscriptionConfigEditor({ value, defaults, onChange: emitChange
   const inherited = (field: InheritedField) => <InheritedSection readOnly={readOnly} field={field} value={value[field]} inherited={value[inheritedFields[field].flag]} defaultValue={defaults?.[field]}
     onChange={next => onChange({ [field]: next })} onInheritanceChange={next => onChange({ [inheritedFields[field].flag]: next, [field]: next ? null : defaults?.[field] ?? '' })}>
     {field === 'dnsConfig' ? (raw, inherited) => <DnsEditor value={raw} defaults={defaults?.dnsConfig} readOnly={readOnly || inherited} onChange={dnsConfig => onChange({ dnsConfig })} {...dnsOptions}
-      checkFakeIpRange={current === 'dnsConfig' ? dnsOptions?.checkFakeIpRange : undefined}
-      onUseRecommendedRange={readOnly ? undefined : (key, range) => onChange({ dnsConfig: updateDnsField(raw, key, range), useSystemDnsConfig: false })} /> : undefined}
+      checkFakeIpRange={current === 'dnsConfig' && !inherited ? dnsOptions?.checkFakeIpRange : undefined}
+      onUseRecommendedRange={readOnly || inherited ? undefined : (key, range) => onChange({ dnsConfig: updateDnsField(raw, key, range), useSystemDnsConfig: false })} /> : undefined}
   </InheritedSection>
 
   return <EditorLayoutProvider layout={layout}><div className={page ? '' : 'flex min-h-[24rem] min-w-0 flex-1 flex-col gap-5'}>

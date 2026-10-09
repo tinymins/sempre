@@ -8,6 +8,7 @@ type RuntimeConfigField =
 
 export type RuntimePendingChange =
   | { type: 'core'; current: string }
+  | { type: 'fake_ip'; current: string[]; next: string[] }
   | { type: 'configuration'; fields: RuntimeConfigField[]; current_revision?: number }
 
 export function pendingChangeCount(changes: RuntimePendingChange[]) {
@@ -32,6 +33,7 @@ const fieldKeys = {
 } as const
 
 export function formatPendingChange(change: RuntimePendingChange, t: ReturnType<typeof useI18n>['t'], locale: string) {
+  if (change.type === 'fake_ip') return `${t('changeFakeIp')}: ${change.current.join(', ')} → ${change.next.join(', ')}`
   const label = t(change.type === 'core' ? 'changeCore' : 'changeConfiguration')
   const detail = change.type === 'configuration'
     ? new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(change.fields.map((field) => t(fieldKeys[field])))
@@ -53,9 +55,9 @@ export function RestartChangeSummary({ detail, changes }: { detail: string; chan
             <ChangeRow
               key={`${change.type}-${index}`}
               icon={change.type === 'core' ? <Boxes size={15} /> : <FileSliders size={15} />}
-              label={t(change.type === 'core' ? 'changeCore' : 'changeConfiguration')}
+              label={t(change.type === 'fake_ip' ? 'changeFakeIp' : change.type === 'core' ? 'changeCore' : 'changeConfiguration')}
             >
-              {change.type === 'configuration'
+              {change.type === 'fake_ip' ? `${change.current.join(', ')} → ${change.next.join(', ')}` : change.type === 'configuration'
                 ? fieldList.format(change.fields.map((field) => t(fieldKeys[field])))
                 : change.current}
             </ChangeRow>
