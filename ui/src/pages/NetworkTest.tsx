@@ -36,7 +36,7 @@ export function NetworkTest() {
 }
 
 function GeneralNetworkTest() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const { session } = useSession()
   const report = useQuery({
     queryKey: ['network', 'test'],
@@ -106,7 +106,7 @@ function GeneralNetworkTest() {
 
   return <div className="mt-5 space-y-5">
     <div className="flex min-h-8 justify-end">
-      <Button variant="primary" icon={<RefreshCw size={16} />} disabled={report.isFetching} onClick={() => report.refetch()}>{t('refresh')}</Button>
+      <Button variant="primary" icon={<RefreshCw size={16} />} disabled={report.isFetching} onClick={() => report.refetch()}>{locale === 'zh-CN' ? '重新检测' : 'Run again'}</Button>
     </div>
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       <Metric icon={CheckCircle2} label={t('reachable')} value={`${okResults.length}/${results.length}`} tone="green" />

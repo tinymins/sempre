@@ -1,4 +1,4 @@
-import { Alert, Checkbox, Form, Input } from '@acme/components'
+import { Alert, Button, Checkbox, Form, Input } from '@acme/components'
 import { EditorProvider, SubscriptionConfigEditor, type EditorDraft, type EditorSource } from '@acme/subscription-editor'
 import { forwardRef, useImperativeHandle, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -41,7 +41,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
   return <EditorProvider locale={locale} messages={clientEditorMessages(t)}><div className="min-h-0 rounded-lg border border-black/[0.08] bg-white/50 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
     <Form form={form} layout="vertical" autoComplete="off" onValuesChange={props.readOnly ? undefined : queueAutosave}>
       <SubscriptionConfigEditor value={draft} onChange={update} readOnly={props.readOnly} layout="page"
-        tabBarFooter={<><SaveStatus profile={state.profileFeedback} schedule={state.scheduleFeedback} />{configurationContext.target && configurationContext.running && configurationContext.target.core !== configurationContext.running.core ? <Alert type="warning" showIcon message={t('proxy.form.coreTransition', { target: configurationContext.target.core, running: configurationContext.running.core })} /> : null}</>}
+        tabBarFooter={<><SaveStatus profile={state.profileFeedback} schedule={state.scheduleFeedback} onRetry={saveNow} />{configurationContext.target && configurationContext.running && configurationContext.target.core !== configurationContext.running.core ? <Alert type="warning" showIcon message={t('proxy.form.coreTransition', { target: configurationContext.target.core, running: configurationContext.running.core })} /> : null}</>}
         defaults={{ ruleList: recommended.rule_list, group: recommended.group, filter: recommended.filter, customConfig: recommended.custom_config, dnsConfig: recommended.dns_config }}
         features={configurationContext.capabilities.features} protocolCount={configurationContext.capabilities.protocols.length}
         nodes={props.customNodes.map(node => ({ id: node.id, name: node.name, label: `${node.name} · ${String(node.proxy.type || '')} · ${String(node.proxy.server || '')}:${String(node.proxy.port || '')}` }))}
@@ -55,8 +55,9 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
 })
 ProxySubscribeEditor.displayName = 'ProxySubscribeEditor'
 
-function SaveStatus({ profile, schedule }: { profile: SaveFeedback; schedule: SaveFeedback }) {
+function SaveStatus({ profile, schedule, onRetry }: { profile: SaveFeedback; schedule: SaveFeedback; onRetry: () => void }) {
   const { t } = useTranslation();
+  const { locale } = useI18n();
   const feedback = profile.state === "error" ? profile
     : schedule.state === "error" ? schedule
       : profile.state === "saving" || schedule.state === "saving" ? { state: "saving" as const }
@@ -69,6 +70,7 @@ function SaveStatus({ profile, schedule }: { profile: SaveFeedback; schedule: Sa
         : feedback.message || "";
   return (
     <div className="mb-4 min-h-6 border-b border-gray-200 pb-3 text-sm dark:border-gray-700">
+      {profile.state === "error" ? <Button size="small" variant="text" className="float-right" onClick={onRetry}>{locale === 'zh-CN' ? '重试保存' : 'Retry save'}</Button> : null}
       {label ? <p role={feedback.state === "error" ? "alert" : "status"} className={feedback.state === "error" ? "break-words text-red-500" : "text-[var(--text-secondary)]"}>{label}</p> : null}
     </div>
   );

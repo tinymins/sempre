@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button as AcmeButton, Checkbox, Select } from '@acme/components'
-import { ArrowDown, ArrowUp, ArrowUpDown, Ban, RefreshCw, Search, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Ban, Search, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { formatBytes, formatDate } from '../lib/format'
 import { directLabel } from '../lib/directLabel'
@@ -52,7 +52,7 @@ export function Connections() {
 
   return <div className="space-y-5">
     <PageTitle title={t('connections')} detail={`${connectionItems.length} · ↓ ${formatBytes(connections.data?.download_total)} · ↑ ${formatBytes(connections.data?.upload_total)}`}>
-      <div className="flex gap-2"><Button size="icon" title={t('refresh')} onClick={() => connections.refetch()}><RefreshCw size={17} /></Button><Button variant="danger" disabled={!connectionItems.some((item) => !item.closed) || close.isPending} onClick={() => close.mutate('')}><Ban size={16} />{t('closeAll')}</Button></div>
+      <div className="flex gap-2"><Button variant="danger" disabled={!connectionItems.some((item) => !item.closed) || close.isPending} onClick={() => close.mutate('')}><Ban size={16} />{t('closeAll')}</Button></div>
     </PageTitle>
     <div className="grid items-start gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
       <div className="relative min-w-0"><Search className="absolute left-3 top-2.5 text-[var(--muted)]" size={16} /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('search')} /></div>

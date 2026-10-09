@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Download, Plus, Trash2 } from 'lucide-react'
 import { Alert, Button, Card, Empty, Input, InputNumber, Popover, Select, Switch, Table, Tabs, Tag, type TableColumn } from '@acme/components'
 import { DnsUpstreamsInput } from '../features/dns/DnsUpstreamsInput'
 import type { DnsFrontendStatus, DnsRewrite, DnsSettings } from '../features/dns/types'
@@ -85,7 +85,6 @@ export function Dns() {
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
       <div><h1 className="text-xl font-semibold">DNS</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '设备级前置 DNS，修改自动保存；核心 DNS 仍由当前订阅配置。' : 'Device-level DNS frontend. Changes are saved automatically. Core DNS remains owned by the active subscription.'}</p></div>
-      <div className="flex gap-2"><Button icon={<RefreshCw size={16} />} onClick={() => { settings.refetch(); queries.refetch() }}>{zh ? '刷新' : 'Refresh'}</Button></div>
     </div>
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><Tabs items={tabs} defaultActiveKey="queries" destroyInactiveTabPane={false} /></Card>
   </div>

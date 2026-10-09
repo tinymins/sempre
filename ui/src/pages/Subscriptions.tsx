@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, Save as SaveIcon, Trash2 } from 'lucide-react'
+import { Activity, CheckCircle2, FileJson, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Dropdown, Select, useToast } from '@acme/components'
 import type { ProxyDebugFormat } from '@acme/types'
 import { Button, Card, ConfirmDialog, Field, PageTitle, Spinner } from '../components/ui'
@@ -11,7 +11,7 @@ import type { CustomNode, LinuxNetworkInventory, SubscriptionCatalogResponse, Su
 import { MessageBridge } from '../features/subscriptions/toolbox/MessageBridge'
 import ProxyDebugModal, { type ProxyDebugModalRef } from '../features/subscriptions/toolbox/ProxyDebugModal'
 import ProxyPreviewModal, { type ProxyPreviewModalRef } from '../features/subscriptions/toolbox/ProxyPreviewModal'
-import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from '../features/subscriptions/toolbox/ProxySubscribeEditor'
+import ProxySubscribeEditor from '../features/subscriptions/toolbox/ProxySubscribeEditor'
 import { RemoteSubscriptionPanel } from '../features/subscriptions/RemoteSubscriptionPanel'
 import { SubscriptionProfileDialog, type SubscriptionMode } from '../features/subscriptions/SubscriptionProfileDialog'
 import { SimpleSubscriptionEditor } from '../features/subscriptions/SimpleSubscriptionEditor'
@@ -40,8 +40,6 @@ export function Subscriptions() {
   const [format, setFormat] = useState<ProxyDebugFormat>('sing-box-v13')
   const previewRef = useRef<ProxyPreviewModalRef>(null)
   const debugRef = useRef<ProxyDebugModalRef>(null)
-  const editorRef = useRef<ProxySubscribeEditorRef>(null)
-  const [editorSaveState, setEditorSaveState] = useState<ProxySubscribeSaveState>({ profileID: '', dirty: false, saving: false })
 
   const catalog = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<SubscriptionCatalogResponse>(session!, '/subscriptions'), refetchInterval: 10000 })
   const customNodes = useQuery({ queryKey: ['custom-nodes'], queryFn: () => api<{ nodes: CustomNode[] }>(session!, '/custom-nodes') })
@@ -50,9 +48,6 @@ export function Subscriptions() {
   const effectiveSelectedID = uiMode === 'simple' ? catalog.data?.active_profile_id || profiles[0]?.id || '' : selectedID || catalog.data?.active_profile_id || profiles[0]?.id || ''
   const storedProfile = profiles.find((item) => item.id === effectiveSelectedID) ?? null
   const currentProfile = drafts[effectiveSelectedID] ?? storedProfile
-  const currentEditorSaveState = editorSaveState.profileID === currentProfile?.id
-    ? editorSaveState
-    : { profileID: currentProfile?.id ?? '', dirty: false, saving: false }
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['subscriptions'] }),
@@ -208,9 +203,6 @@ export function Subscriptions() {
     <div className="space-y-5">
       <PageTitle title={t('subscriptions')}>
         <div className="flex min-w-0 flex-wrap justify-end gap-2">
-          <Button variant="primary" disabled={!currentProfile || currentProfile.mode === 'remote' || !currentEditorSaveState.dirty || currentEditorSaveState.saving} onClick={() => editorRef.current?.saveNow()}>
-            {currentEditorSaveState.saving ? <Spinner /> : <SaveIcon size={16} />}{t('save')}
-          </Button>
           <Button disabled={!currentProfile || action.isPending} onClick={() => setRefreshConfirmationOpen(true)}>
             {action.isPending && action.variables?.operation === 'refresh' ? <Spinner /> : <RefreshCw size={16} />}{t('updateNow')}
           </Button>
@@ -267,7 +259,6 @@ export function Subscriptions() {
 					<ProxyPreviewModal ref={previewRef} />
 					<ProxyDebugModal ref={debugRef} />
 					<ProxySubscribeEditor
-				ref={editorRef}
 			key={`${currentProfile.id}:${catalog.data?.configuration_context.key ?? 'common'}`}
             profile={currentProfile}
             defaults={catalog.data?.editor_defaults ?? { rule_list: '{}', group: '[]', filter: '[]', custom_config: '[]', dns_config: '', private_access_config: '', servers: '[]' }}
@@ -282,7 +273,6 @@ export function Subscriptions() {
               setDrafts((current) => ({ ...current, [candidate.id]: candidate }))
 				await save.mutateAsync({ candidate, contextKey: catalog.data?.configuration_context.key ?? 'common' })
             }}
-				onSaveStateChange={setEditorSaveState}
             diagnostics={(
               <div className="space-y-5">
                 <div className="flex flex-wrap items-end gap-3">

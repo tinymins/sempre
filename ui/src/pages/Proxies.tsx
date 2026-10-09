@@ -17,7 +17,7 @@ export function Proxies() {
   const [tab, setTab] = useState<'groups' | 'providers'>('groups')
   const [search, setSearch] = useState('')
   const proxies = useQuery({ queryKey: ['runtime', 'proxies'], queryFn: () => api<ProxyNode[]>(session!, '/runtime/proxies'), refetchInterval: 5000, retry: false })
-  const providers = useQuery({ queryKey: ['runtime', 'providers'], queryFn: () => api<ProxyProvider[]>(session!, '/runtime/providers'), retry: false })
+  const providers = useQuery({ queryKey: ['runtime', 'providers'], queryFn: () => api<ProxyProvider[]>(session!, '/runtime/providers'), refetchInterval: 5000, retry: false })
   const select = useMutation({
     mutationFn: ({ group, proxy }: { group: string; proxy: string }) => api(session!, '/runtime/proxies/select', { method: 'POST', body: JSON.stringify({ group, proxy }) }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['runtime', 'proxies'] }); toast.success(t('operationDone')) },
@@ -37,9 +37,7 @@ export function Proxies() {
   const activeTab = hasProviders ? tab : 'groups'
 
   return <div className="space-y-5">
-    <PageTitle title={t('proxies')} detail={`${t('proxyGroups')} ${groups.length}${hasProviders ? ` · ${t('proxyProviders')} ${providers.data?.length}` : ''}`}>
-      <Button size="icon" title={t('refresh')} onClick={() => { proxies.refetch(); providers.refetch() }}><RefreshCw size={17} /></Button>
-    </PageTitle>
+    <PageTitle title={t('proxies')} detail={`${t('proxyGroups')} ${groups.length}${hasProviders ? ` · ${t('proxyProviders')} ${providers.data?.length}` : ''}`} />
     <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] pb-3">
       {hasProviders ? <div className="flex h-9 rounded-md bg-[var(--surface-hover)] p-1">
         <button className={`rounded px-3 text-sm ${activeTab === 'groups' ? 'bg-[var(--surface)] font-medium shadow-sm' : 'text-[var(--muted)]'}`} onClick={() => setTab('groups')}>{t('proxies')}</button>
