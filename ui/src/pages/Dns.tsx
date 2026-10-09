@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Plus, Trash2 } from 'lucide-react'
+import { Download, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Alert, Button, Card, Empty, Input, InputNumber, Modal, Popover, Select, Switch, Table, Tabs, Tag, type TableColumn } from '@acme/components'
 import { DnsUpstreamsInput } from '../features/dns/DnsUpstreamsInput'
 import type { DnsFrontendStatus, DnsRewrite, DnsSettings } from '../features/dns/types'
@@ -45,14 +45,17 @@ export function Dns() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dns', 'queries'] }),
   })
   const current = settings.data?.settings
+  const editingRewrite = current?.rewrites.some((item) => item.id === rewrite?.id) ?? false
   const visibleQueries = useMemo(() => {
     const needle = filter.trim().toLowerCase()
     return (queries.data?.queries ?? []).filter((item) => !needle || `${item.name} ${item.client} ${item.answers.join(' ')} ${item.detail}`.toLowerCase().includes(needle))
   }, [filter, queries.data?.queries])
-  const addRewrite = async () => {
+  const saveRewrite = async () => {
     if (!current || !rewrite || !rewrite.domain.trim() || !rewrite.answer.trim()) return
     const entry = { ...rewrite, domain: rewrite.domain.trim(), answer: rewrite.answer.trim() }
-    await save.mutateAsync((latest) => ({ ...latest, rewrites: [...latest.rewrites.filter((item) => item.id !== entry.id), entry] }))
+    await save.mutateAsync((latest) => ({ ...latest, rewrites: latest.rewrites.some((item) => item.id === entry.id)
+      ? latest.rewrites.map((item) => item.id === entry.id ? entry : item)
+      : [...latest.rewrites, entry] }))
     setRewrite(null)
   }
   const queryColumns = useMemo<Array<TableColumn<DnsQueryEvent>>>(() => [
@@ -73,7 +76,10 @@ export function Dns() {
     { title: zh ? '应答' : 'Answer', dataIndex: 'answer', minWidth: 220, sorter: (left, right) => compareText(left.answer, right.answer) },
     { title: 'TTL', dataIndex: 'ttl', width: 90, sorter: (left, right) => left.ttl - right.ttl },
     { title: zh ? '备注' : 'Comment', dataIndex: 'comment', minWidth: 160, sorter: (left, right) => compareText(left.comment, right.comment) },
-    { title: '', key: 'action', width: 60, render: (_value, item) => <Button size="small" variant="text" title={zh ? '删除' : 'Delete'} disabled={save.isPending} onClick={() => save.mutate((latest) => ({ ...latest, rewrites: latest.rewrites.filter((rule) => rule.id !== item.id) }))}><Trash2 size={14} /></Button> },
+    { title: '', key: 'action', width: 96, render: (_value, item) => <div className="flex justify-end gap-1">
+      <Button size="small" variant="text" title={zh ? '编辑' : 'Edit'} disabled={save.isPending} onClick={() => setRewrite({ ...item })}><Pencil size={14} /></Button>
+      <Button size="small" variant="text" title={zh ? '删除' : 'Delete'} disabled={save.isPending} onClick={() => save.mutate((latest) => ({ ...latest, rewrites: latest.rewrites.filter((rule) => rule.id !== item.id) }))}><Trash2 size={14} /></Button>
+    </div> },
   ], [save, zh])
   if (!current) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载 DNS 设置…' : 'Loading DNS settings…'}</div>
   const status = settings.data?.status
@@ -87,7 +93,7 @@ export function Dns() {
       <div><h1 className="text-xl font-semibold">DNS</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '设备级前置 DNS，修改自动保存；核心 DNS 仍由当前订阅配置。' : 'Device-level DNS frontend. Changes are saved automatically. Core DNS remains owned by the active subscription.'}</p></div>
     </div>
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><Tabs items={tabs} defaultActiveKey="queries" destroyInactiveTabPane={false} /></Card>
-    <Modal open={Boolean(rewrite)} title={zh ? '添加 DNS 重写' : 'Add DNS rewrite'} okText={zh ? '确认' : 'Confirm'} cancelText={zh ? '取消' : 'Cancel'} confirmLoading={save.isPending} okButtonProps={{ disabled: !rewrite?.domain.trim() || !rewrite?.answer.trim() }} cancelButtonProps={{ disabled: save.isPending }} onOk={() => addRewrite().catch(() => undefined)} onCancel={() => { if (!save.isPending) setRewrite(null) }} destroyOnClose>
+    <Modal open={Boolean(rewrite)} title={editingRewrite ? (zh ? '编辑 DNS 重写' : 'Edit DNS rewrite') : (zh ? '添加 DNS 重写' : 'Add DNS rewrite')} okText={zh ? '确认' : 'Confirm'} cancelText={zh ? '取消' : 'Cancel'} confirmLoading={save.isPending} okButtonProps={{ disabled: !rewrite?.domain.trim() || !rewrite?.answer.trim() }} cancelButtonProps={{ disabled: save.isPending }} onOk={() => saveRewrite().catch(() => undefined)} onCancel={() => { if (!save.isPending) setRewrite(null) }} destroyOnClose>
       {rewrite ? <div className="grid gap-4 sm:grid-cols-2" inert={save.isPending}>
         <label className="text-sm sm:col-span-2"><span className="mb-2 block font-medium">{zh ? '域名' : 'Domain'}</span><Input autoFocus value={rewrite.domain} placeholder="example.com / *.example.com" onChange={(event) => setRewrite({ ...rewrite, domain: event.target.value })} /></label>
         <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '记录类型' : 'Record type'}</span><Select className="w-full" value={rewrite.type} options={['A', 'AAAA', 'CNAME'].map((value) => ({ value, label: value }))} onChange={(type) => setRewrite({ ...rewrite, type })} /></label>
