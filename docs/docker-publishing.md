@@ -31,7 +31,10 @@ The desktop release workflow continues to run independently on the same tag.
 To publish an existing tag manually, run the `Docker Hub` workflow and supply
 its exact name in the `tag` input. This builds that tag's commit and updates its
 channel tag, so rerunning an older release also moves `latest` or `beta` back to
-that release. Ordinary branch pushes do not publish images.
+that release. Container checks come from the workflow run's commit, so corrections
+to the publishing checks also apply when republishing an older release tag.
+The image source remains that release tag's commit. Ordinary branch pushes do
+not publish images.
 
 AMD64 and ARM64 images build on native GitHub-hosted runners. Each image must
 pass database migration, health, subscription-publishing, and core-free process
