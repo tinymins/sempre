@@ -264,7 +264,7 @@ export default {
   "proxy.form.privateDnsServer": "専用 DNS サーバー",
   "proxy.form.privateDnsPort": "DNS port",
   "source.systemMode": "システムモード",
-  "source.subscriptionProxy": "購読プロキシ",
+  "source.subscriptionProxy": "プロキシ",
   "source.proxyUnavailable": "プロキシを利用できません",
   "source.proxy.starting": "起動中",
   "source.proxy.running": "実行中",

@@ -264,7 +264,7 @@ export default {
   "proxy.form.privateDnsServer": "专用 DNS 服务器",
   "proxy.form.privateDnsPort": "DNS 端口",
   "source.systemMode": "系统模式",
-  "source.subscriptionProxy": "订阅代理",
+  "source.subscriptionProxy": "代理",
   "source.proxyUnavailable": "代理不可用",
   "source.proxy.starting": "启动中",
   "source.proxy.running": "运行中",

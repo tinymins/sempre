@@ -264,7 +264,7 @@ export default {
   "proxy.form.privateDnsServer": "Privater DNS-Server",
   "proxy.form.privateDnsPort": "DNS port",
   "source.systemMode": "Systemmodus",
-  "source.subscriptionProxy": "Abonnement-Proxys",
+  "source.subscriptionProxy": "Proxy",
   "source.proxyUnavailable": "Proxy nicht verfügbar",
   "source.proxy.starting": "Wird gestartet",
   "source.proxy.running": "Aktiv",
