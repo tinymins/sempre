@@ -1,4 +1,5 @@
-import { AutoComplete, Button, Checkbox, Input, InputNumber, Select, Tag, TextArea, Tooltip } from '@acme/components'
+import { SourceProxySelect } from './SourceProxySelect'
+import { AutoComplete, Button, Checkbox, Input, InputNumber, Tag, TextArea, Tooltip } from '@acme/components'
 import { Play, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEditorI18n } from './i18n'
@@ -34,7 +35,7 @@ export function PageSourceFields({ source, index, readOnly, handle, uaPresets, u
           <Tooltip title={t('source.cacheHelp')}><InputNumber size="small" min={0} max={1440} value={source.cacheTtlMinutes} disabled={readOnly} aria-label={t('source.cacheMinutes')} placeholder={t('source.cachePlaceholder')} onChange={next => update({ cacheTtlMinutes: next ?? undefined })} addonAfter={t('source.cacheUnit')} style={{ width: 130 }} /></Tooltip>
         </div>
         <div className="flex items-center gap-2 md:flex-1">
-          <Tooltip title={t('source.modeHelp')}><div className="w-[120px] shrink-0"><Select size="small" value={source.fetchMode ?? 'auto'} disabled={readOnly} options={[{ value: 'auto', label: t('source.modeAuto') }, { value: 'domestic-direct', label: t('source.modeDirect') }]} onChange={next => update({ fetchMode: next as EditorSource['fetchMode'] })} className="w-full" /></div></Tooltip>
+          <Tooltip title={t('source.modeHelp')}><div className="w-[120px] shrink-0"><SourceProxySelect source={source} size="small" disabled={readOnly} update={update} /></div></Tooltip>
           <Tooltip title={t('source.uaHelp')}><div className="flex-1"><AutoComplete size="small" value={source.fetchUa ?? ''} disabled={readOnly} options={uaPresets} onChange={next => update({ fetchUa: next || undefined })} placeholder={t('source.uaPlaceholder')} filterOption={(input, option) => option.value.toLowerCase().includes(input.toLowerCase()) || (typeof option.label === 'string' && option.label.toLowerCase().includes(input.toLowerCase()))} allowClear className="w-full" /></div></Tooltip>
           {debug ? <Tooltip title={t('source.debugHelp')}><Button variant="text" size="small" icon={<Play size={14} />} aria-label={t('source.debug', { index: number(index + 1) })} disabled={!source.url.trim()} onClick={debug} className="shrink-0" /></Tooltip> : null}
         </div>

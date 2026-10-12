@@ -262,5 +262,14 @@ export default {
   "proxy.form.privateDnsDomains": "专用 DNS 域名后缀",
   "proxy.form.privateDnsGlobalWarning": "未填写专用 DNS 域名后缀时，该 DNS 将接管所有域名解析，可能导致内网服务解析异常。",
   "proxy.form.privateDnsServer": "专用 DNS 服务器",
-  "proxy.form.privateDnsPort": "DNS 端口"
+  "proxy.form.privateDnsPort": "DNS 端口",
+  "source.systemMode": "系统模式",
+  "source.subscriptionProxy": "订阅代理",
+  "source.proxyUnavailable": "代理不可用",
+  "source.proxy.starting": "启动中",
+  "source.proxy.running": "运行中",
+  "source.proxy.stopping": "停止中",
+  "source.proxy.stopped": "已停用",
+  "source.proxy.failed": "启动失败",
+  "source.proxy.update-failed": "修改失败，仍使用旧版本",
 }

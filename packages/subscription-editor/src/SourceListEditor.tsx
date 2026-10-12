@@ -1,7 +1,8 @@
+import { SourceProxySelect } from './SourceProxySelect'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { SortableSource } from './SortableSource'
-import { AutoComplete, Button, Checkbox, CodeEditor, Input, InputNumber, Select } from '@acme/components'
+import { AutoComplete, Button, Checkbox, CodeEditor, Input, InputNumber } from '@acme/components'
 import { ArrowDown, ArrowUp, Play, Plus, Trash2 } from 'lucide-react'
 import { createSource, moveSource, sourceText, type EditorSource as SubscriptionSource } from './sources'
 import { useEditorI18n as useI18n } from './i18n'
@@ -69,7 +70,7 @@ export function SourceListEditor({ readOnly, value = [], onChange, onDebug }: Pr
               <InputNumber min={0} max={1440} value={item.cacheTtlMinutes} onChange={(next) => update(index, { cacheTtlMinutes: next ?? undefined })} className="w-full" />
             </label>
             <label className="block space-y-1 text-sm">{t('source.fetchMode')}
-              <Select value={item.fetchMode ?? 'auto'} options={[{ value: 'auto', label: t('source.modeAuto') }, { value: 'domestic-direct', label: t('source.modeDirect') }]} onChange={(next) => update(index, { fetchMode: next as SubscriptionSource['fetchMode'] })} className="w-full" />
+              <SourceProxySelect source={item} disabled={readOnly} update={patch => update(index, patch)} />
             </label>
             <label className="block space-y-1 text-sm">{t('source.fetchUa')}
               <AutoComplete value={item.fetchUa ?? ''} options={uaPresets} onChange={(next) => update(index, { fetchUa: next || undefined })} placeholder={t('source.uaPlaceholder')} className="w-full" />

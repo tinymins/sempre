@@ -1,6 +1,8 @@
+import proxyMessages from '../proxies/messages-de-DE'
 import type { MessageKey } from './zh-CN'
 
 export const deDE = {
+  ...proxyMessages,
   "common.save": "Speichern",
   "common.cancel": "Abbrechen",
   "common.confirm": "Bestätigen",

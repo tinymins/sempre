@@ -13,7 +13,7 @@ use crate::{
     error::ApiError,
     source_cache::{self, CacheMode, LoadedSource, SourceKind, SourceRequest},
     subscription_compile::saved_input,
-    subscription_sources::{source_id, source_items, source_proxy},
+    subscription_sources::{source_id, source_items},
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -27,7 +27,7 @@ struct DebugSourceInput {
     ua: Option<String>,
     prefix: Option<String>,
     cache_ttl_minutes: Option<i32>,
-    fetch_mode: Option<String>,
+    proxy_id: Option<Uuid>,
     mode: Option<String>,
     subscription_id: Option<Uuid>,
     source_index: Option<usize>,
@@ -90,18 +90,22 @@ async fn debug_source(
     }
     .unwrap_or("clash.meta")
     .to_owned();
-    let fetch_mode = if let Some((_, _, item)) = &saved {
-        item.fetch_mode.as_deref()
-    } else {
-        input.fetch_mode.as_deref()
-    }
-    .unwrap_or("auto");
+    let proxy_id = saved
+        .as_ref()
+        .map_or(input.proxy_id, |(_, _, item)| item.proxy_id);
+    let owner =
+        crate::proxy_runtime::owner(&state, saved.as_ref().map(|(id, _, _)| *id), user.id).await?;
+    let route = crate::proxy_runtime::resolve(&state, owner, proxy_id).await?;
+    let fetch_mode = route.identity.as_str();
     let ttl = saved.as_ref().map_or(
         input.cache_ttl_minutes.unwrap_or(60),
         |(_, default_ttl, item)| item.cache_ttl_minutes.or(*default_ttl).unwrap_or(60),
     );
-    let proxy = source_proxy(&state, fetch_mode)?.map(str::to_owned);
-    let identity = source_id(url, &ua, fetch_mode);
+    let proxy = route.url.clone();
+    let identity = saved
+        .as_ref()
+        .filter(|(_, _, item)| !item.id.is_empty())
+        .map_or_else(|| source_id(url, &ua, ""), |(_, _, item)| item.id.clone());
     let prefix = saved.as_ref().map_or_else(
         || input.prefix.clone().unwrap_or_default(),
         |(_, _, item)| item.prefix.clone(),
@@ -115,7 +119,7 @@ async fn debug_source(
     let fetch_mode = fetch_mode.to_owned();
     Ok(debug_stream::response(move |mut stages| async move {
         stages.push(json!({"type":"source","status":"running","cacheMode":if matches!(cache_mode, CacheMode::Bypass) { "bypass" } else { "production" }}));
-        stages.push(json!({"type":"request","status":"ok","ua":ua,"fetchMode":fetch_mode,"cacheTtlMinutes":ttl,"prefix":prefix}));
+        stages.push(json!({"type":"request","status":"ok","ua":ua,"fetchMode":route.name,"cacheTtlMinutes":ttl,"prefix":prefix}));
         let loaded = source_cache::load_observed(
             &state,
             SourceRequest {
@@ -135,14 +139,14 @@ async fn debug_source(
         match loaded {
             Ok(loaded) => {
                 stages.push(json!({"type":"source","status":if loaded.usable { "ok" } else { "error" },"httpStatus":loaded.http_status,"cacheState":loaded.cache_state}));
-                debug_result(&loaded, &ua, &fetch_mode, ttl, &prefix, stages)
+                debug_result(&loaded, &ua, &route.name, ttl, &prefix, stages)
             }
             Err(error) => {
                 stages.push(json!({"type":"source","status":"error","message":error.message()}));
                 error_result(
                     &error,
                     &ua,
-                    &fetch_mode,
+                    &route.name,
                     ttl,
                     &prefix,
                     matches!(cache_mode, CacheMode::ReadOnlySubscription(_)),

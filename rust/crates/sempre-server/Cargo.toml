@@ -12,12 +12,15 @@ path = "src/main.rs"
 
 [dependencies]
 argon2.workspace = true
+base64.workspace = true
+chacha20poly1305 = "0.10"
 axum = { workspace = true, features = ["multipart"] }
 chrono.workspace = true
 futures-util.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 sempre-converter = { path = "../sempre-converter" }
+sempre-proxy = { path = "../sempre-proxy" }
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true

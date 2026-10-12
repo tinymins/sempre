@@ -83,6 +83,10 @@ const FROZEN: &[(&str, &str)] = &[
         "sempre-server/toolbox-migrations/0010_shared_editor.sql",
         "d4045755b417a02011bcbb51c094004895c6a61bac559503e492e029158d783e",
     ),
+    (
+        "sempre-server/toolbox-migrations/0011_subscription_proxies.sql",
+        "09bfcb219806a7b3392e2389b62e0fa2cf8c0d6579c90f319e08c4e42ddcaea4",
+    ),
 ];
 
 #[test]

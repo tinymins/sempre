@@ -28,6 +28,9 @@ services:
       SEMPRE_BIND: 0.0.0.0:8787
       SEMPRE_ACCESS_LOG_RETENTION_DAYS: ${SEMPRE_ACCESS_LOG_RETENTION_DAYS:-90}
       RUST_LOG: ${RUST_LOG:-sempre_server=info,tower_http=info}
+      SEMPRE_PROXY_URL: ${SEMPRE_PROXY_URL:-}
+      SEMPRE_PROXY_TOKEN: ${SEMPRE_PROXY_TOKEN:-}
+      SEMPRE_PROXY_KEY: ${SEMPRE_PROXY_KEY:-}
     ports:
       - "${SEMPRE_PORT:-8787}:8787"
     healthcheck:
@@ -36,6 +39,21 @@ services:
       timeout: 3s
       retries: 6
       start_period: 10s
+
+  sempre-proxy:
+    profiles: [subscription-proxy]
+    build:
+      context: ..
+      dockerfile: rust/proxy.Dockerfile
+    restart: unless-stopped
+    environment:
+      SEMPRE_PROXY_TOKEN: ${SEMPRE_PROXY_TOKEN:-}
+      SEMPRE_PROXY_PROBE_URL: ${SEMPRE_PROXY_PROBE_URL:-https://www.baidu.com/}
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
 
 volumes:
   postgres-data:

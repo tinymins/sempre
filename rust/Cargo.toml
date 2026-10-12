@@ -15,6 +15,7 @@ members = [
     "crates/sempre-manager",
     "crates/sempre-network",
     "crates/sempre-server",
+    "crates/sempre-proxy",
     "crates/sempre-service",
     "crates/sempre-state",
     "crates/sempre-subscription",

@@ -1,4 +1,6 @@
+import proxyMessages from '../proxies/messages-zh-CN'
 export const zhCN = {
+  ...proxyMessages,
   'common.save': '保存',
   'common.cancel': '取消',
   'common.confirm': '确定',

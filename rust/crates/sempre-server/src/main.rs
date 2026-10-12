@@ -8,9 +8,12 @@ mod export_target;
 mod fetch;
 mod maintenance;
 mod openwrt_export;
+mod proxy_crypto;
+mod proxy_runtime;
 mod source_cache;
 mod subscription_compile;
 mod subscription_editor;
+mod subscription_proxies;
 mod subscription_rules;
 mod subscription_selected_nodes;
 mod subscription_source_debug;
@@ -96,15 +99,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if pending {
         return Err("shared editor migration incomplete; run sempre-server migrate".into());
     }
+    proxy_runtime::ensure_schema(&pool).await?;
     let address = config.bind_address;
     let web_root = config.web_root.clone();
     let state = Arc::new(AppState { pool, config });
     tokio::spawn(maintenance::run(state.clone()));
+    tokio::spawn(proxy_runtime::run(state.clone()));
     let protected = subscriptions::router()
         .merge(subscription_compile::router())
         .merge(subscription_stats::router())
         .merge(subscription_source_debug::router())
         .merge(toolbox_nodes::router())
+        .merge(subscription_proxies::router())
         .merge(toolbox_account::router())
         .merge(toolbox_admin::router())
         .merge(toolbox_overview::router())

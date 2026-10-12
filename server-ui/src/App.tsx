@@ -1,3 +1,4 @@
+import { SubscriptionProxiesPage } from './proxies/SubscriptionProxiesPage'
 import { AppSidebar, Avatar, Button, Card, Drawer, Dropdown, Spin, ToastProvider, useToast } from '@acme/components'
 import { ChevronDown, ChevronRight, ChevronsUpDown, Globe2, Home, LogOut, Menu, Rss, Settings, UserRound, Wrench } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -77,7 +78,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
   const [profileOpen, setProfileOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [openGroups, setOpenGroups] = useState(() => ({
-    proxy: location.pathname === '/' || location.pathname.startsWith('/subscriptions') || location.pathname === '/custom-nodes',
+    proxy: location.pathname === '/' || location.pathname.startsWith('/subscriptions') || location.pathname === '/custom-nodes' || location.pathname === '/subscription-proxies',
     tools: location.pathname === '/network',
     settings: location.pathname === '/admin' || location.pathname.startsWith('/settings/'),
   }))
@@ -93,7 +94,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
   const childIndent = <span className="inline-block w-7" aria-hidden="true" />
   const sections = [
     { items: [{ key: 'overview', label: t('nav.overview'), icon: <Home size={17} /> }] },
-    { items: [{ key: 'proxy-group', label: t('nav.proxy'), icon: <Globe2 size={17} />, extra: openGroups.proxy ? <ChevronDown size={14} /> : <ChevronRight size={14} /> }, ...(openGroups.proxy ? [{ key: 'subscriptions', label: t('nav.configSets'), icon: childIndent }, { key: 'custom-nodes', label: t('nav.customNodes'), icon: childIndent }] : [])] },
+    { items: [{ key: 'proxy-group', label: t('nav.proxy'), icon: <Globe2 size={17} />, extra: openGroups.proxy ? <ChevronDown size={14} /> : <ChevronRight size={14} /> }, ...(openGroups.proxy ? [{ key: 'subscriptions', label: t('nav.configSets'), icon: childIndent }, { key: 'custom-nodes', label: t('nav.customNodes'), icon: childIndent }, { key: 'subscription-proxies', label: t('proxies.title'), icon: childIndent }] : [])] },
     { items: [{ key: 'tools-group', label: t('nav.tools'), icon: <Wrench size={17} />, extra: openGroups.tools ? <ChevronDown size={14} /> : <ChevronRight size={14} /> }, ...(openGroups.tools ? [{ key: 'network', label: t('nav.networkTools'), icon: childIndent }] : [])] },
     { items: [{ key: 'settings-group', label: t('nav.settings'), icon: <Settings size={17} />, extra: openGroups.settings ? <ChevronDown size={14} /> : <ChevronRight size={14} /> }, ...(openGroups.settings ? [{ key: 'settings/general', label: t('nav.generalSettings'), icon: childIndent }, ...(isAdmin ? [{ key: 'admin', label: t('nav.admin'), icon: childIndent }] : [])] : [])] },
   ]
@@ -126,6 +127,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
           <Routes location={location}>
             <Route path="/subscriptions" element={<SubscriptionPage />} />
             <Route path="/subscriptions/:id" element={<SubscriptionDeepLink />} />
+            <Route path="/subscription-proxies" element={<SubscriptionProxiesPage />} />
             <Route path="/custom-nodes" element={<CustomNodesPage currentUserId={user.id} />} />
             <Route path="/overview" element={<OverviewPage user={user} />} />
             <Route path="/network" element={<NetworkToolsPage />} />

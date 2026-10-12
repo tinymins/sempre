@@ -230,7 +230,7 @@ async fn resolve_current(
         &mut stages,
     )
     .await?;
-    let revision = revision_hash(&subscription, &local)?;
+    let revision = revision_hash(state, &subscription, &local).await?;
     match generate(state, subscription, local, revision.clone(), stages).await {
         Ok(generated) => match persist_artifact(state, &generated).await {
             Ok(stored) => Ok((stored, generated.stale_source)),
@@ -296,11 +296,32 @@ async fn find_subscription(state: &AppState, url: &str) -> Result<Subscription, 
     })
 }
 
-fn revision_hash(subscription: &Subscription, local: &PreparedInput) -> Result<String, ApiError> {
+async fn revision_hash(
+    state: &AppState,
+    subscription: &Subscription,
+    local: &PreparedInput,
+) -> Result<String, ApiError> {
+    let mut proxies = Vec::new();
+    for item in crate::subscription_sources::source_items(&subscription.fields)? {
+        if !item.enabled {
+            continue;
+        }
+        if let Some(id) = item.proxy_id {
+            let row = crate::proxy_runtime::visible_row(state, id, subscription.owner).await?;
+            if !row.try_get::<bool, _>("enabled")? {
+                return Err(ApiError::unavailable(
+                    "selected subscription proxy is disabled",
+                ));
+            }
+            proxies.push((id, row.try_get::<Option<i64>, _>("active_revision")?));
+        }
+    }
     let input = serde_json::to_vec(&(
         subscription.updated_at.timestamp_micros(),
         &local.profile,
         &local.custom_nodes,
+        &subscription.fields.subscribe_items,
+        proxies,
     ))
     .map_err(ApiError::internal)?;
     Ok(format!("{:x}", Sha256::digest(input)))

@@ -7,14 +7,14 @@ use std::{
 use thiserror::Error;
 use url::Url;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct Config {
     pub database_url: String,
     pub bind_address: SocketAddr,
     pub public_url: Url,
     pub access_log_retention_days: i64,
     pub web_root: PathBuf,
-    pub direct_proxy_url: Option<String>,
+    pub proxy: Option<crate::proxy_runtime::ProxyConfig>,
     pub trusted_proxy_ips: Vec<IpAddr>,
 }
 
@@ -52,17 +52,40 @@ impl Config {
                 &"must be between 1 and 3650",
             ));
         }
-        let direct_proxy_url = env::var("DIRECT_PROXY_URL")
+        let proxy = match env::var("SEMPRE_PROXY_URL")
             .ok()
-            .filter(|value| !value.trim().is_empty());
-        if let Some(proxy) = &direct_proxy_url {
-            let proxy: Url = proxy
-                .parse()
-                .map_err(|error| invalid("DIRECT_PROXY_URL", &error))?;
-            if !matches!(proxy.scheme(), "http" | "https") {
-                return Err(invalid("DIRECT_PROXY_URL", &"must be an HTTP(S) proxy URL"));
+            .filter(|value| !value.trim().is_empty())
+        {
+            Some(value) => {
+                let mut url: Url = value
+                    .parse()
+                    .map_err(|error| invalid("SEMPRE_PROXY_URL", &error))?;
+                if !matches!(url.scheme(), "http" | "https")
+                    || url.host_str().is_none()
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                {
+                    return Err(invalid(
+                        "SEMPRE_PROXY_URL",
+                        &"must be an HTTP(S) runtime URL without credentials",
+                    ));
+                }
+                if !url.path().ends_with('/') {
+                    url.set_path(&format!("{}/", url.path()));
+                }
+                let token = required("SEMPRE_PROXY_TOKEN")?;
+                if token.len() < 32 {
+                    return Err(invalid(
+                        "SEMPRE_PROXY_TOKEN",
+                        &"must contain at least 32 characters",
+                    ));
+                }
+                let key = crate::proxy_crypto::key(&required("SEMPRE_PROXY_KEY")?)
+                    .map_err(|error| invalid("SEMPRE_PROXY_KEY", &error))?;
+                Some(crate::proxy_runtime::ProxyConfig { url, token, key })
             }
-        }
+            None => None,
+        };
         let trusted_proxy_ips = env::var("SEMPRE_TRUSTED_PROXY_IPS")
             .unwrap_or_default()
             .split(',')
@@ -81,7 +104,7 @@ impl Config {
             access_log_retention_days,
             web_root: env::var("SEMPRE_WEB_ROOT")
                 .map_or_else(|_| PathBuf::from("server-ui/dist"), PathBuf::from),
-            direct_proxy_url,
+            proxy,
             trusted_proxy_ips,
         })
     }

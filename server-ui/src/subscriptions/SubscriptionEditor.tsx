@@ -1,3 +1,4 @@
+import { proxyApi, type SubscriptionProxy } from '../proxies/api'
 import { EditorProvider, SubscriptionConfigEditor, sourceText, normalizeSource } from '@acme/subscription-editor'
 import { Button, Modal, Popconfirm, Select, Spin, TextArea, useToast } from '@acme/components'
 import { useEffect, useState } from 'react'
@@ -23,6 +24,8 @@ interface Props {
 export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Props) {
   const { t, number, locale } = useI18n()
   const toast = useToast()
+  const [proxies, setProxies] = useState<SubscriptionProxy[]>([])
+  const [proxyError, setProxyError] = useState('')
   const [draft, setDraft] = useState<SubscriptionDraft | null>(null)
   const [saved, setSaved] = useState<Subscription | null>(null)
   const [defaultsResult, setDefaultsResult] = useState<{ key: string; value: SubscriptionDefaults | null; error: string } | null>(null)
@@ -46,6 +49,7 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   useEffect(() => {
     if (!open) return
     let active = true
+    void proxyApi.list().then(result => { if (active) { setProxies(result.items); setProxyError('') } }).catch(reason => { if (active) setProxyError(String(reason)) })
     void (id ? subscriptionApi.get(id) : Promise.resolve(null))
       .then((subscription) => {
         if (!active) return
@@ -147,7 +151,7 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   }
 
   return (
-    <EditorProvider locale={locale}><Modal open={open} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" bodyStyle={{ display: 'flex', flexDirection: 'column' }} onCancel={close} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
+    <EditorProvider locale={locale} subscriptionProxies={proxies} messages={{ 'source.fetchMode': t('proxies.sourceLabel'), 'source.modeHelp': t('proxies.sourceHelp') }}><Modal open={open} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" bodyStyle={{ display: 'flex', flexDirection: 'column' }} onCancel={close} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
       <Button className="h-auto! min-h-8 min-w-0 max-w-full justify-self-start whitespace-normal text-left" disabled={!draft || targets.length === 0 || saving} onClick={() => setDebugOpen(true)}><span className="min-w-0 break-words">{t('editor.debugDraft')}</span></Button>
       <div className="flex shrink-0 gap-2">
         <Button disabled={saving} onClick={close}>{t('common.cancel')}</Button>
@@ -155,6 +159,7 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
       </div>
     </div>}>
       {loading ? <div className="grid min-h-48 place-items-center"><Spin size="large" /></div> : null}
+      {proxyError ? <p role="alert" className="mb-3 text-sm text-red-600">{proxyError}</p> : null}
       {error ? <p role="alert" className="mb-3 text-sm text-red-600">{error}</p> : null}
       {id && !draft && !loading ? <Button size="small" onClick={() => void reload()}>{t('common.retry')}</Button> : null}
       {defaultsError ? <p role="alert" className="mb-3 text-sm text-red-600">{t('editor.inherit')}: {defaultsError} <Button size="small" onClick={() => setDefaultsRetry(value => value + 1)}>{t('common.retry')}</Button></p> : null}
@@ -184,7 +189,7 @@ function savedSource(saved: Subscription | null, source: SubscriptionSource, dra
   if (!saved?.subscribeItems) return undefined
   const sameSource = (item: SubscriptionSource) =>
     item.enabled === source.enabled && item.url === source.url && item.prefix === source.prefix &&
-    item.cacheTtlMinutes === source.cacheTtlMinutes && item.fetchUa === source.fetchUa && item.fetchMode === source.fetchMode
+    item.cacheTtlMinutes === source.cacheTtlMinutes && item.fetchUa === source.fetchUa && item.proxyId === source.proxyId
   const index = saved.subscribeItems[draftIndex] && sameSource(saved.subscribeItems[draftIndex])
     ? draftIndex : saved.subscribeItems.findIndex(sameSource)
   const matched = saved.subscribeItems[index]

@@ -1,4 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react'
+import { SubscriptionProxyContext, type SubscriptionProxyOption } from './subscription-proxies'
 import zh from './messages/zh-CN'
 import en from './messages/en-US'
 import tw from './messages/zh-TW'
@@ -8,8 +9,8 @@ import de from './messages/de-DE'
 const messages: Record<string, Record<string, string>> = { 'zh-CN': zh, 'en-US': en, en, 'zh-TW': tw, 'ja-JP': ja, 'de-DE': de }
 const LocaleContext = createContext({ locale: 'en-US', messages: {} as Record<string, string> })
 
-export function EditorProvider({ locale, messages = {}, children }: { locale: string; messages?: Record<string, string>; children: ReactNode }) {
-  return <LocaleContext.Provider value={{ locale, messages }}>{children}</LocaleContext.Provider>
+export function EditorProvider({ locale, messages = {}, subscriptionProxies, children }: { subscriptionProxies?: SubscriptionProxyOption[]; locale: string; messages?: Record<string, string>; children: ReactNode }) {
+  return <LocaleContext.Provider value={{ locale, messages }}><SubscriptionProxyContext.Provider value={subscriptionProxies}>{children}</SubscriptionProxyContext.Provider></LocaleContext.Provider>
 }
 
 export function useEditorI18n() {

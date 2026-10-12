@@ -301,6 +301,7 @@ pub(crate) async fn prepare_with_local(
     let source_summary = load_sources(
         state,
         fields,
+        options.viewer,
         &mut profile,
         options.cache_mode,
         stages,

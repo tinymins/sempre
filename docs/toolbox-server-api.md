@@ -11,7 +11,9 @@ public subscription identifier. Saving a record is explicit and immediately
 affects the next public request. It does not require a compile, publish, or
 share step. The server fetches sources and renders target configurations but
 never installs or starts a proxy core. TUN, DNS, and platform settings in a
-generated configuration remain valid output intent.
+generated configuration remain valid output intent. Optional managed
+[subscription proxies](subscription-proxies.md) run in the separate
+`sempre-proxy` container; the main server remains core-free.
 
 Toolbox `users`, `sessions`, `system_settings`, `proxy_custom_nodes`,
 `proxy_subscribe_custom_nodes`, and `proxy_access_logs` are also canonical.
@@ -125,8 +127,10 @@ values come from the server ACL.
 Nonempty `subscribeItems` takes priority over the old `subscribeUrl` field;
 an empty list falls back to the old field for migrated records. Each item
 has `id`, `type` (`url` or `raw`), `enabled`, `prefix`, and `remark`.
-URL items carry `url` and optional `cacheTtlMinutes`, `fetchUa`, and `fetchMode`
-(`auto` or `domestic-direct`); RAW items carry `content` and never fetch over HTTP.
+URL items carry `url` and optional `cacheTtlMinutes`, `fetchUa`, and `proxyId`.
+Null/absent `proxyId` selects system mode; a UUID selects an owned or authorized
+subscription proxy. RAW items carry `content` and never fetch over HTTP. Old
+`fetchMode` fields are rejected and require a manual database edit before upgrade.
 Existing items without a type are URLs. The list preserves mixed source order. The old
 `subscribeUrl` value remains readable and editable for existing rows.
 `servers` remains the configuration's private inline JSONC nodes; global
@@ -258,9 +262,8 @@ if one exists. An invalid
 editor JSONC field still fails explicitly. With `useSystemRuleList` or
 `useSystemGroup` false, an empty/null custom value falls back to the system
 default, whereas an invalid nonempty JSONC value fails. An empty custom filter
-intentionally stays empty. Rule-provider fetching races automatic and configured
-domestic-direct routes when `DIRECT_PROXY_URL` exists, preferring a fresh
-successful response over an older cached fallback.
+intentionally stays empty. Rule-provider fetching uses system mode. Subscription
+proxy selection applies to each URL subscription source.
 
 ## Known migration differences
 
@@ -278,9 +281,10 @@ Remote subscription sources and rule providers use the selected HTTP client
 route for DNS resolution and connections. The server validates HTTP(S) URLs,
 rejects embedded URL credentials, and bounds redirects, time, and response
 size; it does not perform a separate system-DNS public-IP check or pin the
-destination IP. The `auto` route retains reqwest's system proxy behavior.
-`domestic-direct` uses the configured `DIRECT_PROXY_URL` HTTP(S) proxy. In
-either route, the deployment's DNS and egress policy is responsible for
+destination IP. System mode retains reqwest's system proxy behavior. A selected
+subscription proxy uses its authenticated HTTP listener in `sempre-proxy`, without
+silently falling back to system mode. In either route, the deployment's DNS and
+egress policy is responsible for
 blocking access to internal destinations. In particular, an HTTP CONNECT
 proxy resolves the destination independently of the server process. A local
 FakeIP DNS answer therefore does not by itself reject a source before the

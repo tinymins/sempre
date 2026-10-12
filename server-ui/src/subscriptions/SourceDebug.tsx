@@ -1,5 +1,6 @@
 import { Button, Collapse, Modal, Select, Spin, Table, Tag, Tooltip } from '@acme/components'
 import { useEffect, useRef, useState } from 'react'
+import { proxyApi, type SubscriptionProxy } from '../proxies/api'
 import { subscriptionApi } from './api'
 import type { DebugStage, SourceDebugResult } from './diagnostic-types'
 import type { SubscriptionSource } from './types'
@@ -11,10 +12,12 @@ import { ServerCodeBlock } from '../ServerCodeBlock'
 
 export function SourceDebug({ source, saved, onClose }: { source: Extract<SubscriptionSource, { type: 'url' }>; saved?: { id: string; index: number; source: Extract<SubscriptionSource, { type: 'url' }> }; onClose: () => void }) {
   const { t, number, locale } = useI18n()
+  const [proxies, setProxies] = useState<SubscriptionProxy[]>([])
   const [mode, setMode] = useState<'bypass-cache' | 'production'>(saved ? 'production' : 'bypass-cache')
   const [result, setResult] = useState<SourceDebugResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  useEffect(() => { void proxyApi.list().then(result => setProxies(result.items)).catch(reason => setError(String(reason))) }, [])
   const [progress, setProgress] = useState<DebugStage[]>([])
   const requestId = useRef(0)
   const controller = useRef<AbortController | null>(null)
@@ -58,7 +61,7 @@ export function SourceDebug({ source, saved, onClose }: { source: Extract<Subscr
       <p className="text-xs text-[var(--muted)]">{saved ? t('sourceDebug.savedHint') : t('sourceDebug.draftHint')}</p>
       <dl className="grid grid-cols-2 gap-2 rounded border border-[var(--border)] p-3 text-xs md:grid-cols-4">
         <div className="min-w-0"><dt className="text-[var(--muted)]">User-Agent</dt><dd className="break-words">{displayedSource.fetchUa || 'clash.meta'}</dd></div>
-        <div><dt className="text-[var(--muted)]">{diagnosticText(locale, 'fetchMode')}</dt><dd>{displayedSource.fetchMode || 'auto'}</dd></div>
+        <div><dt className="text-[var(--muted)]">{t('proxies.sourceLabel')}</dt><dd>{displayedSource.proxyId ? proxies.find(proxy => proxy.id === displayedSource.proxyId)?.name ?? t('proxies.unavailable') : t('proxies.system')}</dd></div>
         <div><dt className="text-[var(--muted)]">{diagnosticText(locale, 'cacheTtlMinutes')}</dt><dd>{number(displayedSource.cacheTtlMinutes ?? 60)}</dd></div>
         <div className="min-w-0"><dt className="text-[var(--muted)]">{diagnosticText(locale, 'prefix')}</dt><dd className="break-words">{displayedSource.prefix || '—'}</dd></div>
       </dl>

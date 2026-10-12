@@ -21,7 +21,7 @@ pub(crate) enum SourceType {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct SourceItem {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -39,10 +39,19 @@ pub(crate) struct SourceItem {
     remark: String,
     pub cache_ttl_minutes: Option<i32>,
     pub fetch_ua: Option<String>,
-    pub fetch_mode: Option<String>,
+    pub proxy_id: Option<uuid::Uuid>,
 }
 
 impl SourceItem {
+    pub(crate) fn identity(&self, ua: &str, index: usize) -> String {
+        if !self.id.is_empty() {
+            self.id.clone()
+        } else if self.kind == SourceType::Raw {
+            format!("raw:{index}")
+        } else {
+            source_id(&self.url, ua, "")
+        }
+    }
     pub(crate) fn effective_ua(&self) -> &str {
         self.fetch_ua
             .as_deref()
@@ -60,15 +69,25 @@ pub(crate) struct SourceLoadSummary {
     pub failed: usize,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "source loading needs the subscription owner for proxy authorization"
+)]
 pub(crate) async fn load_sources(
     state: &AppState,
     fields: &SubscriptionFields,
+    owner: uuid::Uuid,
     profile: &mut Profile,
     cache_mode: CacheMode,
     stages: &mut StageLog,
     snapshots: &mut Vec<SourceSnapshot>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<SourceLoadSummary, ApiError> {
+    let scope = match cache_mode {
+        CacheMode::Subscription(id) | CacheMode::ReadOnlySubscription(id) => Some(id),
+        _ => None,
+    };
+    let owner = crate::proxy_runtime::owner(state, scope, owner).await?;
     let items = source_items(fields)?;
     let enabled_items = items
         .into_iter()
@@ -86,16 +105,10 @@ pub(crate) async fn load_sources(
     }
     for (source_index, item) in enabled_items {
         let ua = item.effective_ua().to_owned();
-        let mode = item.fetch_mode.clone().unwrap_or_else(|| "auto".into());
-        let source_id = if item.kind == SourceType::Raw {
-            if item.id.is_empty() {
-                format!("raw:{source_index}")
-            } else {
-                item.id.clone()
-            }
-        } else {
-            source_id(&item.url, &ua, &mode)
-        };
+        let mode = item
+            .proxy_id
+            .map_or_else(|| "system".into(), |id| id.to_string());
+        let source_id = item.identity(&ua, source_index);
         let source_label = source_label(&item, source_index);
         stages.push(json!({"type":"fetch","status":"running","sourceId":source_id,"sourceIndex":source_index,"sourceLabel":source_label,"fetchMode":mode}));
         let fetch_started = Instant::now();
@@ -103,7 +116,7 @@ pub(crate) async fn load_sources(
             .cache_ttl_minutes
             .or(fields.cache_ttl_minutes)
             .unwrap_or(60);
-        let loaded = match load_source(state, &item, &ua, &mode, &source_id, ttl, cache_mode).await
+        let loaded = match load_source(state, &item, owner, &ua, &source_id, ttl, cache_mode).await
         {
             Ok(loaded) => loaded,
             Err(error) => {
@@ -167,7 +180,7 @@ pub(crate) async fn load_sources(
 fn profile_source(item: SourceItem, source_id: String, ua: String, mode: &str, ttl: i32) -> Source {
     let mut extra = Map::new();
     extra.insert("cache_ttl_minutes".into(), json!(ttl));
-    extra.insert("fetch_mode".into(), json!(mode));
+    extra.insert("subscription_proxy".into(), json!(mode));
     Source {
         id: source_id,
         kind: if item.kind == SourceType::Raw {
@@ -200,8 +213,8 @@ fn source_label(item: &SourceItem, index: usize) -> String {
 async fn load_source(
     state: &AppState,
     item: &SourceItem,
+    owner: uuid::Uuid,
     ua: &str,
-    mode: &str,
     source_id: &str,
     ttl: i32,
     cache_mode: CacheMode,
@@ -219,14 +232,14 @@ async fn load_source(
     if let Some(error) = source_input_error(&item.url, ttl) {
         return Err(error);
     }
-    let proxy = source_proxy(state, mode)?;
+    let route = crate::proxy_runtime::resolve(state, owner, item.proxy_id).await?;
     source_cache::load(
         state,
         SourceRequest {
             url: &item.url,
             ua,
-            fetch_mode: mode,
-            proxy,
+            fetch_mode: &route.identity,
+            proxy: route.url.as_deref(),
             source_id,
             ttl_minutes: ttl,
             mode: cache_mode,
@@ -326,7 +339,7 @@ pub(crate) fn source_items(fields: &SubscriptionFields) -> Result<Vec<SourceItem
                 remark: String::new(),
                 cache_ttl_minutes: None,
                 fetch_ua: None,
-                fetch_mode: None,
+                proxy_id: None,
             })
             .collect();
     }
@@ -353,22 +366,6 @@ pub(crate) fn all_sources_failed(stages: &[Value]) -> bool {
         }
     }
     failed
-}
-
-pub(crate) fn source_proxy<'a>(
-    state: &'a AppState,
-    mode: &str,
-) -> Result<Option<&'a str>, ApiError> {
-    match mode {
-        "auto" => Ok(None),
-        "domestic-direct" => state
-            .config
-            .direct_proxy_url
-            .as_deref()
-            .map(Some)
-            .ok_or_else(|| ApiError::bad_request("domestic-direct fetch proxy is not configured")),
-        _ => Err(ApiError::bad_request("invalid fetchMode")),
-    }
 }
 
 #[cfg(test)]

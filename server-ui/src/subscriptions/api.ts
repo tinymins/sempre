@@ -30,7 +30,7 @@ export const subscriptionApi = {
   debug: (draft: SubscriptionDraft, target: Target, signal: AbortSignal, onStage: (stage: DebugStage) => void, subscriptionId?: string) => readDebugStream<DraftDebugResult>(`${base}/debug`, { draft, target, ...(subscriptionId ? { subscriptionId } : {}) }, signal, onStage),
   debugSaved: (id: string, target: Target, signal: AbortSignal, onStage: (stage: DebugStage) => void) => readDebugStream<DraftDebugResult>(`${base}/${encodeURIComponent(id)}/debug`, { target }, signal, onStage),
   debugSource: (source: SubscriptionSource, mode: 'bypass-cache' | 'production', signal: AbortSignal, onStage: (stage: DebugStage) => void, saved?: { id: string; index: number }) => readDebugStream<SourceDebugResult>(`${base}/debug-source`, {
-    url: source.url, ua: source.fetchUa, prefix: source.prefix, cacheTtlMinutes: source.cacheTtlMinutes, fetchMode: source.fetchMode, mode, ...(mode === 'production' && saved ? { subscriptionId: saved.id, sourceIndex: saved.index } : {}),
+    url: source.url, ua: source.fetchUa, prefix: source.prefix, cacheTtlMinutes: source.cacheTtlMinutes, proxyId: source.proxyId, mode, ...(mode === 'production' && saved ? { subscriptionId: saved.id, sourceIndex: saved.index } : {}),
   }, signal, onStage),
   customNodes: () => serverRequest<CustomNode[]>('/custom-nodes'),
   customNode: (id: string) => serverRequest<CustomNode>(`/custom-nodes/${encodeURIComponent(id)}`),

@@ -54,17 +54,24 @@ jobs:
 
   build:
     needs: release
-    name: Build and verify (${{ matrix.arch }})
+    name: Build and verify (${{ matrix.image }}, ${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
+        image: [sempre, sempre-proxy]
+        arch: [amd64, arm64]
         include:
           - arch: amd64
             runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
+          - image: sempre
+            dockerfile: rust/Dockerfile
+          - image: sempre-proxy
+            dockerfile: rust/proxy.Dockerfile
     runs-on: ${{ matrix.runner }}
     env:
+      IMAGE: docker.io/ohmywrt/${{ matrix.image }}
       POSTGRES_PASSWORD: ci-password
       SEMPRE_PUBLIC_URL: http://127.0.0.1:8787/
       COMPOSE_PROJECT_NAME: sempre-docker-ci
@@ -82,17 +89,18 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
-          file: rust/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
           load: true
-          tags: sempre:verify
+          tags: ${{ matrix.image }}:verify
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
             org.opencontainers.image.version=${{ needs.release.outputs.tag }}
-          cache-from: type=gha,scope=sempre-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=sempre-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
       - name: Start PostgreSQL and initialize the Toolbox schema
+        if: matrix.image == 'sempre'
         shell: bash
         run: |
           export COMPOSE_FILE="rust/compose.yml:$RUNNER_TEMP/compose-image.yml"
@@ -101,6 +109,7 @@ jobs:
           docker compose up --detach --wait postgres
           docker compose run --rm --no-deps server migrate
       - name: Verify the container
+        if: matrix.image == 'sempre'
         shell: bash
         run: |
           docker compose up --detach --wait --no-build server
@@ -109,7 +118,7 @@ jobs:
           test "$(grep -c sempre-server "$RUNNER_TEMP/sempre-processes")" -eq 1
           ! grep -E 'sing-box|mihomo|xray|v2ray|clash-rs|dae' "$RUNNER_TEMP/sempre-processes"
       - name: Show service logs
-        if: failure()
+        if: failure() && matrix.image == 'sempre'
         run: docker compose logs
       - name: Stop the isolated stack
         if: always()
@@ -127,14 +136,14 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
-          file: rust/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
             org.opencontainers.image.version=${{ needs.release.outputs.tag }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=sempre-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
       - name: Export the image digest
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
@@ -143,17 +152,22 @@ jobs:
           touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: docker-digest-${{ matrix.arch }}
+          name: docker-digest-${{ matrix.image }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
           retention-days: 1
 
   publish:
+    strategy:
+      matrix:
+        image: [sempre, sempre-proxy]
+    env:
+      IMAGE: docker.io/ohmywrt/${{ matrix.image }}
     needs: [release, build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: docker-digest-*
+          pattern: docker-digest-${{ matrix.image }}-*
           path: ${{ runner.temp }}/digests
           merge-multiple: true
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4

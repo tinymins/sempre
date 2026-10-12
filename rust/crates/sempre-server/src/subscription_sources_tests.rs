@@ -13,7 +13,7 @@ async fn raw_sources_use_no_network_or_database_and_preserve_order() {
             public_url: "http://localhost".parse().unwrap(),
             access_log_retention_days: 1,
             web_root: std::path::PathBuf::default(),
-            direct_proxy_url: None,
+            proxy: None,
             trusted_proxy_ips: vec![],
         },
     };
@@ -29,6 +29,7 @@ async fn raw_sources_use_no_network_or_database_and_preserve_order() {
     let summary = load_sources(
         &state,
         &fields,
+        uuid::Uuid::nil(),
         &mut profile,
         CacheMode::ReadOnlyGlobal,
         &mut stages,

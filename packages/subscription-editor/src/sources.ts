@@ -8,6 +8,7 @@ interface SourceFields {
   cacheTtlMinutes?: number
   fetchUa?: string
   fetchMode?: 'auto' | 'domestic-direct'
+  proxyId?: string | null
 }
 
 export type EditorSource = SourceFields & (
@@ -17,7 +18,7 @@ export type EditorSource = SourceFields & (
 
 export function createSource(type: EditorSource['type'] = 'url'): EditorSource {
   const common = { id: randomUuid(), enabled: true, prefix: '', remark: '' }
-  return type === 'raw' ? { ...common, type, content: '' } : { ...common, type, url: '', fetchMode: 'auto' }
+  return type === 'raw' ? { ...common, type, content: '' } : { ...common, type, url: '' }
 }
 
 export function normalizeSource(value: Partial<EditorSource>): EditorSource {

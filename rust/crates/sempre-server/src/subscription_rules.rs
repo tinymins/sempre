@@ -21,66 +21,12 @@ pub(crate) async fn load_rule_source(
     ttl_minutes: i32,
     cache_mode: CacheMode,
 ) -> Result<LoadedSource, ApiError> {
-    if let Some(proxy) = state.config.direct_proxy_url.as_deref() {
-        let direct = source_cache::load(
-            state,
-            SourceRequest {
-                url,
-                ua,
-                fetch_mode: "domestic-direct",
-                proxy: Some(proxy),
-                source_id,
-                ttl_minutes,
-                mode: cache_mode,
-                kind: SourceKind::RuleSet,
-                inspect_unusable: false,
-            },
-        );
-        let automatic = source_cache::load(
-            state,
-            SourceRequest {
-                url,
-                ua,
-                fetch_mode: "auto",
-                proxy: None,
-                source_id,
-                ttl_minutes,
-                mode: cache_mode,
-                kind: SourceKind::RuleSet,
-                inspect_unusable: false,
-            },
-        );
-        tokio::pin!(direct, automatic);
-        let (first, direct_first) = tokio::select! {
-            result = &mut direct => (result, true),
-            result = &mut automatic => (result, false),
-        };
-        if first
-            .as_ref()
-            .is_ok_and(|loaded| loaded.cache_state != "stale")
-        {
-            return first;
-        }
-        let second = if direct_first {
-            automatic.await
-        } else {
-            direct.await
-        };
-        return match (first, second) {
-            (_, Ok(loaded)) if loaded.cache_state != "stale" => Ok(loaded),
-            (Ok(cached), _) | (Err(_), Ok(cached)) => Ok(cached),
-            (Err(first), Err(second)) => {
-                tracing::warn!(first = %first.message(), second = %second.message(), "both rule fetch routes failed");
-                Err(second)
-            }
-        };
-    }
     source_cache::load(
         state,
         SourceRequest {
             url,
             ua,
-            fetch_mode: "auto",
+            fetch_mode: "system",
             proxy: None,
             source_id,
             ttl_minutes,

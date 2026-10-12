@@ -262,5 +262,14 @@ export default {
   "proxy.form.privateDnsDomains": "Private DNS domain suffixes",
   "proxy.form.privateDnsGlobalWarning": "Without private DNS domain suffixes, this server will handle all DNS queries and may break internal service resolution.",
   "proxy.form.privateDnsServer": "專用 DNS 伺服器",
-  "proxy.form.privateDnsPort": "DNS port"
+  "proxy.form.privateDnsPort": "DNS port",
+  "source.systemMode": "系統模式",
+  "source.subscriptionProxy": "訂閱代理",
+  "source.proxyUnavailable": "代理無法使用",
+  "source.proxy.starting": "啟動中",
+  "source.proxy.running": "執行中",
+  "source.proxy.stopping": "停止中",
+  "source.proxy.stopped": "已停用",
+  "source.proxy.failed": "啟動失敗",
+  "source.proxy.update-failed": "修改失敗，仍使用舊版本",
 }

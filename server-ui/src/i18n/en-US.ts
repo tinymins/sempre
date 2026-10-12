@@ -1,6 +1,8 @@
+import proxyMessages from '../proxies/messages-en-US'
 import type { MessageKey } from './zh-CN'
 
 export const enUS = {
+  ...proxyMessages,
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",

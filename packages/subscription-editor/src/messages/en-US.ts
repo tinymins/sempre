@@ -262,5 +262,14 @@ export default {
   "proxy.form.privateDnsDomains": "Private DNS domain suffixes",
   "proxy.form.privateDnsGlobalWarning": "Without private DNS domain suffixes, this server will handle all DNS queries and may break internal service resolution.",
   "proxy.form.privateDnsServer": "Private DNS server",
-  "proxy.form.privateDnsPort": "DNS port"
+  "proxy.form.privateDnsPort": "DNS port",
+  "source.systemMode": "System mode",
+  "source.subscriptionProxy": "Subscription proxies",
+  "source.proxyUnavailable": "Proxy unavailable",
+  "source.proxy.starting": "Starting",
+  "source.proxy.running": "Running",
+  "source.proxy.stopping": "Stopping",
+  "source.proxy.stopped": "Stopped",
+  "source.proxy.failed": "Failed",
+  "source.proxy.update-failed": "Update failed; previous version active",
 }

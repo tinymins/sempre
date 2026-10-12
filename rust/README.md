@@ -38,8 +38,9 @@ docker compose --env-file .env -f rust/compose.yml up --build
 Reusable nodes are managed under `/api/v1/custom-nodes`, per-profile artifact
 statistics under `/api/v1/profiles/{id}/stats`, and Clash rule-provider
 compatibility under `/api/proxy/sing-box/convert/rule[/12|/13]`. Source fetches
-honor `cache_ttl_minutes`; sources using `fetch_mode=domestic-direct` use
-`DIRECT_PROXY_URL` when the administrator configures it.
+honor their cache TTL. Toolbox URL sources choose system mode or one named
+[subscription proxy](../docs/subscription-proxies.md), hosted by the optional
+core runtime in the separate `sempre-proxy` container.
 
 Profile updates require `If-Match: "<revision>"`. The manifest exposes a read-only artifact, its SHA-256 digest, ETag, target, profile revision, and the authenticated editor URL.
 

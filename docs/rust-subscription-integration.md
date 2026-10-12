@@ -25,7 +25,7 @@ inspection and retry; the client does not restore an older configuration.
 | --- | --- | --- |
 | Pure conversion core | Implemented | `Profile + SourceSnapshot + CustomNode + Target -> CompileResult`; no HTTP, database, environment, or process access |
 | Multi-user profiles | Implemented | Registration/login/logout, owner/editor/viewer roles, optimistic profile revisions |
-| Source handling | Implemented | Raw and URL sources, user agent, TTL cache, three-attempt retry, optional domestic-direct proxy, last-known-good snapshot |
+| Source handling | Implemented | Raw and URL sources, user agent, TTL cache, three-attempt retry, per-source system mode or managed subscription proxy, last-known-good snapshot |
 | Fetch safety | Implemented | HTTP(S) only, no URL credentials, public-address DNS pinning, redirect revalidation, timeout and response-size limits |
 | Node input | Implemented | Clash YAML, Base64 URI lists, plain URI lists, manual nodes, reusable authorized custom-node library |
 | Protocol conversion | Implemented for the OhMyWRT executable path | VMess, VLESS, Shadowsocks/plugins, Trojan, Hysteria, Hysteria2, TUIC, HTTP, SOCKS5, AnyTLS from Clash nodes; URI parsing matches the reference parser's actually dispatched schemes |
