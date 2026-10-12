@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { CheckCircle2, Circle, CircleSlash2, Globe2, LoaderCircle, MapPin, Network, RotateCw, XCircle } from 'lucide-react'
 import { Button, Modal, Tag } from '@acme/components'
 import { streamRequest } from '../../lib/api'
@@ -6,6 +6,11 @@ import { useI18n } from '../../lib/i18n'
 import { useSession } from '../../lib/session'
 
 type StepState = 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped'
+
+interface CoreLog {
+  stream: 'stdout' | 'stderr'
+  line: string
+}
 
 interface DebugStep {
   id: string
@@ -49,6 +54,13 @@ export function NodeDebugModal({ node, nodeType, open, onClose }: { node?: strin
   const [finished, setFinished] = useState(false)
   const [fatalError, setFatalError] = useState<string>()
   const [run, setRun] = useState(0)
+  const [logs, setLogs] = useState<CoreLog[]>([])
+  const logView = useRef<HTMLPreElement>(null)
+  const followLogs = useRef(true)
+
+  useEffect(() => {
+    if (logView.current && followLogs.current) logView.current.scrollTop = logView.current.scrollHeight
+  }, [logs])
 
   useEffect(() => {
     if (!open || !node || !session) return
@@ -61,6 +73,8 @@ export function NodeDebugModal({ node, nodeType, open, onClose }: { node?: strin
           if (index < 0) return [...current, step]
           return current.map((item) => item.id === step.id ? step : item)
         })
+      } else if (event === 'log') {
+        setLogs((current) => [...current, payload as CoreLog].slice(-1000))
       } else if (event === 'done') {
         setFinished(true)
       } else if (event === 'error') {
@@ -76,6 +90,8 @@ export function NodeDebugModal({ node, nodeType, open, onClose }: { node?: strin
     setSteps([])
     setFinished(false)
     setFatalError(undefined)
+    setLogs([])
+    followLogs.current = true
     setRun((value) => value + 1)
   }
 
@@ -115,6 +131,17 @@ export function NodeDebugModal({ node, nodeType, open, onClose }: { node?: strin
         {visibleSteps.map((step, index) => <StepRow key={step.id} step={{ ...step, label: labels[step.id] || step.label }} last={index === visibleSteps.length - 1} locale={locale} />)}
       </div>
       {fatalError ? <div className="rounded-lg border border-red-500/30 bg-red-500/8 px-4 py-3 text-sm text-red-600 dark:text-red-400">{fatalError}</div> : null}
+      {logs.length ? <div className="space-y-2">
+        <p className="text-sm font-medium">{locale === 'zh-CN' ? 'Core 原始日志（最近 1,000 行）' : 'Raw core logs (latest 1,000 lines)'}</p>
+        <pre ref={logView} role="log" aria-label={locale === 'zh-CN' ? 'Core 原始日志' : 'Raw core logs'}
+          onScroll={(event) => {
+            const view = event.currentTarget
+            followLogs.current = view.scrollHeight - view.scrollTop - view.clientHeight < 24
+          }}
+          className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-black/[0.06] bg-black/[0.02] px-4 py-3 font-mono text-xs dark:border-white/[0.08] dark:bg-white/[0.03]">
+          {logs.map((log) => `[${log.stream}] ${log.line}`).join('\n')}
+        </pre>
+      </div> : null}
     </div>
   </Modal>
 }

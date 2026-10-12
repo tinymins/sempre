@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     api::{AppState, api_error},
-    node_diagnostic::DiagnosticCore,
+    node_diagnostic::{DiagnosticCore, DiagnosticLog},
 };
 
 mod wireguard;
@@ -174,20 +174,52 @@ fn is_leaf_type(proxy_type: &str) -> bool {
 
 async fn run_debug(state: Arc<AppState>, node: String, sender: mpsc::Sender<DebugEvent>) {
     let total = Instant::now();
-    if !send_running(&sender, "prepare", "启动隔离 Core").await {
-        return;
+    let (logs, mut receiver) = mpsc::channel(128);
+    let forward_logs = async {
+        while let Some(log) = receiver.recv().await {
+            if sender
+                .send(DebugEvent {
+                    event: "log",
+                    payload: json!(log),
+                })
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+    };
+    let (completed, ()) = tokio::join!(run_debug_steps(&state, &node, &sender, logs), forward_logs);
+    if completed {
+        let _ = sender
+            .send(DebugEvent {
+                event: "done",
+                payload: json!({"node":node,"duration_ms":millis(total)}),
+            })
+            .await;
+    }
+}
+
+async fn run_debug_steps(
+    state: &AppState,
+    node: &str,
+    sender: &mpsc::Sender<DebugEvent>,
+    logs: mpsc::Sender<DiagnosticLog>,
+) -> bool {
+    if !send_running(sender, "prepare", "启动隔离 Core").await {
+        return false;
     }
     let prepared = Instant::now();
-    let core = match DiagnosticCore::start(&state.manager, &node).await {
+    let core = match DiagnosticCore::start(&state.manager, node, logs).await {
         Ok(core) => core,
         Err(error) => {
-            send_failed(&sender, "prepare", "启动隔离 Core", prepared, &error).await;
-            send_error(&sender, error).await;
-            return;
+            send_failed(sender, "prepare", "启动隔离 Core", prepared, &error).await;
+            send_error(sender, error).await;
+            return false;
         }
     };
     if !send_succeeded(
-        &sender,
+        sender,
         "prepare",
         "启动隔离 Core",
         prepared,
@@ -196,17 +228,12 @@ async fn run_debug(state: Arc<AppState>, node: String, sender: mpsc::Sender<Debu
     .await
     {
         core.stop().await;
-        return;
+        return false;
     }
 
-    run_standard_steps(&sender, &core).await;
+    run_standard_steps(sender, &core).await;
     core.stop().await;
-    let _ = sender
-        .send(DebugEvent {
-            event: "done",
-            payload: json!({"node":node,"duration_ms":millis(total)}),
-        })
-        .await;
+    true
 }
 
 async fn run_standard_steps(sender: &mpsc::Sender<DebugEvent>, core: &DiagnosticCore) {

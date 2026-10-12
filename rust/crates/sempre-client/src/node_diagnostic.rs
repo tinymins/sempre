@@ -14,12 +14,15 @@ use sempre_state::RuntimeState;
 use serde::Serialize;
 use serde_json::Value;
 use tempfile::TempDir;
-use tokio::{io::AsyncReadExt, net::TcpStream, process::Child, time::sleep};
+use tokio::{net::TcpStream, process::Child, sync::mpsc, time::sleep};
 use uuid::Uuid;
 
 mod config;
+mod output;
 
 use config::build_config;
+pub(crate) use output::DiagnosticLog;
+use output::DiagnosticOutput;
 
 const START_TIMEOUT: Duration = Duration::from_secs(8);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
@@ -29,6 +32,7 @@ pub(crate) struct DiagnosticCore {
     child: Child,
     directory: TempDir,
     client: Client,
+    output: DiagnosticOutput,
 }
 
 #[derive(Serialize)]
@@ -58,7 +62,11 @@ pub(crate) struct PublicIpResult {
 }
 
 impl DiagnosticCore {
-    pub(crate) async fn start(manager: &Manager, node: &str) -> Result<Self, String> {
+    pub(crate) async fn start(
+        manager: &Manager,
+        node: &str,
+        logs: mpsc::Sender<DiagnosticLog>,
+    ) -> Result<Self, String> {
         let document = manager.state().map_err(|error| error.to_string())?;
         if document.runtime.state != RuntimeState::Running {
             return Err("managed core is not running".into());
@@ -113,7 +121,7 @@ impl DiagnosticCore {
             .args(&spec.arguments)
             .envs(&spec.environment)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         if let Some(working_directory) = spec.working_directory {
@@ -123,7 +131,13 @@ impl DiagnosticCore {
         let mut child = command
             .spawn()
             .map_err(|error| format!("start diagnostic core: {error}"))?;
-        wait_until_ready(&mut child, port).await?;
+        let mut output = DiagnosticOutput::capture(&mut child, logs);
+        if let Err(error) = wait_until_ready(&mut child, port).await {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            output.finish().await;
+            return Err(error);
+        }
 
         let proxy = Proxy::all(format!("http://127.0.0.1:{port}"))
             .map_err(|error| format!("configure diagnostic proxy: {error}"))?
@@ -139,6 +153,7 @@ impl DiagnosticCore {
             child,
             directory,
             client,
+            output,
         })
     }
 
@@ -264,6 +279,7 @@ impl DiagnosticCore {
     pub(crate) async fn stop(mut self) {
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
+        self.output.finish().await;
         drop(self.directory);
     }
 }
@@ -292,50 +308,14 @@ async fn wait_until_ready(child: &mut Child, port: u16) -> Result<(), String> {
             .try_wait()
             .map_err(|error| format!("inspect diagnostic core: {error}"))?
         {
-            return Err(child_exit_error(child, status.to_string()).await);
+            return Err(format!("diagnostic core exited with {status}"));
         }
         if TcpStream::connect(address).await.is_ok() {
             return Ok(());
         }
         sleep(Duration::from_millis(100)).await;
     }
-    let _ = child.kill().await;
-    let _ = child.wait().await;
-    let stderr = child_stderr(child).await;
-    Err(with_stderr(
-        "diagnostic core did not open its HTTP proxy in time".into(),
-        &stderr,
-    ))
-}
-
-async fn child_exit_error(child: &mut Child, status: String) -> String {
-    let stderr = child_stderr(child).await;
-    with_stderr(format!("diagnostic core exited with {status}"), &stderr)
-}
-
-async fn child_stderr(child: &mut Child) -> String {
-    let Some(mut stderr) = child.stderr.take() else {
-        return String::new();
-    };
-    let mut output = String::new();
-    let _ = stderr.read_to_string(&mut output).await;
-    output
-}
-
-fn with_stderr(message: String, stderr: &str) -> String {
-    let detail = stderr.trim();
-    if detail.is_empty() {
-        return message;
-    }
-    let detail = detail
-        .chars()
-        .rev()
-        .take(4000)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect::<String>();
-    format!("{message}: {detail}")
+    Err("diagnostic core did not open its HTTP proxy in time".into())
 }
 
 #[cfg(windows)]

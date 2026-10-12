@@ -61,6 +61,10 @@ fn sing_box_config(
     }
     root.insert("route".into(), Value::Object(route));
     root.remove("experimental");
+    root.insert(
+        "log".into(),
+        json!({"level":"debug","timestamp":true,"disable_color":true}),
+    );
     remove_endpoints_and_dependent_dns(root);
     if let Some(dns) = root.get_mut("dns").and_then(Value::as_object_mut) {
         dns.remove("rules");
@@ -156,6 +160,7 @@ fn clash_config(
         json!([format!("{username}:{password}")]),
     );
     root.insert("mode".into(), json!("rule"));
+    root.insert("log-level".into(), json!("debug"));
     if let Some(dns) = root.get_mut("dns").and_then(Value::as_object_mut) {
         dns.remove("listen");
     }
