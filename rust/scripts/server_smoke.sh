@@ -10,19 +10,22 @@ scratch=$(mktemp -d)
 cookie_file=$scratch/cookies
 stable_url=
 subscription_id=
+upstream_id=
 
 cleanup() {
-  if [ -n "$subscription_id" ]; then
-    curl --silent --max-time 5 -b "$cookie_file" -X DELETE \
-      "$base_url/api/v1/subscriptions/$subscription_id" >/dev/null || true
-  fi
+  for id in "$subscription_id" "$upstream_id"; do
+    if [ -n "$id" ]; then
+      curl --silent --max-time 5 -b "$cookie_file" -X DELETE \
+        "$base_url/api/v1/subscriptions/$id" >/dev/null || true
+    fi
+  done
   rm -rf "$scratch"
 }
 trap cleanup EXIT
 
 request_manifest() {
   curl --fail --silent --show-error --max-time 30 \
-    "$base_url/api/subscriptions/$stable_url/manifest?target=sing-box-v13"
+    "$base_url/api/subscriptions/$stable_url/manifest?target=sing-box-v13-openwrt"
 }
 
 fetch_artifact() {
@@ -42,17 +45,10 @@ fetch_artifact() {
 patch_subscription() {
   current=$1
   node_name=$2
-  if [ -n "$node_name" ]; then
-    servers=$(jq -nc --arg name "$node_name" '[{name:$name,type:"socks5",server:"127.0.0.1",port:1080}]')
-    group=$(jq -nc --arg name "$node_name" '[{name:"Smoke Group",type:"select",proxies:[$name,"DIRECT"]}]')
-    upstream=null
-  else
-    servers='[]'
-    group='[]'
-    upstream='"http://127.0.0.1:1/qa-unreachable"'
-  fi
-  body=$(jq -nc --arg servers "$servers" --arg group "$group" --argjson upstream "$upstream" \
-    '{servers:$servers,group:$group,subscribeUrl:$upstream}')
+  servers=$(jq -nc --arg name "$node_name" '[{name:$name,type:"socks5",server:"127.0.0.1",port:1080}]')
+  group=$(jq -nc --arg name "$node_name" '[{name:"Smoke Group",type:"select",proxies:[$name,"DIRECT"]}]')
+  body=$(jq -nc --arg servers "$servers" --arg group "$group" \
+    '{servers:$servers,group:$group}')
   updated_at=$(printf '%s' "$current" | jq -er '.updatedAt')
   curl --fail --silent --show-error --max-time 30 -b "$cookie_file" \
     -H 'Content-Type: application/json' -H "If-Match: $updated_at" \
@@ -82,7 +78,7 @@ stable_url=$(printf '%s' "$current" | jq -er '.url')
 
 manifest_a=$(request_manifest)
 printf '%s' "$manifest_a" | jq -e \
-  '.schema == 1 and .service == "sempre" and .read_only == true and .target.format == "sing-box-v13" and .artifact.node_count == 1' >/dev/null
+  '.schema == 1 and .service == "sempre" and .read_only == true and .target.format == "sing-box-v13-openwrt" and .artifact.node_count == 1' >/dev/null
 fetch_artifact "$manifest_a" "$scratch/a.json"
 grep -q 'Smoke-A' "$scratch/a.json"
 
@@ -100,11 +96,29 @@ current=$(patch_subscription "$current" Smoke-A)
 manifest_a_again=$(request_manifest)
 test "$(printf '%s' "$manifest_a_again" | jq -er '.artifact.sha256')" = \
   "$(printf '%s' "$manifest_a" | jq -er '.artifact.sha256')"
-current=$(patch_subscription "$current" '')
+# Change the upstream's availability, keeping the consumer's saved revision and
+# target unchanged. A separate subscription provides the controlled HTTP source.
+upstream=$(curl --fail --silent --show-error --max-time 30 -b "$cookie_file" \
+  -H 'Content-Type: application/json' -d "$create_body" \
+  "$base_url/api/v1/subscriptions")
+upstream_id=$(printf '%s' "$upstream" | jq -er '.id')
+upstream_url=$(printf '%s' "$upstream" | jq -er '.url')
+body=$(jq -nc --arg url "$base_url/api/subscriptions/$upstream_url/clash-meta" \
+  '{servers:"[]",group:"[]",subscribeUrl:$url,cacheTtlMinutes:0}')
+updated_at=$(printf '%s' "$current" | jq -er '.updatedAt')
+current=$(curl --fail --silent --show-error --max-time 30 -b "$cookie_file" \
+  -H 'Content-Type: application/json' -H "If-Match: $updated_at" \
+  -X PATCH -d "$body" "$base_url/api/v1/subscriptions/$subscription_id")
+manifest_good=$(request_manifest)
+fetch_artifact "$manifest_good" "$scratch/source-good.json"
+grep -q 'Smoke-A' "$scratch/source-good.json"
+curl --fail --silent --show-error --max-time 30 -b "$cookie_file" -X DELETE \
+  "$base_url/api/v1/subscriptions/$upstream_id" >/dev/null
+upstream_id=
 curl --fail --silent --show-error --max-time 30 -D "$scratch/stale-headers" \
   "$base_url/api/subscriptions/$stable_url/sing-box/1.13/openwrt" -o "$scratch/stale.json"
 grep -iq '^x-sempre-stale: true' "$scratch/stale-headers"
-cmp "$scratch/a.json" "$scratch/stale.json"
+cmp "$scratch/source-good.json" "$scratch/stale.json"
 fetch_artifact "$manifest_b" "$scratch/b-after-failure.json"
 cmp "$scratch/b.json" "$scratch/b-after-failure.json"
 
