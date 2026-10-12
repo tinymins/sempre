@@ -58,6 +58,10 @@ export function NetworkAutomationPanel() {
   }
 
   return <Card className="min-w-0 p-4 md:p-5">
+    <div className="mb-5 flex items-center justify-between gap-4 border-b border-[var(--border)] pb-5">
+      <div><h3 className="font-medium">{zh ? 'CN 前置直连路由' : 'CN direct system routes'}</h3><p className="mt-1 text-sm text-[var(--muted)]">{zh ? 'CN IP 经原出口直连，其他公网流量进入 TUN 后分流。启用后使用真实 IP DNS，需重启核心应用。' : 'CN IPs use the original uplink; other public traffic enters TUN. Uses real-IP DNS. Restart the core to apply.'}</p></div>
+      <Switch aria-label={zh ? '启用 CN 前置直连路由' : 'Enable CN direct system routes'} checked={settings?.cn_direct_routes ?? false} loading={update.isPending} disabled={!settings || settings.mode !== 'local'} onChange={(checked) => save({ cn_direct_routes: checked })} />
+    </div>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-2"><Radar className="mt-0.5 text-emerald-600" size={18} /><div><h2 className="text-sm font-semibold">{zh ? '网络识别规则' : 'Network recognition rules'}</h2><p className="mt-1 text-xs leading-5 text-[var(--muted)]">{zh ? '进入已有透明代理的网络时，公网流量自动直连；WG 私网按各连接器选择的家庭网络单独判断。' : 'Public traffic goes direct on networks with an upstream transparent proxy. WireGuard home bypass is selected separately per connector.'}</p></div></div>
       <Switch aria-label={zh ? '启用自动网络切换' : 'Enable automatic network switching'} checked={settings?.automatic_switching ?? false} loading={update.isPending} onChange={(checked) => save({ automatic_switching: checked })} />

@@ -40,6 +40,7 @@ impl DnsConfig {
             domestic_cidrs: Vec::new(),
             cache_ttl_seconds: 300,
             outbound_mark: None,
+            outbound_interfaces: [None, None],
         };
         let mut errors = Vec::new();
         validate(&config, &mut errors);

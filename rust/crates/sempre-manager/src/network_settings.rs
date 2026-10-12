@@ -38,6 +38,8 @@ pub struct NetworkSettings {
     pub mode: NetworkMode,
     pub gateway_capture_host: bool,
     #[serde(default)]
+    pub cn_direct_routes: bool,
+    #[serde(default)]
     pub automatic_switching: bool,
     #[serde(default)]
     pub known_networks: Vec<KnownNetwork>,
@@ -50,6 +52,7 @@ impl Default for NetworkSettings {
             revision: 1,
             mode: NetworkMode::Local,
             gateway_capture_host: false,
+            cn_direct_routes: false,
             automatic_switching: false,
             known_networks: Vec::new(),
         }
@@ -122,6 +125,11 @@ fn validate(settings: &NetworkSettings) -> Result<(), ManagerError> {
             "network settings schema must be {SCHEMA_VERSION}"
         )));
     }
+    if settings.cn_direct_routes && settings.mode != NetworkMode::Local {
+        return Err(ManagerError::InvalidOperation(
+            "CN direct routes require local TUN mode".into(),
+        ));
+    }
     if settings.known_networks.len() > 64 {
         return Err(ManagerError::InvalidOperation(
             "at most 64 known networks may be configured".into(),
@@ -171,6 +179,13 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
     ) -> Result<Profile, ManagerError> {
         let settings = self.network_settings.read();
         let mut profile = profile.clone();
+        profile.extra.insert(
+            "sempre_cn_direct_routes".into(),
+            json!(settings.cn_direct_routes),
+        );
+        if settings.cn_direct_routes && settings.mode == NetworkMode::Local {
+            profile.transparent_proxy.mode = "tun-router".into();
+        }
         profile.network_policy = json!({
             "enabled": settings.automatic_switching,
             "directNetworkIds": settings.known_networks.iter()
@@ -246,6 +261,16 @@ fn shared_dns_mut(dns: &mut Value) -> &mut serde_json::Map<String, Value> {
         *shared = json!({});
     }
     shared.as_object_mut().expect("shared DNS object")
+}
+
+impl NetworkSettings {
+    pub(crate) fn same_routing(&self, previous: &Self) -> bool {
+        self.mode == previous.mode
+            && self.gateway_capture_host == previous.gateway_capture_host
+            && self.cn_direct_routes == previous.cn_direct_routes
+            && self.automatic_switching == previous.automatic_switching
+            && self.known_networks == previous.known_networks
+    }
 }
 
 #[cfg(test)]

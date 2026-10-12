@@ -8,6 +8,7 @@ description = "Client-only transparent proxy runtime and Linux host orchestratio
 
 [dependencies]
 ipnet.workspace = true
+sysinfo.workspace = true
 sempre-converter = { path = "../sempre-converter" }
 sempre-network = { path = "../sempre-network" }
 sempre-state = { path = "../sempre-state" }
@@ -16,6 +17,9 @@ serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+nix = { workspace = true, features = ["socket", "net"] }
 
 [dev-dependencies]
 socket2.workspace = true

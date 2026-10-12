@@ -60,13 +60,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
         let _operation = self.store.acquire_operation()?;
         let document = self.store.read()?;
+        self.validate_cn_settings(&candidate, &document)?;
         let previous = self.network_settings.read();
         let saved = self.network_settings.replace(candidate)?;
-        if saved.mode == previous.mode
-            && saved.gateway_capture_host == previous.gateway_capture_host
-            && saved.automatic_switching == previous.automatic_switching
-            && saved.known_networks == previous.known_networks
-        {
+        if saved.same_routing(&previous) {
             return Ok((CoreChange::default(), saved));
         }
         if document.selected.is_none() {

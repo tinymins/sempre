@@ -8,12 +8,13 @@ use sha2::{Digest, Sha256};
 
 use crate::{DnsSettings, ManagerError};
 
-const CONFIG_BUILD_SCHEMA: u32 = 14;
+const CONFIG_BUILD_SCHEMA: u32 = 15;
 
 pub(crate) fn config_build(
     profile: &Profile,
     target: &Target,
     dns_settings: &DnsSettings,
+    cn_direct_routes: bool,
 ) -> Result<ConfigBuild, ManagerError> {
     let private_access_policy = private_access_policy(profile, target)?;
     let dns_frontend_enabled = dns_settings.enabled
@@ -26,7 +27,12 @@ pub(crate) fn config_build(
             "{}|{}|{}|front-dns:{dns_frontend_enabled}|build:{CONFIG_BUILD_SCHEMA}",
             target.format, target.version, target.platform
         ),
-        runtime_key: Some(runtime_key(profile, target, dns_settings)?),
+        runtime_key: Some(runtime_key(
+            profile,
+            target,
+            dns_settings,
+            cn_direct_routes,
+        )?),
         private_access_policy,
     })
 }
@@ -66,6 +72,7 @@ fn runtime_key(
     profile: &Profile,
     target: &Target,
     dns_settings: &DnsSettings,
+    cn_direct_routes: bool,
 ) -> Result<String, ManagerError> {
     let mut rule_sets = dns_settings.rule_sets.clone();
     if target.core == "sing-box" {
@@ -75,6 +82,7 @@ fn runtime_key(
     }
     let value = json!({
         "transparent_proxy": profile.transparent_proxy,
+        "cn_direct_routes": cn_direct_routes,
         "local_proxy": profile.local_proxy,
         "management_api": profile.management_api,
         "dns_frontend": {
@@ -111,6 +119,32 @@ mod tests {
     use sempre_state::{Layout, Store};
 
     #[test]
+    fn global_cn_switch_changes_runtime_identity_without_editing_the_profile() {
+        let directory = tempfile::tempdir().expect("directory");
+        let manager = Manager::with_runner(Store::new(Layout::at(directory.path())), ProcessRunner)
+            .expect("manager");
+        let mut profile = Profile::default();
+        profile
+            .extra
+            .insert("use_system_dns".into(), serde_json::json!(false));
+        let target = Target::parse("sing-box-v14").expect("target");
+        let original = manager
+            .subscription_config_build(&profile, &target, None)
+            .expect("build");
+        let mut settings = manager.network_settings.read();
+        settings.cn_direct_routes = true;
+        manager
+            .network_settings
+            .replace(settings)
+            .expect("CN settings");
+        let changed = manager
+            .subscription_config_build(&profile, &target, None)
+            .expect("build");
+        assert_ne!(original.runtime_key, changed.runtime_key);
+        assert_eq!(original.profile_revision, changed.profile_revision);
+    }
+
+    #[test]
     fn private_access_build_metadata_excludes_wireguard_keys() {
         let profile = Profile {
             private_access: serde_json::json!({
@@ -138,7 +172,7 @@ mod tests {
         let manager = Manager::with_runner(Store::new(Layout::at(directory.path())), ProcessRunner)
             .expect("manager");
         let target = Target::parse("sing-box-v14").expect("target");
-        let build = config_build(&profile, &target, &manager.dns_settings()).expect("build");
+        let build = config_build(&profile, &target, &manager.dns_settings(), false).expect("build");
         let encoded = serde_json::to_string(&build.private_access_policy).expect("metadata");
         assert!(encoded.contains("d286d2f8-33c5-4f1e-b871-d22a9ba91143"));
         assert!(encoded.contains("remote-wg"));

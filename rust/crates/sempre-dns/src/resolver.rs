@@ -116,11 +116,13 @@ impl ResolverState {
                 matcher: DomainMatcher::from_rules(&rule_set.rules),
             })
             .collect();
+        let upstreams =
+            crate::upstream::UpstreamClient::with_interfaces(config.outbound_interfaces.clone());
         Ok(Self {
             config,
             domestic_cidrs,
             rule_sets,
-            upstreams: crate::upstream::UpstreamClient::default(),
+            upstreams,
         })
     }
 

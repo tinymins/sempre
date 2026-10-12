@@ -76,6 +76,31 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             return Ok(false);
         }
         self.validate_rule_candidates(plan, &candidates).await?;
+        let _gate = self.runtime_rules_gate.lock().await;
+        if let Some(candidate) = candidates.get("geoip-cn")
+            && let Some(intent) = &plan.transparent.cn_routes
+        {
+            let binary = self.store.layout().core_binary(
+                &plan.deployment.core,
+                plan.deployment.repository.as_deref(),
+                &plan.deployment.version,
+            );
+            let source = crate::cn_routes::Source {
+                path: candidate.path.clone(),
+                binary: plan.cn_source.as_ref().is_some_and(|s| s.binary),
+            };
+            let mut union = intent.clone();
+            // Keep both snapshots bypassed until all cache publication completes.
+            union
+                .prefixes
+                .extend(crate::cn_routes::read_prefixes(&binary, &source).await?);
+            if let Some(previous) = &plan.cn_source {
+                union
+                    .prefixes
+                    .extend(crate::cn_routes::read_prefixes(&binary, previous).await?);
+            }
+            self.transparent.apply_cn_routes(&union).await?;
+        }
         // No await between the deployment check and publication: cancellation cannot
         // publish a partially downloaded or unvalidated candidate.
         let document = self.store.read()?;

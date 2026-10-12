@@ -1,3 +1,5 @@
+mod cn_routes;
+pub use cn_routes::cn_direct_routes;
 mod defaults;
 mod domain_policy;
 mod editor;

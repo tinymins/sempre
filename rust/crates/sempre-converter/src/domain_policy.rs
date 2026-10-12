@@ -28,7 +28,17 @@ pub fn apply_dns_frontend_settings(
             .extra
             .insert("use_system_dns".into(), Value::Bool(false));
     }
+    let cn_routes = crate::cn_direct_routes(&profile);
+    if cn_routes && !enabled {
+        return Err(CompileError::Render(
+            "CN direct routes require the managed DNS frontend".into(),
+        ));
+    }
     let shared = shared_mut(&mut profile.dns);
+    if cn_routes {
+        shared.insert("fakeipEnabled".into(), Value::Bool(false));
+        shared.insert("cnIpRuleSetEnabled".into(), Value::Bool(true));
+    }
     shared.insert("systemDnsTakeoverEnabled".into(), Value::Bool(enabled));
     shared.insert("systemDnsListenPort".into(), json!(53));
     shared.insert("systemDnsListenHosts".into(), json!(["127.0.0.1"]));

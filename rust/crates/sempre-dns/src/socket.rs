@@ -5,8 +5,10 @@ use crate::DnsError;
 pub(crate) fn upstream_socket(
     address: std::net::SocketAddr,
     mark: Option<u32>,
+    interface: Option<&str>,
 ) -> Result<UdpSocket, DnsError> {
     let socket = outbound_socket(address, mark, socket2::Type::DGRAM, socket2::Protocol::UDP)?;
+    bind_interface(&socket, address, interface)?;
     let bind = std::net::SocketAddr::new(
         if address.is_ipv4() {
             std::net::Ipv4Addr::UNSPECIFIED.into()
@@ -25,8 +27,10 @@ pub(crate) fn upstream_socket(
 pub(crate) async fn upstream_tcp(
     address: std::net::SocketAddr,
     mark: Option<u32>,
+    interface: Option<&str>,
 ) -> Result<tokio::net::TcpStream, DnsError> {
     let socket = outbound_socket(address, mark, socket2::Type::STREAM, socket2::Protocol::TCP)?;
+    bind_interface(&socket, address, interface)?;
     let stream = tokio::net::TcpSocket::from_std_stream(socket.into())
         .connect(address)
         .await
@@ -116,4 +120,58 @@ fn marked_socket(
         .bind(&address.into())
         .map_err(|error| DnsError::io(format!("bind DNS listener {address}"), error))?;
     Ok(socket)
+}
+
+fn bind_interface(
+    socket: &socket2::Socket,
+    address: std::net::SocketAddr,
+    interface: Option<&str>,
+) -> Result<(), DnsError> {
+    if address.ip().is_loopback() {
+        return Ok(());
+    }
+    let Some(interface) = interface else {
+        return Ok(());
+    };
+    #[cfg(target_os = "macos")]
+    {
+        let index = nix::net::if_::if_nametoindex(interface)
+            .map_err(|e| DnsError::invalid(e.to_string()))?;
+        let index = std::num::NonZeroU32::new(index);
+        let result = if address.is_ipv4() {
+            socket.bind_device_by_index_v4(index)
+        } else {
+            socket.bind_device_by_index_v6(index)
+        };
+        result.map_err(|e| DnsError::io("bind DNS upstream interface", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    fast_talker::sockets::SocketOptions {
+        bind_device: Some(interface.into()),
+        ..Default::default()
+    }
+    .apply(socket)
+    .map_err(|e| DnsError::io("bind DNS upstream interface", e))?;
+    #[cfg(target_os = "linux")]
+    socket
+        .bind_device(Some(interface.as_bytes()))
+        .map_err(|e| DnsError::io("bind DNS upstream interface", e))?;
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        let _ = socket;
+        return Err(DnsError::invalid("DNS interface binding is unsupported"));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn loopback_core_dns_does_not_bind_to_physical_interface() {
+        let address = "127.0.0.1:0".parse().expect("address");
+        super::upstream_socket(address, None, Some("no-such-sempre-interface"))
+            .expect("loopback bypass");
+        let address = "1.1.1.1:53".parse().expect("address");
+        assert!(super::upstream_socket(address, None, Some("no-such-sempre-interface")).is_err());
+    }
 }

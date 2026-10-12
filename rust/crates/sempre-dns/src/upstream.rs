@@ -29,9 +29,17 @@ type Pool = HashMap<(String, Option<u32>), Vec<(Instant, Stream)>>;
 #[derive(Default)]
 pub(crate) struct UpstreamClient {
     idle: Mutex<Pool>,
+    interfaces: [Option<String>; 2],
 }
 
 impl UpstreamClient {
+    pub(crate) fn with_interfaces(interfaces: [Option<String>; 2]) -> Self {
+        Self {
+            idle: Mutex::default(),
+            interfaces,
+        }
+    }
+
     pub async fn exchange(
         &self,
         upstream: &str,
@@ -55,7 +63,11 @@ impl UpstreamClient {
         let endpoint = Endpoint::parse(upstream)?;
         if endpoint.protocol == Protocol::Udp {
             let address = self.addresses(&endpoint, mark).await?[0];
-            let socket = socket::upstream_socket(address, mark)?;
+            let socket = socket::upstream_socket(
+                address,
+                mark,
+                self.interfaces[usize::from(address.is_ipv6())].as_deref(),
+            )?;
             socket
                 .connect(address)
                 .await
@@ -86,9 +98,21 @@ impl UpstreamClient {
                 self.recycle(key, stream);
                 return Ok(response);
             }
-            connect(&endpoint, self.addresses(&endpoint, mark).await?, mark).await?
+            connect(
+                &endpoint,
+                self.addresses(&endpoint, mark).await?,
+                mark,
+                &self.interfaces,
+            )
+            .await?
         } else {
-            connect(&endpoint, self.addresses(&endpoint, mark).await?, mark).await?
+            connect(
+                &endpoint,
+                self.addresses(&endpoint, mark).await?,
+                mark,
+                &self.interfaces,
+            )
+            .await?
         };
         let response = exchange_stream(stream.as_mut(), packet).await?;
         self.recycle(key, stream);
@@ -137,10 +161,17 @@ async fn connect(
     endpoint: &Endpoint,
     addresses: Vec<SocketAddr>,
     mark: Option<u32>,
+    interfaces: &[Option<String>; 2],
 ) -> Result<Stream, DnsError> {
     let mut last_error = DnsError::invalid("DNS upstream has no address");
     for address in addresses {
-        let stream = match socket::upstream_tcp(address, mark).await {
+        let stream = match socket::upstream_tcp(
+            address,
+            mark,
+            interfaces[usize::from(address.is_ipv6())].as_deref(),
+        )
+        .await
+        {
             Ok(stream) => stream,
             Err(error) => {
                 last_error = error;

@@ -295,14 +295,18 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             ));
         }
         crate::runtime_ports::ensure_dns_available(policy.core_listen_port)?;
-        Ok(Some(DnsFrontendPlan::from_policy(
+        let mut plan = DnsFrontendPlan::from_policy(
             &deployment.config_hash,
             &policy,
             &system_dns.original_upstreams,
             system_dns.listen_port,
             &system_dns.listen_hosts,
             &self.dns_settings.read(),
-        )?))
+        )?;
+        if sempre_converter::cn_direct_routes(&profile) {
+            plan.config.outbound_interfaces = self.transparent.cn_outbound_interfaces().await?;
+        }
+        Ok(Some(plan))
     }
 
     pub(crate) async fn prepare_dns_transparent_plan(

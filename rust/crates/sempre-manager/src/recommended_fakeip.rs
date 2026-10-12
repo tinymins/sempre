@@ -95,8 +95,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         target: &Target,
         compiled_policy: Option<&DnsFrontendPolicy>,
     ) -> Result<ConfigBuild, ManagerError> {
-        let mut build =
-            crate::config_build::config_build(profile, target, &self.dns_settings.read())?;
+        let mut build = crate::config_build::config_build(
+            profile,
+            target,
+            &self.dns_settings.read(),
+            self.network_settings.read().cn_direct_routes,
+        )?;
         if uses_recommended_fakeip(profile, target) {
             let ranges = match compiled_policy {
                 Some(policy) => [

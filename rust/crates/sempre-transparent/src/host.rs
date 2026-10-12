@@ -19,6 +19,7 @@ pub struct Controller {
     system_dns: SystemDns,
     macos_dns: MacSystemDns,
     windows_dns: WindowsSystemDns,
+    cn_routes: Arc<crate::cn_routes::Controller>,
 }
 
 impl Default for Controller {
@@ -28,6 +29,7 @@ impl Default for Controller {
             system_dns: SystemDns::disabled(),
             macos_dns: MacSystemDns::new(false, std::path::PathBuf::new()),
             windows_dns: WindowsSystemDns::new(false, std::path::PathBuf::new()),
+            cn_routes: Arc::new(crate::cn_routes::Controller::new(None)),
         }
     }
 }
@@ -36,6 +38,10 @@ impl Controller {
     pub fn new(layout: &sempre_state::Layout) -> Self {
         Self {
             runner: Arc::new(command::SystemRunner),
+            cn_routes: Arc::new(crate::cn_routes::Controller::new(
+                (layout.mode == sempre_state::Mode::System)
+                    .then(|| layout.home.join("cn-routes.json")),
+            )),
             system_dns: SystemDns::new(
                 cfg!(target_os = "linux") && layout.mode == sempre_state::Mode::System,
                 layout.home.join("system-dns"),
@@ -196,6 +202,7 @@ impl Controller {
     }
 
     pub async fn cleanup(&self) -> Result<(), TransparentError> {
+        self.cn_routes.cleanup(self.runner.as_ref()).await?;
         if cfg!(target_os = "macos") {
             if self.is_root().await? {
                 return self.macos_dns.restore(self.runner.as_ref()).await;
@@ -215,6 +222,7 @@ impl Controller {
     }
 
     pub async fn cleanup_runtime_network(&self) -> Result<(), TransparentError> {
+        self.cn_routes.cleanup(self.runner.as_ref()).await?;
         if !cfg!(target_os = "linux") || !self.is_root().await? {
             return Ok(());
         }
@@ -228,6 +236,7 @@ impl Controller {
     }
 
     pub async fn recover_stale_system_dns(&self) -> Result<(), TransparentError> {
+        self.cn_routes.cleanup(self.runner.as_ref()).await?;
         if cfg!(target_os = "macos") && self.macos_dns.allowed() && self.is_root().await? {
             self.macos_dns.restore(self.runner.as_ref()).await?;
         }

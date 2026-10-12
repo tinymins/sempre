@@ -61,10 +61,23 @@ fn prepare_with_windows_ipv6(
         ..Plan::default()
     };
     crate::validate_system_dns_config(&plan, &config)?;
+    let capture_prefixes = config["inbounds"]
+        .as_array()
+        .and_then(|a| a.iter().find(|r| r["type"] == "tun"))
+        .and_then(|r| r.get("route_address"))
+        .cloned();
     match platform {
         Platform::Macos => insert_original_dns_bypass(&mut config, &plan)?,
         Platform::Windows => configure_windows_dns_redirect(&mut config, &plan, core_version)?,
         Platform::WindowsDivert => configure_windows_routes(&mut config, &plan)?,
+    }
+    if sempre_converter::cn_direct_routes(profile)
+        && let Some(capture) = capture_prefixes
+        && let Some(tun) = config["inbounds"]
+            .as_array_mut()
+            .and_then(|a| a.iter_mut().find(|r| r["type"] == "tun"))
+    {
+        tun["route_address"] = capture;
     }
     let mut data =
         serde_json::to_vec_pretty(&config).map_err(|error| TransparentError::Encode {

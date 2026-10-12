@@ -1,3 +1,4 @@
+mod cn_routes;
 mod command;
 mod desktop_plan;
 mod document;
@@ -16,6 +17,7 @@ use sempre_network::Inventory;
 use serde_json::Value;
 use thiserror::Error;
 
+pub use cn_routes::{CnRouteIntent, normalize_cn_prefixes};
 pub use host::Controller;
 
 pub const ROUTE_MARK: u32 = 0x5350_0001;
@@ -23,10 +25,10 @@ pub const BYPASS_MARK: u32 = 0x5350_0002;
 pub const ROUTE_TABLE: u32 = 20_240;
 pub const RULE_PRIORITY: u32 = 20_240;
 pub const POLICY_PROTOCOL: u8 = 0xfd;
-
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Plan {
     pub core: String,
+    pub cn_routes: Option<CnRouteIntent>,
     pub mode: Mode,
     pub tun_interface: String,
     pub tun_address: String,
@@ -39,17 +41,14 @@ pub struct Plan {
     pub fake_ip_prefixes: Vec<String>,
     pub system_dns: Option<SystemDnsPlan>,
 }
-
 impl Plan {
     pub const fn enabled(&self) -> bool {
         matches!(self.mode, Mode::Tun | Mode::TProxy)
     }
-
     pub const fn active(&self) -> bool {
-        self.enabled() || self.system_dns.is_some()
+        self.enabled() || self.system_dns.is_some() || self.cn_routes.is_some()
     }
 }
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SystemDnsPlan {
     pub listen_port: u16,
@@ -59,7 +58,6 @@ pub struct SystemDnsPlan {
     pub managed_frontend: bool,
     pub takeover_host: bool,
 }
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Mode {
     Tun,

@@ -2,6 +2,52 @@ use super::Controller;
 use crate::TransparentError;
 
 impl Controller {
+    pub async fn flush_cn_dns(&self) -> Result<(), TransparentError> {
+        #[cfg(target_os = "macos")]
+        {
+            crate::command::require_success(
+                "dscacheutil",
+                self.runner
+                    .run("/usr/bin/dscacheutil", &["-flushcache"], None)
+                    .await?,
+            )?;
+            crate::command::require_success(
+                "mDNSResponder",
+                self.runner
+                    .run("/usr/bin/killall", &["-HUP", "mDNSResponder"], None)
+                    .await?,
+            )?;
+        }
+        #[cfg(target_os = "windows")]
+        crate::command::require_success(
+            "Clear-DnsClientCache",
+            self.runner
+                .run(
+                    "powershell.exe",
+                    &[
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        "Clear-DnsClientCache",
+                    ],
+                    None,
+                )
+                .await?,
+        )?;
+        Ok(())
+    }
+    pub async fn cn_outbound_interfaces(&self) -> Result<[Option<String>; 2], TransparentError> {
+        crate::cn_routes::outbound_interfaces(self.runner.as_ref()).await
+    }
+    pub async fn apply_cn_routes(
+        &self,
+        intent: &crate::CnRouteIntent,
+    ) -> Result<(), TransparentError> {
+        self.cn_routes
+            .apply(std::sync::Arc::clone(&self.runner), intent)
+            .await
+    }
+
     pub async fn prepare_managed_dns_frontend(
         &self,
         core: &str,

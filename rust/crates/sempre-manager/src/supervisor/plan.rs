@@ -20,6 +20,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 "managed core is stopped".into(),
             ));
         }
+        self.validate_cn_core(&deployment.core)?;
         let reference = CoreRef {
             core: deployment.core.clone(),
             repository: deployment.repository.clone(),
@@ -66,14 +67,19 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         } else {
             None
         };
-        let rules = if deployment.core == "sing-box" {
-            crate::rule_bootstrap::RuleBootstrap::prepare(&self.fetcher, &runtime.config)?
-        } else {
-            crate::rule_bootstrap::RuleBootstrap::default()
-        };
-        let transparent = self
+        let (cn_source, rules) = self
+            .prepare_cn_rules(&deployment.core, &binary, &runtime.config)
+            .await?;
+        let mut transparent = self
             .prepare_dns_transparent_plan(&document, &deployment, &reference, &runtime.config)
             .await?;
+        self.configure_cn_runtime(
+            &binary,
+            &runtime.config,
+            cn_source.as_ref(),
+            &mut transparent,
+        )
+        .await?;
         self.validate_config_path(&reference, &deployment.version, &runtime.config)
             .await?;
         let runtime_data = fs::read(&runtime.config)
@@ -90,14 +96,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
         let binary = path_text(&binary)?;
         let runtime_config = path_text(&runtime.config)?;
-        let data_text = path_text(&data)?;
         Ok(RuntimePlan {
-            spec: adapter.run_spec(binary, runtime_config, data_text),
+            spec: adapter.run_spec(binary, runtime_config, path_text(&data)?),
             deployment,
             runtime_config: runtime.config,
             runtime_config_hash,
             control: runtime.control,
             transparent,
+            cn_source,
             dns_frontend,
             dns_rule_files,
             rules,

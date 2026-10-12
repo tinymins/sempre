@@ -55,6 +55,16 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
         .dns_frontend
         .activate_core(plan.dns_frontend.as_ref(), grace)
         .await;
+    if let Some(intent) = &plan.transparent.cn_routes {
+        let status = manager.dns_frontend.status();
+        if !status.core_dns_healthy || status.mode != "real-ip" {
+            return Err(sempre_transparent::TransparentError::Invalid(
+                "real-IP DNS frontend is not ready; TUN fallback remains disabled".into(),
+            ));
+        }
+        manager.transparent.flush_cn_dns().await?;
+        manager.transparent.apply_cn_routes(intent).await?;
+    }
     Ok(())
 }
 
@@ -65,6 +75,7 @@ pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(
     plan: &RuntimePlan,
 ) -> ProcessEvent {
     tokio::select! {
+        () = manager.monitor_cn_routes(plan) => ProcessEvent::Reload,
         () = manager.complete_rule_bootstrap(plan) => ProcessEvent::Reload,
         () = manager.monitor_network_automation() => unreachable!("network monitor does not exit"),
         result = process.wait() => ProcessEvent::Exited(result),

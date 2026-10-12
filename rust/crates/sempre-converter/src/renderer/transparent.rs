@@ -23,6 +23,13 @@ pub(super) fn sing_box_inbounds(
             inbound["sniff"] = json!(true);
             inbound["sniff_override_destination"] = json!(true);
         }
+        if crate::cn_direct_routes(profile) {
+            inbound["auto_route"] = json!(false);
+            inbound["strict_route"] = json!(false);
+            if !private_capture_cidrs.is_empty() {
+                inbound["route_address"] = json!(private_capture_cidrs);
+            }
+        }
         let mut restricted_routes = super::dns::sing_box_fakeip_route_addresses(profile, target);
         if !restricted_routes.is_empty() {
             for cidr in private_capture_cidrs {
@@ -47,7 +54,18 @@ pub(super) fn sing_box_inbounds(
     let transparent = &profile.transparent_proxy;
     match transparent.mode.as_str() {
         "" | DISABLED => Vec::new(),
-        TUN => vec![sing_box_tun(transparent)],
+        TUN => {
+            let mut inbound = sing_box_tun(transparent);
+            if crate::cn_direct_routes(profile) {
+                inbound["auto_route"] = json!(false);
+                inbound["auto_redirect"] = json!(false);
+                inbound["strict_route"] = json!(false);
+                if !private_capture_cidrs.is_empty() {
+                    inbound["route_address"] = json!(private_capture_cidrs);
+                }
+            }
+            vec![inbound]
+        }
         TPROXY => sing_box_tproxy(
             transparent,
             target.version != "11",

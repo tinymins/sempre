@@ -11,6 +11,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         mut candidate: crate::DnsSettings,
     ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
         candidate.normalize_and_validate()?;
+        if !candidate.enabled && self.network_settings.read().cn_direct_routes {
+            return Err(ManagerError::InvalidOperation(
+                "DNS frontend must remain enabled with CN direct routes".into(),
+            ));
+        }
         if !candidate.enabled && self.network_settings.read().mode == crate::NetworkMode::Gateway {
             return Err(ManagerError::InvalidOperation(
                 "DNS frontend must remain enabled in gateway mode".into(),

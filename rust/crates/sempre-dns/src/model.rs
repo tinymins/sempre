@@ -18,6 +18,7 @@ pub struct DnsConfig {
     pub domestic_cidrs: Vec<String>,
     pub cache_ttl_seconds: u64,
     pub outbound_mark: Option<u32>,
+    pub outbound_interfaces: [Option<String>; 2],
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -47,6 +48,7 @@ impl Default for DnsConfig {
             domestic_cidrs: Vec::new(),
             cache_ttl_seconds: 300,
             outbound_mark: None,
+            outbound_interfaces: [None, None],
         }
     }
 }

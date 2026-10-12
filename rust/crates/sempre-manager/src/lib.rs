@@ -1,6 +1,7 @@
 mod application_uninstall;
 mod auto_config;
 mod bundle;
+mod cn_routes;
 mod component_deploy;
 mod config;
 mod config_build;

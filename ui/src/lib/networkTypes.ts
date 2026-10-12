@@ -3,6 +3,7 @@ export interface NetworkSettings {
   revision: number
   mode: 'local' | 'gateway'
   gateway_capture_host: boolean
+  cn_direct_routes?: boolean
   automatic_switching: boolean
   known_networks: KnownNetwork[]
 }
