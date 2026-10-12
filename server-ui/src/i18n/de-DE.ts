@@ -1,8 +1,10 @@
+import relayMessages from '../dashboard/relay-messages-de-DE'
 import proxyMessages from '../proxies/messages-de-DE'
 import type { MessageKey } from './zh-CN'
 
 export const deDE = {
   ...proxyMessages,
+  ...relayMessages,
   "common.save": "Speichern",
   "common.cancel": "Abbrechen",
   "common.confirm": "Bestätigen",

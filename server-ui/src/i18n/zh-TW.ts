@@ -1,8 +1,10 @@
+import relayMessages from '../dashboard/relay-messages-zh-TW'
 import proxyMessages from '../proxies/messages-zh-TW'
 import type { MessageKey } from './zh-CN'
 
 export const zhTW = {
   ...proxyMessages,
+  ...relayMessages,
   "common.save": "儲存",
   "common.cancel": "取消",
   "common.confirm": "確定",

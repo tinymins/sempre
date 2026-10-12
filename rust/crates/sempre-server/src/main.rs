@@ -10,6 +10,8 @@ mod maintenance;
 mod openwrt_export;
 mod proxy_crypto;
 mod proxy_runtime;
+mod relay_egress;
+mod resource_relay;
 mod source_cache;
 mod subscription_compile;
 mod subscription_editor;
@@ -100,6 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("shared editor migration incomplete; run sempre-server migrate".into());
     }
     proxy_runtime::ensure_schema(&pool).await?;
+    relay_egress::ensure_schema(&pool).await?;
     let address = config.bind_address;
     let web_root = config.web_root.clone();
     let state = Arc::new(AppState { pool, config });
@@ -113,6 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(subscription_proxies::router())
         .merge(toolbox_account::router())
         .merge(toolbox_admin::router())
+        .merge(relay_egress::router())
         .merge(toolbox_overview::router())
         .merge(toolbox_network::router())
         .merge(auth::protected_router())
@@ -128,6 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/v1/auth/login", post(auth::login))
         .merge(toolbox_public::router())
         .merge(toolbox_rules::router())
+        .merge(resource_relay::router())
         .merge(toolbox_account::public_router())
         .merge(protected)
         .route("/api/{*path}", any(api_not_found))

@@ -1,8 +1,10 @@
+import relayMessages from '../dashboard/relay-messages-ja-JP'
 import proxyMessages from '../proxies/messages-ja-JP'
 import type { MessageKey } from './zh-CN'
 
 export const jaJP = {
   ...proxyMessages,
+  ...relayMessages,
   "common.save": "保存",
   "common.cancel": "キャンセル",
   "common.confirm": "確認",

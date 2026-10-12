@@ -91,6 +91,16 @@ impl IntoResponse for ApiError {
 
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
+        if let Some(database) = error.as_database_error()
+            && matches!(
+                database.constraint(),
+                Some("relay_egress_admin_owner" | "relay_egress_proxy_references_proxy_id_fkey")
+            )
+        {
+            return Self::conflict(
+                "proxy or owner is referenced by relay egress policy; choose a replacement first",
+            );
+        }
         Self::internal(error)
     }
 }

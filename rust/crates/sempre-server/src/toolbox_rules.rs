@@ -11,7 +11,9 @@ use serde_json::Value;
 use sempre_converter::convert_clash_rule_set;
 
 use crate::{
-    AppState, error::ApiError, source_cache::CacheMode, subscription_rules::load_rule_source,
+    AppState,
+    error::ApiError,
+    source_cache::{self, CacheMode, SourceKind, SourceRequest},
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -52,13 +54,19 @@ async fn convert(state: &AppState, url: &str, version: u8) -> Result<Json<Value>
     if url.trim().is_empty() {
         return Err(ApiError::bad_request("url is required"));
     }
-    let loaded = load_rule_source(
+    let loaded = source_cache::load_relay(
         state,
-        url,
-        "sempre-rule-set/1",
-        "public-rule-conversion",
-        60,
-        CacheMode::Global,
+        SourceRequest {
+            url,
+            ua: "sempre-rule-set/1",
+            fetch_mode: "relay",
+            proxy: None,
+            source_id: "public-rule-conversion",
+            ttl_minutes: 60,
+            mode: CacheMode::Global,
+            kind: SourceKind::RuleSet,
+            inspect_unusable: false,
+        },
     )
     .await?;
     Ok(Json(convert_clash_rule_set(&loaded.content, version)))

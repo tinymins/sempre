@@ -1,8 +1,10 @@
+import relayMessages from '../dashboard/relay-messages-en-US'
 import proxyMessages from '../proxies/messages-en-US'
 import type { MessageKey } from './zh-CN'
 
 export const enUS = {
   ...proxyMessages,
+  ...relayMessages,
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",

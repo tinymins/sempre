@@ -46,7 +46,7 @@ async fn list(
     State(state): State<Arc<AppState>>,
     CurrentUser(user): CurrentUser,
 ) -> Result<Json<Value>, ApiError> {
-    let rows = sqlx::query("SELECT p.*, (SELECT COUNT(*) FROM proxy_subscribes s WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.subscribe_items,'[]'::jsonb)) item WHERE item->>'proxyId'=p.id::text)) AS reference_count FROM subscription_proxies p WHERE p.user_id=$1 OR p.authorized_user_ids @> jsonb_build_array($1::text) ORDER BY p.created_at")
+    let rows = sqlx::query("SELECT p.*, (SELECT COUNT(*) FROM proxy_subscribes s WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.subscribe_items,'[]'::jsonb)) item WHERE item->>'proxyId'=p.id::text)) + (SELECT COUNT(*) FROM relay_egress_proxy_references r WHERE r.proxy_id=p.id) AS reference_count FROM subscription_proxies p WHERE p.user_id=$1 OR p.authorized_user_ids @> jsonb_build_array($1::text) ORDER BY p.created_at")
         .bind(user.id).fetch_all(&state.pool).await?;
     Ok(Json(
         json!({"configured":state.config.proxy.is_some(),"items":rows.iter().map(|row| output(row, user.id)).collect::<Result<Vec<_>, _>>()?}),
@@ -235,10 +235,10 @@ async fn remove(
         .await?
         .ok_or_else(|| ApiError::not_found("subscription proxy"))?;
     require_owner(&row, user.id)?;
-    let referenced: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM proxy_subscribes s WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.subscribe_items,'[]'::jsonb)) item WHERE item->>'proxyId'=$1::text))").bind(id.to_string()).fetch_one(&mut *tx).await?;
+    let referenced: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM relay_egress_proxy_references WHERE proxy_id::text=$1) OR EXISTS (SELECT 1 FROM proxy_subscribes s WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.subscribe_items,'[]'::jsonb)) item WHERE item->>'proxyId'=$1::text))").bind(id.to_string()).fetch_one(&mut *tx).await?;
     if referenced {
         return Err(ApiError::conflict(
-            "proxy is referenced by subscriptions; choose a replacement first",
+            "proxy is referenced by subscriptions or relay egress policy; choose a replacement first",
         ));
     }
     proxy_runtime::stop(&state, id).await?;

@@ -62,7 +62,7 @@ pub(crate) async fn load(
     state: &AppState,
     request: SourceRequest<'_>,
 ) -> Result<LoadedSource, ApiError> {
-    load_inner(state, request, None).await
+    load_inner(state, request, None, false).await
 }
 
 pub(crate) async fn load_observed(
@@ -70,18 +70,26 @@ pub(crate) async fn load_observed(
     request: SourceRequest<'_>,
     stages: &mut StageLog,
 ) -> Result<LoadedSource, ApiError> {
-    load_inner(state, request, Some(stages)).await
+    load_inner(state, request, Some(stages), false).await
+}
+
+pub(crate) async fn load_relay(
+    state: &AppState,
+    request: SourceRequest<'_>,
+) -> Result<LoadedSource, ApiError> {
+    load_inner(state, request, None, true).await
 }
 
 async fn load_inner(
     state: &AppState,
     request: SourceRequest<'_>,
     mut stages: Option<&mut StageLog>,
+    relay: bool,
 ) -> Result<LoadedSource, ApiError> {
     if request.ttl_minutes < 0 {
         return Err(ApiError::bad_request("cache TTL must be nonnegative"));
     }
-    let cache_key = cache_key(&request);
+    let (policy, cache_key) = relay_cache_context(state, &request, relay).await?;
     let cached = cached_row(state, &request, &cache_key).await?;
     if request.ttl_minutes > 0
         && let Some(row) = &cached
@@ -105,11 +113,7 @@ async fn load_inner(
         stages.push(json!({"type":"cache","status":"ok","cacheState":if cached.is_some() { "stale-candidate" } else { "miss" }}));
         stages.push(json!({"type":"network","status":"skipped","connectionKind":if request.proxy.is_some() { "proxy" } else { "origin" },"fetchMode":request.fetch_mode,"dnsTcpProbed":false,"message":"independent DNS and TCP probes were not run"}));
     }
-    let fetched = fetch::fetch_source_text(request.url, request.ua, request.proxy, |attempt| {
-        if let Some(stages) = &mut stages {
-            stages.push(json!({"type":"attempt","status":attempt.status,"attempt":attempt.number,"durationMs":attempt.duration_ms,"httpStatus":attempt.http_status,"message":attempt.error}));
-        }
-    }).await;
+    let fetched = fetch_requested_source(state, &request, policy.as_ref(), &mut stages).await;
     let usable = fetched.as_ref().is_ok_and(|fetched| {
         fetched.status == 200
             && match request.kind {
@@ -173,6 +177,57 @@ async fn load_inner(
         });
     }
     unusable_result(&request, fetched)
+}
+
+async fn relay_cache_context(
+    state: &AppState,
+    request: &SourceRequest<'_>,
+    relay: bool,
+) -> Result<(Option<crate::relay_egress::Policy>, String), ApiError> {
+    let policy = if relay {
+        Some(crate::relay_egress::Policy::load(state).await?)
+    } else {
+        None
+    };
+    let mut cache_key = cache_key(request);
+    if relay {
+        crate::relay_egress::validate_url(request.url)?;
+        let policy_identity = policy
+            .as_ref()
+            .expect("relay policy loaded")
+            .cache_identity(state)
+            .await?;
+        cache_key = format!(
+            "{:x}",
+            Sha256::digest(format!("{cache_key}\0{policy_identity}").as_bytes())
+        );
+    }
+    Ok((policy, cache_key))
+}
+
+async fn fetch_requested_source(
+    state: &AppState,
+    request: &SourceRequest<'_>,
+    policy: Option<&crate::relay_egress::Policy>,
+    stages: &mut Option<&mut StageLog>,
+) -> Result<fetch::FetchedText, ApiError> {
+    if let Some(policy) = policy {
+        fetch::fetch_text_with_retry(
+            || async {
+                crate::resource_relay::fetch_with_policy(state, request.url, policy)
+                    .await
+                    .and_then(|fetched| fetched.response.into_text())
+            },
+            |_| {},
+        )
+        .await
+    } else {
+        fetch::fetch_source_text(request.url, request.ua, request.proxy, |attempt| {
+        if let Some(stages) = stages {
+            stages.push(json!({"type":"attempt","status":attempt.status,"attempt":attempt.number,"durationMs":attempt.duration_ms,"httpStatus":attempt.http_status,"message":attempt.error}));
+        }
+    }).await
+    }
 }
 
 async fn cached_row(

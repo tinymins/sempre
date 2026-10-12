@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::error::ApiError;
 
-const MAX_SOURCE_SIZE: usize = 32 << 20;
+pub(crate) const MAX_SOURCE_SIZE: usize = 32 << 20;
 const MAX_REDIRECTS: usize = 5;
 
 pub(crate) struct FetchedText {
@@ -32,6 +32,21 @@ pub(crate) async fn fetch_source_text(
     proxy: Option<&str>,
     mut observe: impl FnMut(FetchAttempt),
 ) -> Result<FetchedText, ApiError> {
+    fetch_text_with_retry(
+        || fetch_text(input, user_agent, MAX_SOURCE_SIZE, proxy),
+        &mut observe,
+    )
+    .await
+}
+
+pub(crate) async fn fetch_text_with_retry<F, Fut>(
+    mut fetch: F,
+    mut observe: impl FnMut(FetchAttempt),
+) -> Result<FetchedText, ApiError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<FetchedText, ApiError>>,
+{
     let mut last_error = None;
     let mut last_response = None;
     for attempt in 1..=3 {
@@ -43,7 +58,7 @@ pub(crate) async fn fetch_source_text(
             error: None,
         });
         let started = Instant::now();
-        let fetched = fetch_text(input, user_agent, MAX_SOURCE_SIZE, proxy).await;
+        let fetched = fetch().await;
         observe(FetchAttempt {
             number: attempt,
             status: if fetched
@@ -81,11 +96,46 @@ async fn fetch_text(
     max_size: usize,
     proxy: Option<&str>,
 ) -> Result<FetchedText, ApiError> {
+    let (response, ()) = fetch_bytes(input, user_agent, max_size, |url| async move {
+        Ok((safe_client(&url, proxy)?, ()))
+    })
+    .await?;
+    response.into_text()
+}
+
+pub(crate) struct FetchedBytes {
+    pub content: Vec<u8>,
+    pub status: u16,
+    pub headers: BTreeMap<String, String>,
+}
+
+impl FetchedBytes {
+    pub(crate) fn into_text(self) -> Result<FetchedText, ApiError> {
+        Ok(FetchedText {
+            content: String::from_utf8(self.content)
+                .map_err(|_| ApiError::unavailable("source response is not UTF-8"))?,
+            status: self.status,
+            headers: self.headers,
+        })
+    }
+}
+
+pub(crate) async fn fetch_bytes<T, F, Fut>(
+    input: &str,
+    user_agent: &str,
+    max_size: usize,
+    mut select_client: F,
+) -> Result<(FetchedBytes, T), ApiError>
+where
+    F: FnMut(Url) -> Fut,
+    Fut: std::future::Future<Output = Result<(Client, T), ApiError>>,
+{
     let mut url: Url = input
         .parse()
         .map_err(|_| ApiError::bad_request("source URL is invalid"))?;
     for redirect in 0..=MAX_REDIRECTS {
-        let client = safe_client(&url, proxy)?;
+        validate_url(&url)?;
+        let (client, route_context) = select_client(url.clone()).await?;
         let response = client
             .get(url.clone())
             .header(header::USER_AGENT, user_agent)
@@ -101,7 +151,7 @@ async fn fetch_text(
                 };
                 ApiError::unavailable(reason)
             })?;
-        if response.status().is_redirection() {
+        if matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
             if redirect == MAX_REDIRECTS {
                 return Err(ApiError::unavailable("source exceeded redirect limit"));
             }
@@ -123,6 +173,7 @@ async fn fetch_text(
         }
         let headers = [
             header::CONTENT_TYPE,
+            header::CONTENT_ENCODING,
             header::ETAG,
             header::LAST_MODIFIED,
             header::CACHE_CONTROL,
@@ -146,18 +197,19 @@ async fn fetch_text(
             }
             content.extend_from_slice(&chunk);
         }
-        let content = String::from_utf8(content)
-            .map_err(|_| ApiError::unavailable("source response is not UTF-8"))?;
-        return Ok(FetchedText {
-            content,
-            status,
-            headers,
-        });
+        return Ok((
+            FetchedBytes {
+                content,
+                status,
+                headers,
+            },
+            route_context,
+        ));
     }
     Err(ApiError::unavailable("source redirect failed"))
 }
 
-fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError> {
+pub(crate) fn validate_url(url: &Url) -> Result<(), ApiError> {
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
@@ -169,6 +221,11 @@ fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError> {
     if url.host_str().is_none() {
         return Err(ApiError::bad_request("source URL has no host"));
     }
+    Ok(())
+}
+
+fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError> {
+    validate_url(url)?;
     let mut builder = Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))
