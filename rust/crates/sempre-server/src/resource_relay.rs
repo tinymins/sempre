@@ -75,13 +75,11 @@ pub(crate) async fn fetch_with_policy_observed(
                     "relay URL cannot target another relay endpoint",
                 ));
             }
-            let addresses = public_addresses(&url).await?;
             let route = policy.resolve(state, &url).await?;
             let mut client = reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(10))
-                .timeout(Duration::from_secs(20))
-                .resolve_to_addrs(url.host_str().expect("validated host"), &addresses);
+                .timeout(Duration::from_secs(20));
             match &route.outbound {
                 Outbound::System => {}
                 Outbound::Direct => client = client.no_proxy(),
@@ -124,54 +122,4 @@ async fn download(
         HeaderValue::from_static("nosniff"),
     );
     Ok(response)
-}
-
-async fn public_addresses(url: &url::Url) -> Result<Vec<std::net::SocketAddr>, ApiError> {
-    let host = url
-        .host_str()
-        .ok_or_else(|| ApiError::bad_request("resource URL requires a host"))?;
-    let port = url
-        .port_or_known_default()
-        .ok_or_else(|| ApiError::bad_request("resource URL requires a port"))?;
-    let addresses = tokio::time::timeout(
-        Duration::from_secs(10),
-        tokio::net::lookup_host((host.trim_matches(['[', ']']), port)),
-    )
-    .await
-    .map_err(|_| ApiError::unavailable("resource DNS lookup timed out"))?
-    .map_err(|_| ApiError::unavailable("resource DNS lookup failed"))?
-    .collect::<Vec<_>>();
-    if addresses.is_empty() || addresses.iter().any(|address| !public_ip(address.ip())) {
-        return Err(ApiError::bad_request(
-            "resource URL must resolve only to public addresses",
-        ));
-    }
-    Ok(addresses)
-}
-
-fn public_ip(ip: std::net::IpAddr) -> bool {
-    match ip {
-        std::net::IpAddr::V4(ip) => {
-            let [a, b, c, _] = ip.octets();
-            !(a == 0
-                || a == 10
-                || a == 127
-                || a >= 224
-                || (a == 100 && (64..=127).contains(&b))
-                || (a == 169 && b == 254)
-                || (a == 172 && (16..=31).contains(&b))
-                || (a == 192
-                    && (b == 168 || (b == 0 && (c == 0 || c == 2)) || (b == 88 && c == 99)))
-                || (a == 198 && (b == 18 || b == 19 || (b == 51 && c == 100)))
-                || (a == 203 && b == 0 && c == 113))
-        }
-        std::net::IpAddr::V6(ip) => {
-            let segments = ip.segments();
-            // Global unicast only; exclude IETF special assignments and documentation.
-            (segments[0] & 0xe000) == 0x2000
-                && !(segments[0] == 0x2001 && (segments[1] < 0x200 || segments[1] == 0xdb8))
-                && segments[0] != 0x2002
-                && !(segments[0] == 0x3fff && segments[1] < 0x1000)
-        }
-    }
 }

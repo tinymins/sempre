@@ -31,10 +31,9 @@ including when inferred from the original `.srs` extension. Other rule providers
 retain their existing conversion endpoints. Wrapped client downloads use the
 direct outbound to reach Sempre; upstream egress is selected by the server.
 
-Public relay destinations must resolve to public addresses. Direct connections
-pin the validated DNS results. Managed or environment proxies can perform their
-own destination DNS resolution, so local validation does not pin their remote
-resolution. Recursive requests to this service's relay paths are rejected.
+Resource requests use the selected outbound's DNS and connection behavior without
+a local public-IP precheck or DNS pinning. Recursive requests to this service's
+relay paths are rejected.
 
 Raw responses have no server-side body cache. Rule conversion retains its
 existing retry/cache behavior, with saved-policy and referenced-provider
