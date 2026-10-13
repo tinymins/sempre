@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::fmt::Write;
 
 use super::{Endpoint, Route, invalid};
 use crate::{TransparentError, command};
@@ -112,10 +113,11 @@ pub(super) async fn change(
                 format!("via {} ", route.endpoint.gateway)
             };
             let operation = if add { "replace" } else { "del" };
-            batch.push_str(&format!(
-                "route {operation} {} {gateway}dev {} table {TABLE} proto 253\n",
+            let _ = writeln!(
+                batch,
+                "route {operation} {} {gateway}dev {} table {TABLE} proto 253",
                 route.prefix, route.endpoint.interface
-            ));
+            );
         }
         if batch.is_empty() {
             continue;

@@ -2,6 +2,10 @@ use super::Controller;
 use crate::TransparentError;
 
 impl Controller {
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows")),
+        allow(clippy::unused_async)
+    )] // Shared asynchronous platform contract; Linux has no DNS cache to flush.
     pub async fn flush_cn_dns(&self) -> Result<(), TransparentError> {
         #[cfg(target_os = "macos")]
         {
