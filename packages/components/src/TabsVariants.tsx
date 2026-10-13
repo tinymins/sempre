@@ -1,10 +1,4 @@
-import {
-  type ReactNode,
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode } from "react";
 import { cn } from "./utils";
 
 import type { TabItem } from "./Tabs";
@@ -68,53 +62,22 @@ export function LineTabs({
     large: "text-base px-4 py-2.5",
   }[size];
 
-  const tabBarRef = useRef<HTMLDivElement>(null);
-  const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
-  const hasInitRef = useRef(false);
-
-  const updateIndicator = useCallback(() => {
-    const tabBar = tabBarRef.current;
-    const activeTab = tabRefs.current.get(activeKey);
-    if (!tabBar || !activeTab) return;
-    const barRect = tabBar.getBoundingClientRect();
-    const tabRect = activeTab.getBoundingClientRect();
-    setIndicatorStyle({
-      left: tabRect.left - barRect.left + tabBar.scrollLeft,
-      width: tabRect.width,
-    });
-  }, [activeKey]);
-
-  useLayoutEffect(() => {
-    updateIndicator();
-    if (!hasInitRef.current) {
-      requestAnimationFrame(() => {
-        hasInitRef.current = true;
-      });
-    }
-  }, [updateIndicator]);
-
   return (
     <div className={className}>
       <div className="flex items-center border-b border-black/[0.06] dark:border-white/[0.08] select-none">
         <div
-          ref={tabBarRef}
           className={cn(
-            "relative flex gap-0 flex-1 overflow-x-auto",
+            "flex min-w-0 gap-0 flex-1 overflow-x-auto",
             centered && "justify-center",
           )}
         >
           {items.map((item) => (
             <button
               key={item.key}
-              ref={(el) => {
-                if (el) tabRefs.current.set(item.key, el);
-                else tabRefs.current.delete(item.key);
-              }}
               type="button"
               disabled={item.disabled}
               className={cn(
-                "relative whitespace-nowrap transition-colors font-medium cursor-pointer",
+                "relative shrink-0 whitespace-nowrap transition-colors font-medium cursor-pointer",
                 sizeClass,
                 type === "card" &&
                   "border border-b-0 border-black/[0.06] dark:border-white/[0.08] rounded-t -mb-px",
@@ -134,20 +97,17 @@ export function LineTabs({
                 {item.icon}
                 {item.label}
               </span>
+              {type === "line" && (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-[var(--accent)] rounded-t transition-opacity motion-reduce:transition-none",
+                    activeKey === item.key ? "opacity-100" : "opacity-0",
+                  )}
+                />
+              )}
             </button>
           ))}
-          {type === "line" && (
-            <span
-              className="absolute bottom-0 h-0.5 bg-[var(--accent)] rounded-t"
-              style={{
-                left: indicatorStyle.left,
-                width: indicatorStyle.width,
-                transition: hasInitRef.current
-                  ? "left 0.3s cubic-bezier(0.645, 0.045, 0.355, 1), width 0.3s cubic-bezier(0.645, 0.045, 0.355, 1)"
-                  : "none",
-              }}
-            />
-          )}
         </div>
         {tabBarExtraContent ? (
           <div className="shrink-0 ml-auto pl-2">{tabBarExtraContent}</div>
