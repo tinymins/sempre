@@ -8,7 +8,7 @@ export default {
   "proxies.systemHelp": "Sempre サーバーの既定のネットワーク動作を使用します。",
   "proxies.notConfigured": "The proxy runtime is not configured. Configure sempre-proxy and the server’s runtime URL, token, and encryption key.",
   "proxies.name": "名前",
-  "proxies.namePlaceholder": "Shanghai home / Singapore / Hangzhou Telecom",
+  "proxies.namePlaceholder": "プロキシ名を入力",
   "proxies.engine": "エンジン",
   "proxies.engineAuto": "自動選択",
   "proxies.configuration": "プロキシ設定",

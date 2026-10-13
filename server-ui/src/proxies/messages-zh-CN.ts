@@ -8,7 +8,7 @@ export default {
   "proxies.systemHelp": "沿用 Sempre 服务端当前默认网络行为。",
   "proxies.notConfigured": "代理运行服务尚未配置。请配置 sempre-proxy，以及主服务的运行服务地址、令牌和加密密钥。",
   "proxies.name": "名称",
-  "proxies.namePlaceholder": "上海家宽 / 新加坡机房 / 杭州电信",
+  "proxies.namePlaceholder": "输入代理名称",
   "proxies.engine": "运行引擎",
   "proxies.engineAuto": "自动选择",
   "proxies.configuration": "代理配置",

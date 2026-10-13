@@ -8,7 +8,7 @@ export default {
   "proxies.systemHelp": "Standard-Netzwerkverhalten des Sempre-Servers verwenden.",
   "proxies.notConfigured": "The proxy runtime is not configured. Configure sempre-proxy and the server’s runtime URL, token, and encryption key.",
   "proxies.name": "Name",
-  "proxies.namePlaceholder": "Shanghai home / Singapore / Hangzhou Telecom",
+  "proxies.namePlaceholder": "Proxynamen eingeben",
   "proxies.engine": "Engine",
   "proxies.engineAuto": "Automatisch",
   "proxies.configuration": "Proxy-Konfiguration",
