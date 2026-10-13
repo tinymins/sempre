@@ -260,7 +260,7 @@ pub(crate) async fn prepare_local(
     let mut target =
         Target::parse(&target.format).map_err(|error| ApiError::bad_request(error.to_string()))?;
     target.standalone = true;
-    let mut profile = Profile {
+    let profile = Profile {
         name: fields
             .remark
             .clone()
@@ -269,9 +269,6 @@ pub(crate) async fn prepare_local(
         editor: crate::subscription_editor::editor(fields, &target),
         ..Profile::default()
     };
-    if target.is_openwrt() {
-        profile = crate::openwrt_export::prepare(&profile, &target, &state.config.public_url)?;
-    }
     let custom_nodes = load_custom_nodes(state, selected, options.viewer, options.node_scope)
         .await
         .inspect_err(|error| {

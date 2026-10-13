@@ -1,15 +1,23 @@
 //! Apply server resource URLs after rendering, including generated and custom rules.
-use sempre_converter::{CompileRequest, CompileResult};
+use sempre_converter::{CompileRequest, CompileResult, EditorConfig, Profile, prepare_profile};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
 
 use crate::error::ApiError;
 
-pub(crate) const REVISION: &str = "resource-relay-export-v1";
+pub(crate) const REVISION: &str = "resource-relay-export-v2";
 
 pub(crate) fn compile(request: &CompileRequest, base: &Url) -> Result<CompileResult, ApiError> {
-    let mut result = sempre_converter::compile(request)
+    let mut request = request.clone();
+    request.profile = prepare_profile(&request.profile, &request.target)
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    request.profile.editor = EditorConfig::default();
+    if request.target.is_openwrt() {
+        request.profile.dns["shared"]["gfwBlackRuleSetUrl"] =
+            "https://cdn.jsdelivr.net/gh/ohmywrt/clash-rule@master/gfwip.yaml".into();
+    }
+    let mut result = sempre_converter::compile(&request)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
     let clash = matches!(result.format.as_str(), "clash" | "clash-meta" | "clash-rs");
     if !clash && request.target.core != "sing-box" {
@@ -37,34 +45,7 @@ pub(crate) fn compile(request: &CompileRequest, base: &Url) -> Result<CompileRes
             }
         }
     } else {
-        let direct = config
-            .get("outbounds")
-            .and_then(Value::as_array)
-            .and_then(|outbounds| {
-                outbounds
-                    .iter()
-                    .find(|outbound| outbound["type"] == "direct")
-                    .and_then(|outbound| outbound["tag"].as_str())
-                    .map(str::to_owned)
-            });
-        if let Some(rule_sets) = config
-            .get_mut("route")
-            .and_then(|route| route.get_mut("rule_set"))
-            .and_then(Value::as_array_mut)
-        {
-            for rule_set in rule_sets {
-                if rule_set["type"] != "remote" {
-                    continue;
-                }
-                let Some(source) = rule_set["url"].as_str().filter(|source| remote(source)) else {
-                    continue;
-                };
-                rule_set["url"] = relay_url(base, source)?.into();
-                if let Some(direct) = &direct {
-                    rule_set["download_detour"] = direct.clone().into();
-                }
-            }
-        }
+        wrap_sing_box_rules(&mut config, &request.profile, &result.version, base)?;
     }
     result.content = if clash {
         serde_yaml::to_string(&config).map_err(ApiError::internal)?
@@ -86,7 +67,71 @@ fn wrap_raw_field(value: &mut Value, key: &str, base: &Url) -> Result<(), ApiErr
     Ok(())
 }
 
-pub(crate) fn rule_url(base: &Url, version: &str, source: &str) -> Result<String, ApiError> {
+fn wrap_sing_box_rules(
+    config: &mut Value,
+    profile: &Profile,
+    version: &str,
+    base: &Url,
+) -> Result<(), ApiError> {
+    let direct = config
+        .get("outbounds")
+        .and_then(Value::as_array)
+        .and_then(|outbounds| {
+            outbounds
+                .iter()
+                .find(|outbound| outbound["type"] == "direct")
+                .and_then(|outbound| outbound["tag"].as_str())
+                .map(str::to_owned)
+        });
+    if let Some(rule_sets) = config
+        .get_mut("route")
+        .and_then(|route| route.get_mut("rule_set"))
+        .and_then(Value::as_array_mut)
+    {
+        for rule_set in rule_sets {
+            if rule_set["type"] != "remote" {
+                continue;
+            }
+            let Some(source) = rule_set["url"].as_str().filter(|source| remote(source)) else {
+                continue;
+            };
+            let provider = profile
+                .rule_providers
+                .iter()
+                .find(|provider| rule_set["tag"] == provider.tag && provider.url == source);
+            let binary = rule_set["format"] == "binary"
+                || Url::parse(source).is_ok_and(|url| {
+                    std::path::Path::new(url.path())
+                        .extension()
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("srs"))
+                });
+            let clash_source = provider.is_some_and(|provider| provider.format != "source")
+                || (rule_set["tag"] == "geoip-gfwblack"
+                    && profile
+                        .dns
+                        .pointer("/shared/gfwBlackRuleSetUrl")
+                        .and_then(Value::as_str)
+                        == Some(source));
+            let wrapped = if binary || !clash_source {
+                relay_url(base, source)?
+            } else {
+                rule_url(base, version, source)?
+            };
+            rule_set["url"] = wrapped.into();
+            if binary {
+                rule_set["format"] = "binary".into();
+            } else if clash_source {
+                rule_set["format"] = "source".into();
+            }
+            if let Some(direct) = &direct {
+                rule_set["download_detour"] = direct.clone().into();
+            }
+        }
+    }
+    Ok(())
+}
+
+fn rule_url(base: &Url, version: &str, source: &str) -> Result<String, ApiError> {
     if is_relay_url(base, source) {
         return Ok(source.to_owned());
     }
@@ -105,7 +150,7 @@ pub(crate) fn rule_url(base: &Url, version: &str, source: &str) -> Result<String
     Ok(url.to_string())
 }
 
-pub(crate) fn relay_url(base: &Url, source: &str) -> Result<String, ApiError> {
+fn relay_url(base: &Url, source: &str) -> Result<String, ApiError> {
     if source.trim().is_empty() || is_relay_url(base, source) {
         return Ok(source.to_owned());
     }

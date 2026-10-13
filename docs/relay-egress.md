@@ -31,10 +31,17 @@ and Clash RS rule-provider URLs and explicit geodata URLs use the raw endpoint,
 retaining their original response format. Sing-box rules generated from Clash
 providers use the versioned conversion endpoint; native source JSON and binary
 rule resources use the raw endpoint. Binary formats inferred from `.srs` are
-retained. Already wrapped URLs remain
-unchanged. This applies to direct exports, manifest artifacts, and debug output.
+retained. Already wrapped URLs remain unchanged. This applies to direct exports,
+manifest artifacts, and debug output.
 Wrapped sing-box downloads use the direct outbound to reach Sempre; upstream
 egress is selected by the server.
+
+URL wrapping is owned solely by `sempre-server::resource_export`. Subscription
+preparation retains original resource URLs; the unified export entry resolves
+source-format metadata, compiles the configuration, then rewrites remote rule
+URLs once and calculates the final artifact hash. Direct downloads, manifest
+artifacts, and debug output all use that entry. There is no separate OpenWrt
+URL-rewriting step, and the pure converter receives no relay URL configuration.
 
 Resource requests use the selected outbound's DNS and connection behavior without
 a local public-IP precheck or DNS pinning. Recursive requests to this service's
