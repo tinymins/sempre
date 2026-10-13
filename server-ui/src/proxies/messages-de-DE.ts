@@ -1,5 +1,7 @@
 export default {
   "proxies.title": "Proxy-Einstellungen",
+  "proxies.nodesTab": "Proxy-Knoten",
+  "proxies.rulesTab": "Proxy-Regeln",
   "proxies.description": "Proxy-Verbindungen für Abonnementabrufe und Ressourcenweiterleitung verwalten.",
   "proxies.add": "Proxy hinzufügen",
   "proxies.edit": "Proxy bearbeiten",

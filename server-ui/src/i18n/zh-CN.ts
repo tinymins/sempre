@@ -1,4 +1,4 @@
-import relayMessages from '../dashboard/relay-messages-zh-CN'
+import relayMessages from '../proxies/relay-messages-zh-CN'
 import proxyMessages from '../proxies/messages-zh-CN'
 export const zhCN = {
   ...proxyMessages,

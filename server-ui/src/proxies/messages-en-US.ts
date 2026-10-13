@@ -1,5 +1,7 @@
 export default {
   "proxies.title": "Proxy settings",
+  "proxies.nodesTab": "Proxy nodes",
+  "proxies.rulesTab": "Proxy rules",
   "proxies.description": "Manage proxy connections for subscription fetching and resource relay requests.",
   "proxies.add": "Add proxy",
   "proxies.edit": "Edit proxy",

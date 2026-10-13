@@ -1,5 +1,7 @@
 export default {
   "proxies.title": "プロキシ設定",
+  "proxies.nodesTab": "プロキシノード",
+  "proxies.rulesTab": "プロキシルール",
   "proxies.description": "購読の取得とリソース中継に使用するプロキシ接続を管理します。",
   "proxies.add": "プロキシを追加",
   "proxies.edit": "プロキシを編集",

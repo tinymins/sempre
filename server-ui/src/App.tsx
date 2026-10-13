@@ -1,4 +1,4 @@
-import { SubscriptionProxiesPage } from './proxies/SubscriptionProxiesPage'
+import { ProxySettingsPage } from './proxies/ProxySettingsPage'
 import { AppSidebar, Avatar, Button, Card, Drawer, Dropdown, Spin, ToastProvider, useToast } from '@acme/components'
 import { ChevronDown, ChevronRight, ChevronsUpDown, Globe2, Home, LogOut, Menu, Rss, Settings, UserRound, Wrench } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -127,7 +127,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
           <Routes location={location}>
             <Route path="/subscriptions" element={<SubscriptionPage />} />
             <Route path="/subscriptions/:id" element={<SubscriptionDeepLink />} />
-            <Route path="/subscription-proxies" element={<SubscriptionProxiesPage />} />
+            <Route path="/subscription-proxies" element={<ProxySettingsPage canManageRules={isAdmin} />} />
             <Route path="/custom-nodes" element={<CustomNodesPage currentUserId={user.id} />} />
             <Route path="/overview" element={<OverviewPage user={user} />} />
             <Route path="/network" element={<NetworkToolsPage />} />

@@ -89,6 +89,11 @@ Migration `0012_relay_egress.sql` initializes the system fallback and reference
 protection. Run the normal `sempre-server migrate` step before starting this
 server version.
 
+The control UI groups these settings under **Proxy settings → Proxy rules**.
+The **Proxy nodes** tab manages outbound providers. Rule editing retains the
+existing administrator permission requirement; the admin settings page no
+longer contains the relay controls.
+
 ## Custom-node bindings
 
 Proxy settings support binding an owned or shared custom node in addition to

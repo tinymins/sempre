@@ -1,5 +1,7 @@
 export default {
   "proxies.title": "代理设置",
+  "proxies.nodesTab": "代理节点",
+  "proxies.rulesTab": "代理规则",
   "proxies.description": "管理用于订阅获取和资源中转的代理连接。",
   "proxies.add": "新增代理",
   "proxies.edit": "编辑代理",

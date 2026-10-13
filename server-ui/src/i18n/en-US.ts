@@ -1,4 +1,4 @@
-import relayMessages from '../dashboard/relay-messages-en-US'
+import relayMessages from '../proxies/relay-messages-en-US'
 import proxyMessages from '../proxies/messages-en-US'
 import type { MessageKey } from './zh-CN'
 

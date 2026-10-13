@@ -11,7 +11,7 @@ import { proxyApi, type ProxyInput, type SubscriptionProxy } from './api'
 
 const empty: ProxyInput = { name: '', content: '', engine: null, enabled: true }
 
-export function SubscriptionProxiesPage() {
+export function ProxyNodesPanel() {
   const { t, date } = useI18n()
   const toast = useToast()
   const [items, setItems] = useState<SubscriptionProxy[] | null>(null)
@@ -58,8 +58,8 @@ export function SubscriptionProxiesPage() {
     finally { setBusy(null) }
   }
   const patch = (patch: Partial<ProxyInput>) => setEditing(current => current ? { ...current, input: { ...current.input, ...patch } } : null)
-  return <section className="space-y-4">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">{t('proxies.title')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('proxies.description')}</p></div><div className="flex gap-2"><Button icon={<RefreshCw size={16} />} onClick={() => void refresh()}>{t('proxies.refresh')}</Button><Button variant="primary" icon={<Plus size={16} />} disabled={!configured || busy !== null} onClick={() => void open()}>{t('proxies.add')}</Button></div></div>
+  return <section className="min-w-0 space-y-4 pt-4">
+    <div className="flex justify-end"><div className="flex flex-wrap gap-2"><Button icon={<RefreshCw size={16} />} onClick={() => void refresh()}>{t('proxies.refresh')}</Button><Button variant="primary" icon={<Plus size={16} />} disabled={!configured || busy !== null} onClick={() => void open()}>{t('proxies.add')}</Button></div></div>
     {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
     {items === null && !error ? <Spin /> : null}
     {items !== null && !configured ? <Card><p className="text-sm">{t('proxies.notConfigured')}</p></Card> : null}
