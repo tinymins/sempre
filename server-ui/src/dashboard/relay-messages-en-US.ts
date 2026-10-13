@@ -1,9 +1,9 @@
 export default {
   "relay.title": "Relay egress",
-  "relay.description": "Choose the default outbound for server relay requests, with optional exact-host overrides. Subscription source proxies remain independent.",
+  "relay.description": "Configure the default outbound and host rules for server relay requests.",
   "relay.direct": "Direct",
   "relay.default": "Default outbound",
-  "relay.fallbackHint": "Unmatched hosts use the default outbound; host rules are optional. Unavailable proxies fail the request without switching to direct.",
+  "relay.fallbackHint": "Requests without a matching host rule use the default outbound. If the selected proxy is unavailable, requests fail without switching outbounds.",
   "relay.hostRules": "Host rules",
   "relay.hostHint": "Enter exact hostnames without scheme, port or path. Wildcards are not supported.",
   "relay.empty": "No rules. All hosts use the default outbound.",
@@ -12,7 +12,7 @@ export default {
   "relay.addHost": "Add host rule",
   "relay.unsaved": "Unsaved changes",
   "relay.test": "Test saved configuration",
-  "relay.testHint": "Save changes before testing. Tests use the saved policy and bypass the resource cache.",
+  "relay.testHint": "Request the target resource using the saved outbound configuration. Save changes before testing.",
   "relay.url": "Test URL",
   "relay.matched": "Matched rule",
   "relay.elapsed": "Elapsed",
@@ -21,5 +21,8 @@ export default {
   "relay.failure": "Failed",
   "relay.error": "Error",
   "relay.stale": "Another administrator changed this policy. Reload before editing; reloading discards your changes.",
-  "relay.reload": "Reload configuration"
+  "relay.reload": "Reload configuration",
+  "relay.hostPlaceholder": "Enter an exact hostname",
+  "relay.urlPlaceholder": "Enter an HTTP or HTTPS resource URL",
+  "relay.testAction": "Test access",
 } as const

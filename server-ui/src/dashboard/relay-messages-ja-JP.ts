@@ -1,9 +1,9 @@
 export default {
   "relay.title": "中継アウトバウンド",
-  "relay.description": "サーバー中継の既定の接続先と完全一致ホストの例外を設定します。購読ソースのプロキシ選択は独立しています。",
+  "relay.description": "サーバー中継リクエストの既定のアウトバウンドとホストルールを設定します。",
   "relay.direct": "直接接続",
   "relay.default": "既定の接続先",
-  "relay.fallbackHint": "一致しないホストは既定の接続先を使用します。ホストルールは任意です。プロキシが利用できない場合は直接接続へ切り替えずエラーになります。",
+  "relay.fallbackHint": "一致するホストルールがない場合は既定のアウトバウンドを使用します。選択したプロキシが利用できない場合、接続先を切り替えずリクエストが失敗します。",
   "relay.hostRules": "ホストルール",
   "relay.hostHint": "スキーム、ポート、パスを除く完全なホスト名を入力します。ワイルドカードは使用できません。",
   "relay.empty": "ルールなし。すべてのホストに既定の接続先を使用します。",
@@ -12,7 +12,7 @@ export default {
   "relay.addHost": "ホストルールを追加",
   "relay.unsaved": "未保存の変更",
   "relay.test": "保存済み設定をテスト",
-  "relay.testHint": "変更を保存してからテストしてください。保存済み設定を使用し、リソースキャッシュを回避します。",
+  "relay.testHint": "保存済みのアウトバウンド設定で対象リソースにアクセスします。変更を保存してからテストしてください。",
   "relay.url": "テスト URL",
   "relay.matched": "一致したルール",
   "relay.elapsed": "所要時間",
@@ -21,5 +21,8 @@ export default {
   "relay.failure": "失敗",
   "relay.error": "エラー",
   "relay.stale": "別の管理者が設定を変更しました。再読み込み後に編集してください。現在の変更は破棄されます。",
-  "relay.reload": "設定を再読み込み"
+  "relay.reload": "設定を再読み込み",
+  "relay.hostPlaceholder": "完全なホスト名を入力",
+  "relay.urlPlaceholder": "HTTP または HTTPS のリソース URL を入力",
+  "relay.testAction": "アクセステスト",
 } as const

@@ -1,9 +1,9 @@
 export default {
   "relay.title": "中轉出站",
-  "relay.description": "為伺服器中轉請求選擇預設出站，可依完整主機名稱覆寫。訂閱來源代理選擇保持獨立。",
+  "relay.description": "設定伺服器中轉請求的預設出站和主機規則。",
   "relay.direct": "直連",
   "relay.default": "預設出站",
-  "relay.fallbackHint": "未符合規則的主機使用預設出站；不必新增主機規則。代理不可用時請求報錯，不自動改用直連。",
+  "relay.fallbackHint": "未符合主機規則的請求使用預設出站。指定代理無法使用時，請求失敗，不自動切換出站。",
   "relay.hostRules": "主機規則",
   "relay.hostHint": "僅填寫完整主機名稱，不含協定、連接埠或路徑；不支援萬用字元。",
   "relay.empty": "目前沒有規則，所有主機使用預設出站。",
@@ -12,7 +12,7 @@ export default {
   "relay.addHost": "新增主機規則",
   "relay.unsaved": "有尚未儲存的變更",
   "relay.test": "測試已儲存設定",
-  "relay.testHint": "請先儲存變更再測試。測試使用已儲存策略並略過資源快取。",
+  "relay.testHint": "使用已儲存的出站設定請求目標資源。請先儲存變更再測試。",
   "relay.url": "測試 URL",
   "relay.matched": "符合的規則",
   "relay.elapsed": "耗時",
@@ -21,5 +21,8 @@ export default {
   "relay.failure": "失敗",
   "relay.error": "錯誤",
   "relay.stale": "其他管理員已修改設定。請重新載入後再編輯；重新載入會捨棄目前變更。",
-  "relay.reload": "重新載入設定"
+  "relay.reload": "重新載入設定",
+  "relay.hostPlaceholder": "輸入完整主機名稱",
+  "relay.urlPlaceholder": "輸入 HTTP 或 HTTPS 資源位址",
+  "relay.testAction": "測試存取",
 } as const

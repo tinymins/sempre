@@ -1,9 +1,9 @@
 export default {
   "relay.title": "中转出站",
-  "relay.description": "为服务端中转请求选择默认出站，可按完整主机名覆盖。订阅源代理选择保持独立。",
+  "relay.description": "设置服务端中转请求的默认出站和主机规则。",
   "relay.direct": "直连",
   "relay.default": "默认出站",
-  "relay.fallbackHint": "未匹配主机规则时使用默认出站；无需添加主机规则。代理不可用时请求报错，不自动切换直连。",
+  "relay.fallbackHint": "未匹配主机规则的请求使用默认出站。指定代理不可用时，请求失败，不自动切换出站。",
   "relay.hostRules": "主机规则",
   "relay.hostHint": "仅填写完整主机名，不含协议、端口或路径；不支持通配符。",
   "relay.empty": "暂无规则，所有主机使用默认出站。",
@@ -12,7 +12,7 @@ export default {
   "relay.addHost": "新增主机规则",
   "relay.unsaved": "有未保存的修改",
   "relay.test": "测试已保存配置",
-  "relay.testHint": "先保存修改再测试。测试使用已保存策略并绕过资源缓存。",
+  "relay.testHint": "使用已保存的出站配置请求目标资源。请先保存修改再测试。",
   "relay.url": "测试 URL",
   "relay.matched": "匹配规则",
   "relay.elapsed": "耗时",
@@ -21,5 +21,8 @@ export default {
   "relay.failure": "失败",
   "relay.error": "错误",
   "relay.stale": "配置已被其他管理员修改。重新加载最新配置后再编辑；重新加载会丢弃当前修改。",
-  "relay.reload": "重新加载配置"
+  "relay.reload": "重新加载配置",
+  "relay.hostPlaceholder": "输入完整主机名",
+  "relay.urlPlaceholder": "输入 HTTP 或 HTTPS 资源地址",
+  "relay.testAction": "测试访问",
 } as const

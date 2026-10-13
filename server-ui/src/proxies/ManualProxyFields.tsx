@@ -19,8 +19,8 @@ export function ManualProxyFields({ onChange, disabled }: { onChange: (content: 
     {!['ss', 'socks5', 'hysteria2', 'tuic'].includes(node.type) ? <Checkbox disabled={disabled} checked={node.tls} onChange={event => patch({ tls: event.target.checked, reality: false })}>TLS</Checkbox> : null}
     {node.tls ? field('servername', 'SNI') : null}
     {['vmess', 'vless', 'trojan'].includes(node.type) ? <label className="block space-y-1 text-sm">{t('proxies.transport')}<Select disabled={disabled} value={node.network} options={['tcp', 'ws', 'grpc'].map(value => ({ value, label: value }))} onChange={value => patch({ network: String(value) })} className="w-full" /></label> : null}
-    {node.network === 'ws' && ['vmess', 'vless', 'trojan'].includes(node.type) ? <div className="grid gap-3 sm:grid-cols-2">{field('path', 'Path')}{field('host', 'Host')}</div> : null}
-    {node.network === 'grpc' && ['vmess', 'vless', 'trojan'].includes(node.type) ? field('service', 'Service name') : null}
-    {node.type === 'vless' && node.tls ? <><Checkbox disabled={disabled} checked={node.reality} onChange={event => patch({ reality: event.target.checked })}>REALITY</Checkbox>{field('flow', 'Flow')}{node.reality ? <>{field('publicKey', 'Public key')}{field('shortId', 'Short ID')}</> : null}</> : null}
+    {node.network === 'ws' && ['vmess', 'vless', 'trojan'].includes(node.type) ? <div className="grid gap-3 sm:grid-cols-2">{field('path', t('proxies.wsPath'))}{field('host', t('proxies.wsHost'))}</div> : null}
+    {node.network === 'grpc' && ['vmess', 'vless', 'trojan'].includes(node.type) ? field('service', t('proxies.grpcService')) : null}
+    {node.type === 'vless' && node.tls ? <><Checkbox disabled={disabled} checked={node.reality} onChange={event => patch({ reality: event.target.checked })}>REALITY</Checkbox>{field('flow', 'Flow')}{node.reality ? <>{field('publicKey', t('proxies.realityPublicKey'))}{field('shortId', t('proxies.realityShortId'))}</> : null}</> : null}
   </div>
 }

@@ -1,9 +1,9 @@
 export default {
   "relay.title": "Relay-Ausgang",
-  "relay.description": "Standardausgang für Server-Relay-Anfragen mit optionalen Regeln für exakte Hostnamen. Abonnement-Quellproxys bleiben unabhängig.",
+  "relay.description": "Standardausgang und Hostregeln für Server-Relay-Anfragen konfigurieren.",
   "relay.direct": "Direkt",
   "relay.default": "Standardausgang",
-  "relay.fallbackHint": "Ohne passende Hostregel gilt der Standardausgang. Hostregeln sind optional. Bei nicht verfügbaren Proxys schlägt die Anfrage ohne Direkt-Fallback fehl.",
+  "relay.fallbackHint": "Anfragen ohne passende Hostregel verwenden den Standardausgang. Ist der gewählte Proxy nicht verfügbar, schlägt die Anfrage ohne Ausgangswechsel fehl.",
   "relay.hostRules": "Hostregeln",
   "relay.hostHint": "Exakten Hostnamen ohne Schema, Port oder Pfad eingeben. Platzhalter werden nicht unterstützt.",
   "relay.empty": "Keine Regeln. Alle Hosts verwenden den Standardausgang.",
@@ -12,7 +12,7 @@ export default {
   "relay.addHost": "Hostregel hinzufügen",
   "relay.unsaved": "Ungespeicherte Änderungen",
   "relay.test": "Gespeicherte Konfiguration testen",
-  "relay.testHint": "Änderungen vor dem Test speichern. Tests nutzen die gespeicherte Richtlinie und umgehen den Ressourcen-Cache.",
+  "relay.testHint": "Zielressource mit der gespeicherten Ausgangskonfiguration abrufen. Änderungen vor dem Test speichern.",
   "relay.url": "Test-URL",
   "relay.matched": "Passende Regel",
   "relay.elapsed": "Dauer",
@@ -21,5 +21,8 @@ export default {
   "relay.failure": "Fehlgeschlagen",
   "relay.error": "Fehler",
   "relay.stale": "Ein anderer Administrator hat die Richtlinie geändert. Vor dem Bearbeiten neu laden; dabei werden Ihre Änderungen verworfen.",
-  "relay.reload": "Konfiguration neu laden"
+  "relay.reload": "Konfiguration neu laden",
+  "relay.hostPlaceholder": "Exakten Hostnamen eingeben",
+  "relay.urlPlaceholder": "HTTP- oder HTTPS-Ressourcen-URL eingeben",
+  "relay.testAction": "Zugriff testen",
 } as const
