@@ -48,9 +48,9 @@ export function OverviewPage({ user }: { user: ServerUser }) {
         </div></Card>
         <Card className="lg:col-span-2"><div className="space-y-3">
           <div><h2 className="font-semibold">{t('overview.quickActions')}</h2><p className="text-xs text-[var(--muted)]">{t('overview.quickHint')}</p></div>
-          <Button block icon={<Plus size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left" onClick={() => go('/subscriptions', true)}><span className="min-w-0 flex-1 break-words">{t('overview.createConfig')}</span></Button>
-          <Button block icon={<Rss size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left" onClick={() => go('/subscriptions')}><span className="min-w-0 flex-1 break-words">{t('overview.manageConfigs')}</span></Button>
-          <Button block icon={<Network size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left" onClick={() => go('/network')}><span className="min-w-0 flex-1 break-words">{t('overview.networkAction')}</span></Button>
+          <Button block icon={<Plus size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left backdrop-blur-none!" onClick={() => go('/subscriptions', true)}><span className="min-w-0 flex-1 break-words">{t('overview.createConfig')}</span></Button>
+          <Button block icon={<Rss size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left backdrop-blur-none!" onClick={() => go('/subscriptions')}><span className="min-w-0 flex-1 break-words">{t('overview.manageConfigs')}</span></Button>
+          <Button block icon={<Network size={15} />} className="h-auto! min-h-8 justify-start! whitespace-normal py-2! text-left backdrop-blur-none!" onClick={() => go('/network')}><span className="min-w-0 flex-1 break-words">{t('overview.networkAction')}</span></Button>
         </div></Card>
       </div>
     </> : null}
