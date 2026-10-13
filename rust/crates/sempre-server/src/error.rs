@@ -91,6 +91,13 @@ impl IntoResponse for ApiError {
 
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
+        if error.as_database_error().is_some_and(|database| {
+            database.constraint() == Some("subscription_proxies_custom_node_id_fkey")
+        }) {
+            return Self::conflict(
+                "custom node is bound to a proxy; unbind the proxy before deleting the node or its owner",
+            );
+        }
         if let Some(database) = error.as_database_error()
             && matches!(
                 database.constraint(),

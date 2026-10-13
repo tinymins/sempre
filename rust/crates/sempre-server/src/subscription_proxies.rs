@@ -2,7 +2,7 @@ use crate::{
     AppState,
     auth::CurrentUser,
     error::ApiError,
-    proxy_crypto,
+    proxy_crypto, proxy_node_binding,
     proxy_runtime::{self, Stored},
 };
 use axum::{
@@ -36,6 +36,7 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
 struct Input {
     name: String,
     content: Option<String>,
+    custom_node_id: Option<Uuid>,
     engine: Option<Engine>,
     enabled: bool,
     #[serde(default)]
@@ -57,6 +58,7 @@ fn output(row: &PgRow, viewer: Uuid) -> Result<Value, ApiError> {
     let owner: Uuid = row.try_get("user_id")?;
     Ok(json!({
         "id":row.try_get::<Uuid,_>("id")?,"name":row.try_get::<String,_>("name")?,
+        "customNodeId":row.try_get::<Option<Uuid>,_>("custom_node_id")?,
         "engine":row.try_get::<String,_>("engine")?,"protocol":row.try_get::<String,_>("protocol")?,
         "enabled":row.try_get::<bool,_>("enabled")?,"status":row.try_get::<String,_>("status")?,
         "revision":row.try_get::<i64,_>("revision")?,"activeRevision":row.try_get::<Option<i64>,_>("active_revision")?,
@@ -90,6 +92,11 @@ fn require_owner(row: &PgRow, user: Uuid) -> Result<(), ApiError> {
 }
 
 async fn validate(state: &AppState, input: &Input) -> Result<(), ApiError> {
+    if input.custom_node_id.is_some() && input.content.is_some() {
+        return Err(ApiError::bad_request(
+            "choose a custom node or provide proxy configuration, not both",
+        ));
+    }
     if input.name.trim().is_empty() || input.name.chars().count() > 80 {
         return Err(ApiError::bad_request(
             "proxy name must contain 1–80 characters",
@@ -111,7 +118,7 @@ async fn validate(state: &AppState, input: &Input) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn encode(
+pub(crate) fn encode(
     state: &AppState,
     id: Uuid,
     content: &str,
@@ -143,16 +150,15 @@ async fn create(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     validate(&state, &input).await?;
     let id = Uuid::new_v4();
-    let (cipher, engine, protocol) = encode(
-        &state,
-        id,
-        input
-            .content
-            .as_deref()
-            .ok_or_else(|| ApiError::bad_request("proxy configuration required"))?,
-        input.engine,
-    )?;
     let mut tx = state.pool.begin().await?;
+    let content = match input.custom_node_id {
+        Some(node) => proxy_node_binding::content(&mut tx, node, user.id).await?,
+        None => input
+            .content
+            .clone()
+            .ok_or_else(|| ApiError::bad_request("proxy configuration required"))?,
+    };
+    let (cipher, engine, protocol) = encode(&state, id, &content, input.engine)?;
     sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
         .bind(user.id)
         .fetch_one(&mut *tx)
@@ -167,9 +173,9 @@ async fn create(
             "maximum 8 subscription proxies per user",
         ));
     }
-    let row = sqlx::query("INSERT INTO subscription_proxies (id,user_id,name,engine,protocol,configuration,enabled,authorized_user_ids,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *")
+    let row = sqlx::query("INSERT INTO subscription_proxies (id,user_id,name,engine,protocol,configuration,enabled,authorized_user_ids,status,custom_node_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *")
         .bind(id).bind(user.id).bind(input.name.trim()).bind(engine).bind(protocol).bind(cipher).bind(input.enabled)
-        .bind(json!(input.authorized_user_ids)).bind(if input.enabled { "starting" } else { "stopped" }).fetch_one(&mut *tx).await?;
+        .bind(json!(input.authorized_user_ids)).bind(if input.enabled { "starting" } else { "stopped" }).bind(input.custom_node_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     schedule(state, id);
     Ok((StatusCode::CREATED, Json(output(&row, user.id)?)))
@@ -183,6 +189,10 @@ async fn update(
 ) -> Result<Json<Value>, ApiError> {
     validate(&state, &input).await?;
     let mut tx = state.pool.begin().await?;
+    let content = match input.custom_node_id {
+        Some(node) => Some(proxy_node_binding::content(&mut tx, node, user.id).await?),
+        None => input.content.clone(),
+    };
     let row = sqlx::query("SELECT * FROM subscription_proxies WHERE id=$1 FOR UPDATE")
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -196,8 +206,7 @@ async fn update(
             "proxy is used by subscriptions belonging to a removed authorized user",
         ));
     }
-    let encoded = input
-        .content
+    let encoded = content
         .as_ref()
         .map(|content| encode(&state, id, content, input.engine))
         .transpose()?;
@@ -210,14 +219,19 @@ async fn update(
         ),
     };
     let revision: i64 = row.try_get("revision")?;
-    let next_revision = if input.content.is_some() {
+    let next_revision = if content.is_some() {
         revision + 1
     } else {
         revision
     };
-    let row = sqlx::query("UPDATE subscription_proxies SET name=$2,configuration=$3,engine=$4,protocol=$5,enabled=$6,authorized_user_ids=$7,revision=$8,status=$9,last_error=NULL,updated_at=NOW() WHERE id=$1 RETURNING *")
+    let custom_node_id = if content.is_some() {
+        input.custom_node_id
+    } else {
+        row.try_get("custom_node_id")?
+    };
+    let row = sqlx::query("UPDATE subscription_proxies SET name=$2,configuration=$3,engine=$4,protocol=$5,enabled=$6,authorized_user_ids=$7,revision=$8,status=$9,last_error=NULL,updated_at=NOW(),custom_node_id=$10 WHERE id=$1 RETURNING *")
         .bind(id).bind(input.name.trim()).bind(cipher).bind(engine).bind(protocol).bind(input.enabled).bind(json!(input.authorized_user_ids))
-        .bind(next_revision).bind(if input.enabled { "starting" } else { "stopping" }).fetch_one(&mut *tx).await?;
+        .bind(next_revision).bind(if input.enabled { "starting" } else { "stopping" }).bind(custom_node_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     schedule(state, id);
     Ok(Json(output(&row, user.id)?))
@@ -277,7 +291,7 @@ async fn test(
     }
 }
 
-fn schedule(state: Arc<AppState>, id: Uuid) {
+pub(crate) fn schedule(state: Arc<AppState>, id: Uuid) {
     tokio::spawn(async move {
         if let Err(error) = proxy_runtime::reconcile(&state, id).await {
             tracing::warn!(

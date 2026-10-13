@@ -135,6 +135,15 @@ async fn update(
     if let Some(ids) = &input.authorized_user_ids {
         validate_users(&state, ids).await?;
     }
+    let changed = crate::proxy_node_binding::sync(
+        &state,
+        &mut tx,
+        id,
+        owner,
+        input.content.as_deref(),
+        input.authorized_user_ids.as_deref(),
+    )
+    .await?;
     sqlx::query("UPDATE proxy_custom_nodes SET content=COALESCE($1,content),authorized_user_ids=COALESCE($2,authorized_user_ids),updated_at=NOW() WHERE id=$3")
         .bind(&input.content)
         .bind(input.authorized_user_ids.map(|ids| json!(ids)))
@@ -150,6 +159,9 @@ async fn update(
         .await?;
     }
     tx.commit().await?;
+    for proxy in changed {
+        crate::subscription_proxies::schedule(state.clone(), proxy);
+    }
     let row = visible_row(&state, id, user.id).await?;
     node_output(&state, &row, user.id).await.map(Json)
 }

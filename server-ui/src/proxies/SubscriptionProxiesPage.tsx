@@ -4,7 +4,7 @@ import { Plus, RefreshCw } from 'lucide-react'
 import { useI18n } from '../i18n/provider'
 import type { MessageKey } from '../i18n/zh-CN'
 import { subscriptionApi } from '../subscriptions/api'
-import type { UserBrief } from '../subscriptions/types'
+import type { CustomNode, UserBrief } from '../subscriptions/types'
 import { ManualProxyFields } from './ManualProxyFields'
 import { defaultManualContent } from './manual-proxy'
 import { proxyApi, type ProxyInput, type SubscriptionProxy } from './api'
@@ -22,6 +22,7 @@ export function SubscriptionProxiesPage() {
   const [editorError, setEditorError] = useState('')
   const [inputMode, setInputMode] = useState('import')
   const [users, setUsers] = useState<UserBrief[]>([])
+  const [nodes, setNodes] = useState<CustomNode[]>([])
   const refresh = useCallback(async () => {
     try { const result = await proxyApi.list(); setItems(result.items); setConfigured(result.configured); setError('') }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
@@ -39,19 +40,22 @@ export function SubscriptionProxiesPage() {
   }
   const open = async (proxy?: SubscriptionProxy) => {
     setEditorError('')
-    setInputMode('import')
     setBusy(proxy?.id ?? 'new')
     try {
-      const [result, choices] = await Promise.all([proxy ? proxyApi.edit(proxy.id) : Promise.resolve(null), subscriptionApi.users()])
+      const [result, choices, nodeChoices] = await Promise.all([proxy ? proxyApi.edit(proxy.id) : Promise.resolve(null), subscriptionApi.users(), subscriptionApi.customNodes()])
       setUsers(choices)
-      setEditing({ id: proxy?.id ?? null, input: result ? { name: result.name, content: result.content, engine: result.engine, enabled: result.enabled, authorizedUserIds: result.authorizedUserIds } : { ...empty, authorizedUserIds: [] } })
+      setNodes(nodeChoices)
+      setInputMode(result ? (result.customNodeId ? 'custom-node' : 'import') : 'custom-node')
+      setEditing({ id: proxy?.id ?? null, input: result ? { name: result.name, content: result.content, customNodeId: result.customNodeId, engine: result.engine, enabled: result.enabled, authorizedUserIds: result.authorizedUserIds } : { ...empty, authorizedUserIds: [] } })
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
   const save = async () => {
     if (!editing) return
+    if (inputMode === 'custom-node' && !editing.input.customNodeId) { setEditorError(t('proxies.selectCustomNode')); return }
     setBusy('save'); setEditorError('')
-    try { await proxyApi.save(editing.id, editing.input); setEditing(null); await refresh() }
+    const input = inputMode === 'custom-node' ? { ...editing.input, content: undefined } : { ...editing.input, customNodeId: null }
+    try { await proxyApi.save(editing.id, input); setEditing(null); await refresh() }
     catch (reason) { setEditorError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -68,8 +72,8 @@ export function SubscriptionProxiesPage() {
       <div className="space-y-4">{editorError ? <p role="alert" className="text-sm text-red-600">{editorError}</p> : null}
         <label className="block space-y-1 text-sm">{t('proxies.name')}<Input disabled={busy === 'save'} value={editing.input.name} onChange={event => patch({ name: event.target.value })} placeholder={t('proxies.namePlaceholder')} /></label>
         <label className="block space-y-1 text-sm">{t('proxies.engine')}<Select disabled={busy === 'save'} value={editing.input.engine ?? 'auto'} options={[{ value: 'auto', label: t('proxies.engineAuto') }, { value: 'sing-box', label: 'sing-box' }, { value: 'xray', label: 'Xray' }]} onChange={value => patch({ engine: value === 'auto' ? null : value as ProxyInput['engine'] })} className="w-full" /></label>
-        <label className="block space-y-1 text-sm">{t('proxies.inputMode')}<Select disabled={busy === 'save'} value={inputMode} options={[{ value: 'import', label: t('proxies.import') }, { value: 'manual', label: t('proxies.manual') }]} onChange={value => { setInputMode(String(value)); if (value === 'manual') patch({ content: defaultManualContent() }) }} className="w-full" /></label>
-        {inputMode === 'manual' ? <ManualProxyFields disabled={busy === 'save'} onChange={content => patch({ content })} /> : <label className="block space-y-1 text-sm">{t('proxies.configuration')}<TextArea disabled={busy === 'save'} rows={9} value={editing.input.content ?? ''} onChange={event => patch({ content: event.target.value })} className="font-mono text-xs" /></label>}<p className="text-xs text-[var(--muted)]">{t('proxies.configurationHelp')}</p>
+        <label className="block space-y-1 text-sm">{t('proxies.inputMode')}<Select disabled={busy === 'save'} value={inputMode} options={[{ value: 'custom-node', label: t('proxies.fromCustomNode') }, { value: 'import', label: t('proxies.import') }, { value: 'manual', label: t('proxies.manual') }]} onChange={value => { setInputMode(String(value)); if (value === 'manual') patch({ content: defaultManualContent() }) }} className="w-full" /></label>
+        {inputMode === 'custom-node' ? <div className="space-y-2"><label className="block space-y-1 text-sm">{t('proxies.customNode')}<Select disabled={busy === 'save'} value={editing.input.customNodeId ?? undefined} placeholder={t('proxies.selectCustomNode')} options={nodes.map(node => ({ value: node.id, label: `${node.name} · ${node.proxyType}` }))} onChange={value => patch({ customNodeId: String(value) })} className="w-full" /></label><p className="text-xs text-[var(--muted)]">{t(nodes.length ? 'proxies.customNodeHelp' : 'proxies.customNodesEmpty')}</p></div> : <><div>{inputMode === 'manual' ? <ManualProxyFields disabled={busy === 'save'} onChange={content => patch({ content })} /> : <label className="block space-y-1 text-sm">{t('proxies.configuration')}<TextArea disabled={busy === 'save'} rows={9} value={editing.input.content ?? ''} onChange={event => patch({ content: event.target.value })} className="font-mono text-xs" /></label>}</div><p className="text-xs text-[var(--muted)]">{t('proxies.configurationHelp')}</p></>}
         <label className="block space-y-1 text-sm">{t('proxies.authorizedUsers')}<Select mode="multiple" disabled={busy === 'save'} value={editing.input.authorizedUserIds} options={users.map(user => ({ value: user.id, label: `${user.name} (${user.email})` }))} onChange={value => patch({ authorizedUserIds: value as string[] })} className="w-full" /></label>
         <Checkbox disabled={busy === 'save'} checked={editing.input.enabled} onChange={event => patch({ enabled: event.target.checked })}>{t('proxies.startAfterSave')}</Checkbox>
       </div>

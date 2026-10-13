@@ -88,3 +88,24 @@ have no effect.
 Migration `0012_relay_egress.sql` initializes the system fallback and reference
 protection. Run the normal `sempre-server migrate` step before starting this
 server version.
+
+## Custom-node bindings
+
+Proxy settings support binding an owned or shared custom node in addition to
+imported configurations and manual entry. Create or edit a proxy with
+`customNodeId` instead of `content`. Edit and list responses return the binding
+as `customNodeId` (null for independent configurations). Supplying `content`
+switches back to an independent configuration; enable/disable requests that
+omit both fields retain the binding.
+
+Saving a node configuration atomically updates its bound proxies' encrypted
+configurations and desired revisions, then schedules runtime reconciliation.
+The selected engine must support the new configuration or the node edit fails.
+The existing last-working-version behavior applies if runtime startup fails.
+A bound node cannot be deleted, and its owner cannot revoke access from a user
+whose proxy still binds it. Replace or unbind those proxies first. Proxy sharing
+continues to control who can use the resulting outbound independently of node
+sharing.
+
+Migration `0013_proxy_custom_node.sql` adds the binding and deletion protection.
+Run `sempre-server migrate` before using this version.

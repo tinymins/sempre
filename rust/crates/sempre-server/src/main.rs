@@ -9,6 +9,7 @@ mod fetch;
 mod maintenance;
 mod openwrt_export;
 mod proxy_crypto;
+mod proxy_node_binding;
 mod proxy_runtime;
 mod relay_egress;
 mod resource_relay;
