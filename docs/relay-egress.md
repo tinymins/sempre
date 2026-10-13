@@ -114,3 +114,10 @@ sharing.
 
 Migration `0013_proxy_custom_node.sql` adds the binding and deletion protection.
 Run `sempre-server migrate` before using this version.
+
+Migration `0015_relay_default_hosts.sql` adds `raw.githubusercontent.com` and
+`cdn.jsdelivr.net` when missing, with each new rule initialized to the current
+default outbound. Existing matching rules remain unchanged. These are ordinary
+host overrides: their outbounds can be edited independently and do not change
+when the default outbound is edited later. The access-test field initially uses
+`https://raw.githubusercontent.com/dler-io/Rules/refs/heads/main/Clash/Provider/AdBlock.yaml`.

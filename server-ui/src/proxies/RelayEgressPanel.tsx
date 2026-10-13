@@ -19,7 +19,7 @@ export function RelayEgressPanel() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [stale, setStale] = useState(false)
-  const [url, setUrl] = useState('')
+  const [url, setUrl] = useState('https://raw.githubusercontent.com/dler-io/Rules/refs/heads/main/Clash/Provider/AdBlock.yaml')
   const [result, setResult] = useState<RelayEgressTest | null>(null)
   const apply = (next: RelayEgressPolicy) => { setSaved(next); setForm(next); setStale(false); setResult(null) }
   const load = async () => {
