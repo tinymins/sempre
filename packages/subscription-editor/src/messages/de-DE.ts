@@ -99,6 +99,7 @@ export default {
   "source.remark": "Bemerkung",
   "source.prefix": "Präfix für Knotennamen",
   "source.cacheMinutes": "Cache-Dauer (Minuten)",
+  "source.cacheHelp": "Standardmäßig 60 Minuten. Mit 0 wird der Cache nicht verwendet.",
   "source.fetchMode": "Abrufmodus",
   "source.modeAuto": "Automatisch",
   "source.modeDirect": "Direkt im Inland",

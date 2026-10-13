@@ -99,6 +99,7 @@ export default {
   "source.remark": "備考",
   "source.prefix": "ノード名の接頭辞",
   "source.cacheMinutes": "キャッシュ時間（分）",
+  "source.cacheHelp": "既定値は 60 分です。0 を入力するとキャッシュを使用しません。",
   "source.fetchMode": "取得モード",
   "source.modeAuto": "自動",
   "source.modeDirect": "国内直接接続",

@@ -2,8 +2,8 @@ import { SourceProxySelect } from './SourceProxySelect'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { SortableSource } from './SortableSource'
-import { AutoComplete, Button, Checkbox, CodeEditor, Input, InputNumber } from '@acme/components'
-import { ArrowDown, ArrowUp, Play, Plus, Trash2 } from 'lucide-react'
+import { AutoComplete, Button, Checkbox, CodeEditor, Input, InputNumber, Tooltip } from '@acme/components'
+import { ArrowDown, ArrowUp, CircleHelp, Play, Plus, Trash2 } from 'lucide-react'
 import { createSource, moveSource, sourceText, type EditorSource as SubscriptionSource } from './sources'
 import { useEditorI18n as useI18n } from './i18n'
 import { useEditorLayout } from './layout'
@@ -66,9 +66,9 @@ export function SourceListEditor({ readOnly, value = [], onChange, onDebug }: Pr
             <label className="block space-y-1 text-sm">{t('source.prefix')}
               <Input value={item.prefix} onChange={(event) => update(index, { prefix: event.target.value })} />
             </label>
-            {item.type === 'url' ? <><label className="block space-y-1 text-sm">{t('source.cacheMinutes')}
-              <InputNumber min={0} max={1440} value={item.cacheTtlMinutes} onChange={(next) => update(index, { cacheTtlMinutes: next ?? undefined })} className="w-full" />
-            </label>
+            {item.type === 'url' ? <><div className="space-y-1 text-sm"><div className="flex items-center gap-1">{t('source.cacheMinutes')}<Tooltip title={t('source.cacheHelp')}><Button variant="text" size="small" icon={<CircleHelp size={14} />} aria-label={t('source.cacheHelp')} /></Tooltip></div>
+              <InputNumber aria-label={t('source.cacheMinutes')} min={0} max={1440} value={item.cacheTtlMinutes} onChange={(next) => update(index, { cacheTtlMinutes: next ?? undefined })} className="w-full" />
+            </div>
             <label className="block space-y-1 text-sm">{t('source.fetchMode')}
               <SourceProxySelect source={item} disabled={readOnly} update={patch => update(index, patch)} />
             </label>

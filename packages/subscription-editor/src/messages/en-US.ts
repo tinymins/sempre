@@ -99,6 +99,7 @@ export default {
   "source.remark": "Remark",
   "source.prefix": "Node name prefix",
   "source.cacheMinutes": "Cache duration (minutes)",
+  "source.cacheHelp": "Defaults to 60 minutes. Enter 0 to disable caching.",
   "source.fetchMode": "Fetch mode",
   "source.modeAuto": "Auto",
   "source.modeDirect": "Domestic direct",

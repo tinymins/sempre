@@ -99,6 +99,7 @@ export default {
   "source.remark": "备注",
   "source.prefix": "节点名前缀",
   "source.cacheMinutes": "缓存分钟数",
+  "source.cacheHelp": "默认缓存 60 分钟，填 0 不使用缓存。",
   "source.fetchMode": "抓取模式",
   "source.modeAuto": "自动",
   "source.modeDirect": "国内直连",

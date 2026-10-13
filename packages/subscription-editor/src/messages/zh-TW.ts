@@ -99,6 +99,7 @@ export default {
   "source.remark": "備註",
   "source.prefix": "節點名前綴",
   "source.cacheMinutes": "快取分鐘數",
+  "source.cacheHelp": "預設快取 60 分鐘，填 0 不使用快取。",
   "source.fetchMode": "抓取模式",
   "source.modeAuto": "自動",
   "source.modeDirect": "國內直連",
