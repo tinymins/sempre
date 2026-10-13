@@ -10,9 +10,9 @@ export default {
   "relay.host": "主机名",
   "relay.outbound": "出站",
   "relay.addHost": "新增主机规则",
-  "relay.unsaved": "有未保存的修改",
+  "relay.unsaved": "待保存",
   "relay.test": "测试已保存配置",
-  "relay.testHint": "使用已保存的出站配置请求目标资源。请先保存修改再测试。",
+  "relay.testHint": "使用已保存的出站配置请求目标资源。请等待自动保存完成后再测试。",
   "relay.url": "测试 URL",
   "relay.matched": "匹配规则",
   "relay.elapsed": "耗时",
@@ -25,4 +25,6 @@ export default {
   "relay.hostPlaceholder": "输入完整主机名",
   "relay.urlPlaceholder": "输入 HTTP 或 HTTPS 资源地址",
   "relay.testAction": "测试访问",
+  "relay.saving": "自动保存中…",
+  "relay.hostRequired": "主机名不能为空。",
 } as const

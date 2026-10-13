@@ -54,4 +54,7 @@ export default {
   "proxies.grpcService": "gRPC サービス名",
   "proxies.realityPublicKey": "REALITY 公開鍵",
   "proxies.realityShortId": "REALITY ショート ID",
+  "proxies.referenceCount": "参照数",
+  "proxies.autoSaveHint": "入力欄はフォーカスを外すと保存され、選択項目の変更はすぐに保存されます。変更がなければ保存されません。",
+  "proxies.enabled": "プロキシを有効化",
 } as const

@@ -54,4 +54,7 @@ export default {
   "proxies.grpcService": "gRPC 服务名称",
   "proxies.realityPublicKey": "REALITY 公钥",
   "proxies.realityShortId": "REALITY 短 ID",
+  "proxies.referenceCount": "引用数量",
+  "proxies.autoSaveHint": "输入框失焦时保存，选项修改后立即保存，无改动不保存。",
+  "proxies.enabled": "启用代理",
 } as const

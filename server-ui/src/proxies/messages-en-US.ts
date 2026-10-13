@@ -54,4 +54,7 @@ export default {
   "proxies.grpcService": "gRPC service name",
   "proxies.realityPublicKey": "REALITY public key",
   "proxies.realityShortId": "REALITY short ID",
+  "proxies.referenceCount": "Reference count",
+  "proxies.autoSaveHint": "Text fields save on blur. Option changes save immediately. Unchanged values are not saved.",
+  "proxies.enabled": "Enable proxy",
 } as const

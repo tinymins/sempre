@@ -7,9 +7,9 @@ core-free and resolves managed connections through the optional `sempre-proxy`
 service.
 
 The existing proxy-provider page is named **Proxy settings**. Provider IDs and
-subscription-source selections retain their existing meaning. The administrator
-settings page adds **Relay egress**, with a default outbound, optional exact-host
-overrides, explicit save, and a saved-policy URL probe. Selecting an overseas
+subscription-source selections retain their existing meaning.
+**Proxy settings → Proxy rules** provides a default outbound, optional exact-host
+overrides in a compact table, and a saved-policy URL probe. Selecting an overseas
 provider as the default is sufficient when no host overrides are needed.
 
 ## Public resource endpoints
@@ -82,8 +82,12 @@ The test accepts `{"url":"https://example.com/resource"}`. Results contain `ok`,
 `host`, `matchedHost` (null for the fallback), `outbound`, `outboundName`,
 `httpStatus`, `elapsedMs`, and `bodyBytes`. Network or selected-connection failures
 return a structured result with `ok:false`, `httpStatus:null`, and `error`.
-Malformed URLs return HTTP 400. Tests use the saved policy; unsaved form changes
-have no effect.
+Malformed URLs return HTTP 400. Tests use the saved policy and remain disabled
+while changes are pending. Dropdown selections and row deletion save immediately;
+host inputs save on blur only when changed. Blank new rows remain local until a
+host is entered. Consecutive edits save sequentially against the latest revision.
+Failed saves retain the edited values with a retry action; revision conflicts
+require reloading the policy.
 
 Migration `0012_relay_egress.sql` initializes the system fallback and reference
 protection. Run the normal `sempre-server migrate` step before starting this

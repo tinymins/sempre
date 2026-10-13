@@ -10,9 +10,9 @@ export default {
   "relay.host": "Hostname",
   "relay.outbound": "Ausgang",
   "relay.addHost": "Hostregel hinzufügen",
-  "relay.unsaved": "Ungespeicherte Änderungen",
+  "relay.unsaved": "Speichern ausstehend",
   "relay.test": "Gespeicherte Konfiguration testen",
-  "relay.testHint": "Zielressource mit der gespeicherten Ausgangskonfiguration abrufen. Änderungen vor dem Test speichern.",
+  "relay.testHint": "Zielressource mit der gespeicherten Ausgangskonfiguration abrufen. Vor dem Test warten, bis das automatische Speichern abgeschlossen ist.",
   "relay.url": "Test-URL",
   "relay.matched": "Passende Regel",
   "relay.elapsed": "Dauer",
@@ -25,4 +25,6 @@ export default {
   "relay.hostPlaceholder": "Exakten Hostnamen eingeben",
   "relay.urlPlaceholder": "HTTP- oder HTTPS-Ressourcen-URL eingeben",
   "relay.testAction": "Zugriff testen",
+  "relay.saving": "Automatisches Speichern…",
+  "relay.hostRequired": "Der Hostname darf nicht leer sein.",
 } as const

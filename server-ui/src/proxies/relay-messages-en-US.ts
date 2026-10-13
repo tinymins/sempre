@@ -10,9 +10,9 @@ export default {
   "relay.host": "Hostname",
   "relay.outbound": "Outbound",
   "relay.addHost": "Add host rule",
-  "relay.unsaved": "Unsaved changes",
+  "relay.unsaved": "Save pending",
   "relay.test": "Test saved configuration",
-  "relay.testHint": "Request the target resource using the saved outbound configuration. Save changes before testing.",
+  "relay.testHint": "Request the target resource using the saved outbound configuration. Wait for automatic saving to finish before testing.",
   "relay.url": "Test URL",
   "relay.matched": "Matched rule",
   "relay.elapsed": "Elapsed",
@@ -25,4 +25,6 @@ export default {
   "relay.hostPlaceholder": "Enter an exact hostname",
   "relay.urlPlaceholder": "Enter an HTTP or HTTPS resource URL",
   "relay.testAction": "Test access",
+  "relay.saving": "Saving automatically…",
+  "relay.hostRequired": "Hostname cannot be empty.",
 } as const

@@ -10,9 +10,9 @@ export default {
   "relay.host": "ホスト名",
   "relay.outbound": "接続先",
   "relay.addHost": "ホストルールを追加",
-  "relay.unsaved": "未保存の変更",
+  "relay.unsaved": "保存待ち",
   "relay.test": "保存済み設定をテスト",
-  "relay.testHint": "保存済みのアウトバウンド設定で対象リソースにアクセスします。変更を保存してからテストしてください。",
+  "relay.testHint": "保存済みのアウトバウンド設定で対象リソースにアクセスします。自動保存が完了してからテストしてください。",
   "relay.url": "テスト URL",
   "relay.matched": "一致したルール",
   "relay.elapsed": "所要時間",
@@ -25,4 +25,6 @@ export default {
   "relay.hostPlaceholder": "完全なホスト名を入力",
   "relay.urlPlaceholder": "HTTP または HTTPS のリソース URL を入力",
   "relay.testAction": "アクセステスト",
+  "relay.saving": "自動保存中…",
+  "relay.hostRequired": "ホスト名は必須です。",
 } as const

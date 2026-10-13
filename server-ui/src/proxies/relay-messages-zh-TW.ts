@@ -10,9 +10,9 @@ export default {
   "relay.host": "主機名稱",
   "relay.outbound": "出站",
   "relay.addHost": "新增主機規則",
-  "relay.unsaved": "有尚未儲存的變更",
+  "relay.unsaved": "待儲存",
   "relay.test": "測試已儲存設定",
-  "relay.testHint": "使用已儲存的出站設定請求目標資源。請先儲存變更再測試。",
+  "relay.testHint": "使用已儲存的出站設定請求目標資源。請等待自動儲存完成後再測試。",
   "relay.url": "測試 URL",
   "relay.matched": "符合的規則",
   "relay.elapsed": "耗時",
@@ -25,4 +25,6 @@ export default {
   "relay.hostPlaceholder": "輸入完整主機名稱",
   "relay.urlPlaceholder": "輸入 HTTP 或 HTTPS 資源位址",
   "relay.testAction": "測試存取",
+  "relay.saving": "自動儲存中…",
+  "relay.hostRequired": "主機名稱不能為空。",
 } as const

@@ -1,11 +1,11 @@
 # Subscription proxies
 
-The server UI's **订阅代理 / Subscription proxies** page manages application-level
-proxies used to download subscription sources. Each URL source selects **系统模式 /
+The server UI's **Proxy settings → Proxy nodes** tab lists application-level
+proxies in a compact table. Each URL source selects **系统模式 /
 System mode** or one named proxy from a flat list. System mode retains the server's
 default HTTP-client networking behavior. A selected proxy never silently falls
-back to system mode. Remote rule sets use system mode; the old two-route race is
-removed. Generated client routing, DNS, and node configuration are unaffected.
+back to system mode. Resource relay requests use the independent policy under
+**Proxy rules**. Generated client routing, DNS, and node configuration are unaffected.
 
 ## Deployment
 
@@ -44,6 +44,12 @@ convert `fetchMode`, import `DIRECT_PROXY_URL`, or modify existing sources. Befo
 switching an existing deployment, manually remove old `fetchMode` fields and set
 each source's `proxyId` to null (system mode) or the intended proxy UUID. The new
 server rejects unknown source fields rather than interpreting old modes.
+
+Existing proxy edits save automatically: text inputs save on blur, and engine,
+node, and enabled selections save immediately. Unchanged values do not trigger
+updates. Name and enabled changes preserve the existing encrypted configuration
+and its revision. New proxies are created with the **Add proxy** action after
+the required fields are complete.
 
 ## Connections and lifecycle
 
