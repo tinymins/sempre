@@ -42,7 +42,7 @@ export function RelayEgressPanel() {
     return <Select aria-label={label} className="w-full min-w-0" value={outboundValue(outbound)} options={options} disabled={testing || loading || stale} onChange={(value) => onChange(parseOutbound(value))} />
   }
   return <div className="min-w-0 space-y-6 pt-4">
-    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-[var(--muted)]">{t('relay.description')}</p><span role="status" className="text-xs text-[var(--muted)]">{saving ? t('relay.saving') : dirty || hasHostDraft ? t('relay.unsaved') : t('common.saved')}</span></div>
+    <p className="text-sm text-[var(--muted)]">{t('relay.description')}</p>
     {loading ? <Spin /> : null}
     {error || hostError || testError ? <p role="alert" className="break-words text-sm text-red-600">{error || hostError || testError}</p> : null}
     {stale ? <p role="alert" className="text-sm">{t('relay.stale')}</p> : null}
