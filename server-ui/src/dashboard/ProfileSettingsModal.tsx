@@ -1,10 +1,11 @@
+import type { ModalLifecycleProps } from '../use-modal-state'
 import { Avatar, Button, Input, Modal, Password, Select, Tabs, Upload, useToast } from '@acme/components'
 import { useState } from 'react'
 import type { ServerUser } from '../server-api'
 import { accountApi, type AccountSettings } from './account-api'
 import { useI18n } from '../i18n/provider'
 
-export function ProfileSettingsModal({ user, onClose, onUpdated }: { user: ServerUser; onClose: () => void; onUpdated: (user: ServerUser) => void }) {
+export function ProfileSettingsModal({ open, afterOpenChange, user, onClose, onUpdated }: { user: ServerUser; onClose: () => void; onUpdated: (user: ServerUser) => void } & ModalLifecycleProps) {
   const { t } = useI18n()
   const toast = useToast()
   const languageOptions = [
@@ -74,7 +75,7 @@ export function ProfileSettingsModal({ user, onClose, onUpdated }: { user: Serve
     finally { setBusy(false) }
   }
 
-  return <Modal open title={t('account.title')} size="large" footer={null} onCancel={() => { if (!busy) onClose() }} closable={!busy} keyboard={!busy} maskClosable={false}>
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={t('account.title')} size="large" footer={null} onCancel={() => { if (!busy) onClose() }} closable={!busy} keyboard={!busy} maskClosable={false}>
     <div className="space-y-4">
       <Tabs items={[{ key: 'profile', label: t('account.profile') }, { key: 'password', label: t('account.changePassword') }]} activeKey={tab} onChange={setTab} type="segment" />
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}

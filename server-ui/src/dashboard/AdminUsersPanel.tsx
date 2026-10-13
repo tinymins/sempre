@@ -1,3 +1,4 @@
+import { useModalState } from '../use-modal-state'
 import { Button, Card, Input, Modal, Password, Popconfirm, Select, Spin, Table, Tooltip, useToast } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { adminApi, type AdminUser } from './admin-api'
@@ -17,7 +18,7 @@ export function AdminUsersPanel({ currentUserId, canManage }: { currentUserId: s
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const [resetUser, setResetUser] = useState<AdminUser | null>(null)
+  const { value: resetUser, show: setResetUser, close: closeReset, afterOpenChange: finishReset, ...resetModal } = useModalState<AdminUser>()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -38,7 +39,7 @@ export function AdminUsersPanel({ currentUserId, canManage }: { currentUserId: s
   const create = async () => {
     if (!name.trim() || !email.trim() || password.length < 12) { setFormError(t('admin.createUserError')); return }
     setBusy(true); setFormError('')
-    try { await adminApi.createUser({ name: name.trim(), email: email.trim(), password, role }); setCreateOpen(false); setName(''); setEmail(''); setPassword(''); setRole('user'); toast.success(t('common.created')); await load() }
+    try { await adminApi.createUser({ name: name.trim(), email: email.trim(), password, role }); setCreateOpen(false); toast.success(t('common.created')); await load() }
     catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
@@ -51,7 +52,7 @@ export function AdminUsersPanel({ currentUserId, canManage }: { currentUserId: s
   const reset = async () => {
     if (!resetUser || password.length < 12) { setFormError(t('admin.passwordMin')); return }
     setBusy(true); setFormError('')
-    try { await adminApi.resetPassword(resetUser.id, password); setResetUser(null); setPassword(''); toast.success(t('account.passwordUpdated')) }
+    try { await adminApi.resetPassword(resetUser.id, password); closeReset(); toast.success(t('account.passwordUpdated')) }
     catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
@@ -73,7 +74,7 @@ export function AdminUsersPanel({ currentUserId, canManage }: { currentUserId: s
       { title: t('admin.lastLogin'), width: 180, minWidth: 180, className: 'whitespace-nowrap', render: (_, item) => item.lastLoginAt ? date(item.lastLoginAt) : '—' },
       { title: t('common.actions'), width: 300, minWidth: 300, className: 'whitespace-nowrap', render: (_, item) => canManage && item.id !== currentUserId && item.role !== 'superadmin' ? <div className="flex gap-1"><Button size="small" disabled={busy} onClick={() => { setFormError(''); setPassword(''); setResetUser(item) }}>{t('admin.resetPassword')}</Button><Popconfirm title={t('admin.deleteUser', { name: item.name })} description={t('admin.deleteUserHint')} okText={t('common.delete')} cancelText={t('common.cancel')} okType="danger" onConfirm={() => void remove(item.id)}><Button size="small" danger disabled={busy}>{t('common.delete')}</Button></Popconfirm></div> : null },
     ]} locale={{ emptyText: t('common.noData') }} />
-    {createOpen ? <Modal open title={t('admin.addUser')} okText={t('common.create')} cancelText={t('common.cancel')} confirmLoading={busy} onCancel={() => { if (!busy) setCreateOpen(false) }} onOk={() => void create()} closable={!busy} cancelButtonProps={{ disabled: busy }}><div className="space-y-3">{formError ? <p role="alert" className="text-sm text-red-600">{formError}</p> : null}<label className="block space-y-1 text-sm">{t('account.name')}<Input value={name} onChange={(event) => setName(event.target.value)} /></label><label className="block space-y-1 text-sm">{t('common.email')}<Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label className="block space-y-1 text-sm">{t('account.newPassword')}<Password value={password} onChange={(event) => setPassword(event.target.value)} /></label><label className="block space-y-1 text-sm">{t('admin.userRole')}<Select value={role} options={roles} onChange={(next) => setRole(next as AdminUser['role'])} className="w-full" /></label></div></Modal> : null}
-    {resetUser ? <Modal open title={`${t('admin.resetPassword')} · ${resetUser.name}`} okText={t('admin.resetPassword')} cancelText={t('common.cancel')} confirmLoading={busy} onCancel={() => { if (!busy) setResetUser(null) }} onOk={() => void reset()} closable={!busy} cancelButtonProps={{ disabled: busy }}><div className="space-y-3">{formError ? <p role="alert" className="text-sm text-red-600">{formError}</p> : null}<label className="block space-y-1 text-sm">{t('account.newPassword')}<Password value={password} onChange={(event) => setPassword(event.target.value)} /></label></div></Modal> : null}
+    <Modal open={createOpen} afterOpenChange={(open) => { if (!open) { setName(''); setEmail(''); setPassword(''); setRole('user'); setFormError('') } }} title={t('admin.addUser')} okText={t('common.create')} cancelText={t('common.cancel')} confirmLoading={busy} onCancel={() => { if (!busy) setCreateOpen(false) }} onOk={() => void create()} closable={!busy} cancelButtonProps={{ disabled: busy }}><div className="space-y-3">{formError ? <p role="alert" className="text-sm text-red-600">{formError}</p> : null}<label className="block space-y-1 text-sm">{t('account.name')}<Input value={name} onChange={(event) => setName(event.target.value)} /></label><label className="block space-y-1 text-sm">{t('common.email')}<Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label className="block space-y-1 text-sm">{t('account.newPassword')}<Password value={password} onChange={(event) => setPassword(event.target.value)} /></label><label className="block space-y-1 text-sm">{t('admin.userRole')}<Select value={role} options={roles} onChange={(next) => setRole(next as AdminUser['role'])} className="w-full" /></label></div></Modal>
+    {resetUser ? <Modal {...resetModal} afterOpenChange={(open) => { finishReset(open); if (!open) { setPassword(''); setFormError('') } }} title={`${t('admin.resetPassword')} · ${resetUser.name}`} okText={t('admin.resetPassword')} cancelText={t('common.cancel')} confirmLoading={busy} onCancel={() => { if (!busy) closeReset() }} onOk={() => void reset()} closable={!busy} cancelButtonProps={{ disabled: busy }}><div className="space-y-3">{formError ? <p role="alert" className="text-sm text-red-600">{formError}</p> : null}<label className="block space-y-1 text-sm">{t('account.newPassword')}<Password value={password} onChange={(event) => setPassword(event.target.value)} /></label></div></Modal> : null}
   </Card>
 }

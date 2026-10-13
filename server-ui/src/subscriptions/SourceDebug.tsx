@@ -1,3 +1,4 @@
+import type { ModalLifecycleProps } from '../use-modal-state'
 import { Button, Collapse, Modal, Select, Spin, Table, Tag, Tooltip } from '@acme/components'
 import { useEffect, useRef, useState } from 'react'
 import { proxyApi, type SubscriptionProxy } from '../proxies/api'
@@ -10,7 +11,7 @@ import { DiagnosticValue } from './DiagnosticValue'
 import { diagnosticText } from './diagnostic-locale'
 import { ServerCodeBlock } from '../ServerCodeBlock'
 
-export function SourceDebug({ source, saved, onClose }: { source: Extract<SubscriptionSource, { type: 'url' }>; saved?: { id: string; index: number; source: Extract<SubscriptionSource, { type: 'url' }> }; onClose: () => void }) {
+export function SourceDebug({ open, afterOpenChange, source, saved, onClose }: { source: Extract<SubscriptionSource, { type: 'url' }>; saved?: { id: string; index: number; source: Extract<SubscriptionSource, { type: 'url' }> }; onClose: () => void } & ModalLifecycleProps) {
   const { t, number, locale } = useI18n()
   const [proxies, setProxies] = useState<SubscriptionProxy[]>([])
   const [mode, setMode] = useState<'bypass-cache' | 'production'>(saved ? 'production' : 'bypass-cache')
@@ -55,7 +56,7 @@ export function SourceDebug({ source, saved, onClose }: { source: Extract<Subscr
     }
   }
   const displayedSource = mode === 'production' && saved ? saved.source : source
-  return <Modal open title={t('sourceDebug.title', { name: displayedSource.remark || displayedSource.url })} size="large" footer={null} onCancel={() => { stop(); onClose() }}>
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={t('sourceDebug.title', { name: displayedSource.remark || displayedSource.url })} size="large" footer={null} onCancel={() => { stop(); onClose() }}>
     <div className="space-y-4">
       <p className="truncate text-xs text-[var(--muted)]" title={displayedSource.url}>{displayedSource.url}</p>
       <p className="text-xs text-[var(--muted)]">{saved ? t('sourceDebug.savedHint') : t('sourceDebug.draftHint')}</p>

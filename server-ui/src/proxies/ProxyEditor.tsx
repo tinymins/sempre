@@ -1,3 +1,4 @@
+import type { ModalLifecycleProps } from '../use-modal-state'
 import { Button, Checkbox, Input, Modal, Select, TextArea } from '@acme/components'
 import { useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n/provider'
@@ -12,9 +13,9 @@ const payload = (input: ProxyInput, mode: Mode): ProxyInput => mode === 'custom-
   : { ...input, name: input.name.trim(), customNodeId: null }
 const same = (a: ProxyInput, b: ProxyInput) => JSON.stringify(a) === JSON.stringify(b)
 
-export function ProxyEditor({ id, initial, nodes, onSaved, onClose }: {
+export function ProxyEditor({ open, afterOpenChange, id, initial, nodes, onSaved, onClose }: {
   id: string | null; initial: ProxyInput; nodes: CustomNode[]; onSaved: () => Promise<void>; onClose: () => void
-}) {
+} & ModalLifecycleProps) {
   const { t } = useI18n()
   const initialMode = initial.customNodeId || !id ? 'custom-node' : 'import'
   const [input, setInput] = useState(initial)
@@ -81,7 +82,7 @@ export function ProxyEditor({ id, initial, nodes, onSaved, onClose }: {
   }
   const disabled = !id && saving
   const dirty = !same(payload(input, mode), savedInput)
-  return <Modal open title={t(id ? 'proxies.edit' : 'proxies.add')} onCancel={() => { if (!disabled) void close() }} footer={<div className="flex items-center justify-between gap-3">
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={t(id ? 'proxies.edit' : 'proxies.add')} onCancel={() => { if (!disabled) void close() }} footer={<div className="flex items-center justify-between gap-3">
     <span role="status" className="text-xs text-[var(--muted)]">{id ? saving ? t('relay.saving') : dirty ? t('relay.unsaved') : t('common.saved') : ''}</span>
     <div className="flex gap-2"><Button disabled={disabled} onClick={() => void close()}>{t('common.close')}</Button>{!id ? <Button variant="primary" loading={saving} onClick={() => void create()}>{t('proxies.add')}</Button> : null}</div>
   </div>}>

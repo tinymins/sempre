@@ -1,10 +1,11 @@
+import type { ModalLifecycleProps } from '../use-modal-state'
 import { Button, CodeEditor, Modal, Popconfirm, Select, Spin, useToast } from '@acme/components'
 import { useCallback, useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
 import type { CustomNode, Subscription, UserBrief } from './types'
 import { useI18n } from '../i18n/provider'
 
-interface Props {
+interface Props extends ModalLifecycleProps {
   nodeId: string | null
   currentUserId: string
   users: UserBrief[] | null
@@ -17,7 +18,7 @@ interface Props {
   onSaved: () => void
 }
 
-export function CustomNodeEditor({ nodeId, currentUserId, users, subscriptions, usersError, subscriptionsError, retryUsers, retrySubscriptions, onClose, onSaved }: Props) {
+export function CustomNodeEditor({ open, afterOpenChange, nodeId, currentUserId, users, subscriptions, usersError, subscriptionsError, retryUsers, retrySubscriptions, onClose, onSaved }: Props) {
   const { t } = useI18n()
   const toast = useToast()
   const [node, setNode] = useState<CustomNode | null>(null)
@@ -76,7 +77,7 @@ export function CustomNodeEditor({ nodeId, currentUserId, users, subscriptions, 
   }
 
   const saveButton = <Button variant="primary" loading={saving} disabled={loading || (Boolean(nodeId) && !node) || !content.trim()}>{t('common.confirm')}</Button>
-  return <Modal open title={nodeId ? t('nodes.edit') : t('nodes.new')} footer={<div className="flex justify-end gap-2"><Button disabled={saving} onClick={onClose}>{t('common.cancel')}</Button>{removedEnabled.length ? <Popconfirm title={t('nodes.unassignEnabled')} description={removedEnabled.map((item) => item.remark || item.subscribeId).join('、')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={save}>{saveButton}</Popconfirm> : <Button variant="primary" loading={saving} disabled={loading || (Boolean(nodeId) && !node) || !content.trim()} onClick={() => void save()}>{t('common.confirm')}</Button>}</div>} onCancel={() => { if (!saving) onClose() }} closable={!saving} keyboard={!saving} maskClosable={false} size="large">
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={nodeId ? t('nodes.edit') : t('nodes.new')} footer={<div className="flex justify-end gap-2"><Button disabled={saving} onClick={onClose}>{t('common.cancel')}</Button>{removedEnabled.length ? <Popconfirm title={t('nodes.unassignEnabled')} description={removedEnabled.map((item) => item.remark || item.subscribeId).join('、')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={save}>{saveButton}</Popconfirm> : <Button variant="primary" loading={saving} disabled={loading || (Boolean(nodeId) && !node) || !content.trim()} onClick={() => void save()}>{t('common.confirm')}</Button>}</div>} onCancel={() => { if (!saving) onClose() }} closable={!saving} keyboard={!saving} maskClosable={false} size="large">
     <div className="space-y-4">
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       {loading ? <Spin size="small" /> : null}

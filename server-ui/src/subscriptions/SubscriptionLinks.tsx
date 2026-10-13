@@ -1,3 +1,4 @@
+import { useModalState, type ModalLifecycleProps } from '../use-modal-state'
 import { Button, Modal, Popconfirm, Tag, useToast } from '@acme/components'
 import { Bug, Copy, ExternalLink, Globe2, Link2 } from 'lucide-react'
 import { useState } from 'react'
@@ -30,11 +31,11 @@ function LinkRow({ label, url, copyLabel, openLabel, debugLabel, onCopy, onDebug
   </div>
 }
 
-export function SubscriptionLinks({ subscription, targets, onClose }: { subscription: Subscription | null; targets: Target[]; onClose: () => void }) {
+export function SubscriptionLinks({ open, afterOpenChange, subscription, targets, onClose }: { subscription: Subscription | null; targets: Target[]; onClose: () => void } & ModalLifecycleProps) {
   const { t, number } = useI18n()
   const toast = useToast()
   const [clearing, setClearing] = useState(false)
-  const [debugTarget, setDebugTarget] = useState<Target | null>(null)
+  const { value: debugTarget, show: setDebugTarget, close: closeDebug, ...debugModal } = useModalState<Target>()
   const base = subscription ? `${window.location.origin}/api/subscriptions/${encodeURIComponent(subscription.url)}` : ''
   const manifestUrl = subscription ? `${base}/manifest` : ''
   const copy = async (value: string) => {
@@ -55,7 +56,7 @@ export function SubscriptionLinks({ subscription, targets, onClose }: { subscrip
     finally { setClearing(false) }
   }
   return (
-    <Modal open={Boolean(subscription)} title={t('links.title', { name: subscription?.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} width={560}>
+    <Modal open={open} afterOpenChange={afterOpenChange} title={t('links.title', { name: subscription?.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} width={560}>
       <p className="mb-4 text-sm text-[var(--muted)]">{t('links.stableHint')}</p>
       {manifestUrl ? <section className="mb-5 space-y-2"><p className="text-xs text-[var(--muted)]">{t('links.manifestHint')}</p><LinkRow label={t('links.manifest')} url={manifestUrl} copyLabel={t('links.copyManifest')} openLabel={t('links.openManifest')} onCopy={() => void copy(manifestUrl)} /></section> : null}
       <h3 className="mb-2 text-sm font-semibold">{t('links.rawFormats')}</h3>
@@ -70,7 +71,7 @@ export function SubscriptionLinks({ subscription, targets, onClose }: { subscrip
         {targets.length === 0 ? <p className="text-sm text-[var(--muted)]">{t('links.loadingFormats')}</p> : null}
       </div>
       {subscription?.canDelete ? <div className="mt-5 border-t border-[var(--border)] pt-4"><Popconfirm title={t('links.clearTitle')} description={t('links.clearDetail')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={() => void clearCache()}><Button size="small" loading={clearing}>{t('links.clear')}</Button></Popconfirm></div> : null}
-      {subscription && debugTarget ? <SubscriptionDebug savedSubscription={subscription} targets={targets} initialTarget={debugTarget} onClose={() => setDebugTarget(null)} /> : null}
+      {subscription && debugTarget ? <SubscriptionDebug {...debugModal} savedSubscription={subscription} targets={targets} initialTarget={debugTarget} onClose={closeDebug} /> : null}
     </Modal>
   )
 }

@@ -1,3 +1,4 @@
+import type { ModalLifecycleProps } from '../use-modal-state'
 import { Button, Input, Modal, Select, Spin, Table, Tag, Tooltip } from '@acme/components'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { subscriptionApi } from './api'
@@ -6,7 +7,7 @@ import type { Subscription } from './types'
 import { useI18n } from '../i18n/provider'
 import { PreviewNodeDetails } from './PreviewNodeDetails'
 
-interface Props {
+interface Props extends ModalLifecycleProps {
   subscription: Subscription
   targets: Target[]
   onClose: () => void
@@ -15,7 +16,7 @@ interface Props {
 type IndexedPreviewNode = PreviewNode & { previewIndex: number }
 const typeColors: Record<string, string> = { vmess: 'blue', vless: 'purple', ss: 'green', trojan: 'orange', hysteria2: 'magenta', hysteria: 'red', tuic: 'cyan', socks5: 'default', http: 'default' }
 
-export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
+export function SubscriptionPreview({ open, afterOpenChange, subscription, targets, onClose }: Props) {
   const { t, number } = useI18n()
   const [format, setFormat] = useState(targets.find((item) => item.format === 'clash-meta')?.format ?? targets[0]?.format ?? '')
   const [nodes, setNodes] = useState<PreviewNode[] | null>(null)
@@ -85,7 +86,7 @@ export function SubscriptionPreview({ subscription, targets, onClose }: Props) {
   const filteredCount = (nodes?.length ?? 0) - activeCount
   const typeCounts = Object.entries((nodes ?? []).filter((node) => !node.filtered).reduce<Record<string, number>>((counts, node) => ({ ...counts, [node.type]: (counts[node.type] ?? 0) + 1 }), {}))
 
-  return <Modal open title={t('preview.title', { name: subscription.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} size="almost-full">
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={t('preview.title', { name: subscription.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} size="almost-full">
     <div className="space-y-4">
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         {nodes ? <p className="min-w-0 flex-1 basis-64 break-words text-sm">{t('preview.summary', { total: number(nodes.length), active: number(activeCount), filtered: number(filteredCount) })}{typeCounts.length ? ` · ${typeCounts.map(([type, count]) => `${type} ${number(count)}`).join(' / ')}` : ''}</p> : <div className="min-w-0 flex-1 basis-64" />}

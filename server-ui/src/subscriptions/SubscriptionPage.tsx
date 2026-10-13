@@ -1,3 +1,4 @@
+import { useModalState } from '../use-modal-state'
 import { Button, Card, Popconfirm, Table, Tooltip, useToast } from '@acme/components'
 import { BarChart3, Edit3, Eye, Link2, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
@@ -19,10 +20,10 @@ export function SubscriptionPage({ initialEditId }: { initialEditId?: string }) 
   const [items, setItems] = useState<Subscription[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [editing, setEditing] = useState<string | null | undefined>(initialEditId ?? (location.state?.createSubscription === true ? null : undefined))
-  const [links, setLinks] = useState<Subscription | null>(null)
-  const [preview, setPreview] = useState<Subscription | null>(null)
-  const [stats, setStats] = useState<Subscription | null>(null)
+  const { value: editing, show: setEditing, close: closeEditing, afterOpenChange: finishEditing, ...editorModal } = useModalState<string | null>(initialEditId ?? (location.state?.createSubscription === true ? null : undefined))
+  const { value: links, show: setLinks, close: closeLinks, ...linksModal } = useModalState<Subscription>()
+  const { value: preview, show: setPreview, close: closePreview, ...previewModal } = useModalState<Subscription>()
+  const { value: stats, show: setStats, close: closeStats, ...statsModal } = useModalState<Subscription>()
   const [targets, setTargets] = useState<Target[]>([])
   const [targetsError, setTargetsError] = useState('')
 
@@ -65,14 +66,14 @@ export function SubscriptionPage({ initialEditId }: { initialEditId?: string }) 
     }
   }
   const saved = (value: Subscription) => {
-    closeEditor()
+    closeEditing()
     toast.success(t('common.saved'))
     setItems((current) => [value, ...current.filter((item) => item.id !== value.id)])
     void load()
   }
-  const closeEditor = () => {
-    setEditing(undefined)
-    if (initialEditId) navigate({ pathname: '/subscriptions', search: location.search }, { replace: true })
+  const finishEditorClose = (open: boolean) => {
+    finishEditing(open)
+    if (!open && initialEditId) navigate({ pathname: '/subscriptions', search: location.search }, { replace: true })
   }
   const actions = (item: Subscription) => <div className="flex flex-wrap items-center gap-1">
     <Button size="small" variant="text" icon={<Link2 size={15} />} aria-label={t('configs.linkAction', { name: item.remark || t('configs.unnamed') })} title={t('links.title', { name: item.remark || t('configs.unnamed') })} onClick={() => setLinks(item)} />
@@ -114,9 +115,9 @@ export function SubscriptionPage({ initialEditId }: { initialEditId?: string }) 
         { title: t('common.actions'), width: 190, minWidth: 190, className: 'whitespace-nowrap', render: (_, item) => actions(item) },
       ]} />
     </div>
-    {editing !== undefined ? <SubscriptionEditor open id={editing} targets={targets} onClose={closeEditor} onSaved={saved} /> : null}
-    {links ? <SubscriptionLinks subscription={links} targets={targets} onClose={() => setLinks(null)} /> : null}
-    {preview ? <SubscriptionPreview subscription={preview} targets={targets} onClose={() => setPreview(null)} /> : null}
-    {stats ? <SubscriptionStats subscription={stats} onClose={() => setStats(null)} /> : null}
+    {editing !== undefined ? <SubscriptionEditor {...editorModal} afterOpenChange={finishEditorClose} id={editing} targets={targets} onClose={closeEditing} onSaved={saved} /> : null}
+    {links ? <SubscriptionLinks {...linksModal} subscription={links} targets={targets} onClose={closeLinks} /> : null}
+    {preview ? <SubscriptionPreview {...previewModal} subscription={preview} targets={targets} onClose={closePreview} /> : null}
+    {stats ? <SubscriptionStats {...statsModal} subscription={stats} onClose={closeStats} /> : null}
   </section>
 }

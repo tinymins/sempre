@@ -1,3 +1,4 @@
+import type { ModalLifecycleProps } from '../use-modal-state'
 import { Button, CodePanel, Input, Modal } from '@acme/components'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DraftDebugResult } from './diagnostic-types'
@@ -24,7 +25,7 @@ function highlight(line: string, query: string) {
   return pieces
 }
 
-export function DiagnosticSearch({ result, open, onClose }: { result: DraftDebugResult; open: boolean; onClose: () => void }) {
+export function DiagnosticSearch({ open, afterOpenChange, result, onClose }: { result: DraftDebugResult; onClose: () => void } & ModalLifecycleProps) {
   const { locale, number } = useI18n()
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -46,7 +47,7 @@ export function DiagnosticSearch({ result, open, onClose }: { result: DraftDebug
     if (open && matches.length) activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }, [open, active, matches])
   const selected = matches[active]
-  return <Modal open={open} title={diagnosticText(locale, 'searchTitle')} size="large" footer={null} onCancel={onClose} style={{ height: 'min(800px, calc(100dvh - 32px))' }} bodyStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={diagnosticText(locale, 'searchTitle')} size="large" footer={null} onCancel={onClose} style={{ height: 'min(800px, calc(100dvh - 32px))' }} bodyStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <Input value={query} onChange={(event) => { setQuery(event.target.value); setActive(0) }} placeholder={diagnosticText(locale, 'searchHint')} />
       <div className="flex items-center gap-2 text-sm">

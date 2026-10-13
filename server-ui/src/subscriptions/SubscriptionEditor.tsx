@@ -1,3 +1,4 @@
+import { useModalState, type ModalLifecycleProps } from '../use-modal-state'
 import { proxyApi, type SubscriptionProxy } from '../proxies/api'
 import { EditorProvider, SubscriptionConfigEditor, sourceText, normalizeSource } from '@acme/subscription-editor'
 import { Button, Modal, Popconfirm, Select, Spin, TextArea, useToast } from '@acme/components'
@@ -13,15 +14,14 @@ import { draftFromSubscription, emptyDraft, type Subscription, type Subscription
 import { useI18n } from '../i18n/provider'
 import type { MessageKey } from '../i18n/zh-CN'
 
-interface Props {
-  open: boolean
+interface Props extends ModalLifecycleProps {
   id: string | null
   onClose: () => void
   onSaved: (value: Subscription) => void
   targets: Target[]
 }
 
-export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Props) {
+export function SubscriptionEditor({ open, afterOpenChange, id, onClose, onSaved, targets }: Props) {
   const { t, number, locale } = useI18n()
   const toast = useToast()
   const [proxies, setProxies] = useState<SubscriptionProxy[]>([])
@@ -38,8 +38,8 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   const [error, setError] = useState('')
   const [usersError, setUsersError] = useState('')
   const [conflict, setConflict] = useState(false)
-  const [debugOpen, setDebugOpen] = useState(false)
-  const [sourceDebug, setSourceDebug] = useState<{ source: Extract<SubscriptionSource, { type: 'url' }>; index: number } | null>(null)
+  const { value: debugOpen, show: showDebug, close: closeDebug, ...debugModal } = useModalState<true>()
+  const { value: sourceDebug, show: setSourceDebug, close: closeSourceDebug, ...sourceDebugModal } = useModalState<{ source: Extract<SubscriptionSource, { type: 'url' }>; index: number }>()
   const selectedFormat = targets.find(target => target.format === previewFormat)?.format ?? targets[0]?.format ?? null
   const defaultsKey = JSON.stringify([id, selectedFormat, defaultsRetry])
   const currentDefaults = open && defaultsResult?.key === defaultsKey ? defaultsResult : null
@@ -80,7 +80,6 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
 
   const close = () => {
     if (saving) return
-    setDefaultsRetry(value => value + 1)
     onClose()
   }
 
@@ -151,8 +150,8 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
   }
 
   return (
-    <EditorProvider locale={locale} subscriptionProxies={proxies} messages={{ 'source.fetchMode': t('proxies.sourceLabel'), 'source.modeHelp': t('proxies.sourceHelp') }}><Modal open={open} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" bodyStyle={{ display: 'flex', flexDirection: 'column' }} onCancel={close} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
-      <Button className="h-auto! min-h-8 min-w-0 max-w-full justify-self-start whitespace-normal text-left" disabled={!draft || targets.length === 0 || saving} onClick={() => setDebugOpen(true)}><span className="min-w-0 break-words">{t('editor.debugDraft')}</span></Button>
+    <EditorProvider locale={locale} subscriptionProxies={proxies} messages={{ 'source.fetchMode': t('proxies.sourceLabel'), 'source.modeHelp': t('proxies.sourceHelp') }}><Modal open={open} afterOpenChange={afterOpenChange} title={id ? t('configs.edit') : t('configs.new')} size="almost-full" bodyStyle={{ display: 'flex', flexDirection: 'column' }} onCancel={close} closable={!saving} keyboard={!saving} maskClosable={false} destroyOnClose footer={<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pt-4">
+      <Button className="h-auto! min-h-8 min-w-0 max-w-full justify-self-start whitespace-normal text-left" disabled={!draft || targets.length === 0 || saving} onClick={() => showDebug(true)}><span className="min-w-0 break-words">{t('editor.debugDraft')}</span></Button>
       <div className="flex shrink-0 gap-2">
         <Button disabled={saving} onClick={close}>{t('common.cancel')}</Button>
         <Button variant="primary" loading={saving} disabled={loading || !draft || (saved !== null && !saved.canEdit)} onClick={save}>{t('common.save')}</Button>
@@ -173,8 +172,8 @@ export function SubscriptionEditor({ open, id, onClose, onSaved, targets }: Prop
         dnsPreviewControls={<div className="space-y-1 text-sm"><Select value={selectedFormat ?? ''} addonBefore={t('editor.defaultsPreviewFormat')} aria-label={t('editor.defaultsPreviewFormat')} options={targets.length ? targets.map(target => ({ value: target.format, label: target.format })) : [{ value: '', label: t('editor.defaultsPreviewGeneric') }]} disabled={targets.length === 0} onChange={next => setPreviewFormat(String(next))} className="w-full max-w-md" /><p className="text-xs text-[var(--muted)]">{t('editor.defaultsPreviewHint')}</p></div>}
         onDebugSource={(source, index) => { if (source.type === 'url') setSourceDebug({ source, index }) }}
       /> : null}
-      {draft && debugOpen ? <SubscriptionDebug draft={draft} targets={targets} subscriptionId={saved?.id} onClose={() => setDebugOpen(false)} /> : null}
-      {sourceDebug ? <SourceDebug source={sourceDebug.source} saved={savedSource(saved, sourceDebug.source, sourceDebug.index)} onClose={() => setSourceDebug(null)} /> : null}
+      {draft && debugOpen ? <SubscriptionDebug {...debugModal} draft={draft} targets={targets} subscriptionId={saved?.id} onClose={closeDebug} /> : null}
+      {sourceDebug ? <SourceDebug {...sourceDebugModal} source={sourceDebug.source} saved={savedSource(saved, sourceDebug.source, sourceDebug.index)} onClose={closeSourceDebug} /> : null}
     </Modal></EditorProvider>
   )
 }

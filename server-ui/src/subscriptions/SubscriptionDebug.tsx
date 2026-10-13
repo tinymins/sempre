@@ -1,3 +1,4 @@
+import { useModalState, type ModalLifecycleProps } from '../use-modal-state'
 import { Button, Collapse, Input, Modal, Select, Spin, Tag } from '@acme/components'
 import { useEffect, useRef, useState } from 'react'
 import { subscriptionApi } from './api'
@@ -11,7 +12,7 @@ import { DiagnosticValue } from './DiagnosticValue'
 import { diagnosticText } from './diagnostic-locale'
 import { ServerCodeBlock } from '../ServerCodeBlock'
 
-export function SubscriptionDebug({ draft, savedSubscription, targets, subscriptionId, initialTarget, onClose }: { draft?: SubscriptionDraft; savedSubscription?: Subscription; targets: Target[]; subscriptionId?: string; initialTarget?: Target; onClose: () => void }) {
+export function SubscriptionDebug({ open, afterOpenChange, draft, savedSubscription, targets, subscriptionId, initialTarget, onClose }: { draft?: SubscriptionDraft; savedSubscription?: Subscription; targets: Target[]; subscriptionId?: string; initialTarget?: Target; onClose: () => void } & ModalLifecycleProps) {
   const { t, number, locale } = useI18n()
   const [format, setFormat] = useState(initialTarget?.format ?? targets[0]?.format ?? '')
   const [result, setResult] = useState<DraftDebugResult | null>(null)
@@ -19,8 +20,8 @@ export function SubscriptionDebug({ draft, savedSubscription, targets, subscript
   const [loading, setLoading] = useState(Boolean(savedSubscription && initialTarget))
   const [error, setError] = useState('')
   const [progress, setProgress] = useState<DebugStage[]>([])
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [traceOpen, setTraceOpen] = useState(false)
+  const { value: searchOpen, show: showSearch, close: closeSearch, ...searchModal } = useModalState<true>()
+  const { value: traceOpen, show: showTrace, close: closeTrace, ...traceModal } = useModalState<true>()
   const [traceId, setTraceId] = useState<string | undefined>()
   const requestId = useRef(0)
   const controller = useRef<AbortController | null>(null)
@@ -92,16 +93,16 @@ export function SubscriptionDebug({ draft, savedSubscription, targets, subscript
     setError('')
     setResult(null)
     setProgress([])
-    setSearchOpen(false)
-    setTraceOpen(false)
+    closeSearch()
+    closeTrace()
     setTraceId(undefined)
     void execute(target, currentRequest, nextController.signal)
   }
   const query = search.trim().toLowerCase()
   const diagnostics = result?.diagnostics.filter((item) => !query || `${item.level} ${item.sourceId ?? ''} ${item.message}`.toLowerCase().includes(query)) ?? []
   const errors = result?.diagnostics.filter((item) => item.level === 'error') ?? []
-  const openTrace = (id?: string) => { setTraceId(id); setTraceOpen(true) }
-  return <Modal open title={savedSubscription ? t('debug.savedTitle', { name: savedSubscription.remark || t('configs.unnamed') }) : t('debug.draftTitle')} size="almost-full" footer={null} onCancel={() => { stop(); onClose() }}>
+  const openTrace = (id?: string) => { setTraceId(id); showTrace(true) }
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={savedSubscription ? t('debug.savedTitle', { name: savedSubscription.remark || t('configs.unnamed') }) : t('debug.draftTitle')} size="almost-full" footer={null} onCancel={() => { stop(); onClose() }}>
     <div className="space-y-4">
       <p className="text-sm text-[var(--muted)]">{savedSubscription ? t('debug.savedHint') : t('debug.draftHint')}</p>
       <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -119,7 +120,7 @@ export function SubscriptionDebug({ draft, savedSubscription, targets, subscript
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Tag color={result.runtimeValidated ? 'green' : 'blue'}>{diagnosticText(locale, result.runtimeValidated ? 'runtime' : 'structural')}</Tag>
           <Tag>{diagnosticText(locale, 'elapsedMs')}: {number(result.elapsedMs)} ms</Tag>
-          <Button size="small" onClick={() => setSearchOpen(true)}>{diagnosticText(locale, 'searchTitle')}</Button>
+          <Button size="small" onClick={() => showSearch(true)}>{diagnosticText(locale, 'searchTitle')}</Button>
           <Button size="small" disabled={!result.nodeTraces?.length} onClick={() => openTrace()}>{diagnosticText(locale, 'trace')} · {number(result.nodeTraces?.length ?? 0)}</Button>
           {!result.nodeTraces?.length ? <span className="text-xs text-[var(--muted)]">{diagnosticText(locale, 'traceUnavailable')}</span> : null}
         </div>
@@ -140,8 +141,8 @@ export function SubscriptionDebug({ draft, savedSubscription, targets, subscript
           ...(result.nodeOrigins != null ? [{ key: 'origins', label: t('debug.origins'), children: <DiagnosticValue value={result.nodeOrigins} /> }] : []),
           ...(result.fieldDiffs != null ? [{ key: 'diffs', label: t('debug.fieldDiffs'), children: <DiagnosticValue value={result.fieldDiffs} /> }] : []),
         ]} />
-        {searchOpen ? <DiagnosticSearch result={result} open onClose={() => setSearchOpen(false)} /> : null}
-        {traceOpen ? <DiagnosticTrace traces={result.nodeTraces ?? []} selectedId={traceId} open onClose={() => setTraceOpen(false)} /> : null}
+        {searchOpen ? <DiagnosticSearch {...searchModal} result={result} onClose={closeSearch} /> : null}
+        {traceOpen ? <DiagnosticTrace {...traceModal} traces={result.nodeTraces ?? []} selectedId={traceId} onClose={closeTrace} /> : null}
       </> : null}
     </div>
   </Modal>

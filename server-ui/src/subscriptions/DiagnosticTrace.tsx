@@ -1,3 +1,4 @@
+import type { ModalLifecycleProps } from '../use-modal-state'
 import { Button, Input, Modal } from '@acme/components'
 import { CheckCircle2, CircleMinus, CircleX } from 'lucide-react'
 import { useState } from 'react'
@@ -46,13 +47,13 @@ export function TraceSteps({ trace }: { trace: NodeTraceResult }) {
   </div>
 }
 
-export function DiagnosticTrace({ traces, selectedId, open, onClose }: { traces: NodeTraceResult[]; selectedId?: string; open: boolean; onClose: () => void }) {
+export function DiagnosticTrace({ open, afterOpenChange, traces, selectedId, onClose }: { traces: NodeTraceResult[]; selectedId?: string; onClose: () => void } & ModalLifecycleProps) {
   const { locale } = useI18n()
   const [search, setSearch] = useState('')
   const [chosenId, setChosenId] = useState<string | null>(null)
   const selected = traces.find((trace, index) => (trace.traceId ?? String(index)) === (chosenId ?? selectedId))
   const filtered = traces.map((trace, index) => ({ trace, index })).filter(({ trace }) => trace.nodeName.toLowerCase().includes(search.trim().toLowerCase()))
-  return <Modal open={open} title={diagnosticText(locale, 'traceTitle')} size="large" footer={null} onCancel={onClose} style={{ height: 'min(800px, calc(100dvh - 32px))' }} bodyStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={diagnosticText(locale, 'traceTitle')} size="large" footer={null} onCancel={onClose} style={{ height: 'min(800px, calc(100dvh - 32px))' }} bodyStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
     <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(5rem,30%)_minmax(0,1fr)] gap-3 md:grid-cols-[12rem_1fr] md:grid-rows-1">
       <aside className="flex min-h-0 flex-col gap-2">
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={diagnosticText(locale, 'trace')} />

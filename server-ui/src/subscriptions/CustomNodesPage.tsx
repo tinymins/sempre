@@ -1,3 +1,4 @@
+import { useModalState } from '../use-modal-state'
 import { Button, Card, Popconfirm, Table, Tag, Tooltip, useToast } from '@acme/components'
 import { Edit3, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
@@ -12,7 +13,7 @@ export function CustomNodesPage({ currentUserId }: { currentUserId: string }) {
   const [nodes, setNodes] = useState<CustomNode[]>([])
   const [subscriptions, setSubscriptions] = useState<Subscription[] | null>(null)
   const [users, setUsers] = useState<UserBrief[] | null>(null)
-  const [editing, setEditing] = useState<string | null | undefined>(undefined)
+  const { value: editing, show: setEditing, close: closeEditor, ...editorModal } = useModalState<string | null>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [subscriptionsError, setSubscriptionsError] = useState('')
@@ -65,6 +66,6 @@ export function CustomNodesPage({ currentUserId }: { currentUserId: string }) {
       { title: t('nodes.assignedConfigs'), width: 130, minWidth: 130, className: 'whitespace-nowrap', render: (_, node) => number(node.assignments.length) },
       { title: t('common.actions'), width: 100, minWidth: 100, className: 'whitespace-nowrap', render: (_, node) => <div className="flex gap-1">{node.canEdit ? <Button size="small" variant="text" icon={<Edit3 size={14} />} aria-label={`${t('common.edit')} ${node.name}`} onClick={() => setEditing(node.id)} /> : null}{node.canManageAuthorization ? <Popconfirm title={t('nodes.deleteTitle')} description={t('nodes.deleteHint')} okText={t('common.delete')} cancelText={t('common.cancel')} onConfirm={() => remove(node.id)} okType="danger"><Button size="small" variant="text" danger icon={<Trash2 size={14} />} aria-label={`${t('common.delete')} ${node.name}`} /></Popconfirm> : null}</div> },
     ]} locale={{ emptyText: t('nodes.empty') }} />
-    {editing !== undefined ? <CustomNodeEditor nodeId={editing} currentUserId={currentUserId} users={users} subscriptions={subscriptions} usersError={usersError} subscriptionsError={subscriptionsError} retryUsers={loadUsers} retrySubscriptions={loadSubscriptions} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); void loadNodes() }} /> : null}
+    {editing !== undefined ? <CustomNodeEditor {...editorModal} nodeId={editing} currentUserId={currentUserId} users={users} subscriptions={subscriptions} usersError={usersError} subscriptionsError={subscriptionsError} retryUsers={loadUsers} retrySubscriptions={loadSubscriptions} onClose={closeEditor} onSaved={() => { closeEditor(); void loadNodes() }} /> : null}
   </section>
 }

@@ -1,3 +1,4 @@
+import { useModalState } from './use-modal-state'
 import { ProxySettingsPage } from './proxies/ProxySettingsPage'
 import { AppSidebar, Avatar, Button, Card, Drawer, Dropdown, Spin, ToastProvider, useToast } from '@acme/components'
 import { ChevronDown, ChevronRight, ChevronsUpDown, Globe2, Home, LogOut, Menu, Rss, Settings, UserRound, Wrench } from 'lucide-react'
@@ -75,7 +76,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
   const toast = useToast()
   const location = useLocation()
   const navigate = useNavigate()
-  const [profileOpen, setProfileOpen] = useState(false)
+  const { value: profileOpen, show: showProfile, close: closeProfile, ...profileModal } = useModalState<true>()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [openGroups, setOpenGroups] = useState(() => ({
     proxy: location.pathname === '/' || location.pathname.startsWith('/subscriptions') || location.pathname === '/custom-nodes' || location.pathname === '/subscription-proxies',
@@ -90,7 +91,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
       onSignedOut()
     } catch (reason) { toast.error(t('nav.signOutFailed', { reason: reason instanceof Error ? reason.message : String(reason) })) }
   }
-  const accountFooter = <ServerAccountMenu user={user} onProfile={() => setProfileOpen(true)} onSignOut={() => void signOut()} />
+  const accountFooter = <ServerAccountMenu user={user} onProfile={() => showProfile(true)} onSignOut={() => void signOut()} />
   const childIndent = <span className="inline-block w-7" aria-hidden="true" />
   const sections = [
     { items: [{ key: 'overview', label: t('nav.overview'), icon: <Home size={17} /> }] },
@@ -120,7 +121,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
       </aside>
       <div className="min-w-0 flex-1">
         <header className="border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2 md:hidden">
-          <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-1"><Button variant="text" size="small" icon={<Menu size={18} />} aria-label={t('nav.openMenu')} onClick={() => setMobileMenuOpen(true)} /><Brand /></div><div className="flex shrink-0 gap-1"><Button variant="text" size="small" icon={<UserRound size={15} />} aria-label={t('nav.profile')} onClick={() => setProfileOpen(true)} /><Button variant="text" size="small" icon={<LogOut size={15} />} aria-label={t('nav.signOut')} onClick={() => void signOut()} /></div></div>
+          <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-1"><Button variant="text" size="small" icon={<Menu size={18} />} aria-label={t('nav.openMenu')} onClick={() => setMobileMenuOpen(true)} /><Brand /></div><div className="flex shrink-0 gap-1"><Button variant="text" size="small" icon={<UserRound size={15} />} aria-label={t('nav.profile')} onClick={() => showProfile(true)} /><Button variant="text" size="small" icon={<LogOut size={15} />} aria-label={t('nav.signOut')} onClick={() => void signOut()} /></div></div>
         </header>
         <Drawer open={mobileMenuOpen} title={t('nav.menu')} placement="left" width={280} onClose={() => setMobileMenuOpen(false)} className="md:hidden"><AppSidebar width={256} activeKey={location.pathname.slice(1) || 'overview'} onSelect={select} header={<Brand />} sections={sections} footer={accountFooter} /></Drawer>
         <main className="w-full p-4 sm:p-6">
@@ -138,7 +139,7 @@ function ServerShell({ user, onUserUpdated, onSignedOut }: { user: ServerUser; o
           </Routes>
         </main>
       </div>
-      {profileOpen ? <ProfileSettingsModal user={user} onUpdated={onUserUpdated} onClose={() => setProfileOpen(false)} /> : null}
+      {profileOpen ? <ProfileSettingsModal {...profileModal} user={user} onUpdated={onUserUpdated} onClose={closeProfile} /> : null}
     </div>
   )
 }

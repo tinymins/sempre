@@ -1,3 +1,4 @@
+import { useModalState } from '../use-modal-state'
 import { Button, Popconfirm, Table, Tag, useToast } from '@acme/components'
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
@@ -19,7 +20,7 @@ export function ProxyNodesPanel() {
   const [configured, setConfigured] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const [editing, setEditing] = useState<{ id: string | null; input: ProxyInput } | null>(null)
+  const { value: editing, show: setEditing, close: closeEditor, ...editorModal } = useModalState<{ id: string | null; input: ProxyInput }>()
   const [nodes, setNodes] = useState<CustomNode[]>([])
   const refresh = useCallback(async () => {
     try { const result = await proxyApi.list(); setItems(result.items); setConfigured(result.configured); setError('') }
@@ -61,6 +62,6 @@ export function ProxyNodesPanel() {
       </div> },
     ]} />
     <p className="text-xs text-[var(--muted)]">{t('proxies.systemHelp')}</p>
-    {editing ? <ProxyEditor id={editing.id} initial={editing.input} nodes={nodes} onSaved={refresh} onClose={() => setEditing(null)} /> : null}
+    {editing ? <ProxyEditor {...editorModal} id={editing.id} initial={editing.input} nodes={nodes} onSaved={refresh} onClose={closeEditor} /> : null}
   </section>
 }

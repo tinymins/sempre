@@ -1,3 +1,4 @@
+import type { ModalLifecycleProps } from '../use-modal-state'
 import { Modal, Pagination, Spin, Table, Tag, Tooltip } from '@acme/components'
 import { useEffect, useState } from 'react'
 import { subscriptionApi } from './api'
@@ -19,7 +20,7 @@ const accessTypeColors: Record<string, string> = {
   'sing-box-v13-macos': 'blue',
 }
 
-export function SubscriptionStats({ subscription, onClose }: { subscription: Subscription | null; onClose: () => void }) {
+export function SubscriptionStats({ open, afterOpenChange, subscription, onClose }: { subscription: Subscription | null; onClose: () => void } & ModalLifecycleProps) {
   const { t, date, number } = useI18n()
   const [stats, setStats] = useState<AccessStats | null>(null)
   const [page, setPage] = useState(1)
@@ -34,7 +35,7 @@ export function SubscriptionStats({ subscription, onClose }: { subscription: Sub
     return () => { active = false }
   }, [subscription, page])
 
-  return <Modal open={Boolean(subscription)} title={t('stats.title', { name: subscription?.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} size="large">
+  return <Modal open={open} afterOpenChange={afterOpenChange} title={t('stats.title', { name: subscription?.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} size="large">
     {loading ? <Spin size="large" /> : null}
     {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
     {stats ? <div className="space-y-5">
