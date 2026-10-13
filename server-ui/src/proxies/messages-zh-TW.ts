@@ -13,7 +13,6 @@ export default {
   "proxies.engineAuto": "自動選擇",
   "proxies.configuration": "代理設定",
   "proxies.configurationHelp": "貼上一個節點連結、Clash 節點文件或單個 sing-box/Xray 原生 outbound。憑證加密儲存。",
-  "proxies.authorizedUsers": "允許使用的使用者",
   "proxies.startAfterSave": "儲存後自動啟動",
   "proxies.saveEnable": "儲存並啟用",
   "proxies.references": "被 {count} 處訂閱或中轉設定引用",

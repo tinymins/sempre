@@ -13,7 +13,6 @@ export default {
   "proxies.engineAuto": "自動選択",
   "proxies.configuration": "プロキシ設定",
   "proxies.configurationHelp": "Paste one node URI, a Clash node document, or one native sing-box/Xray outbound. Credentials are encrypted at rest.",
-  "proxies.authorizedUsers": "使用を許可するユーザー",
   "proxies.startAfterSave": "保存後に自動起動",
   "proxies.saveEnable": "保存して有効化",
   "proxies.references": "購読・中継設定の {count} 箇所で使用",

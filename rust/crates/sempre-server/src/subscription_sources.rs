@@ -71,7 +71,7 @@ pub(crate) struct SourceLoadSummary {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "source loading needs the subscription owner for proxy authorization"
+    reason = "source loading needs the subscription owner for cache identity"
 )]
 pub(crate) async fn load_sources(
     state: &AppState,

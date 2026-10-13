@@ -14,9 +14,8 @@ export interface SubscriptionProxy {
   checkedAt: string | null
   canEdit: boolean
   referenceCount: number
-  authorizedUserIds: string[]
 }
-export interface ProxyInput { name: string; content?: string; customNodeId?: string | null; engine: 'sing-box' | 'xray' | null; enabled: boolean; authorizedUserIds: string[] }
+export interface ProxyInput { name: string; content?: string; customNodeId?: string | null; engine: 'sing-box' | 'xray' | null; enabled: boolean }
 export const proxyApi = {
   list: () => serverRequest<{ configured: boolean; items: SubscriptionProxy[] }>('/subscription-proxies'),
   edit: (id: string) => serverRequest<SubscriptionProxy & { content: string }>(`/subscription-proxies/${id}`),

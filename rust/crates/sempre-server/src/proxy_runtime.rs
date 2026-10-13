@@ -187,9 +187,12 @@ pub(crate) async fn run(state: Arc<AppState>) {
     }
 }
 
-pub(crate) async fn visible_row(state: &AppState, id: Uuid, user: Uuid) -> Result<PgRow, ApiError> {
-    sqlx::query("SELECT * FROM subscription_proxies WHERE id=$1 AND (user_id=$2 OR authorized_user_ids @> jsonb_build_array($2::text))")
-        .bind(id).bind(user).fetch_optional(&state.pool).await?.ok_or_else(|| ApiError::not_found("subscription proxy"))
+pub(crate) async fn visible_row(state: &AppState, id: Uuid) -> Result<PgRow, ApiError> {
+    sqlx::query("SELECT * FROM subscription_proxies WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("subscription proxy"))
 }
 
 pub(crate) async fn resolve(
@@ -204,7 +207,7 @@ pub(crate) async fn resolve(
             name: "system".into(),
         });
     };
-    let row = visible_row(state, id, user).await?;
+    let row = visible_row(state, id).await?;
     if !row.try_get::<bool, _>("enabled")? {
         return Err(ApiError::unavailable(
             "selected subscription proxy is disabled",

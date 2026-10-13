@@ -4,12 +4,12 @@ import { Plus, RefreshCw } from 'lucide-react'
 import { useI18n } from '../i18n/provider'
 import type { MessageKey } from '../i18n/zh-CN'
 import { subscriptionApi } from '../subscriptions/api'
-import type { CustomNode, UserBrief } from '../subscriptions/types'
+import type { CustomNode } from '../subscriptions/types'
 import { ManualProxyFields } from './ManualProxyFields'
 import { defaultManualContent } from './manual-proxy'
 import { proxyApi, type ProxyInput, type SubscriptionProxy } from './api'
 
-const empty: ProxyInput = { name: '', content: '', engine: null, enabled: true, authorizedUserIds: [] }
+const empty: ProxyInput = { name: '', content: '', engine: null, enabled: true }
 
 export function SubscriptionProxiesPage() {
   const { t, date } = useI18n()
@@ -21,7 +21,6 @@ export function SubscriptionProxiesPage() {
   const [editing, setEditing] = useState<{ id: string | null; input: ProxyInput } | null>(null)
   const [editorError, setEditorError] = useState('')
   const [inputMode, setInputMode] = useState('import')
-  const [users, setUsers] = useState<UserBrief[]>([])
   const [nodes, setNodes] = useState<CustomNode[]>([])
   const refresh = useCallback(async () => {
     try { const result = await proxyApi.list(); setItems(result.items); setConfigured(result.configured); setError('') }
@@ -42,11 +41,10 @@ export function SubscriptionProxiesPage() {
     setEditorError('')
     setBusy(proxy?.id ?? 'new')
     try {
-      const [result, choices, nodeChoices] = await Promise.all([proxy ? proxyApi.edit(proxy.id) : Promise.resolve(null), subscriptionApi.users(), subscriptionApi.customNodes()])
-      setUsers(choices)
+      const [result, nodeChoices] = await Promise.all([proxy ? proxyApi.edit(proxy.id) : Promise.resolve(null), subscriptionApi.customNodes()])
       setNodes(nodeChoices)
       setInputMode(result ? (result.customNodeId ? 'custom-node' : 'import') : 'custom-node')
-      setEditing({ id: proxy?.id ?? null, input: result ? { name: result.name, content: result.content, customNodeId: result.customNodeId, engine: result.engine, enabled: result.enabled, authorizedUserIds: result.authorizedUserIds } : { ...empty, authorizedUserIds: [] } })
+      setEditing({ id: proxy?.id ?? null, input: result ? { name: result.name, content: result.content, customNodeId: result.customNodeId, engine: result.engine, enabled: result.enabled } : { ...empty } })
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -67,14 +65,13 @@ export function SubscriptionProxiesPage() {
     {items !== null && !configured ? <Card><p className="text-sm">{t('proxies.notConfigured')}</p></Card> : null}
     <Card><div className="flex items-center gap-3"><h2 className="font-medium">{t('proxies.system')}</h2><Tag>{t('proxies.builtin')}</Tag></div><p className="mt-2 text-sm text-[var(--muted)]">{t('proxies.systemHelp')}</p></Card>
     {items?.map(proxy => <Card key={proxy.id}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 space-y-2"><div className="flex flex-wrap items-center gap-2"><h2 className="break-words font-medium">{proxy.name}</h2><Tag color={proxy.status === 'running' ? 'green' : proxy.lastError ? 'red' : 'default'}>{t(`proxies.status.${proxy.status}` as MessageKey)}</Tag></div><p className="text-sm text-[var(--muted)]">{proxy.protocol} · {proxy.engine} · {t('proxies.references', { count: proxy.referenceCount })}</p>{proxy.checkedAt ? <p className="text-xs text-[var(--muted)]">{t('proxies.checked')}: {date(proxy.checkedAt)}</p> : null}{proxy.lastError ? <p role="alert" className="max-w-2xl break-words text-sm text-red-600">{proxy.lastError}</p> : null}</div>
-      <div className="flex flex-wrap gap-2"><Button disabled={!proxy.enabled || busy !== null} loading={busy === proxy.id} onClick={() => void action(proxy.id, async () => { const result = await proxyApi.test(proxy.id); toast.success(t('proxies.testSuccess', { ms: result.elapsedMs })) })}>{t('proxies.test')}</Button>{proxy.canEdit ? <><Button disabled={busy !== null} onClick={() => void open(proxy)}>{t('common.edit')}</Button><Button disabled={busy !== null} onClick={() => void action(proxy.id, () => proxyApi.save(proxy.id, { name: proxy.name, engine: proxy.engine, enabled: !proxy.enabled, authorizedUserIds: proxy.authorizedUserIds }))}>{t(proxy.enabled ? 'proxies.disable' : 'proxies.enable')}</Button><Popconfirm title={t('proxies.deleteConfirm')} description={t('proxies.deleteHelp')} onConfirm={() => action(proxy.id, () => proxyApi.remove(proxy.id))}><Button danger disabled={busy !== null || proxy.referenceCount > 0}>{t('common.delete')}</Button></Popconfirm></> : null}</div></div></Card>)}
+      <div className="flex flex-wrap gap-2"><Button disabled={!proxy.enabled || busy !== null} loading={busy === proxy.id} onClick={() => void action(proxy.id, async () => { const result = await proxyApi.test(proxy.id); toast.success(t('proxies.testSuccess', { ms: result.elapsedMs })) })}>{t('proxies.test')}</Button>{proxy.canEdit ? <><Button disabled={busy !== null} onClick={() => void open(proxy)}>{t('common.edit')}</Button><Button disabled={busy !== null} onClick={() => void action(proxy.id, () => proxyApi.save(proxy.id, { name: proxy.name, engine: proxy.engine, enabled: !proxy.enabled }))}>{t(proxy.enabled ? 'proxies.disable' : 'proxies.enable')}</Button><Popconfirm title={t('proxies.deleteConfirm')} description={t('proxies.deleteHelp')} onConfirm={() => action(proxy.id, () => proxyApi.remove(proxy.id))}><Button danger disabled={busy !== null || proxy.referenceCount > 0}>{t('common.delete')}</Button></Popconfirm></> : null}</div></div></Card>)}
     {editing ? <Modal open title={t(editing.id ? 'proxies.edit' : 'proxies.add')} onCancel={() => { if (busy !== 'save') setEditing(null) }} footer={<div className="flex justify-end gap-2"><Button disabled={busy === 'save'} onClick={() => setEditing(null)}>{t('common.cancel')}</Button><Button variant="primary" loading={busy === 'save'} onClick={() => void save()}>{t(editing.input.enabled ? 'proxies.saveEnable' : 'common.save')}</Button></div>}>
       <div className="space-y-4">{editorError ? <p role="alert" className="text-sm text-red-600">{editorError}</p> : null}
         <label className="block space-y-1 text-sm">{t('proxies.name')}<Input disabled={busy === 'save'} value={editing.input.name} onChange={event => patch({ name: event.target.value })} placeholder={t('proxies.namePlaceholder')} /></label>
         <label className="block space-y-1 text-sm">{t('proxies.engine')}<Select disabled={busy === 'save'} value={editing.input.engine ?? 'auto'} options={[{ value: 'auto', label: t('proxies.engineAuto') }, { value: 'sing-box', label: 'sing-box' }, { value: 'xray', label: 'Xray' }]} onChange={value => patch({ engine: value === 'auto' ? null : value as ProxyInput['engine'] })} className="w-full" /></label>
         <label className="block space-y-1 text-sm">{t('proxies.inputMode')}<Select disabled={busy === 'save'} value={inputMode} options={[{ value: 'custom-node', label: t('proxies.fromCustomNode') }, { value: 'import', label: t('proxies.import') }, { value: 'manual', label: t('proxies.manual') }]} onChange={value => { setInputMode(String(value)); if (value === 'manual') patch({ content: defaultManualContent() }) }} className="w-full" /></label>
         {inputMode === 'custom-node' ? <div className="space-y-2"><label className="block space-y-1 text-sm">{t('proxies.customNode')}<Select disabled={busy === 'save'} value={editing.input.customNodeId ?? undefined} placeholder={t('proxies.selectCustomNode')} options={nodes.map(node => ({ value: node.id, label: `${node.name} · ${node.proxyType}` }))} onChange={value => patch({ customNodeId: String(value) })} className="w-full" /></label><p className="text-xs text-[var(--muted)]">{t(nodes.length ? 'proxies.customNodeHelp' : 'proxies.customNodesEmpty')}</p></div> : <><div>{inputMode === 'manual' ? <ManualProxyFields disabled={busy === 'save'} onChange={content => patch({ content })} /> : <label className="block space-y-1 text-sm">{t('proxies.configuration')}<TextArea disabled={busy === 'save'} rows={9} value={editing.input.content ?? ''} onChange={event => patch({ content: event.target.value })} className="font-mono text-xs" /></label>}</div><p className="text-xs text-[var(--muted)]">{t('proxies.configurationHelp')}</p></>}
-        <label className="block space-y-1 text-sm">{t('proxies.authorizedUsers')}<Select mode="multiple" disabled={busy === 'save'} value={editing.input.authorizedUserIds} options={users.map(user => ({ value: user.id, label: `${user.name} (${user.email})` }))} onChange={value => patch({ authorizedUserIds: value as string[] })} className="w-full" /></label>
         <Checkbox disabled={busy === 'save'} checked={editing.input.enabled} onChange={event => patch({ enabled: event.target.checked })}>{t('proxies.startAfterSave')}</Checkbox>
       </div>
     </Modal> : null}

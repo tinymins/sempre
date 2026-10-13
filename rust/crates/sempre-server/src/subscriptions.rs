@@ -151,7 +151,7 @@ async fn create(
     let id = Uuid::new_v4();
     let url = Uuid::new_v4().to_string();
     let mut transaction = state.pool.begin().await?;
-    crate::subscription_proxies::validate_sources(&mut transaction, &fields, user.id).await?;
+    crate::subscription_proxies::validate_sources(&mut transaction, &fields).await?;
     sqlx::query("INSERT INTO proxy_subscribes (id, user_id, url, remark, log_level, subscribe_url, subscribe_items, rule_list, use_system_rule_list, \"group\", use_system_group, filter, use_system_filter, servers, custom_config, use_system_custom_config, dns_config, use_system_dns_config, private_access_config, authorized_user_ids, cache_ttl_minutes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)")
         .bind(id).bind(user.id).bind(url)
         .bind(&fields.remark).bind(&fields.log_level).bind(&fields.subscribe_url)
@@ -231,7 +231,7 @@ async fn update(
     )
     .await?;
     if edited_fields.contains("subscribeItems") {
-        crate::subscription_proxies::validate_sources(&mut transaction, &fields, owner).await?;
+        crate::subscription_proxies::validate_sources(&mut transaction, &fields).await?;
     }
     let new_users = fields
         .authorized_user_ids

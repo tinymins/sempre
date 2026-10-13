@@ -95,6 +95,10 @@ const FROZEN: &[(&str, &str)] = &[
         "sempre-server/toolbox-migrations/0013_proxy_custom_node.sql",
         "dacfbdf4a17884e954723d2793c5e9d6c37c869f50f3b0428c65da02689ae278",
     ),
+    (
+        "sempre-server/toolbox-migrations/0014_public_subscription_proxies.sql",
+        "8f018f5f82d3aefb4ebd08ddc0c0526b0257908757897a34a5e607b424f1db70",
+    ),
 ];
 
 #[test]

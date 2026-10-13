@@ -307,7 +307,7 @@ async fn revision_hash(
             continue;
         }
         if let Some(id) = item.proxy_id {
-            let row = crate::proxy_runtime::visible_row(state, id, subscription.owner).await?;
+            let row = crate::proxy_runtime::visible_row(state, id).await?;
             if !row.try_get::<bool, _>("enabled")? {
                 return Err(ApiError::unavailable(
                     "selected subscription proxy is disabled",

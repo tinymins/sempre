@@ -128,8 +128,8 @@ Nonempty `subscribeItems` takes priority over the old `subscribeUrl` field;
 an empty list falls back to the old field for migrated records. Each item
 has `id`, `type` (`url` or `raw`), `enabled`, `prefix`, and `remark`.
 URL items carry `url` and optional `cacheTtlMinutes`, `fetchUa`, and `proxyId`.
-Null/absent `proxyId` selects system mode; a UUID selects an owned or authorized
-subscription proxy. RAW items carry `content` and never fetch over HTTP. Old
+Null/absent `proxyId` selects system mode; a UUID selects any configured
+subscription proxy from the catalog available to all authenticated accounts. RAW items carry `content` and never fetch over HTTP. Old
 `fetchMode` fields are rejected and require a manual database edit before upgrade.
 Existing items without a type are URLs. The list preserves mixed source order. The old
 `subscribeUrl` value remains readable and editable for existing rows.

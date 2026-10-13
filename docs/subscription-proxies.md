@@ -70,12 +70,15 @@ connections and the last working version of a failed edit. Runtime/control error
 are visible in the list; ordinary core output is discarded to avoid credential
 disclosure. The server reconciles saved state every 30 seconds.
 
-Only the owner can edit configurations and credentials. Authorized users can use
-and test shared proxies. Public subscription generation resolves the subscription
-owner's proxy permission. Proxy IDs and active revisions partition source caches;
+Every authenticated account can list, use, and test all configured subscription
+proxies. The catalog excludes configurations and credentials; only the owner can
+read or edit a proxy's configuration, change its enabled state, or delete it.
+Public subscription generation uses the selected proxy regardless of ownership.
+Proxy IDs and active revisions partition source caches;
 public artifact revisions include proxy references and active revisions. Changing
 a proxy does not change the source's stable identity. Referenced proxies cannot be
-deleted or have a still-referencing owner's access revoked.
+deleted until their subscription and relay-policy references are removed.
+Disabled proxies remain listed but cannot be used for fetching or testing.
 
 ## API
 
@@ -86,10 +89,11 @@ All endpoints require an authenticated server session:
 | GET | `/api/v1/subscription-proxies` | Redacted list and runtime configuration availability |
 | POST | `/api/v1/subscription-proxies` | Create an encrypted connection |
 | GET | `/api/v1/subscription-proxies/{id}` | Owner-only edit configuration |
-| PATCH | `/api/v1/subscription-proxies/{id}` | Update name, connection, enabled state, or grants |
+| PATCH | `/api/v1/subscription-proxies/{id}` | Owner-only update of name, connection, or enabled state |
 | DELETE | `/api/v1/subscription-proxies/{id}` | Delete an unreferenced connection |
 | POST | `/api/v1/subscription-proxies/{id}/test` | Check the active connection |
 
-Creation accepts `name`, `content`, `engine` (`null`, `sing-box`, or `xray`),
-`enabled`, and `authorizedUserIds`. On update, omitting `content` preserves the
-connection. A URL source stores `proxyId`; null/absence selects system mode.
+Creation accepts `name`, `content` or `customNodeId`, `engine` (`null`, `sing-box`,
+or `xray`), and `enabled`. Binding a custom node requires access to that node;
+proxy availability does not grant access to the custom-node catalog. On update,
+omitting both `content` and `customNodeId` preserves the connection. A URL source stores `proxyId`; null/absence selects system mode.

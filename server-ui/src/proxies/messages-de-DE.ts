@@ -13,7 +13,6 @@ export default {
   "proxies.engineAuto": "Automatisch",
   "proxies.configuration": "Proxy-Konfiguration",
   "proxies.configurationHelp": "Paste one node URI, a Clash node document, or one native sing-box/Xray outbound. Credentials are encrypted at rest.",
-  "proxies.authorizedUsers": "Berechtigte Benutzer",
   "proxies.startAfterSave": "Nach dem Speichern automatisch starten",
   "proxies.saveEnable": "Speichern und aktivieren",
   "proxies.references": "In {count} Abonnement- oder Relay-Einstellungen verwendet",

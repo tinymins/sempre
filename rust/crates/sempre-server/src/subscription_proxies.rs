@@ -39,16 +39,14 @@ struct Input {
     custom_node_id: Option<Uuid>,
     engine: Option<Engine>,
     enabled: bool,
-    #[serde(default)]
-    authorized_user_ids: Vec<Uuid>,
 }
 
 async fn list(
     State(state): State<Arc<AppState>>,
     CurrentUser(user): CurrentUser,
 ) -> Result<Json<Value>, ApiError> {
-    let rows = sqlx::query("SELECT p.*, (SELECT COUNT(*) FROM proxy_subscribes s WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.subscribe_items,'[]'::jsonb)) item WHERE item->>'proxyId'=p.id::text)) + (SELECT COUNT(*) FROM relay_egress_proxy_references r WHERE r.proxy_id=p.id) AS reference_count FROM subscription_proxies p WHERE p.user_id=$1 OR p.authorized_user_ids @> jsonb_build_array($1::text) ORDER BY p.created_at")
-        .bind(user.id).fetch_all(&state.pool).await?;
+    let rows = sqlx::query("SELECT p.*, (SELECT COUNT(*) FROM proxy_subscribes s WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.subscribe_items,'[]'::jsonb)) item WHERE item->>'proxyId'=p.id::text)) + (SELECT COUNT(*) FROM relay_egress_proxy_references r WHERE r.proxy_id=p.id) AS reference_count FROM subscription_proxies p ORDER BY p.created_at")
+        .fetch_all(&state.pool).await?;
     Ok(Json(
         json!({"configured":state.config.proxy.is_some(),"items":rows.iter().map(|row| output(row, user.id)).collect::<Result<Vec<_>, _>>()?}),
     ))
@@ -64,7 +62,7 @@ fn output(row: &PgRow, viewer: Uuid) -> Result<Value, ApiError> {
         "revision":row.try_get::<i64,_>("revision")?,"activeRevision":row.try_get::<Option<i64>,_>("active_revision")?,
         "lastError":row.try_get::<Option<String>,_>("last_error")?,
         "checkedAt":row.try_get::<Option<chrono::DateTime<chrono::Utc>>,_>("checked_at")?,
-        "authorizedUserIds":row.try_get::<Value,_>("authorized_user_ids")?,"canEdit":owner==viewer,
+        "canEdit":owner==viewer,
         "referenceCount":row.try_get::<i64,_>("reference_count").unwrap_or(0)
     }))
 }
@@ -74,7 +72,7 @@ async fn edit(
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
-    let row = proxy_runtime::visible_row(&state, id, user.id).await?;
+    let row = proxy_runtime::visible_row(&state, id).await?;
     require_owner(&row, user.id)?;
     let stored = proxy_runtime::decode(&state, id, &row.try_get::<String, _>("configuration")?)?;
     let mut output = output(&row, user.id)?;
@@ -91,7 +89,7 @@ fn require_owner(row: &PgRow, user: Uuid) -> Result<(), ApiError> {
     Ok(())
 }
 
-async fn validate(state: &AppState, input: &Input) -> Result<(), ApiError> {
+fn validate(input: &Input) -> Result<(), ApiError> {
     if input.custom_node_id.is_some() && input.content.is_some() {
         return Err(ApiError::bad_request(
             "choose a custom node or provide proxy configuration, not both",
@@ -101,19 +99,6 @@ async fn validate(state: &AppState, input: &Input) -> Result<(), ApiError> {
         return Err(ApiError::bad_request(
             "proxy name must contain 1–80 characters",
         ));
-    }
-    let unique = input
-        .authorized_user_ids
-        .iter()
-        .collect::<std::collections::HashSet<_>>();
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id=ANY($1)")
-        .bind(&input.authorized_user_ids)
-        .fetch_one(&state.pool)
-        .await?;
-    if unique.len() != input.authorized_user_ids.len()
-        || usize::try_from(count).ok() != Some(unique.len())
-    {
-        return Err(ApiError::bad_request("invalid authorized users"));
     }
     Ok(())
 }
@@ -148,7 +133,7 @@ async fn create(
     CurrentUser(user): CurrentUser,
     Json(input): Json<Input>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    validate(&state, &input).await?;
+    validate(&input)?;
     let id = Uuid::new_v4();
     let mut tx = state.pool.begin().await?;
     let content = match input.custom_node_id {
@@ -173,9 +158,9 @@ async fn create(
             "maximum 8 subscription proxies per user",
         ));
     }
-    let row = sqlx::query("INSERT INTO subscription_proxies (id,user_id,name,engine,protocol,configuration,enabled,authorized_user_ids,status,custom_node_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *")
+    let row = sqlx::query("INSERT INTO subscription_proxies (id,user_id,name,engine,protocol,configuration,enabled,status,custom_node_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *")
         .bind(id).bind(user.id).bind(input.name.trim()).bind(engine).bind(protocol).bind(cipher).bind(input.enabled)
-        .bind(json!(input.authorized_user_ids)).bind(if input.enabled { "starting" } else { "stopped" }).bind(input.custom_node_id).fetch_one(&mut *tx).await?;
+        .bind(if input.enabled { "starting" } else { "stopped" }).bind(input.custom_node_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     schedule(state, id);
     Ok((StatusCode::CREATED, Json(output(&row, user.id)?)))
@@ -187,7 +172,7 @@ async fn update(
     Path(id): Path<Uuid>,
     Json(input): Json<Input>,
 ) -> Result<Json<Value>, ApiError> {
-    validate(&state, &input).await?;
+    validate(&input)?;
     let mut tx = state.pool.begin().await?;
     let content = match input.custom_node_id {
         Some(node) => Some(proxy_node_binding::content(&mut tx, node, user.id).await?),
@@ -199,13 +184,6 @@ async fn update(
         .await?
         .ok_or_else(|| ApiError::not_found("subscription proxy"))?;
     require_owner(&row, user.id)?;
-    let unauthorized: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM proxy_subscribes s WHERE s.user_id<>$2 AND NOT (s.user_id=ANY($3)) AND EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.subscribe_items,'[]'::jsonb)) item WHERE item->>'proxyId'=$1::text))")
-        .bind(id.to_string()).bind(user.id).bind(&input.authorized_user_ids).fetch_one(&mut *tx).await?;
-    if unauthorized {
-        return Err(ApiError::conflict(
-            "proxy is used by subscriptions belonging to a removed authorized user",
-        ));
-    }
     let encoded = content
         .as_ref()
         .map(|content| encode(&state, id, content, input.engine))
@@ -229,8 +207,8 @@ async fn update(
     } else {
         row.try_get("custom_node_id")?
     };
-    let row = sqlx::query("UPDATE subscription_proxies SET name=$2,configuration=$3,engine=$4,protocol=$5,enabled=$6,authorized_user_ids=$7,revision=$8,status=$9,last_error=NULL,updated_at=NOW(),custom_node_id=$10 WHERE id=$1 RETURNING *")
-        .bind(id).bind(input.name.trim()).bind(cipher).bind(engine).bind(protocol).bind(input.enabled).bind(json!(input.authorized_user_ids))
+    let row = sqlx::query("UPDATE subscription_proxies SET name=$2,configuration=$3,engine=$4,protocol=$5,enabled=$6,revision=$7,status=$8,last_error=NULL,updated_at=NOW(),custom_node_id=$9 WHERE id=$1 RETURNING *")
+        .bind(id).bind(input.name.trim()).bind(cipher).bind(engine).bind(protocol).bind(input.enabled)
         .bind(next_revision).bind(if input.enabled { "starting" } else { "stopping" }).bind(custom_node_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     schedule(state, id);
@@ -269,7 +247,7 @@ async fn test(
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
-    let row = proxy_runtime::visible_row(&state, id, user.id).await?;
+    let row = proxy_runtime::visible_row(&state, id).await?;
     if !row.try_get::<bool, _>("enabled")? {
         return Err(ApiError::bad_request("enable the proxy before testing"));
     }
@@ -305,13 +283,15 @@ pub(crate) fn schedule(state: Arc<AppState>, id: Uuid) {
 pub(crate) async fn validate_sources(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     fields: &crate::subscriptions::SubscriptionFields,
-    owner: Uuid,
 ) -> Result<(), ApiError> {
     for item in crate::subscription_sources::source_items(fields)? {
         if let Some(id) = item.proxy_id {
-            // Reference locks prevent deletion/revocation while a source is being saved.
-            sqlx::query("SELECT id FROM subscription_proxies WHERE id=$1 AND (user_id=$2 OR authorized_user_ids @> jsonb_build_array($2::text)) FOR KEY SHARE")
-                .bind(id).bind(owner).fetch_optional(&mut **tx).await?.ok_or_else(|| ApiError::not_found("subscription proxy"))?;
+            // Reference locks prevent deletion while a source is being saved.
+            sqlx::query("SELECT id FROM subscription_proxies WHERE id=$1 FOR KEY SHARE")
+                .bind(id)
+                .fetch_optional(&mut **tx)
+                .await?
+                .ok_or_else(|| ApiError::not_found("subscription proxy"))?;
         }
     }
     Ok(())
