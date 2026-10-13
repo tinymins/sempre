@@ -2,7 +2,10 @@
 use sempre_converter::{EditorConfig, Profile, Target, prepare_profile};
 use url::Url;
 
-use crate::error::ApiError;
+use crate::{
+    error::ApiError,
+    resource_export::{relay_url, rule_url},
+};
 
 const GFW_RULES: &str = "https://cdn.jsdelivr.net/gh/ohmywrt/clash-rule@master/gfwip.yaml";
 
@@ -29,6 +32,8 @@ pub(crate) fn prepare(
         if binary {
             provider.url = relay_url(public_url, &provider.url)?;
             provider.format = "binary".into();
+        } else if provider.format == "source" {
+            provider.url = relay_url(public_url, &provider.url)?;
         } else {
             provider.url = rule_url(public_url, &target.version, &provider.url)?;
             provider.format = "source".into();
@@ -57,42 +62,4 @@ pub(crate) fn prepare(
     profile.dns["shared"]["gfwBlackRuleSetUrl"] =
         rule_url(public_url, &target.version, GFW_RULES)?.into();
     Ok(profile)
-}
-
-fn rule_url(base: &Url, version: &str, source: &str) -> Result<String, ApiError> {
-    if is_relay_url(base, source) {
-        return Ok(source.to_owned());
-    }
-    let path = match version {
-        "11" => "api/proxy/sing-box/convert/rule",
-        "12" => "api/proxy/sing-box/convert/rule/12",
-        "13" | "14" => "api/proxy/sing-box/convert/rule/13",
-        _ => {
-            return Err(ApiError::bad_request(
-                "unsupported sing-box rule-set version",
-            ));
-        }
-    };
-    let mut url = base.join(path).map_err(ApiError::internal)?;
-    url.query_pairs_mut().append_pair("url", source);
-    Ok(url.to_string())
-}
-
-fn relay_url(base: &Url, source: &str) -> Result<String, ApiError> {
-    if source.trim().is_empty() || is_relay_url(base, source) {
-        return Ok(source.to_owned());
-    }
-    let mut url = base.join("api/proxy/fetch").map_err(ApiError::internal)?;
-    url.query_pairs_mut().append_pair("url", source);
-    Ok(url.to_string())
-}
-
-fn is_relay_url(base: &Url, source: &str) -> bool {
-    let Ok(source) = Url::parse(source) else {
-        return false;
-    };
-    source.origin() == base.origin()
-        && base
-            .join("api/proxy/")
-            .is_ok_and(|prefix| source.path().starts_with(prefix.path()))
 }

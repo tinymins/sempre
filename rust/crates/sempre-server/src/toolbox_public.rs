@@ -15,12 +15,13 @@ use sha2::{Digest, Sha256};
 use sqlx::{Row as _, postgres::PgRow};
 use uuid::Uuid;
 
-use sempre_converter::{Target, compile};
+use sempre_converter::Target;
 
 use crate::{
     AppState,
     error::ApiError,
     export_target::{available as available_targets, from_path as suffix_target},
+    resource_export::compile,
     source_cache::CacheMode,
     subscription_compile::{PrepareOptions, PreparedInput, prepare_local, prepare_with_local},
     subscriptions::{SubscriptionFields, row_fields},
@@ -317,6 +318,8 @@ async fn revision_hash(
         }
     }
     let input = serde_json::to_vec(&(
+        crate::resource_export::REVISION,
+        state.config.public_url.as_str(),
         subscription.updated_at.timestamp_micros(),
         &local.profile,
         &local.custom_nodes,
@@ -350,7 +353,7 @@ async fn generate(
     let mut input = serde_json::to_vec(&request).map_err(ApiError::internal)?;
     input.extend_from_slice(subscription.updated_at.to_rfc3339().as_bytes());
     let input_hash = format!("{:x}", Sha256::digest(&input));
-    let result = compile(&request).map_err(|error| ApiError::bad_request(error.to_string()))?;
+    let result = compile(&request, &state.config.public_url)?;
     if result.node_count == 0 && crate::subscription_sources::all_sources_failed(&stages) {
         return Err(ApiError::unavailable(
             "all enabled subscription sources failed and no usable nodes remain",

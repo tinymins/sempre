@@ -12,8 +12,8 @@ use sqlx::Row as _;
 use uuid::Uuid;
 
 use sempre_converter::{
-    CompileRequest, CompileResult, CustomNode, Diagnostic, Profile, Target, compile,
-    parse_jsonc_value, preview_nodes, trace_node_steps,
+    CompileRequest, CompileResult, CustomNode, Diagnostic, Profile, Target, parse_jsonc_value,
+    preview_nodes, trace_node_steps,
 };
 
 use crate::{
@@ -22,6 +22,7 @@ use crate::{
     debug_stream::{self, StageLog},
     diagnostic_projection,
     error::ApiError,
+    resource_export::compile,
     source_cache::CacheMode,
     subscription_rules::load_rule_snapshots,
     subscription_sources::{all_sources_failed, load_sources},
@@ -141,9 +142,9 @@ async fn run_debug(
         };
     stages.push(json!({"type":"prepare","status":"ok"}));
     stages.push(json!({"type":"compile","status":"running"}));
-    let mut result = match compile(&request) {
+    let mut result = match compile(&request, &state.config.public_url) {
         Ok(result) => result,
-        Err(error) => return debug_failure(stages.clone(), "compile", &error.to_string()),
+        Err(error) => return debug_failure(stages.clone(), "compile", error.message()),
     };
     if result.node_count == 0 && all_sources_failed(stages) {
         return debug_failure(

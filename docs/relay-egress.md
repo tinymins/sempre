@@ -25,11 +25,16 @@ redirects server-side, and does not redirect clients back to the upstream URL.
 It does not forward client cookies or authorization. Downloads are limited to
 32 MiB, five redirects, and bounded DNS/connect/request timeouts.
 
-OpenWrt exports wrap custom binary providers and the built-in CN/HK GeoIP and CN
-GeoSite resource URLs with the raw endpoint. Their `binary` format is retained,
-including when inferred from the original `.srs` extension. Other rule providers
-retain their existing conversion endpoints. Wrapped client downloads use the
-direct outbound to reach Sempre; upstream egress is selected by the server.
+Server exports wrap remote rule resources after compilation, including custom
+configuration overrides and compiler-generated providers. Clash, Clash Meta,
+and Clash RS rule-provider URLs and explicit geodata URLs use the raw endpoint,
+retaining their original response format. Sing-box rules generated from Clash
+providers use the versioned conversion endpoint; native source JSON and binary
+rule resources use the raw endpoint. Binary formats inferred from `.srs` are
+retained. Already wrapped URLs remain
+unchanged. This applies to direct exports, manifest artifacts, and debug output.
+Wrapped sing-box downloads use the direct outbound to reach Sempre; upstream
+egress is selected by the server.
 
 Resource requests use the selected outbound's DNS and connection behavior without
 a local public-IP precheck or DNS pinning. Recursive requests to this service's
