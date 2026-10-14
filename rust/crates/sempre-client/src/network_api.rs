@@ -13,6 +13,7 @@ use crate::api::{AppState, api_error};
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/api/v1/network/routes", get(routes))
         .route(
             "/api/v1/network/fake-ip/check",
             post(crate::fakeip_api::check),
@@ -50,6 +51,22 @@ async fn update_settings(
         Err(error) => api_error(
             StatusCode::BAD_REQUEST,
             "NETWORK_SETTINGS_UPDATE_FAILED",
+            error.to_string(),
+        ),
+    }
+}
+
+async fn routes() -> Response {
+    match tokio::task::spawn_blocking(sempre_network::route_table).await {
+        Ok(Ok(routes)) => Json(json!({ "routes": routes })).into_response(),
+        Ok(Err(error)) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "ROUTE_TABLE_FAILED",
+            error.to_string(),
+        ),
+        Err(error) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "ROUTE_TABLE_FAILED",
             error.to_string(),
         ),
     }

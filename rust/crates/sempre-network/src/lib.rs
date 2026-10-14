@@ -5,6 +5,7 @@ mod inventory;
 mod probe;
 mod public_ip;
 mod route_probe;
+mod route_table;
 mod routes;
 
 pub use default_interface::{DefaultInterface, default_interface, normalize_mac};
@@ -18,6 +19,7 @@ pub use probe::{NetworkTestReport, NetworkTestResult, run_network_test};
 pub use public_ip::{
     DOMESTIC_IP_PROBE, FOREIGN_IP_PROBE, IpMetadata, PublicIpProbe, lookup_ip_metadata,
 };
+pub use route_table::{SystemRoute, route_table};
 pub use routes::{route_prefixes, route_prefixes_excluding};
 
 use std::io;
