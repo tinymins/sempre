@@ -9,7 +9,7 @@ function currentTheme(): UIContextValue['theme'] {
   return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
 }
 
-export function AcmeContentBoundary({ children }: { children: ReactNode }) {
+export function AcmeProviders({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<UIContextValue['theme']>(currentTheme)
 
   useEffect(() => {
@@ -25,10 +25,16 @@ export function AcmeContentBoundary({ children }: { children: ReactNode }) {
   )
 
   return (
-    <div className="acme-content-scope min-h-0" data-acme-content-boundary>
-      <UIContext.Provider value={ui}>
-        <ToastProvider>{children}</ToastProvider>
-      </UIContext.Provider>
-    </div>
+    <UIContext.Provider value={ui}>
+      <ToastProvider>{children}</ToastProvider>
+    </UIContext.Provider>
   )
+}
+
+export function AcmeContentScope({ children }: { children: ReactNode }) {
+  return <div className="acme-content-scope min-h-0" data-acme-content-boundary>{children}</div>
+}
+
+export function AcmeContentBoundary({ children }: { children: ReactNode }) {
+  return <AcmeContentScope><AcmeProviders>{children}</AcmeProviders></AcmeContentScope>
 }

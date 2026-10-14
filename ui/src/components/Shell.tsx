@@ -9,7 +9,7 @@ import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
 import type { NetworkSettingsResponse, SystemStatus } from '../lib/types'
 import { cn } from '../lib/cn'
-import { AcmeContentBoundary } from './AcmeContentBoundary'
+import { AcmeContentScope, AcmeProviders } from './AcmeContentBoundary'
 import { RuntimeRestartButton } from './RuntimeRestartButton'
 import { Badge, Button } from './ui'
 import { modeLabel } from './PrivateAccessRuntimePanel'
@@ -120,7 +120,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   } as CSSProperties
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--text)]" data-sidebar-collapsed={desktopCollapsed} style={shellStyle}>
+    <AcmeProviders><div className="min-h-screen bg-[var(--background)] text-[var(--text)]" data-sidebar-collapsed={desktopCollapsed} style={shellStyle}>
       {mobileOpen ? <button aria-label="Close navigation" className="fixed inset-0 z-30 bg-black/35 lg:hidden" onClick={() => setMobileOpen(false)} /> : null}
       <aside id="primary-navigation" className={cn('fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--sidebar)] transition-[transform,width] duration-200 ease-out lg:w-[var(--shell-sidebar-width)] lg:translate-x-0', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
         <div className={cn('flex h-16 shrink-0 items-center gap-3 border-b border-[var(--border)] px-4', desktopCollapsed && 'lg:justify-center lg:px-0')}>
@@ -168,8 +168,8 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
           </div>
         </header>
         {!chrome && !passwordWarningDismissed && (system.data?.web.password_warning || session?.warning === 'PASSWORD_EMPTY') ? <div className="relative border-b border-amber-400/40 bg-amber-400/12 px-10 py-2 text-center text-xs font-medium text-amber-800 dark:text-amber-300">{t('emptyPassword')}<Button className="absolute right-2 top-1/2 size-6 -translate-y-1/2 text-amber-800 hover:bg-amber-400/15 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200" size="icon" variant="ghost" title={t('close')} aria-label={t('close')} onClick={() => setPasswordWarningDismissed(true)}><X size={15} /></Button></div> : null}
-        <main className="mx-auto w-full max-w-[1600px] p-4 md:p-6"><AcmeContentBoundary>{children}</AcmeContentBoundary></main>
+        <main className="mx-auto w-full max-w-[1600px] p-4 md:p-6"><AcmeContentScope>{children}</AcmeContentScope></main>
       </div>
-    </div>
+    </div></AcmeProviders>
   )
 }
