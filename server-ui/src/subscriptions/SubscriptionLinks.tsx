@@ -1,5 +1,5 @@
 import { useModalState, type ModalLifecycleProps } from '../use-modal-state'
-import { Button, Modal, Popconfirm, Tag, useToast } from '@acme/components'
+import { Button, Modal, Popconfirm, Select, Tag, useToast } from '@acme/components'
 import { Bug, Copy, ExternalLink, Globe2, Link2 } from 'lucide-react'
 import { useState } from 'react'
 import { targetSuffix, type Target } from './diagnostic-types'
@@ -14,6 +14,16 @@ function formatLabel(format: string): string {
   const singBox = /^sing-box(?:-v(12|13|14))?(?:-(openwrt|windows|macos))?$/.exec(format)
   if (singBox) return `Sing-box v1.${singBox[1] ?? '11'}${singBox[2] === 'windows' ? ' Windows' : singBox[2] === 'macos' ? ' macOS' : ' OpenWrt'}`
   return format
+}
+
+function formatFamily(target: Target): string {
+  if (target.format.startsWith('clash')) return 'clash'
+  if (target.format.startsWith('sing-box')) return 'sing-box'
+  return target.format
+}
+
+function targetPlatform(target: Target): string {
+  return targetSuffix(target.format)?.split('/')[2] ?? target.platform
 }
 
 function LinkRow({ label, url, copyLabel, openLabel, debugLabel, onCopy, onDebug }: { label: string; url: string; copyLabel: string; openLabel: string; debugLabel?: string; onCopy: () => void; onDebug?: () => void }) {
@@ -35,6 +45,12 @@ export function SubscriptionLinks({ open, afterOpenChange, subscription, targets
   const { t, number } = useI18n()
   const toast = useToast()
   const [clearing, setClearing] = useState(false)
+  const [formatFilter, setFormatFilter] = useState('')
+  const [platformFilter, setPlatformFilter] = useState('')
+  const formats = [...new Set(targets.map(formatFamily))]
+  const platforms = [...new Set(targets.map(targetPlatform))]
+  const platformNames: Record<string, string> = { windows: 'Windows', macos: 'macOS', openwrt: 'OpenWrt', default: t('links.genericPlatform') }
+  const visibleTargets = targets.filter(target => (!formatFilter || formatFamily(target) === formatFilter) && (!platformFilter || targetPlatform(target) === platformFilter))
   const { value: debugTarget, show: setDebugTarget, close: closeDebug, ...debugModal } = useModalState<Target>()
   const base = subscription ? `${window.location.origin}/api/subscriptions/${encodeURIComponent(subscription.url)}` : ''
   const manifestUrl = subscription ? `${base}/manifest` : ''
@@ -59,9 +75,15 @@ export function SubscriptionLinks({ open, afterOpenChange, subscription, targets
     <Modal open={open} afterOpenChange={afterOpenChange} title={t('links.title', { name: subscription?.remark || t('configs.unnamed') })} footer={null} onCancel={onClose} width={560}>
       <p className="mb-4 text-sm text-[var(--muted)]">{t('links.stableHint')}</p>
       {manifestUrl ? <section className="mb-5 space-y-2"><p className="text-xs text-[var(--muted)]">{t('links.manifestHint')}</p><LinkRow label={t('links.manifest')} url={manifestUrl} copyLabel={t('links.copyManifest')} openLabel={t('links.openManifest')} onCopy={() => void copy(manifestUrl)} /></section> : null}
-      <h3 className="mb-2 text-sm font-semibold">{t('links.rawFormats')}</h3>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">{t('links.rawFormats')}</h3>
+        <div className="ml-auto flex items-center gap-2">
+          <Select size="small" aria-label={t('links.filterFormat')} value={formatFilter} onChange={(value: string) => setFormatFilter(value)} options={[{ value: '', label: t('links.allFormats') }, ...formats.map(value => ({ value, label: value === 'sing-box' ? 'Sing-box' : formatLabel(value) }))]} className="w-28" />
+          <Select size="small" aria-label={t('links.filterPlatform')} value={platformFilter} onChange={(value: string) => setPlatformFilter(value)} options={[{ value: '', label: t('links.allPlatforms') }, ...platforms.map(value => ({ value, label: platformNames[value] ?? value }))]} className="w-28" />
+        </div>
+      </div>
       <div className="space-y-3">
-        {targets.map((target) => {
+        {visibleTargets.map((target) => {
           const label = formatLabel(target.format)
           const suffix = targetSuffix(target.format)
           if (!suffix) return null
@@ -69,6 +91,7 @@ export function SubscriptionLinks({ open, afterOpenChange, subscription, targets
           return <LinkRow key={target.format} label={label} url={url} copyLabel={t('links.copyFormat', { format: label })} openLabel={t('links.openFormat', { format: label })} debugLabel={t('links.debugFormat', { format: label })} onCopy={() => void copy(url)} onDebug={() => setDebugTarget(target)} />
         })}
         {targets.length === 0 ? <p className="text-sm text-[var(--muted)]">{t('links.loadingFormats')}</p> : null}
+        {targets.length > 0 && visibleTargets.length === 0 ? <p className="text-sm text-[var(--muted)]">{t('links.noMatchingFormats')}</p> : null}
       </div>
       {subscription?.canDelete ? <div className="mt-5 border-t border-[var(--border)] pt-4"><Popconfirm title={t('links.clearTitle')} description={t('links.clearDetail')} okText={t('common.confirm')} cancelText={t('common.cancel')} onConfirm={() => void clearCache()}><Button size="small" loading={clearing}>{t('links.clear')}</Button></Popconfirm></div> : null}
       {subscription && debugTarget ? <SubscriptionDebug {...debugModal} savedSubscription={subscription} targets={targets} initialTarget={debugTarget} onClose={closeDebug} /> : null}
