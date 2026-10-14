@@ -7,6 +7,7 @@ use std::{
     sync::Mutex,
     time::{Duration, Instant},
 };
+#[cfg(not(target_os = "windows"))]
 use sysinfo::Networks;
 
 #[derive(Debug, Serialize)]
@@ -40,9 +41,13 @@ impl<R: VersionRunner> Manager<R> {
             return Err("system route inspection is unavailable".into());
         }
         let document = self.store.read().map_err(|error| error.to_string())?;
+        let alive = document
+            .runtime
+            .pid
+            .is_some_and(crate::runtime::process_alive);
         let identity = format!(
-            "{:?}|{:?}",
-            document.runtime.pid, document.runtime.runtime_config_hash
+            "{:?}|{:?}|{:?}|{alive}",
+            document.runtime.pid, document.runtime.runtime_config_hash, document.runtime.state
         );
         let mut cache = self.fakeip_route_cache.0.lock().expect("route cache lock");
         if let Some(snapshot) = cache.as_ref()
@@ -53,16 +58,19 @@ impl<R: VersionRunner> Manager<R> {
         }
         let routes = (|| {
             let mut interfaces = Vec::new();
-            if document
-                .runtime
-                .pid
-                .is_some_and(crate::runtime::process_alive)
+            if (alive
+                || matches!(
+                    document.runtime.state,
+                    sempre_state::RuntimeState::Starting
+                        | sempre_state::RuntimeState::Stopping
+                        | sempre_state::RuntimeState::Restarting
+                ))
                 && let Some(path) = document.runtime.runtime_config.as_deref()
             {
                 let data = fs::read(path).map_err(|error| error.to_string())?;
                 let config =
                     serde_yaml::from_slice::<Value>(&data).map_err(|error| error.to_string())?;
-                interfaces = managed_interfaces(&config, &Networks::new_with_refreshed_list());
+                interfaces = managed_interfaces(&config);
             }
             sempre_network::route_prefixes_excluding(&interfaces)
                 .map(|routes| {
@@ -83,7 +91,7 @@ impl<R: VersionRunner> Manager<R> {
     }
 }
 
-fn managed_interfaces(config: &Value, networks: &Networks) -> Vec<String> {
+fn managed_interfaces(config: &Value) -> Vec<String> {
     let mut names = Vec::new();
     let mut addresses = Vec::new();
     if let Some(tun) = config.get("tun")
@@ -126,7 +134,9 @@ fn managed_interfaces(config: &Value, networks: &Networks) -> Vec<String> {
         }
     }
     let mut identifiers = names.clone();
-    for (name, data) in networks {
+    identifiers.extend(addresses.iter().map(ToString::to_string));
+    #[cfg(not(target_os = "windows"))]
+    for (name, data) in &Networks::new_with_refreshed_list() {
         if names.contains(name)
             || data
                 .ip_networks()

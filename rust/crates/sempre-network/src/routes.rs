@@ -9,7 +9,7 @@ pub fn route_prefixes() -> Result<Vec<String>, NetworkError> {
     route_prefixes_excluding(&[])
 }
 
-/// Exclude routes owned by interface names (Unix) or interface addresses (Windows).
+/// Exclude routes by interface names (Unix) or native adapter names/addresses (Windows).
 pub fn route_prefixes_excluding(interfaces: &[String]) -> Result<Vec<String>, NetworkError> {
     let mut routes = platform_routes(interfaces)?;
     routes.sort();
@@ -45,11 +45,38 @@ fn platform_routes(interfaces: &[String]) -> Result<Vec<String>, NetworkError> {
 
 #[cfg(target_os = "windows")]
 fn platform_routes(interfaces: &[String]) -> Result<Vec<String>, NetworkError> {
+    let adapters = ipconfig::get_adapters().map_err(io::Error::other)?;
+    let has_names = interfaces
+        .iter()
+        .any(|interface| interface.parse::<IpAddr>().is_err());
+    let owned = adapters
+        .iter()
+        .filter(|adapter| {
+            interfaces.iter().any(|interface| {
+                interface == adapter.friendly_name()
+                    || interface == adapter.adapter_name()
+                    || (!has_names
+                        && interface
+                            .parse::<IpAddr>()
+                            .is_ok_and(|address| adapter.ip_addresses().contains(&address)))
+            })
+        })
+        .collect::<Vec<_>>();
+    let addresses = owned
+        .iter()
+        .flat_map(|adapter| adapter.ip_addresses())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let indexes = owned
+        .iter()
+        .map(|adapter| adapter.ipv6_if_index())
+        .filter(|index| *index != 0)
+        .collect::<Vec<_>>();
     let mut routes =
-        parse_windows_ipv4_routes(&command_output("route.exe", &["PRINT", "-4"])?, interfaces);
+        parse_windows_ipv4_routes(&command_output("route.exe", &["PRINT", "-4"])?, &addresses);
     routes.extend(parse_windows_ipv6_routes(
         &command_output("route.exe", &["PRINT", "-6"])?,
-        interfaces,
+        &indexes,
     ));
     Ok(routes)
 }
@@ -134,28 +161,17 @@ fn parse_windows_ipv4_routes(output: &str, interfaces: &[String]) -> Vec<String>
 }
 
 #[cfg(target_os = "windows")]
-fn parse_windows_ipv6_routes(output: &str, interfaces: &[String]) -> Vec<String> {
-    let indexes = output
-        .lines()
-        .filter_map(|line| {
-            let (index, rest) = line.trim().split_once("...")?;
-            let name = rest.rsplit("...").next()?.trim();
-            interfaces
-                .iter()
-                .any(|interface| interface == name)
-                .then(|| index.trim().to_owned())
-        })
-        .collect::<Vec<_>>();
+fn parse_windows_ipv6_routes(output: &str, indexes: &[u32]) -> Vec<String> {
     output
         .lines()
-        .filter(|line| {
-            !indexes
-                .iter()
-                .any(|index| line.split_whitespace().next() == Some(index))
+        .filter_map(|line| {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            let index = fields.first()?.parse::<u32>().ok()?;
+            if indexes.contains(&index) {
+                return None;
+            }
+            parse_route_destination(fields.get(2)?).filter(|route| route.contains(':'))
         })
-        .flat_map(|line| line.split_whitespace())
-        .filter_map(parse_route_destination)
-        .filter(|route| route.contains(':'))
         .collect()
 }
 
