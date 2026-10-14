@@ -5,7 +5,7 @@ import { LoaderCircle, RotateCw, ScrollText } from 'lucide-react'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
-import { useRestartTask } from '../lib/useRestartTask'
+import { useStartupTask } from '../lib/useStartupTask'
 import type { ManagedRuntimeStatus } from '../lib/types'
 import { formatPendingChange, pendingChangeCount, RestartChangeSummary, type RuntimePendingChange } from './RestartChangeSummary'
 import { RuntimeRestartModal } from './RuntimeRestartModal'
@@ -19,8 +19,8 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [taskOpen, setTaskOpen] = useState(false)
   const [submittedAt, setSubmittedAt] = useState(() => new Date().toISOString())
-  const { task, query, mutation } = useRestartTask()
-  const submitting = useIsMutating({ mutationKey: ['runtime', 'restart-task'] }) > 0
+  const { task, query, mutation } = useStartupTask()
+  const submitting = useIsMutating({ mutationKey: ['runtime', 'startup-task'] }) > 0
   const runtimeStatus = useQuery({
     queryKey: ['runtime', 'status'],
     queryFn: () => api<RuntimeStatusWithChanges>(session!, '/runtime/status'),
@@ -32,7 +32,8 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
   const needsRestart = Boolean(runtimeStatus.data?.pending)
   const pendingCount = pendingChangeCount(runtimeStatus.data?.pending_changes ?? [])
   const showPendingCount = needsRestart && pendingCount > 0 && !restarting && !showLabel && !panel
-  const label = restarting ? (locale === 'zh-CN' ? '正在重启核心 · 查看日志' : 'Restarting core · view log') : t(panel ? 'restartCore' : 'restartNow')
+  const starting = task?.action === 'start' && !submitting
+  const label = restarting ? (locale === 'zh-CN' ? (starting ? '正在启动核心 · 查看日志' : '正在重启核心 · 查看日志') : (starting ? 'Starting core · view log' : 'Restarting core · view log')) : t(panel ? 'restartCore' : 'restartNow')
   const pendingFakeIp = runtimeStatus.data?.pending_changes?.find(change => change.type === 'fake_ip')
   const title = pendingFakeIp ? formatPendingChange(pendingFakeIp, t, locale) : showPendingCount
     ? locale === 'zh-CN' ? `有 ${pendingCount} 项改动待应用，点击重启核心` : `${pendingCount} changes pending. Click to restart the core.`
@@ -47,7 +48,7 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
         {showLabel ? label : null}
       </Button>
       {needsRestart && !restarting && !showPendingCount ? <span data-restart-required aria-hidden="true" className="pointer-events-none absolute left-6 top-1.5 size-2 rounded-full bg-red-500 ring-2 ring-[var(--background)]" /> : null}
-      {task ? <Button variant="text" className="!size-8 !p-0" title={locale === 'zh-CN' ? '查看重启任务' : 'View restart task'} aria-label={locale === 'zh-CN' ? '查看重启任务' : 'View restart task'} onClick={() => { mutation.reset(); setTaskOpen(true) }}><ScrollText size={16} /></Button> : null}
+      {task ? <Button variant="text" className="!size-8 !p-0" title={locale === 'zh-CN' ? '查看启动日志' : 'View startup log'} aria-label={locale === 'zh-CN' ? '查看启动日志' : 'View startup log'} onClick={() => { mutation.reset(); setTaskOpen(true) }}><ScrollText size={16} /></Button> : null}
     </span>
     <ConfirmDialog open={confirmOpen} title={t('coreRestartConfirmTitle')}
       detail={<RestartChangeSummary detail={t('coreRestartConfirmDetail')} changes={runtimeStatus.data?.pending_changes ?? []} />}

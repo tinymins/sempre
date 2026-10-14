@@ -47,7 +47,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let result = self
             .run_supervisor_with_grace(shutdown, STARTUP_GRACE)
             .await;
-        self.restart_tasks.supervisor_exited(result.as_ref().err());
+        self.startup_tasks.supervisor_exited(result.as_ref().err());
         result
     }
 
@@ -94,6 +94,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 continue;
             }
             let runtime_gate = self.runtime_rules_gate.lock().await;
+            wait::consume_reload(self).await;
+            if self.store.read()?.desired_state == DesiredState::Stopped {
+                continue;
+            }
+            if !self.startup_tasks.begin_cycle() {
+                drop(runtime_gate);
+                if wait::wait_preparation(self, &mut shutdown).await {
+                    return Ok(());
+                }
+                continue;
+            }
             let plan = match self.resolve_runtime_plan().await {
                 Ok(plan) => plan,
                 Err(error) => {
@@ -118,6 +129,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 }
             };
             if !state::mark_starting(self, &plan)? {
+                self.startup_tasks.interrupt_cycle();
                 continue;
             }
             match self
@@ -152,19 +164,20 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         runtime_gate: tokio::sync::MutexGuard<'_, ()>,
     ) -> Result<CycleResult, ManagerError> {
         self.log_supervisor(&format!("starting {}", deployment_label(&plan.deployment)));
-        self.restart_tasks
+        self.startup_tasks
             .runtime_log("starting", &deployment_label(&plan.deployment));
         if let Err(error) = self.start_gateway().await {
             self.handle_process_failure(plan, "gateway startup failed", &error)?;
             return Ok(CycleResult::Failed);
         }
-        let tasks = self.restart_tasks.clone();
+        let tasks = self.startup_tasks.clone();
+        let task_id = tasks.snapshot().expect("startup cycle has a task").id;
         let mut process = match ManagedProcess::spawn_observed(
             &plan.spec,
             &self.store.layout().core_stdout_log,
             &self.store.layout().core_stderr_log,
             Some(std::sync::Arc::new(move |stream, line| {
-                tasks.runtime_log(stream, line);
+                tasks.runtime_log_for(&task_id, stream, line);
             })),
         ) {
             Ok(process) => process,
@@ -205,11 +218,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     .await;
             }
             ProcessEvent::Reload => {
+                self.startup_tasks.interrupt_cycle();
                 drop(runtime_gate);
                 self.stop_process(&mut process, false).await?;
                 return Ok(CycleResult::Restart);
             }
             ProcessEvent::Shutdown => {
+                self.startup_tasks.interrupt_cycle();
                 drop(runtime_gate);
                 self.stop_process(&mut process, true).await?;
                 return Ok(CycleResult::Shutdown);
@@ -254,7 +269,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<(), ManagerError> {
         let _runtime_gate = self.runtime_rules_gate.lock().await;
         let transition = state::mark_stopping(self);
-        self.log_restart_stopping(process.pid());
+        self.log_startup_stopping(process.pid());
         let transparent = if service_stopped {
             self.dns_frontend.stop().await;
             self.stop_gateway().await;
@@ -263,7 +278,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             self.cleanup_after_core_failure().await
         };
         let terminated = process.terminate(STOP_GRACE).await;
-        self.restart_tasks.stopped(&terminated);
+        self.startup_tasks.stopped(&terminated);
         self.remove_control();
         transition?;
         let state = state::mark_intentional_exit(self, service_stopped);
@@ -286,12 +301,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             deployment_label(&plan.deployment),
             plan.rules.pending_count()
         ));
-        self.restart_tasks.healthy();
+        self.startup_tasks.healthy();
         Ok(())
     }
 
     fn mark_runtime_started(&self, plan: &RuntimePlan, pid: u32) -> Result<(), ManagerError> {
-        self.restart_tasks.runtime_log(
+        self.startup_tasks.runtime_log(
             "health_check",
             &format!("{} · PID {pid}", deployment_label(&plan.deployment)),
         );
@@ -356,7 +371,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 
     pub(crate) fn log_supervisor(&self, message: &str) {
-        self.restart_tasks.runtime_log("supervisor", message);
+        self.startup_tasks.runtime_log("supervisor", message);
         let line = format!("{} {message}\n", Utc::now().to_rfc3339());
         // Disk-backed diagnostics must not affect the managed runtime lifecycle.
         let _ = append_log(&self.store.layout().manager_log, &line);

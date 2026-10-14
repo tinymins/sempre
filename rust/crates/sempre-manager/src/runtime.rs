@@ -1,3 +1,5 @@
+mod action;
+
 use chrono::{DateTime, Utc};
 use sempre_core::CoreRef;
 use sempre_state::{Deployment, DesiredState, Document, RuntimeFailure, RuntimeState};
@@ -83,137 +85,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         Ok(self.runtime_status_value(&self.store.read()?))
     }
 
-    pub async fn runtime_action(&self, action: &str) -> Result<RuntimeStatus, ManagerError> {
-        self.runtime_action_inner(action, false).await
-    }
-
-    pub(crate) async fn runtime_action_inner(
-        &self,
-        action: &str,
-        restart_task: bool,
-    ) -> Result<RuntimeStatus, ManagerError> {
-        if !matches!(action, START | STOP | RESTART) {
-            return Err(action_error(
-                "INVALID_RUNTIME_ACTION",
-                "runtime action must be start, stop, or restart",
-            ));
-        }
-        if !restart_task && self.restart_tasks.running() {
-            return Err(crate::restart_task::busy());
-        }
-        let _operation = self.store.acquire_operation()?;
-        let mut document = self.store.read()?;
-        let current = self.runtime_status_value(&document);
-        let configuration_pending = self.active_profile_config_pending(&document);
-        if action == START
-            && document.desired_state == DesiredState::Running
-            && matches!(
-                current.runtime_state,
-                RuntimeState::Running | RuntimeState::Starting | RuntimeState::Restarting
-            )
-            && !configuration_pending
-        {
-            return Ok(current);
-        }
-        if action == RESTART && is_transition(current.runtime_state) {
-            return Err(crate::restart_task::busy());
-        }
-        if matches!(action, START | RESTART) {
-            self.ensure_runtime_action_preparable(&document, configuration_pending)?;
-            if restart_task {
-                self.restart_tasks.log("compiling", "");
-            }
-            self.prepare_runtime_action().await?;
-            document = self.store.read()?;
-        }
-        let expected = self.runtime_deployment(&document);
-        match action {
-            START => {
-                let expected = expected
-                    .map_err(|error| action_error("RUNTIME_NOT_READY", error.to_string()))?;
-                self.store
-                    .update_checked(|state| -> Result<(), ManagerError> {
-                        ensure_runtime_deployment(self, state, &expected)?;
-                        state.desired_state = DesiredState::Running;
-                        state.runtime.state = if state.runtime.state == RuntimeState::Stopping {
-                            RuntimeState::Restarting
-                        } else {
-                            RuntimeState::Starting
-                        };
-                        reset_runtime_intent(state);
-                        Ok(())
-                    })?;
-            }
-            STOP => {
-                if document.desired_state == DesiredState::Stopped {
-                    return Ok(current);
-                }
-                self.store.update(|state| {
-                    state.desired_state = DesiredState::Stopped;
-                    state.runtime.state = if state.runtime.pid.is_some()
-                        || is_transition(state.runtime.state)
-                        || state.runtime.state == RuntimeState::Running
-                    {
-                        RuntimeState::Stopping
-                    } else {
-                        state.runtime.pid = None;
-                        RuntimeState::Stopped
-                    };
-                    state.runtime.last_transition = Some(Utc::now());
-                    Ok(())
-                })?;
-            }
-            RESTART => {
-                let expected = expected
-                    .map_err(|error| action_error("RUNTIME_NOT_READY", error.to_string()))?;
-                self.store
-                    .update_checked(|state| -> Result<(), ManagerError> {
-                        ensure_runtime_deployment(self, state, &expected)?;
-                        state.desired_state = DesiredState::Running;
-                        state.runtime.state = if state.runtime.pid.is_some()
-                            || state.runtime.state == RuntimeState::Running
-                        {
-                            RuntimeState::Stopping
-                        } else {
-                            state.runtime.pid = None;
-                            RuntimeState::Restarting
-                        };
-                        reset_runtime_intent(state);
-                        Ok(())
-                    })?;
-            }
-            _ => unreachable!("validated runtime action"),
-        }
-        if restart_task {
-            self.restart_tasks.prepared(self.current_config()?);
-        }
-        self.request_runtime_reload();
-        self.runtime_status()
-    }
-
-    async fn prepare_runtime_action(&self) -> Result<(), ManagerError> {
-        if let Err(error) = self.prepare_active_subscription_for_runtime_locked().await {
-            self.record_runtime_preparation_failure(&error)?;
-            return Err(action_error(
-                "RUNTIME_PREPARATION_FAILED",
-                error.to_string(),
-            ));
-        }
-        Ok(())
-    }
-
-    fn ensure_runtime_action_preparable(
-        &self,
-        document: &Document,
-        configuration_pending: bool,
-    ) -> Result<(), ManagerError> {
-        match self.runtime_deployment(document) {
-            Err(ManagerError::NoConfiguration) if configuration_pending => Ok(()),
-            Err(error) => Err(action_error("RUNTIME_NOT_READY", error.to_string())),
-            Ok(_) => Ok(()),
-        }
-    }
-
     fn runtime_status_value(&self, document: &Document) -> RuntimeStatus {
         let target = self.runtime_deployment(document);
         let configuration_pending = self.active_profile_config_pending(document);
@@ -254,10 +125,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             target.as_ref().err(),
             configuration_pending,
         );
-        if self.restart_tasks.running() {
-            for action in [&mut actions.start, &mut actions.stop, &mut actions.restart] {
+        for (name, action) in [
+            (START, &mut actions.start),
+            (STOP, &mut actions.stop),
+            (RESTART, &mut actions.restart),
+        ] {
+            if self.startup_tasks.blocks(name) {
                 action.allowed = false;
-                action.reason = "a core restart is already in progress".into();
+                action.reason = "a core startup is already in progress".into();
             }
         }
         RuntimeStatus {

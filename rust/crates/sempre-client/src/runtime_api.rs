@@ -17,8 +17,9 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/api/v1/runtime/status", get(status))
         .route("/api/v1/runtime/start", post(start))
         .route("/api/v1/runtime/stop", post(stop))
-        .route("/api/v1/runtime/restart", post(restart).get(restart_task))
-        .route("/api/v1/runtime/restart/config", get(restart_config))
+        .route("/api/v1/runtime/restart", post(restart))
+        .route("/api/v1/runtime/startup-task", get(startup_task))
+        .route("/api/v1/runtime/startup-task/config", get(startup_config))
         .route("/api/v1/runtime/reload", post(reload))
 }
 
@@ -42,7 +43,7 @@ async fn stop(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn restart(State(state): State<Arc<AppState>>) -> Response {
-    match state.manager.start_restart_task() {
+    match state.manager.start_startup_task("restart") {
         Ok(task) => (
             StatusCode::ACCEPTED,
             Json(json!({
@@ -60,25 +61,25 @@ async fn restart(State(state): State<Arc<AppState>>) -> Response {
     }
 }
 
-async fn restart_task(State(state): State<Arc<AppState>>) -> Response {
-    Json(json!({ "task": state.manager.restart_task() })).into_response()
+async fn startup_task(State(state): State<Arc<AppState>>) -> Response {
+    Json(json!({ "task": state.manager.startup_task() })).into_response()
 }
 
 #[derive(Deserialize)]
-struct RestartConfigQuery {
+struct StartupConfigQuery {
     id: String,
 }
 
-async fn restart_config(
+async fn startup_config(
     State(state): State<Arc<AppState>>,
-    Query(query): Query<RestartConfigQuery>,
+    Query(query): Query<StartupConfigQuery>,
 ) -> Response {
-    match state.manager.restart_task_config(&query.id) {
+    match state.manager.startup_task_config(&query.id) {
         Some(config) => Json(config).into_response(),
         None => api_error(
             StatusCode::NOT_FOUND,
-            "RESTART_CONFIG_NOT_FOUND",
-            "Configuration for this restart task is unavailable",
+            "STARTUP_CONFIG_NOT_FOUND",
+            "Configuration for this startup task is unavailable",
         ),
     }
 }
@@ -125,13 +126,13 @@ struct ReloadOutput {
 async fn reload(State(state): State<Arc<AppState>>) -> Response {
     if state
         .manager
-        .restart_task()
+        .startup_task()
         .is_some_and(|task| task.state == "running")
     {
         return api_error(
             StatusCode::CONFLICT,
-            "RUNTIME_RESTART_IN_PROGRESS",
-            "a core restart is already in progress",
+            "RUNTIME_STARTUP_IN_PROGRESS",
+            "a core startup is already in progress",
         );
     }
     state.manager.request_runtime_reload();

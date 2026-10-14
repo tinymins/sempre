@@ -94,6 +94,25 @@ pub(super) async fn wait_inactive<R: VersionRunner>(
     }
 }
 
+pub(super) async fn consume_reload<R: VersionRunner>(manager: &Manager<R>) {
+    // A new cycle uses the latest intent, including any queued reload wakeup.
+    tokio::select! {
+        biased;
+        () = manager.wait_runtime_reload() => {},
+        () = std::future::ready(()) => {},
+    }
+}
+
+pub(super) async fn wait_preparation<R: VersionRunner>(
+    manager: &Manager<R>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> bool {
+    tokio::select! {
+        () = manager.startup_tasks.wait_prepared() => false,
+        () = shutdown_requested(shutdown) => true,
+    }
+}
+
 pub(super) async fn wait_retry<R: VersionRunner>(
     manager: &Manager<R>,
     shutdown: &mut watch::Receiver<bool>,

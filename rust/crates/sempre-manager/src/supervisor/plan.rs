@@ -26,7 +26,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             repository: deployment.repository.clone(),
             reference: deployment.reference.clone(),
         };
-        self.restart_tasks.runtime_log("network", "");
+        self.startup_tasks.runtime_log("network", "");
         self.ensure_local_proxy_ports_available(&document, &deployment)?;
         let dns_frontend = self
             .prepare_dns_frontend_plan(&document, &deployment, &reference)
@@ -57,10 +57,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
         let runtime = adapter.prepare_runtime(&config, &control_directory)?;
         if deployment.core == "sing-box" {
-            for message in crate::fakeip_routes::adapt_runtime_config(&runtime.config) {
-                self.log_supervisor(&message);
-                self.restart_tasks.runtime_log("network", &message);
-            }
+            self.adapt_fakeip_runtime(&runtime.config);
         }
         let dns_rule_files = if deployment.core == "sing-box" {
             crate::dns_rule_files::prepare(&runtime.config, &config, &self.dns_settings.read())?
@@ -80,8 +77,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             &mut transparent,
         )
         .await?;
+        self.startup_tasks.runtime_log("validating", "");
         self.validate_config_path(&reference, &deployment.version, &runtime.config)
             .await?;
+        self.startup_tasks
+            .capture_config(&deployment.config_hash, &config);
         let runtime_data = fs::read(&runtime.config)
             .map_err(|error| ManagerError::io("read runtime configuration", error))?;
         let runtime_config_hash = format!("{:x}", Sha256::digest(runtime_data));
@@ -108,5 +108,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             dns_rule_files,
             rules,
         })
+    }
+
+    fn adapt_fakeip_runtime(&self, config: &std::path::Path) {
+        for message in crate::fakeip_routes::adapt_runtime_config(config) {
+            self.log_supervisor(&message);
+            self.startup_tasks.runtime_log("network", &message);
+        }
     }
 }

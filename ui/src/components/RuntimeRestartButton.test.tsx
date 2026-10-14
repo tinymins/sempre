@@ -4,12 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../lib/i18n'
 import { SessionProvider } from '../lib/session'
-import { type RestartTask } from '../lib/restartTask'
+import { type StartupTask } from '../lib/startupTask'
 import { RuntimeRestartButton } from './RuntimeRestartButton'
 
 const status = { runtime_state: 'running', pending: false, pending_changes: [], actions: { restart: { allowed: true } } }
-const makeTask = (): RestartTask => ({
-  id: 'task-1', state: 'running', started_at: new Date(Date.now() - 81000).toISOString(), finished_at: null,
+const makeTask = (): StartupTask => ({
+  id: 'task-1', action: 'restart', state: 'running', started_at: new Date(Date.now() - 81000).toISOString(), finished_at: null,
   omitted_logs: 0, config_available: true,
   logs: [
     { sequence: 0, timestamp: '2026-09-03T12:34:56Z', stage: 'begin', message: '' },
@@ -27,13 +27,13 @@ describe('asynchronous restart task', () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); localStorage.clear() })
 
   it('opens immediately, prevents duplicate submissions, and keeps running after closing', async () => {
-    let current: RestartTask | null = null
+    let current: StartupTask | null = null
     let accept!: () => void
     const response = new Promise<void>((resolve) => { accept = resolve })
     let posts = 0
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const path = new URL(String(input)).pathname
-      if (path.endsWith('/runtime/restart')) {
+      if (path.endsWith('/runtime/restart') || path.endsWith('/runtime/startup-task')) {
         if (init.method === 'POST') {
           posts++
           await response

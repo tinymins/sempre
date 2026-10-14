@@ -98,7 +98,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .validate_output(adapter.as_ref(), &binary, config, data.path())
             .await?;
         for line in output.lines() {
-            self.restart_tasks.log("validation", line);
+            self.startup_tasks.log("validation", line);
         }
         Ok(())
     }

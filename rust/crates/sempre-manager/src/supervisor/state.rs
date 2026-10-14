@@ -159,7 +159,7 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
         document.runtime.last_transition = Some(now);
         Ok(())
     })?;
-    manager.restart_tasks.failure(stage, error);
+    manager.startup_tasks.failure(stage, error);
     Ok(())
 }
 

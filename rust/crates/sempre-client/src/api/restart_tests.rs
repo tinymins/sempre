@@ -10,13 +10,13 @@ use super::{
 };
 
 #[tokio::test]
-async fn restart_task_and_configuration_require_authentication() {
+async fn startup_task_and_configuration_require_authentication() {
     let root = tempfile::tempdir().unwrap();
     let (state, token) = test_state(&root);
     let app = router(state);
     for path in [
-        "/api/v1/runtime/restart",
-        "/api/v1/runtime/restart/config?id=missing",
+        "/api/v1/runtime/startup-task",
+        "/api/v1/runtime/startup-task/config?id=missing",
     ] {
         let response = app
             .clone()
@@ -31,7 +31,7 @@ async fn restart_task_and_configuration_require_authentication() {
         let response = app.clone().oneshot(authenticated).await.unwrap();
         assert_eq!(
             response.status(),
-            if path.ends_with("restart") {
+            if path.ends_with("startup-task") {
                 StatusCode::OK
             } else {
                 StatusCode::NOT_FOUND
@@ -114,19 +114,19 @@ async fn restart_http_response_does_not_wait_for_validation_or_allow_a_second_re
         assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
     }
     tokio::time::timeout(Duration::from_secs(5), async {
-        while !state.manager.restart_task().unwrap().config_available {
+        while !state.manager.startup_task().unwrap().config_available {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
     .unwrap();
-    let task = state.manager.restart_task().unwrap();
+    let task = state.manager.startup_task().unwrap();
     assert!(
         task.logs
             .iter()
             .any(|entry| entry.message.contains("validation-output"))
     );
-    assert!(state.manager.restart_task_config(&task.id).is_some());
+    assert!(state.manager.startup_task_config(&task.id).is_some());
 }
 
 #[tokio::test]

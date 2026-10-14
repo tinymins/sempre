@@ -29,7 +29,6 @@ mod pending_changes;
 mod private_access_status;
 mod process;
 mod recommended_fakeip;
-mod restart_task;
 mod rule_bootstrap;
 mod rule_provider;
 mod runtime;
@@ -39,6 +38,7 @@ mod selection_config;
 mod service_deploy;
 mod service_readiness;
 mod source_loading;
+mod startup_task;
 mod subscription;
 mod subscription_mutation;
 mod subscription_tools;
@@ -75,11 +75,11 @@ pub use network_settings::{KnownNetwork, NetworkMode, NetworkSettings};
 pub use pending_changes::RuntimePendingChange;
 pub use private_access_status::{PrivateAccessConnectorStatus, PrivateAccessStatus};
 pub use process::{ProcessRunner, ValidationRunner, VersionRunner};
-pub use restart_task::{RestartLogEntry, RestartTask};
 pub use runtime::{RuntimeActionAvailability, RuntimeActions, RuntimeDeployment, RuntimeStatus};
 pub use sempre_bundle::DeployComponent;
 pub use sempre_bundle::Export as BundleExport;
 pub use service_deploy::uninstall_system_service;
+pub use startup_task::{StartupLogEntry, StartupTask};
 pub use subscription::SubscriptionRender;
 pub use subscription_tools::{
     ProfileDebugProgress, ProfileDebugResult, ProfileDebugSource, SourceInspection,
@@ -102,7 +102,7 @@ pub struct Manager<R = ProcessRunner> {
     runtime_reload: Arc<Notify>,
     runtime_rules_gate: Arc<tokio::sync::Mutex<()>>,
     fakeip_route_cache: fakeip_selection::RouteCache,
-    restart_tasks: Arc<restart_task::RestartTasks>,
+    startup_tasks: Arc<startup_task::StartupTasks>,
     core_download_tasks: Arc<core_download_task::CoreDownloadTasks>,
     subscription_schedule_changed: Arc<Notify>,
     tunnels: Arc<TunnelController>,
@@ -172,7 +172,7 @@ impl<R: VersionRunner> Manager<R> {
             runtime_reload: Arc::new(Notify::new()),
             runtime_rules_gate: Arc::default(),
             fakeip_route_cache: fakeip_selection::RouteCache::default(),
-            restart_tasks: Arc::default(),
+            startup_tasks: Arc::default(),
             core_download_tasks: Arc::default(),
             subscription_schedule_changed: Arc::new(Notify::new()),
             tunnels,

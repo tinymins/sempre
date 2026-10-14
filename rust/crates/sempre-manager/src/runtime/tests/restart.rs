@@ -6,11 +6,11 @@ use super::*;
 async fn restart_is_accepted_before_preparation_and_blocks_all_other_actions() {
     let (_root, manager) = fixture();
     let manager = Arc::new(manager);
-    let task = manager.start_restart_task().unwrap();
+    let task = manager.start_startup_task("restart").unwrap();
     assert_eq!(task.state, "running");
     assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
     assert!(!manager.runtime_status().unwrap().actions.restart.allowed);
-    assert!(manager.start_restart_task().is_err());
+    assert!(manager.start_startup_task("restart").is_err());
     for action in [START, STOP, RESTART] {
         assert_eq!(
             manager
@@ -18,27 +18,28 @@ async fn restart_is_accepted_before_preparation_and_blocks_all_other_actions() {
                 .await
                 .unwrap_err()
                 .runtime_action_code(),
-            Some("RUNTIME_RESTART_IN_PROGRESS")
+            Some("RUNTIME_STARTUP_IN_PROGRESS")
         );
     }
     tokio::time::timeout(Duration::from_secs(3), async {
-        while !manager.restart_task().unwrap().config_available {
+        while !manager.startup_task().unwrap().config_available {
             tokio::task::yield_now().await;
         }
     })
     .await
     .unwrap();
-    assert!(manager.restart_tasks.running());
+    assert!(manager.startup_tasks.running());
     assert!(
         manager
-            .restart_task_config(&task.id)
+            .startup_task_config(&task.id)
             .unwrap()
             .content
             .contains("inbounds")
     );
-    assert!(manager.restart_task_config("wrong-task").is_none());
-    manager.restart_tasks.healthy();
-    assert_eq!(manager.restart_task().unwrap().state, "succeeded");
+    assert!(manager.startup_task_config("wrong-task").is_none());
+    manager.startup_tasks.begin_cycle();
+    manager.startup_tasks.healthy();
+    assert_eq!(manager.startup_task().unwrap().state, "succeeded");
 }
 
 #[tokio::test]
@@ -59,6 +60,6 @@ async fn transitioning_core_rejects_restart_even_with_uncompiled_changes() {
             .await
             .unwrap_err()
             .runtime_action_code(),
-        Some("RUNTIME_RESTART_IN_PROGRESS")
+        Some("RUNTIME_STARTUP_IN_PROGRESS")
     );
 }
