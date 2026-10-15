@@ -24,6 +24,7 @@ export function Tunnels() {
   const copy = locale === 'zh-CN' ? zh : en
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState<TunnelConfig | null>(null)
+  const [serverInputs, setServerInputs] = useState<Record<string, ReturnType<typeof parseEndpoint>>>({})
   const [resolverTypes, setResolverTypes] = useState<Record<string, ResolverType>>({})
   const [resolverInputs, setResolverInputs] = useState<Record<string, string>>({})
   const [advancedInputs, setAdvancedInputs] = useState<Record<string, AdvancedInput>>({})
@@ -57,6 +58,7 @@ export function Tunnels() {
   })
   const update = (next: TunnelConfig) => setEditing(next)
   const openEditor = (next: TunnelConfig) => {
+    setServerInputs({})
     setResolverTypes({})
     setResolverInputs({})
     setAdvancedInputs({})
@@ -98,17 +100,23 @@ export function Tunnels() {
       {invalidResolverInput ? <Alert className="mb-3" type="error" showIcon message={copy.invalidResolver} /> : null}
       <div className="space-y-4" inert={save.isPending}>
     {config.instances.length === 0 ? <Card><Empty description={copy.empty} /></Card> : config.instances.map((instance, index) => {
-      const server = parseEndpoint(instance.server_url, 'wss', 443)
+      const server = serverInputs[instance.id] ?? parseEndpoint(instance.server_url)
+      const updateServer = (change: Partial<typeof server>) => {
+        const next = { ...server, ...change }
+        setServerInputs((current) => ({ ...current, [instance.id]: next }))
+        updateInstance(config, index, { server_url: endpointURL(next.scheme, next.host, next.port) }, update)
+      }
       const resolver = parseResolver(instance.dns_resolvers[0] || '')
       const resolverType = resolverTypes[instance.id] ?? resolver.type
       const resolverInput = resolverInputs[instance.id] ?? formatResolverInput(resolver, resolverType)
       const advancedInput = advancedInputs[instance.id]
       return <Card key={instance.id} className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
         <div className="flex items-center justify-between gap-2"><h2 className="font-semibold">{instance.name || `${copy.instance} ${index + 1}`}</h2><Button size="small" variant="danger" icon={<Trash2 size={14} />} onClick={() => update({ ...config, instances: config.instances.filter((item) => item.id !== instance.id) })}>{copy.remove}</Button></div>
-        <div className="mt-4 grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[1fr_2fr_120px_auto]">
+        <div className="mt-4 grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[1fr_100px_2fr_120px_auto]">
           <Field label={copy.remark}><Input value={instance.name} onChange={(event) => updateInstance(config, index, { name: event.target.value }, update)} /></Field>
-          <Field label={copy.serverHost}><Input value={server.host} placeholder="hz.example.com" onChange={(event) => updateInstance(config, index, { server_url: endpointURL('wss', event.target.value, server.port) }, update)} /></Field>
-          <Field label={copy.serverPort}><InputNumber className="w-full" min={1} max={65535} value={server.port} placeholder="443" onChange={(value) => updateInstance(config, index, { server_url: endpointURL('wss', server.host, value ?? 443) }, update)} /></Field>
+          <Field label={copy.protocol}><Select value={server.scheme} options={serverProtocolOptions} onChange={(value) => updateServer({ scheme: value as 'ws' | 'wss' })} /></Field>
+          <Field label={copy.serverHost}><Input value={server.host} placeholder="hz.example.com" onChange={(event) => updateServer({ host: event.target.value })} /></Field>
+          <Field label={copy.serverPort}><InputNumber className="w-full" min={1} max={65535} value={server.port} placeholder={server.scheme === 'ws' ? '80' : '443'} onChange={(value) => updateServer({ port: value ?? (server.scheme === 'ws' ? 80 : 443) })} /></Field>
           <Field label={copy.desiredRunning}><Switch checked={instance.desired_state === 'running'} onChange={(checked) => updateInstance(config, index, { desired_state: checked ? 'running' : 'stopped' }, update)} /></Field>
         </div>
         <Collapse className="mt-4" size="small" items={[{ key: 'advanced', label: copy.advancedSettings, children: <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_1fr]">
@@ -143,7 +151,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 type ResolverType = 'dns' | 'doh' | 'dot'
 type AdvancedInput = { websocketPing?: string; retryBackoff?: string; upgradePath?: string }
 const resolverTypeOptions = [{ value: 'dns', label: 'DNS' }, { value: 'doh', label: 'DoH' }, { value: 'dot', label: 'DoT' }]
-function parseEndpoint(value: string, scheme: string, defaultPort: number) { try { const parsed = new URL(value); if (parsed.protocol !== `${scheme}:`) return { host: '', port: defaultPort }; return { host: parsed.hostname.replace(/^\[|\]$/g, ''), port: Number(parsed.port) || defaultPort } } catch { return { host: '', port: defaultPort } } }
+const serverProtocolOptions = [{ value: 'wss', label: 'WSS' }, { value: 'ws', label: 'WS' }]
+function parseEndpoint(value: string): { scheme: 'ws' | 'wss'; host: string; port: number } { try { const parsed = new URL(value); if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') throw new Error('Invalid tunnel protocol'); const scheme = parsed.protocol === 'ws:' ? 'ws' : 'wss'; return { scheme, host: parsed.hostname.replace(/^\[|\]$/g, ''), port: Number(parsed.port) || (scheme === 'ws' ? 80 : 443) } } catch { return { scheme: 'wss', host: '', port: 443 } } }
 function endpointURL(scheme: string, host: string, port: number) { const clean = host.trim().replace(/^\[|\]$/g, ''); return clean ? `${scheme}://${clean.includes(':') ? `[${clean}]` : clean}:${port}` : '' }
 function resolverDefaultPort(type: ResolverType) { return type === 'dns' ? 53 : type === 'doh' ? 443 : 853 }
 type ParsedResolver = { type: ResolverType; host: string; port: number; path: string; search: string }
@@ -184,5 +193,5 @@ function newForward(config: TunnelConfig): TunnelForward { const used = new Set(
 function updateInstance(config: TunnelConfig, index: number, change: Partial<TunnelInstance>, apply: (next: TunnelConfig) => void) { apply({ ...config, instances: config.instances.map((item, itemIndex) => itemIndex === index ? { ...item, ...change } : item) }) }
 function stateLabel(copy: Record<keyof typeof en, string>, state: string) { return state === 'running' ? copy.stateRunning : state === 'starting' ? copy.stateStarting : state === 'installing' ? copy.stateInstalling : state === 'restarting' ? copy.stateRestarting : state === 'stopping' ? copy.stateStopping : copy.stateStopped }
 
-const zh = { title: '隧道', detail: '管理本机 wstunnel 客户端。Sempre 不会连接或配置远端 OpenWrt。', edit: '编辑配置', save: '保存配置', safetyTitle: '安全边界', safetyDetail: '这里只启动本机客户端并监听 127.0.0.1。远端 wstunnel server、证书、防火墙和 OpenWrt 服务必须由你人工配置。', notInstalled: '尚未安装', download: '下载并校验', failed: '操作失败', invalidResolver: 'DNS 服务器格式无效，请修正后再保存。', addInstance: '新增远端实例', empty: '尚未配置隧道。每台远端 OpenWrt 添加一个客户端实例。', instance: '实例', restarts: '重启次数', start: '启动', stop: '停止', restart: '重启', log: '日志', remove: '删除', remark: '备注', serverHost: '对端域名', serverPort: '服务端口', desiredRunning: '保持运行', advancedSettings: '高级参数', resolverType: 'DNS 类型', resolverServer: 'DNS 服务器', preferIPv4: 'IPv4 优先', retryBackoff: '最大重连退避', udpForwards: 'UDP 转发', addForward: '新增转发', close: '关闭', noLog: '暂无日志', localPort: '本地 UDP 端口', remoteHost: '远端主机', remotePort: '远端 UDP 端口', timeout: 'UDP 超时秒', stateRunning: '运行中', stateStarting: '启动中', stateInstalling: '安装中', stateRestarting: '重启中', stateStopping: '停止中', stateStopped: '已停止' }
-const en = { title: 'Tunnels', detail: 'Manage local wstunnel clients. Sempre never connects to or configures remote OpenWrt hosts.', edit: 'Edit configuration', save: 'Save configuration', safetyTitle: 'Safety boundary', safetyDetail: 'Only local clients listening on 127.0.0.1 are managed here. Configure the remote wstunnel server, certificates, firewall, and OpenWrt service manually.', notInstalled: 'is not installed', download: 'Download and verify', failed: 'Operation failed', invalidResolver: 'The DNS server format is invalid. Correct it before saving.', addInstance: 'Add remote instance', empty: 'No tunnels configured. Add one client instance for each remote OpenWrt host.', instance: 'Instance', restarts: 'Restarts', start: 'Start', stop: 'Stop', restart: 'Restart', log: 'Log', remove: 'Remove', remark: 'Remark', serverHost: 'Remote domain', serverPort: 'Service port', desiredRunning: 'Keep running', advancedSettings: 'Advanced settings', resolverType: 'DNS type', resolverServer: 'DNS server', preferIPv4: 'Prefer IPv4', retryBackoff: 'Maximum retry backoff', udpForwards: 'UDP forwards', addForward: 'Add forward', close: 'Close', noLog: 'No log output', localPort: 'Local UDP port', remoteHost: 'Remote host', remotePort: 'Remote UDP port', timeout: 'UDP timeout (seconds)', stateRunning: 'Running', stateStarting: 'Starting', stateInstalling: 'Installing', stateRestarting: 'Restarting', stateStopping: 'Stopping', stateStopped: 'Stopped' }
+const zh = { title: '隧道', detail: '管理本机 wstunnel 客户端。Sempre 不会连接或配置远端 OpenWrt。', edit: '编辑配置', save: '保存配置', safetyTitle: '安全边界', safetyDetail: '这里只启动本机客户端并监听 127.0.0.1。远端 wstunnel server、证书、防火墙和 OpenWrt 服务必须由你人工配置。', notInstalled: '尚未安装', download: '下载并校验', failed: '操作失败', invalidResolver: 'DNS 服务器格式无效，请修正后再保存。', addInstance: '新增远端实例', empty: '尚未配置隧道。每台远端 OpenWrt 添加一个客户端实例。', instance: '实例', restarts: '重启次数', start: '启动', stop: '停止', restart: '重启', log: '日志', remove: '删除', remark: '备注', protocol: '协议', serverHost: '对端域名', serverPort: '服务端口', desiredRunning: '保持运行', advancedSettings: '高级参数', resolverType: 'DNS 类型', resolverServer: 'DNS 服务器', preferIPv4: 'IPv4 优先', retryBackoff: '最大重连退避', udpForwards: 'UDP 转发', addForward: '新增转发', close: '关闭', noLog: '暂无日志', localPort: '本地 UDP 端口', remoteHost: '远端主机', remotePort: '远端 UDP 端口', timeout: 'UDP 超时秒', stateRunning: '运行中', stateStarting: '启动中', stateInstalling: '安装中', stateRestarting: '重启中', stateStopping: '停止中', stateStopped: '已停止' }
+const en = { title: 'Tunnels', detail: 'Manage local wstunnel clients. Sempre never connects to or configures remote OpenWrt hosts.', edit: 'Edit configuration', save: 'Save configuration', safetyTitle: 'Safety boundary', safetyDetail: 'Only local clients listening on 127.0.0.1 are managed here. Configure the remote wstunnel server, certificates, firewall, and OpenWrt service manually.', notInstalled: 'is not installed', download: 'Download and verify', failed: 'Operation failed', invalidResolver: 'The DNS server format is invalid. Correct it before saving.', addInstance: 'Add remote instance', empty: 'No tunnels configured. Add one client instance for each remote OpenWrt host.', instance: 'Instance', restarts: 'Restarts', start: 'Start', stop: 'Stop', restart: 'Restart', log: 'Log', remove: 'Remove', remark: 'Remark', protocol: 'Protocol', serverHost: 'Remote domain', serverPort: 'Service port', desiredRunning: 'Keep running', advancedSettings: 'Advanced settings', resolverType: 'DNS type', resolverServer: 'DNS server', preferIPv4: 'Prefer IPv4', retryBackoff: 'Maximum retry backoff', udpForwards: 'UDP forwards', addForward: 'Add forward', close: 'Close', noLog: 'No log output', localPort: 'Local UDP port', remoteHost: 'Remote host', remotePort: 'Remote UDP port', timeout: 'UDP timeout (seconds)', stateRunning: 'Running', stateStarting: 'Starting', stateInstalling: 'Installing', stateRestarting: 'Restarting', stateStopping: 'Stopping', stateStopped: 'Stopped' }

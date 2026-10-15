@@ -172,12 +172,14 @@ impl Instance {
         let mut arguments = vec![
             "--no-color=true".into(),
             "client".into(),
-            "--tls-verify-certificate".into(),
             "--websocket-ping-frequency".into(),
             self.websocket_ping.clone(),
             "--connection-retry-max-backoff".into(),
             self.connection_retry_max_backoff.clone(),
         ];
+        if Url::parse(&self.server_url).is_ok_and(|url| url.scheme() == "wss") {
+            arguments.push("--tls-verify-certificate".into());
+        }
         if self.prefer_ipv4 {
             arguments.push("--dns-resolver-prefer-ipv4".into());
         }
@@ -234,13 +236,13 @@ fn validate_instance(
     }
     let server = Url::parse(&instance.server_url).ok();
     if server.as_ref().is_none_or(|url| {
-        url.scheme() != "wss"
+        !matches!(url.scheme(), "ws" | "wss")
             || url.host_str().is_none()
             || !url.username().is_empty()
             || url.password().is_some()
     }) {
         return Err(TunnelError::invalid(
-            "server URL must be an absolute wss:// URL without credentials",
+            "server URL must be an absolute ws:// or wss:// URL without credentials",
         ));
     }
     validate_duration(&instance.websocket_ping)?;
@@ -351,10 +353,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_cleartext_and_duplicate_ports() {
+    fn accepts_cleartext_and_rejects_duplicate_ports() {
         let mut cleartext = config();
         cleartext.instances[0].server_url = "ws://hz.example.com".into();
-        assert!(cleartext.validate().is_err());
+        assert!(cleartext.validate().is_ok());
         let mut duplicate = config();
         let mut second = duplicate.instances[0].forwards[0].clone();
         second.id = "backup".into();
