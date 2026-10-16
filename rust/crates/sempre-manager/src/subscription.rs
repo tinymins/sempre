@@ -308,6 +308,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         refresh: bool,
     ) -> Result<RenderedProfile, ManagerError> {
         if profile_mode(profile) == "remote" {
+            self.local_transport_profile(profile, &target)?;
             let mut remote = self.remote.render(profile, &target).await?;
             validate_runtime_profile(&remote.profile)?;
             let dns_settings = self.dns_settings.read();
@@ -339,7 +340,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 dns_frontend_policy: Some(dns_frontend_policy),
             });
         }
-
         validate_runtime_profile(profile)?;
         let mut updated = profile.clone();
         let loaded = self
@@ -358,6 +358,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let mut compile_profile =
             self.apply_dns_frontend_settings(&network_profile, &target, dns_settings.enabled)?;
         loaded.for_compile(&mut compile_profile, &target, &catalog.custom_nodes)?;
+        compile_profile = self.local_transport_profile(&compile_profile, &target)?;
         let overlay = if dns_settings.enabled && target.core == "sing-box" {
             dns_settings.routing_overlay(&mut snapshots, target.core == "sing-box")?
         } else {
@@ -389,7 +390,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             dns_frontend_policy: Some(dns_frontend_policy),
         })
     }
-
     pub(crate) fn subscription_target(
         &self,
         document: &Document,

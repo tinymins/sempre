@@ -169,11 +169,13 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                     }
                   />
                 </label>
+                {renderTransport?.(connector, patch => updateConnector(index, patch))}
+                {!(renderTransport && connector.transportEndpointRef) ? <>
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgPeerAddress")}</FieldLabel>
                   <Input
                     value={connector.peerAddress}
-                    disabled={Boolean(connector.transportEndpointRef)}
+                    required
                     placeholder="vpn.example.com"
                     onChange={(event) =>
                       updateConnector(index, {
@@ -188,14 +190,14 @@ export const PrivateAccessEditor = ({ value, readOnly, onChange, renderTransport
                     min={1}
                     max={65535}
                     value={connector.peerPort}
-                    disabled={Boolean(connector.transportEndpointRef)}
+                    required
                     onChange={(peerPort) =>
                       updateConnector(index, { peerPort })
                     }
                     className="w-full"
                   />
                 </label>
-                {renderTransport?.(connector, patch => updateConnector(index, patch))}
+                </> : null}
                 <label className="space-y-1">
                   <FieldLabel>{t("proxy.form.privateWgKeepalive")}</FieldLabel>
                   <InputNumber

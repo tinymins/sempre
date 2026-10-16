@@ -127,7 +127,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         warnings.extend(provider_warnings);
         let request = CompileRequest {
             protocol: 1,
-            profile: updated.clone(),
+            profile: self.local_transport_profile(&updated, &target)?,
             snapshots,
             custom_nodes: catalog.custom_nodes,
             target: target.clone(),
@@ -244,6 +244,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let profile = find_profile(&catalog, id)?.clone();
         let target = Target::parse(format)?;
         if profile_mode(&profile) == "remote" {
+            self.local_transport_profile(&profile, &target)?;
             let remote = self.remote.render(&profile, &target).await?;
             return Ok(SubscriptionRender {
                 format: remote.target.format,
@@ -407,7 +408,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         Ok((
             CompileRequest {
                 protocol: 1,
-                profile,
+                profile: self.local_transport_profile(&profile, &target)?,
                 snapshots: loaded.snapshots,
                 custom_nodes,
                 target,
