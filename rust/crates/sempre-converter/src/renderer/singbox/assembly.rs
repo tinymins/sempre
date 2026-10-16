@@ -96,6 +96,9 @@ pub(super) fn render(
         "route": route,
         "experimental": config::experimental(profile, target, store_fakeip)
     });
+    if crate::cn_pre_routing(profile) && !crate::cn_direct_routes(profile) {
+        crate::apply_cn_proxy(&mut output)?;
+    }
     if !private.endpoints.is_empty() {
         output["endpoints"] = json!(private.endpoints);
     }

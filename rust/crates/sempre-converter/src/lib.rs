@@ -1,5 +1,5 @@
 mod cn_routes;
-pub use cn_routes::cn_direct_routes;
+pub use cn_routes::{CN_PROXY_GROUP, apply_cn_proxy, cn_direct_routes, cn_pre_routing};
 mod defaults;
 mod domain_policy;
 mod editor;

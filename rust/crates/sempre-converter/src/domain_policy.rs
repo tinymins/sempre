@@ -28,10 +28,10 @@ pub fn apply_dns_frontend_settings(
             .extra
             .insert("use_system_dns".into(), Value::Bool(false));
     }
-    let cn_routes = crate::cn_direct_routes(&profile);
+    let cn_routes = crate::cn_pre_routing(&profile);
     if cn_routes && !enabled {
         return Err(CompileError::Render(
-            "CN direct routes require the managed DNS frontend".into(),
+            "CN pre-routing requires the managed DNS frontend".into(),
         ));
     }
     let shared = shared_mut(&mut profile.dns);

@@ -8,13 +8,13 @@ use sha2::{Digest, Sha256};
 
 use crate::{DnsSettings, ManagerError};
 
-const CONFIG_BUILD_SCHEMA: u32 = 15;
+const CONFIG_BUILD_SCHEMA: u32 = 16;
 
 pub(crate) fn config_build(
     profile: &Profile,
     target: &Target,
     dns_settings: &DnsSettings,
-    cn_direct_routes: bool,
+    network_settings: &crate::NetworkSettings,
 ) -> Result<ConfigBuild, ManagerError> {
     let private_access_policy = private_access_policy(profile, target)?;
     let dns_frontend_enabled = dns_settings.enabled
@@ -31,7 +31,7 @@ pub(crate) fn config_build(
             profile,
             target,
             dns_settings,
-            cn_direct_routes,
+            network_settings,
         )?),
         private_access_policy,
     })
@@ -72,7 +72,7 @@ fn runtime_key(
     profile: &Profile,
     target: &Target,
     dns_settings: &DnsSettings,
-    cn_direct_routes: bool,
+    network_settings: &crate::NetworkSettings,
 ) -> Result<String, ManagerError> {
     let mut rule_sets = dns_settings.rule_sets.clone();
     if target.core == "sing-box" {
@@ -82,7 +82,8 @@ fn runtime_key(
     }
     let value = json!({
         "transparent_proxy": profile.transparent_proxy,
-        "cn_direct_routes": cn_direct_routes,
+        "cn_direct_routes": network_settings.cn_direct_routes,
+        "cn_routing_mode": network_settings.cn_routing_mode,
         "local_proxy": profile.local_proxy,
         "management_api": profile.management_api,
         "dns_frontend": {
@@ -142,6 +143,16 @@ mod tests {
             .expect("build");
         assert_ne!(original.runtime_key, changed.runtime_key);
         assert_eq!(original.profile_revision, changed.profile_revision);
+        let mut settings = manager.network_settings.read();
+        settings.cn_routing_mode = crate::CnRoutingMode::Proxy;
+        manager
+            .network_settings
+            .replace(settings)
+            .expect("proxy settings");
+        let proxy = manager
+            .subscription_config_build(&profile, &target, None)
+            .expect("proxy build");
+        assert_ne!(changed.runtime_key, proxy.runtime_key);
     }
 
     #[test]
@@ -172,7 +183,13 @@ mod tests {
         let manager = Manager::with_runner(Store::new(Layout::at(directory.path())), ProcessRunner)
             .expect("manager");
         let target = Target::parse("sing-box-v14").expect("target");
-        let build = config_build(&profile, &target, &manager.dns_settings(), false).expect("build");
+        let build = config_build(
+            &profile,
+            &target,
+            &manager.dns_settings(),
+            &manager.network_settings.read(),
+        )
+        .expect("build");
         let encoded = serde_json::to_string(&build.private_access_policy).expect("metadata");
         assert!(encoded.contains("d286d2f8-33c5-4f1e-b871-d22a9ba91143"));
         assert!(encoded.contains("remote-wg"));

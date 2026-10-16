@@ -78,7 +78,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             profile,
             target,
             &self.dns_settings.read(),
-            self.network_settings.read().cn_direct_routes,
+            &self.network_settings.read(),
         )
         .ok()?;
         if build.profile_id != profile.id || build.target_key != expected.target_key {
@@ -170,7 +170,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             profile,
             target,
             &self.dns_settings.read(),
-            self.network_settings.read().cn_direct_routes,
+            &self.network_settings.read(),
         )?;
         if uses_recommended_fakeip(profile, target) {
             let ranges = match compiled_policy {

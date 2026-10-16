@@ -46,6 +46,7 @@ async fn cn_routes_kernel_priority_update_recovery_and_cleanup() {
     let layout = sempre_state::Layout::system_at(directory.path());
     let controller = Controller::new(&layout);
     let mut intent = CnRouteIntent {
+        direct: true,
         prefixes: vec![
             "223.5.5.0/24".into(),
             "114.114.114.0/24".into(),

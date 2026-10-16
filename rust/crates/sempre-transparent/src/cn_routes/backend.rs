@@ -35,6 +35,7 @@ pub(crate) trait Backend: Default + Send + Sync + 'static {
         &'a self,
         runner: &'a dyn command::Runner,
         routes: &'a [Route],
+        proxy_prefixes: &'a [String],
     ) -> impl Future<Output = Result<(), TransparentError>> + Send + 'a;
 }
 
@@ -83,7 +84,8 @@ impl Backend for Native {
         &self,
         runner: &dyn command::Runner,
         routes: &[Route],
+        proxy_prefixes: &[String],
     ) -> Result<(), TransparentError> {
-        platform::verify(runner, routes).await
+        platform::verify(runner, routes, proxy_prefixes).await
     }
 }

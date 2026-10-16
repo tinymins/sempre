@@ -90,6 +90,7 @@ pub(super) async fn policy(
 pub(super) async fn verify(
     runner: &dyn command::Runner,
     routes: &[Route],
+    proxy_prefixes: &[String],
 ) -> Result<(), TransparentError> {
     let tun = &routes
         .iter()
@@ -101,6 +102,19 @@ pub(super) async fn verify(
         return Err(invalid("1.1.1.1 is not routed into the managed TUN"));
     }
     for v6 in [false, true] {
+        if let Some(prefix) = proxy_prefixes.iter().find(|p| p.contains(':') == v6) {
+            if (v6 && !routes.iter().any(|r| r.prefix == "::/1"))
+                || (!v6 && !routes.iter().any(|r| r.prefix == "0.0.0.0/1"))
+            {
+                continue;
+            }
+            let address = prefix.split('/').next().expect("validated prefix");
+            if native::lookup(runner, address).await? != *tun {
+                return Err(invalid(format!(
+                    "CN proxy route {prefix} does not enter the managed TUN"
+                )));
+            }
+        }
         if let Some(route) = routes
             .iter()
             .find(|r| !r.fallback && r.prefix.contains(':') == v6)

@@ -23,7 +23,7 @@ pub(super) fn sing_box_inbounds(
             inbound["sniff"] = json!(true);
             inbound["sniff_override_destination"] = json!(true);
         }
-        if crate::cn_direct_routes(profile) {
+        if crate::cn_pre_routing(profile) {
             inbound["auto_route"] = json!(false);
             inbound["strict_route"] = json!(false);
             if !private_capture_cidrs.is_empty() {
@@ -56,7 +56,7 @@ pub(super) fn sing_box_inbounds(
         "" | DISABLED => Vec::new(),
         TUN => {
             let mut inbound = sing_box_tun(transparent);
-            if crate::cn_direct_routes(profile) {
+            if crate::cn_pre_routing(profile) {
                 inbound["auto_route"] = json!(false);
                 inbound["auto_redirect"] = json!(false);
                 inbound["strict_route"] = json!(false);

@@ -303,7 +303,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             &system_dns.listen_hosts,
             &self.dns_settings.read(),
         )?;
-        if sempre_converter::cn_direct_routes(&profile) {
+        if sempre_converter::cn_pre_routing(&profile) {
             plan.config.outbound_interfaces = self.transparent.cn_outbound_interfaces().await?;
         }
         Ok(Some(plan))

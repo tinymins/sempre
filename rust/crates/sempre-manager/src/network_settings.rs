@@ -31,6 +31,14 @@ const fn default_true() -> bool {
     true
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CnRoutingMode {
+    #[default]
+    DirectRoute,
+    Proxy,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NetworkSettings {
     pub schema: u32,
@@ -39,6 +47,8 @@ pub struct NetworkSettings {
     pub gateway_capture_host: bool,
     #[serde(default)]
     pub cn_direct_routes: bool,
+    #[serde(default)]
+    pub cn_routing_mode: CnRoutingMode,
     #[serde(default)]
     pub automatic_switching: bool,
     #[serde(default)]
@@ -53,6 +63,7 @@ impl Default for NetworkSettings {
             mode: NetworkMode::Local,
             gateway_capture_host: false,
             cn_direct_routes: false,
+            cn_routing_mode: CnRoutingMode::DirectRoute,
             automatic_switching: false,
             known_networks: Vec::new(),
         }
@@ -127,7 +138,7 @@ fn validate(settings: &NetworkSettings) -> Result<(), ManagerError> {
     }
     if settings.cn_direct_routes && settings.mode != NetworkMode::Local {
         return Err(ManagerError::InvalidOperation(
-            "CN direct routes require local TUN mode".into(),
+            "CN pre-routing requires local TUN mode".into(),
         ));
     }
     if settings.known_networks.len() > 64 {
@@ -182,6 +193,10 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
         profile.extra.insert(
             "sempre_cn_direct_routes".into(),
             json!(settings.cn_direct_routes),
+        );
+        profile.extra.insert(
+            "sempre_cn_routing_mode".into(),
+            json!(settings.cn_routing_mode),
         );
         if settings.cn_direct_routes && settings.mode == NetworkMode::Local {
             profile.transparent_proxy.mode = "tun-router".into();
@@ -268,6 +283,7 @@ impl NetworkSettings {
         self.mode == previous.mode
             && self.gateway_capture_host == previous.gateway_capture_host
             && self.cn_direct_routes == previous.cn_direct_routes
+            && self.cn_routing_mode == previous.cn_routing_mode
             && self.automatic_switching == previous.automatic_switching
             && self.known_networks == previous.known_networks
     }

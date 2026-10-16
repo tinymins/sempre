@@ -91,6 +91,7 @@ impl Backend for Memory {
         &self,
         _: &dyn command::Runner,
         routes: &[Route],
+        _: &[String],
     ) -> Result<(), TransparentError> {
         if routes
             .iter()
@@ -120,6 +121,7 @@ fn endpoints() -> (Endpoint, Endpoint) {
 
 fn intent() -> Intent {
     Intent {
+        direct: true,
         prefixes: vec!["223.5.5.0/24".into(), "114.114.114.0/24".into()],
         tun_addresses: vec!["172.19.0.1/30".into()],
         capture_prefixes: Vec::new(),
@@ -167,7 +169,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     let (mut uplink, tun) = endpoints();
     let original = plan(&intent(), std::slice::from_ref(&uplink), &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, original.clone())
+        .replace(&command::SystemRunner, original.clone(), &[])
         .await
         .expect("install");
     let events = controller.backend.events.lock().expect("events").clone();
@@ -180,7 +182,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     next.prefixes.push("120.0.0.0/8".into());
     let updated = plan(&next, std::slice::from_ref(&uplink), &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, updated)
+        .replace(&command::SystemRunner, updated, &[])
         .await
         .expect("delta");
     assert_eq!(
@@ -197,12 +199,23 @@ async fn installation_updates_and_cleanup_preserve_order() {
     uplink.gateway = "192.168.2.1".into();
     let changed = plan(&next, &[uplink], &tun).expect("new network");
     controller
-        .replace(&command::SystemRunner, changed.clone())
+        .replace(&command::SystemRunner, changed.clone(), &[])
         .await
         .expect("switch");
     assert_eq!(
         *controller.backend.routes.lock().expect("routes"),
         changed.into_iter().collect()
+    );
+    next.direct = false;
+    let proxy = plan(&next, &[endpoints().0], &tun).expect("proxy plan");
+    assert!(proxy.iter().all(|route| route.fallback));
+    controller
+        .replace(&command::SystemRunner, proxy.clone(), &next.prefixes)
+        .await
+        .expect("proxy switch");
+    assert_eq!(
+        *controller.backend.routes.lock().expect("routes"),
+        proxy.into_iter().collect()
     );
     controller.backend.events.lock().expect("events").clear();
     controller
@@ -225,7 +238,7 @@ async fn partial_batch_failure_and_stale_journal_are_recoverable() {
     controller.backend.fail.store(true, Ordering::SeqCst);
     assert!(
         controller
-            .replace(&command::SystemRunner, routes.clone())
+            .replace(&command::SystemRunner, routes.clone(), &[])
             .await
             .is_err()
     );
@@ -291,7 +304,7 @@ async fn failed_cleanup_keeps_journal_for_next_recovery() {
     let (uplink, tun) = endpoints();
     let desired = plan(&intent(), &[uplink], &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, desired)
+        .replace(&command::SystemRunner, desired, &[])
         .await
         .expect("install");
     controller

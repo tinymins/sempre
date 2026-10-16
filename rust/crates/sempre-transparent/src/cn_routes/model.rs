@@ -7,6 +7,7 @@ use crate::TransparentError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Intent {
+    pub direct: bool,
     pub prefixes: Vec<String>,
     pub tun_addresses: Vec<String>,
     pub capture_prefixes: Vec<String>,
@@ -96,11 +97,13 @@ pub(crate) fn plan(
         if family.is_empty() {
             return Err(invalid("CN snapshot is missing an active address family"));
         }
-        routes.extend(family.into_iter().map(|prefix| Route {
-            prefix: prefix.clone(),
-            endpoint: uplink.clone(),
-            fallback: false,
-        }));
+        if intent.direct {
+            routes.extend(family.into_iter().map(|prefix| Route {
+                prefix: prefix.clone(),
+                endpoint: uplink.clone(),
+                fallback: false,
+            }));
+        }
         // Keep the physical default intact. Longer CN prefixes win over these.
         for prefix in if v4 {
             ["0.0.0.0/1", "128.0.0.0/1"]
@@ -122,9 +125,10 @@ pub(crate) fn plan(
         let capture = prefix
             .parse::<IpNet>()
             .map_err(|_| invalid("invalid private capture prefix"))?;
-        if cn_nets
-            .iter()
-            .any(|cn| cn.contains(&capture.network()) || capture.contains(&cn.network()))
+        if intent.direct
+            && cn_nets
+                .iter()
+                .any(|cn| cn.contains(&capture.network()) || capture.contains(&cn.network()))
         {
             return Err(invalid("a TUN capture prefix overlaps CN direct routes"));
         }

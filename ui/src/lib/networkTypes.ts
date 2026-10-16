@@ -4,6 +4,7 @@ export interface NetworkSettings {
   mode: 'local' | 'gateway'
   gateway_capture_host: boolean
   cn_direct_routes?: boolean
+  cn_routing_mode?: 'direct-route' | 'proxy'
   automatic_switching: boolean
   known_networks: KnownNetwork[]
 }

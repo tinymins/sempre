@@ -1,12 +1,14 @@
-# CN system routes before TUN
+# CN pre-routing
 
-Enable **CN direct system routes** in the network settings and restart the core.
-The setting is off by default, requires system mode, local network mode,
+Select the undeletable **CN pre-routing** built-in beside **Mainland China domains**
+on the domain-routing page, in either UI mode. It is disabled by default and its
+routing mode defaults to **Direct system route**. Enable it and restart the core.
+The setting requires system mode, local network mode,
 sing-box, and the managed DNS frontend. It forces real-IP DNS and an enabled
 `geoip-cn` destination-only rule set. Conditional, inverted, empty, or unsafe
 rule sets fail activation before the TUN fallback is enabled.
 
-CN destinations use explicit routes through the original interface and gateway.
+In **Direct system route** mode, CN destinations use explicit routes through the original interface and gateway.
 Other destinations use two `/1` TUN routes per active address family. Existing
 connected and more-specific system routes retain their precedence. Explicit
 private-access capture routes are preserved and must not overlap CN prefixes.
@@ -21,8 +23,17 @@ recapture. Linux additionally uses the existing bypass socket mark.
 | Linux | `ip -batch`, table 20241, rules 20241–20243 | Protocol 253 and full route identity |
 | Windows | IP Helper through batched PowerShell/C# calls | Metric 53717, protocol 3 and full route identity |
 
-The route count is the normalized CN CIDR count for active address families,
-plus two fallback routes per family and any private capture routes. No complement
+In **Proxy** mode, no physical CN bypass routes are installed. CN traffic enters
+TUN through the same fallback, then `geoip-cn` selects the dedicated
+`DNS · CN pre-routing` proxy group. Its selectable members are real proxy nodes,
+with a proxy node as default; selection uses the normal runtime proxy API and
+sing-box cache. Essential DNS handling and private-access rules retain priority;
+the CN proxy rule precedes Mainland China domains and custom/domain/core routing.
+Both modes use real-IP DNS and require a core restart after changing mode.
+
+In direct mode, the route count is the normalized CN CIDR count for active address families,
+plus two fallback routes per family and any private capture routes. Proxy mode
+installs only the fallback and private capture routes. No complement
 of the CN set is expanded. IPv4 and IPv6 currently require the same physical
 interface because the managed core has one default egress binding.
 
@@ -37,7 +48,7 @@ interface because the managed core has one default egress binding.
 6. Withdraw fallback before deleting CN routes on stop or error. Persist a
    write-ahead journal at `data/cn-routes.json`; recover it on the next daemon start.
 
-Managed remote rule updates first install the union of old and new CN prefixes,
+In direct mode, managed remote rule updates first install the union of old and new CN prefixes,
 then publish the new snapshot. The monitor subsequently removes obsolete routes.
 Failed cleanup retains the journal for retry. Caller cancellation cannot race
 an in-flight native batch against cleanup.
@@ -60,7 +71,8 @@ Before production acceptance, verify on each supported OS with the real core:
 
 | Check | Expected result |
 | --- | --- |
-| CN literal and real-IP domain connections | Physical interface; absent from TUN packet capture |
+| CN literal and real-IP domain connections, direct mode | Physical interface; absent from TUN packet capture |
+| CN literal and real-IP domain connections, proxy mode | Managed TUN, then selected CN proxy node; no physical CN bypass routes |
 | Ordinary literal `1.1.1.1` connection | Managed TUN, then the configured core outbound |
 | Core/proxy/DNS upstream connections | Physical egress; no routing loop |
 | Rule refresh and repeated network switches | Updated gateway/CIDRs; unrelated routes preserved |

@@ -65,7 +65,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 &compilation_item.1.updated,
                 &compilation_item.1.target,
                 &self.dns_settings.read(),
-                self.network_settings.read().cn_direct_routes,
+                &self.network_settings.read(),
             )?;
             let candidate = self
                 .prepare_config_content_for(
@@ -118,7 +118,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             profile,
             &target,
             &self.dns_settings.read(),
-            self.network_settings.read().cn_direct_routes,
+            &self.network_settings.read(),
         )?))
     }
 

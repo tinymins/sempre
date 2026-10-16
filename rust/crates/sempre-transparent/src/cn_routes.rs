@@ -69,14 +69,24 @@ impl<B: Backend> Controller<B> {
                 ));
             }
             let desired = model::plan(&intent, &uplinks, &tun)?;
+            let proxy_prefixes = if intent.direct {
+                &[][..]
+            } else {
+                &intent.prefixes
+            };
             if previous.routes == desired {
-                let result = controller.backend.verify(runner.as_ref(), &desired).await;
+                let result = controller
+                    .backend
+                    .verify(runner.as_ref(), &desired, proxy_prefixes)
+                    .await;
                 if result.is_err() {
                     controller.cleanup_locked(runner.as_ref()).await?;
                 }
                 return result;
             }
-            controller.replace(runner.as_ref(), desired).await
+            controller
+                .replace(runner.as_ref(), desired, proxy_prefixes)
+                .await
         })
         .await
         .map_err(|e| invalid(e.to_string()))?
@@ -86,6 +96,7 @@ impl<B: Backend> Controller<B> {
         &self,
         runner: &dyn command::Runner,
         desired: Vec<Route>,
+        proxy_prefixes: &[String],
     ) -> Result<(), TransparentError> {
         let previous = self.read()?;
         let additions = difference(&desired, &previous.routes);
@@ -101,9 +112,11 @@ impl<B: Backend> Controller<B> {
             self.change(runner, &additions, false, true).await?;
             self.change(runner, &additions, true, true).await?;
             self.backend.policy(runner, true).await?;
-            self.backend.verify(runner, &desired).await?;
             self.change(runner, &removals, true, false).await?;
             self.change(runner, &removals, false, false).await?;
+            self.backend
+                .verify(runner, &desired, proxy_prefixes)
+                .await?;
             self.write(&Journal {
                 routes: desired,
                 policy: true,

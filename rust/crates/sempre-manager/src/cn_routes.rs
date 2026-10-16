@@ -19,7 +19,7 @@ pub(crate) struct Source {
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub(crate) fn validate_cn_core(&self, core: &str) -> Result<(), ManagerError> {
         if self.network_settings.read().cn_direct_routes && core != "sing-box" {
-            return Err(invalid("CN direct routes require sing-box"));
+            return Err(invalid("CN pre-routing requires sing-box"));
         }
         Ok(())
     }
@@ -47,14 +47,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             return Ok(());
         }
         if !self.dns_settings.read().enabled {
-            return Err(invalid("CN direct routes require the DNS frontend"));
+            return Err(invalid("CN pre-routing requires the DNS frontend"));
         }
         if document
             .selected
             .as_ref()
             .is_some_and(|core| core.core != "sing-box")
         {
-            return Err(invalid("CN direct routes require sing-box"));
+            return Err(invalid("CN pre-routing requires sing-box"));
         }
         Ok(())
     }
@@ -73,6 +73,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 source,
                 transparent,
                 self.transparent.cn_outbound_interfaces().await?,
+                self.network_settings.read().cn_routing_mode == crate::CnRoutingMode::DirectRoute,
             )
             .await?;
         }
@@ -88,7 +89,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             return Ok(None);
         }
         if self.store.layout().mode != Mode::System {
-            return Err(invalid("CN direct routes require the system service"));
+            return Err(invalid("CN pre-routing requires the system service"));
         }
         let mut document: Value = serde_json::from_slice(
             &fs::read(config).map_err(|e| ManagerError::io("read CN runtime configuration", e))?,
@@ -97,11 +98,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let definitions = document
             .pointer_mut("/route/rule_set")
             .and_then(Value::as_array_mut)
-            .ok_or_else(|| invalid("CN direct routes require geoip-cn"))?;
+            .ok_or_else(|| invalid("CN pre-routing requires geoip-cn"))?;
         let definition = definitions
             .iter_mut()
             .find(|r| r["tag"] == "geoip-cn")
-            .ok_or_else(|| invalid("CN direct routes require geoip-cn"))?;
+            .ok_or_else(|| invalid("CN pre-routing requires geoip-cn"))?;
         let format = definition["format"].as_str().unwrap_or("binary").to_owned();
         if definition["type"] == "remote" {
             let url = definition["url"]
@@ -133,7 +134,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
         if definition["type"] != "local" {
             return Err(invalid(
-                "CN direct routes require a local or remote IP-only rule set",
+                "CN pre-routing requires a local or remote IP-only rule set",
             ));
         }
         let mut path = PathBuf::from(
@@ -195,6 +196,7 @@ pub(crate) async fn configure(
     source: &Source,
     transparent: &mut sempre_transparent::Plan,
     outbound_interfaces: [Option<String>; 2],
+    direct: bool,
 ) -> Result<(), ManagerError> {
     if outbound_interfaces[1]
         .as_ref()
@@ -219,7 +221,7 @@ pub(crate) async fn configure(
             .is_some_and(|s| s.iter().any(|s| s["type"] == "fakeip"))
     {
         return Err(invalid(
-            "CN direct routes require a compiled real-IP DNS configuration",
+            "CN pre-routing requires a compiled real-IP DNS configuration",
         ));
     }
     let tun = document["inbounds"]
@@ -229,7 +231,7 @@ pub(crate) async fn configure(
                 .find(|r| r["tag"] == "tun-in" && r["type"] == "tun")
         })
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| invalid("CN direct routes require the managed sing-box TUN"))?;
+        .ok_or_else(|| invalid("CN pre-routing requires the managed sing-box TUN"))?;
     let capture_prefixes = tun
         .get("route_address")
         .and_then(Value::as_array)
@@ -266,6 +268,9 @@ pub(crate) async fn configure(
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect();
+    if !direct {
+        sempre_converter::apply_cn_proxy(&mut document)?;
+    }
     // Bound core sockets must use the original physical default, never TUN.
     document["route"]["auto_detect_interface"] = json!(false);
     if cfg!(target_os = "linux") {
@@ -284,6 +289,7 @@ pub(crate) async fn configure(
     )
     .map_err(|e| ManagerError::io("write CN runtime", e))?;
     transparent.cn_routes = Some(CnRouteIntent {
+        direct,
         prefixes,
         tun_addresses,
         capture_prefixes,
@@ -394,36 +400,47 @@ mod tests {
         let config = serde_json::json!({
             "inbounds": [{"type":"tun", "tag":"tun-in", "address":["172.19.0.1/30"], "auto_route":true, "auto_redirect":true,
                 "route_exclude_address":["1.1.1.1/32"], "route_address":["10.8.0.0/16"], "dns_mode":"native", "dns_address":["192.0.2.1"]}],
-            "route":{"auto_detect_interface":true}, "dns":{"servers":[{"type":"udp","server":"223.5.5.5"}]}
+            "route":{"auto_detect_interface":true, "rules":[{"action":"hijack-dns", "protocol":"dns"}, {"domain":["example.cn"], "outbound":"direct"}]},
+            "outbounds":[{"type":"direct", "tag":"direct"}, {"type":"socks", "tag":"test-node", "server":"192.0.2.1", "server_port":1080}], "dns":{"servers":[{"type":"udp","server":"223.5.5.5"}]}
         });
-        std::fs::write(&runtime, config.to_string()).expect("runtime");
-        let mut plan = sempre_transparent::Plan::default();
-        super::configure(
-            std::path::Path::new("unused"),
-            &runtime,
-            &source,
-            &mut plan,
-            [Some("en0".into()), None],
-        )
-        .await
-        .expect("configure");
-        let result: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&runtime).expect("read")).expect("JSON");
-        let tun = &result["inbounds"][0];
-        assert_eq!(tun["auto_route"], false);
-        assert_eq!(tun["auto_redirect"], false);
-        for field in [
-            "route_address",
-            "route_exclude_address",
-            "dns_mode",
-            "dns_address",
-        ] {
-            assert!(tun.get(field).is_none());
+        for direct in [true, false] {
+            std::fs::write(&runtime, config.to_string()).expect("runtime");
+            let mut plan = sempre_transparent::Plan::default();
+            super::configure(
+                std::path::Path::new("unused"),
+                &runtime,
+                &source,
+                &mut plan,
+                [Some("en0".into()), None],
+                direct,
+            )
+            .await
+            .expect("configure");
+            let result: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&runtime).expect("read")).expect("JSON");
+            let tun = &result["inbounds"][0];
+            assert_eq!(tun["auto_route"], false);
+            assert_eq!(tun["auto_redirect"], false);
+            for field in [
+                "route_address",
+                "route_exclude_address",
+                "dns_mode",
+                "dns_address",
+            ] {
+                assert!(tun.get(field).is_none());
+            }
+            assert_eq!(result["route"]["default_interface"], "en0");
+            assert_eq!(result["route"]["auto_detect_interface"], false);
+            let intent = plan.cn_routes.expect("intent");
+            assert_eq!(intent.direct, direct);
+            if !direct {
+                let rules = result["route"]["rules"].as_array().expect("rules");
+                assert_eq!(rules[0]["action"], "hijack-dns");
+                assert_eq!(rules[1]["outbound"], sempre_converter::CN_PROXY_GROUP);
+                assert!(rules[2].get("domain").is_some());
+            }
+            assert_eq!(intent.capture_prefixes, ["10.8.0.0/16"]);
+            assert!(intent.tun_addresses.iter().any(|a| a.contains(':')));
         }
-        assert_eq!(result["route"]["default_interface"], "en0");
-        assert_eq!(result["route"]["auto_detect_interface"], false);
-        let intent = plan.cn_routes.expect("intent");
-        assert_eq!(intent.capture_prefixes, ["10.8.0.0/16"]);
-        assert!(intent.tun_addresses.iter().any(|a| a.contains(':')));
     }
 }

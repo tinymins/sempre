@@ -223,6 +223,7 @@ pub(crate) fn validate(settings: &DnsSettings) -> Result<(), ManagerError> {
         }
         if rule_set.id == builtin::BUILTIN_ID
             || rule_set.name.eq_ignore_ascii_case(builtin::BUILTIN_NAME)
+            || rule_set.name.eq_ignore_ascii_case("CN pre-routing")
         {
             return Err(ManagerError::InvalidOperation(
                 "DNS routing rule set id or name is reserved for Mainland China domains".into(),

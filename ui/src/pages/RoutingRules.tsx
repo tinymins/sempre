@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LockKeyhole, Pencil, Plus, Settings2, Trash2 } from 'lucide-react'
 import { Button, Card, Input, Modal, Select, Switch } from '@acme/components'
+import { CnRuleSet } from '../features/dns/CnRuleSet'
 import { BuiltinRuleSet } from '../features/dns/BuiltinRuleSet'
 import { RuleSetRuntime } from '../features/dns/RuleSetRuntime'
 import type { DnsRoutingDomain, DnsRoutingRuleSet } from '../features/dns/types'
@@ -11,12 +12,13 @@ import { directLabel } from '../lib/directLabel'
 import { useI18n } from '../lib/i18n'
 import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
-import type { ProxyNode } from '../lib/types'
+import type { NetworkSettingsResponse, ProxyNode } from '../lib/types'
 import { SimpleRoutingRules, type SimpleRoutingSave } from '../features/dns/SimpleRoutingRules'
 import { useUIMode } from '../lib/uiMode'
 import { useDnsSettings } from '../features/dns/useDnsSettings'
 
 const BUILTIN_ID = 'builtin-domains-min'
+const CN_ID = 'builtin-cn-pre-routing'
 
 type DomainDialogState = {
   mode: 'add' | 'edit'
@@ -45,6 +47,7 @@ export function RoutingRules() {
     refetchInterval: 5000,
     retry: false,
   })
+  const network = useQuery({ queryKey: ['network', 'settings'], queryFn: () => api<NetworkSettingsResponse>(session!, '/network/settings'), enabled: Boolean(session) })
   const selectProxy = useMutation({
     mutationFn: ({ group, proxy }: { group: string; proxy: string }) => api(session!, '/runtime/proxies/select', { method: 'POST', body: JSON.stringify({ group, proxy }) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runtime', 'proxies'] }),
@@ -134,7 +137,8 @@ export function RoutingRules() {
   if (!current) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载域名分流…' : 'Loading domain routing…'}</div>
   if (uiMode === 'simple' && proxies.isLoading) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载分流节点…' : 'Loading routing nodes…'}</div>
   const builtin = <BuiltinRuleSet policy={current.domestic_domains} count={builtinCount} saving={save.isPending} proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} zh={zh} onChange={(patch) => save.mutate((latest) => ({ ...latest, domestic_domains: { ...latest.domestic_domains, ...patch } }))} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy }, { onError: (error) => message.error(error.message) })} />
-  if (uiMode === 'simple') return <SimpleRoutingRules builtin={builtin} settings={current} proxyGroups={proxies.data ?? []} saving={save.isPending || selectProxy.isPending} pendingSelection={Object.keys(pendingSelections).length > 0} onSave={saveSimple} />
+  const cnBuiltin = <CnRuleSet proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} zh={zh} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy }, { onError: (error) => message.error(error.message) })} />
+  if (uiMode === 'simple') return <SimpleRoutingRules builtin={<div className="space-y-6">{cnBuiltin}<div className="border-t border-[var(--border)] pt-6">{builtin}</div></div>} settings={current} proxyGroups={proxies.data ?? []} saving={save.isPending || selectProxy.isPending} pendingSelection={Object.keys(pendingSelections).length > 0} onSave={saveSimple} />
   return <div className="space-y-5">
     <div className="flex min-h-10 items-start justify-between gap-4">
       <div><h1 className="text-xl font-semibold">{zh ? '域名分流' : 'Domain routing'}</h1><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '修改直接保存；sing-box 已启用自动重载的规则集可免重启更新域名，规则集结构变更仍需重启核心。' : 'Changes are saved directly. Domain edits in sing-box rule sets with automatic reload enabled need no restart; rule-set structure changes still require a core restart.'}</p></div>
@@ -145,11 +149,12 @@ export function RoutingRules() {
         <div className="border-b border-[var(--border)] px-4 py-3 text-sm font-medium">{zh ? '规则集' : 'Rule sets'}</div>
         <div className="space-y-1 p-2">
           <RuleSetButton selected={selectedId === BUILTIN_ID} name={zh ? '中国大陆域名' : 'Mainland China domains'} mode={current.domestic_domains.enabled ? current.domestic_domains.mode : 'disabled'} count={builtinCount} builtin onClick={() => setSelectedId(BUILTIN_ID)} />
+          <RuleSetButton selected={selectedId === CN_ID} name={zh ? 'CN 前置分流' : 'CN pre-routing'} directRouteLabel={zh ? '直连路由' : 'Direct system route'} mode={network.data?.settings.cn_direct_routes ? (network.data.settings.cn_routing_mode ?? 'direct-route') : 'disabled'} builtin onClick={() => setSelectedId(CN_ID)} />
           {current.rule_sets.map((ruleSet) => <RuleSetButton key={ruleSet.id} selected={selectedId === ruleSet.id} name={ruleSet.name} mode={ruleSet.mode} count={ruleSet.domains.length} onClick={() => setSelectedId(ruleSet.id)} saving={save.isPending} onDelete={() => void deleteSet(ruleSet.id).catch(() => undefined)} />)}
         </div>
       </Card>
       <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
-        {selectedId === BUILTIN_ID ? builtin : active ? <EditableRuleSet saving={save.isPending} ruleSet={active} proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} zh={zh} onSettings={openSettings} onAdd={() => openDomainDialog()} onEdit={openDomainDialog} onDelete={deleteDomain} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy }, { onError: (error) => message.error(error.message) })} /> : null}
+        {selectedId === BUILTIN_ID ? builtin : selectedId === CN_ID ? cnBuiltin : active ? <EditableRuleSet saving={save.isPending} ruleSet={active} proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} zh={zh} onSettings={openSettings} onAdd={() => openDomainDialog()} onEdit={openDomainDialog} onDelete={deleteDomain} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy }, { onError: (error) => message.error(error.message) })} /> : null}
       </Card>
     </div>
     <Modal open={settingsDialogOpen} title={zh ? '设置规则集' : 'Rule set settings'} okText={zh ? '保存' : 'Save'} cancelText={zh ? '取消' : 'Cancel'} okButtonProps={{ disabled: !ruleSetInput.name.trim() }} confirmLoading={save.isPending} onOk={() => applySettings().catch(() => undefined)} onCancel={() => { if (!save.isPending) setSettingsDialogOpen(false) }} destroyOnClose>
@@ -167,9 +172,9 @@ export function RoutingRules() {
   </div>
 }
 
-function RuleSetButton({ saving, selected, name, mode, count, builtin, onClick, onDelete }: { saving?: boolean; selected: boolean; name: string; mode: string; count: number; builtin?: boolean; onClick: () => void; onDelete?: () => void }) {
+function RuleSetButton({ saving, selected, name, mode, count, builtin, directRouteLabel, onClick, onDelete }: { saving?: boolean; selected: boolean; name: string; mode: string; count?: number; builtin?: boolean; directRouteLabel?: string; onClick: () => void; onDelete?: () => void }) {
   return <div className={`flex items-center rounded-md ${selected ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'hover:bg-[var(--surface-hover)]'}`}>
-    <button className="min-w-0 flex-1 px-3 py-2.5 text-left" onClick={onClick}><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{name}</span>{builtin ? <LockKeyhole className="shrink-0" size={13} /> : null}</div><div className="mt-1 flex gap-2 text-xs text-[var(--muted)]"><span>{mode === 'disabled' ? 'OFF' : mode === 'direct' ? directLabel('direct') : 'PROXY'}</span><span>·</span><span>{count}</span></div></button>
+    <button className="min-w-0 flex-1 px-3 py-2.5 text-left" onClick={onClick}><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{name}</span>{builtin ? <LockKeyhole className="shrink-0" size={13} /> : null}</div><div className="mt-1 flex gap-2 text-xs text-[var(--muted)]"><span>{mode === 'disabled' ? 'OFF' : mode === 'direct' ? directLabel('direct') : mode === 'direct-route' ? directRouteLabel : 'PROXY'}</span>{count !== undefined ? <><span>·</span><span>{count}</span></> : null}</div></button>
     {onDelete ? <Button className="mr-1" size="small" variant="text" icon={<Trash2 size={14} />} title="Delete" disabled={saving} onClick={onDelete} /> : null}
   </div>
 }

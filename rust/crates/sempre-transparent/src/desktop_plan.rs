@@ -71,7 +71,7 @@ fn prepare_with_windows_ipv6(
         Platform::Windows => configure_windows_dns_redirect(&mut config, &plan, core_version)?,
         Platform::WindowsDivert => configure_windows_routes(&mut config, &plan)?,
     }
-    if sempre_converter::cn_direct_routes(profile)
+    if sempre_converter::cn_pre_routing(profile)
         && let Some(capture) = capture_prefixes
         && let Some(tun) = config["inbounds"]
             .as_array_mut()
