@@ -9,7 +9,7 @@ export function SourceProxySelect({ source, disabled, update, size }: { source: 
   const proxies = useContext(SubscriptionProxyContext)
   const { t } = useEditorI18n()
   if (proxies === undefined) return <Select size={size} disabled={disabled} value={source.fetchMode ?? 'auto'} options={[{ value: 'auto', label: t('source.modeAuto') }, { value: 'domestic-direct', label: t('source.modeDirect') }]} onChange={next => update({ fetchMode: next as EditorSource['fetchMode'] })} className="w-full" />
-  const options = [{ value: '', label: t('source.systemMode') }, ...proxies.map(proxy => ({ value: proxy.id, label: `${proxy.name}${proxy.enabled && proxy.status === 'running' ? '' : ` · ${t(`source.proxy.${proxy.enabled ? proxy.status : 'stopped'}`)}`}` }))]
+  const options = [{ value: '', label: t('source.direct') }, ...proxies.map(proxy => ({ value: proxy.id, label: `${proxy.name}${proxy.enabled && proxy.status === 'running' ? '' : ` · ${t(`source.proxy.${proxy.enabled ? proxy.status : 'stopped'}`)}`}` }))]
   if (source.proxyId && !proxies.some(proxy => proxy.id === source.proxyId)) options.push({ value: source.proxyId, label: t('source.proxyUnavailable') })
   return <Select aria-label={t('source.subscriptionProxy')} size={size} disabled={disabled} value={source.proxyId ?? ''} options={options} onChange={next => update({ proxyId: String(next) || null })} className="w-full" />
 }

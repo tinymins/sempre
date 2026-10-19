@@ -26,7 +26,7 @@ export default {
   "proxies.deleteConfirm": "このプロキシを削除しますか？",
   "proxies.deleteHelp": "削除する前に、購読と中継設定で使用中のプロキシを置き換えてください。",
   "proxies.sourceLabel": "プロキシ",
-  "proxies.sourceHelp": "このソースを取得するプロキシまたはシステムモードを選択します。",
+  "proxies.sourceHelp": "このソースを取得する際の直接接続またはプロキシを選択します。直接接続では環境プロキシを使用しません。",
   "proxies.unavailable": "プロキシを利用できません",
   "proxies.refresh": "更新",
   "proxies.import": "リンク / 設定をインポート",

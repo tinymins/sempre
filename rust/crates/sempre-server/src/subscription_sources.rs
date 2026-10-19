@@ -107,7 +107,7 @@ pub(crate) async fn load_sources(
         let ua = item.effective_ua().to_owned();
         let mode = item
             .proxy_id
-            .map_or_else(|| "system".into(), |id| id.to_string());
+            .map_or_else(|| "direct".into(), |id| id.to_string());
         let source_id = item.identity(&ua, source_index);
         let source_label = source_label(&item, source_index);
         stages.push(json!({"type":"fetch","status":"running","sourceId":source_id,"sourceIndex":source_index,"sourceLabel":source_label,"fetchMode":mode}));

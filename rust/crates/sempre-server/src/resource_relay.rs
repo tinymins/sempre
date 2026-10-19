@@ -32,6 +32,22 @@ pub(crate) struct RelayFetch {
     pub route: ResolvedRoute,
 }
 
+pub(crate) struct FetchOptions<'a> {
+    pub user_agent: &'a str,
+    pub max_size: usize,
+    pub timeout: Duration,
+}
+
+impl Default for FetchOptions<'_> {
+    fn default() -> Self {
+        Self {
+            user_agent: "sempre-resource-relay/1",
+            max_size: fetch::MAX_SOURCE_SIZE,
+            timeout: Duration::from_secs(20),
+        }
+    }
+}
+
 /// No body cache: admin probes always exercise the saved outbound policy.
 pub(crate) async fn fetch(state: &AppState, input: &str) -> Result<RelayFetch, ApiError> {
     let policy = relay_egress::Policy::load(state).await?;
@@ -43,8 +59,17 @@ pub(crate) async fn fetch_with_policy(
     input: &str,
     policy: &relay_egress::Policy,
 ) -> Result<RelayFetch, ApiError> {
+    fetch_with_policy_options(state, input, policy, FetchOptions::default()).await
+}
+
+pub(crate) async fn fetch_with_policy_options(
+    state: &AppState,
+    input: &str,
+    policy: &relay_egress::Policy,
+    options: FetchOptions<'_>,
+) -> Result<RelayFetch, ApiError> {
     let last_url = std::sync::Mutex::new(None);
-    fetch_with_policy_observed(state, input, policy, &last_url).await
+    fetch_with_options_observed(state, input, policy, options, &last_url).await
 }
 
 pub(crate) async fn fetch_with_policy_observed(
@@ -53,11 +78,21 @@ pub(crate) async fn fetch_with_policy_observed(
     policy: &relay_egress::Policy,
     last_url: &std::sync::Mutex<Option<url::Url>>,
 ) -> Result<RelayFetch, ApiError> {
+    fetch_with_options_observed(state, input, policy, FetchOptions::default(), last_url).await
+}
+
+async fn fetch_with_options_observed(
+    state: &AppState,
+    input: &str,
+    policy: &relay_egress::Policy,
+    options: FetchOptions<'_>,
+    last_url: &std::sync::Mutex<Option<url::Url>>,
+) -> Result<RelayFetch, ApiError> {
     relay_egress::validate_url(input)?;
     let (response, route) = fetch::fetch_bytes(
         input,
-        "sempre-resource-relay/1",
-        fetch::MAX_SOURCE_SIZE,
+        options.user_agent,
+        options.max_size,
         |url| async move {
             *last_url.lock().map_err(ApiError::internal)? = Some(url.clone());
             if url.fragment().is_some() {
@@ -79,7 +114,7 @@ pub(crate) async fn fetch_with_policy_observed(
             let mut client = reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(10))
-                .timeout(Duration::from_secs(20));
+                .timeout(options.timeout);
             match &route.outbound {
                 Outbound::System => {}
                 Outbound::Direct => client = client.no_proxy(),

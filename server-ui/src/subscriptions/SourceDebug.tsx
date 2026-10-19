@@ -62,7 +62,7 @@ export function SourceDebug({ open, afterOpenChange, source, saved, onClose }: {
       <p className="text-xs text-[var(--muted)]">{saved ? t('sourceDebug.savedHint') : t('sourceDebug.draftHint')}</p>
       <dl className="grid grid-cols-2 gap-2 rounded border border-[var(--border)] p-3 text-xs md:grid-cols-4">
         <div className="min-w-0"><dt className="text-[var(--muted)]">User-Agent</dt><dd className="break-words">{displayedSource.fetchUa || 'clash.meta'}</dd></div>
-        <div><dt className="text-[var(--muted)]">{t('proxies.sourceLabel')}</dt><dd>{displayedSource.proxyId ? proxies.find(proxy => proxy.id === displayedSource.proxyId)?.name ?? t('proxies.unavailable') : t('proxies.system')}</dd></div>
+        <div><dt className="text-[var(--muted)]">{t('proxies.sourceLabel')}</dt><dd>{displayedSource.proxyId ? proxies.find(proxy => proxy.id === displayedSource.proxyId)?.name ?? t('proxies.unavailable') : t('relay.direct')}</dd></div>
         <div><dt className="text-[var(--muted)]">{diagnosticText(locale, 'cacheTtlMinutes')}</dt><dd>{number(displayedSource.cacheTtlMinutes ?? 60)}</dd></div>
         <div className="min-w-0"><dt className="text-[var(--muted)]">{diagnosticText(locale, 'prefix')}</dt><dd className="break-words">{displayedSource.prefix || '—'}</dd></div>
       </dl>

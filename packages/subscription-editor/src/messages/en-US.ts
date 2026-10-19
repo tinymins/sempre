@@ -264,7 +264,7 @@ export default {
   "proxy.form.privateDnsGlobalWarning": "Without private DNS domain suffixes, this server will handle all DNS queries and may break internal service resolution.",
   "proxy.form.privateDnsServer": "Private DNS server",
   "proxy.form.privateDnsPort": "DNS port",
-  "source.systemMode": "System mode",
+  "source.direct": "Direct",
   "source.subscriptionProxy": "Proxy",
   "source.proxyUnavailable": "Proxy unavailable",
   "source.proxy.starting": "Starting",

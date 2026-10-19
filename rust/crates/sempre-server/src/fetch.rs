@@ -136,21 +136,20 @@ where
     for redirect in 0..=MAX_REDIRECTS {
         validate_url(&url)?;
         let (client, route_context) = select_client(url.clone()).await?;
-        let response = client
-            .get(url.clone())
-            .header(header::USER_AGENT, user_agent)
-            .send()
-            .await
-            .map_err(|error| {
-                let reason = if error.is_timeout() {
-                    "source request timed out"
-                } else if error.is_connect() {
-                    "source connection failed"
-                } else {
-                    "source transport failed"
-                };
-                ApiError::unavailable(reason)
-            })?;
+        let mut request = client.get(url.clone());
+        if !user_agent.is_empty() {
+            request = request.header(header::USER_AGENT, user_agent);
+        }
+        let response = request.send().await.map_err(|error| {
+            let reason = if error.is_timeout() {
+                "source request timed out"
+            } else if error.is_connect() {
+                "source connection failed"
+            } else {
+                "source transport failed"
+            };
+            ApiError::unavailable(reason)
+        })?;
         if matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
             if redirect == MAX_REDIRECTS {
                 return Err(ApiError::unavailable("source exceeded redirect limit"));
@@ -227,6 +226,7 @@ pub(crate) fn validate_url(url: &Url) -> Result<(), ApiError> {
 fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError> {
     validate_url(url)?;
     let mut builder = Client::builder()
+        .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(20));

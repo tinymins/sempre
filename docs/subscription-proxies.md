@@ -1,11 +1,12 @@
 # Subscription proxies
 
 The server UI's **Proxy settings → Proxy nodes** tab lists application-level
-proxies in a compact table. Each URL source selects **系统模式 /
-System mode** or one named proxy from a flat list. System mode retains the server's
-default HTTP-client networking behavior. A selected proxy never silently falls
-back to system mode. Resource relay requests use the independent policy under
-**Proxy rules**. Generated client routing, DNS, and node configuration are unaffected.
+proxies in a compact table. Each URL source selects **直连 / Direct** or one named
+proxy from a flat list. Direct access explicitly disables environment proxies.
+A selected proxy never silently falls back to direct or system mode. Source
+choices take precedence over the global **Proxy rules** policy; other business
+resource requests, including rule-provider snapshots and resource relay requests,
+use that policy. Generated client routing, DNS, and node configuration are unaffected.
 
 ## Deployment
 
@@ -36,13 +37,14 @@ docker compose -f rust/compose.yml --profile subscription-proxy up -d --build
 
 The optional `SEMPRE_PROXY_PROBE_URL` runtime setting defaults to
 `https://www.baidu.com/`. It must be reachable through the configured upstream.
-Passing the startup probe does not guarantee access to a particular subscription;
-use the source debugger to verify the real destination.
+Startup probes and node connection tests use the specific proxy being tested,
+independently of global proxy rules. Passing the startup probe does not guarantee
+access to a particular subscription; use the source debugger to verify the real destination.
 
 Migration `0011_subscription_proxies.sql` creates the new table only. It does not
 convert `fetchMode`, import `DIRECT_PROXY_URL`, or modify existing sources. Before
 switching an existing deployment, manually remove old `fetchMode` fields and set
-each source's `proxyId` to null (system mode) or the intended proxy UUID. The new
+each source's `proxyId` to null (direct access) or the intended proxy UUID. The new
 server rejects unknown source fields rather than interpreting old modes.
 
 Existing proxy edits save automatically: text inputs save on blur, and engine,
@@ -102,4 +104,5 @@ All endpoints require an authenticated server session:
 Creation accepts `name`, `content` or `customNodeId`, `engine` (`null`, `sing-box`,
 or `xray`), and `enabled`. Binding a custom node requires access to that node;
 proxy availability does not grant access to the custom-node catalog. On update,
-omitting both `content` and `customNodeId` preserves the connection. A URL source stores `proxyId`; null/absence selects system mode.
+omitting both `content` and `customNodeId` preserves the connection. A URL source
+stores `proxyId`; null/absence selects direct access without environment proxies.

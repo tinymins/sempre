@@ -203,8 +203,8 @@ pub(crate) async fn resolve(
     let Some(id) = id else {
         return Ok(Route {
             url: None,
-            identity: format!("{user}:system"),
-            name: "system".into(),
+            identity: format!("{user}:direct"),
+            name: "direct".into(),
         });
     };
     let row = visible_row(state, id).await?;

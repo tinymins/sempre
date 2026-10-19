@@ -325,6 +325,10 @@ async fn revision_hash(
         &local.custom_nodes,
         &subscription.fields.subscribe_items,
         proxies,
+        crate::relay_egress::Policy::load(state)
+            .await?
+            .cache_identity(state)
+            .await?,
     ))
     .map_err(ApiError::internal)?;
     Ok(format!("{:x}", Sha256::digest(input)))

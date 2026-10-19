@@ -21,12 +21,12 @@ pub(crate) async fn load_rule_source(
     ttl_minutes: i32,
     cache_mode: CacheMode,
 ) -> Result<LoadedSource, ApiError> {
-    source_cache::load(
+    source_cache::load_relay(
         state,
         SourceRequest {
             url,
             ua,
-            fetch_mode: "system",
+            fetch_mode: "relay",
             proxy: None,
             source_id,
             ttl_minutes,

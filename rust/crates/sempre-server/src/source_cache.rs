@@ -214,9 +214,17 @@ async fn fetch_requested_source(
     if let Some(policy) = policy {
         fetch::fetch_text_with_retry(
             || async {
-                crate::resource_relay::fetch_with_policy(state, request.url, policy)
-                    .await
-                    .and_then(|fetched| fetched.response.into_text())
+                crate::resource_relay::fetch_with_policy_options(
+                    state,
+                    request.url,
+                    policy,
+                    crate::resource_relay::FetchOptions {
+                        user_agent: request.ua,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .and_then(|fetched| fetched.response.into_text())
             },
             |_| {},
         )

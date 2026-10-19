@@ -264,7 +264,7 @@ export default {
   "proxy.form.privateDnsGlobalWarning": "未填写专用 DNS 域名后缀时，该 DNS 将接管所有域名解析，可能导致内网服务解析异常。",
   "proxy.form.privateDnsServer": "专用 DNS 服务器",
   "proxy.form.privateDnsPort": "DNS 端口",
-  "source.systemMode": "系统模式",
+  "source.direct": "直连",
   "source.subscriptionProxy": "代理",
   "source.proxyUnavailable": "代理不可用",
   "source.proxy.starting": "启动中",

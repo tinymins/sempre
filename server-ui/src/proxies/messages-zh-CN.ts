@@ -26,7 +26,7 @@ export default {
   "proxies.deleteConfirm": "删除这个代理？",
   "proxies.deleteHelp": "被引用的代理需要先在订阅和中转设置中选择替代连接。",
   "proxies.sourceLabel": "代理",
-  "proxies.sourceHelp": "选择系统模式或抓取此订阅源时使用的代理。",
+  "proxies.sourceHelp": "选择直连或抓取此订阅源时使用的代理。直连不使用环境代理。",
   "proxies.unavailable": "代理不可用",
   "proxies.refresh": "刷新",
   "proxies.import": "导入链接 / 配置",

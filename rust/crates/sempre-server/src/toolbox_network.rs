@@ -3,13 +3,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axum::{Json, Router, routing::get};
+use axum::{Json, Router, extract::State, routing::get};
 use serde::Serialize;
 use tokio::sync::RwLock;
 
-use crate::{AppState, error::ApiError};
+use crate::{AppState, error::ApiError, relay_egress::Policy, resource_relay};
 
 struct CacheEntry {
+    policy_identity: String,
     items: Vec<String>,
     fetched_at: Instant,
 }
@@ -31,20 +32,26 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/api/v1/network/geosite/cn", get(geosite_cn))
 }
 
-async fn geoip_cn() -> Result<Json<ListOutput>, ApiError> {
-    list(&GEOIP, fetch_geoip()).await
+async fn geoip_cn(State(state): State<Arc<AppState>>) -> Result<Json<ListOutput>, ApiError> {
+    let policy = Policy::load(&state).await?;
+    let identity = policy.cache_identity(&state).await?;
+    list(&GEOIP, identity, fetch_geoip(&state, &policy)).await
 }
 
-async fn geosite_cn() -> Result<Json<ListOutput>, ApiError> {
-    list(&GEOSITE, fetch_geosite()).await
+async fn geosite_cn(State(state): State<Arc<AppState>>) -> Result<Json<ListOutput>, ApiError> {
+    let policy = Policy::load(&state).await?;
+    let identity = policy.cache_identity(&state).await?;
+    list(&GEOSITE, identity, fetch_geosite(&state, &policy)).await
 }
 
 async fn list(
     cache: &RwLock<Option<CacheEntry>>,
+    policy_identity: String,
     fetch: impl std::future::Future<Output = Result<Vec<String>, ApiError>>,
 ) -> Result<Json<ListOutput>, ApiError> {
     if let Some(entry) = cache.read().await.as_ref()
         && entry.fetched_at.elapsed() < TTL
+        && entry.policy_identity == policy_identity
     {
         return Ok(Json(ListOutput {
             count: entry.items.len(),
@@ -53,6 +60,7 @@ async fn list(
     }
     let items = fetch.await?;
     *cache.write().await = Some(CacheEntry {
+        policy_identity,
         items: items.clone(),
         fetched_at: Instant::now(),
     });
@@ -62,29 +70,27 @@ async fn list(
     }))
 }
 
-async fn text(url: &str) -> Result<String, ApiError> {
-    let response = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(ApiError::internal)?
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| ApiError::unavailable(format!("network list fetch failed: {error}")))?;
-    if !response.status().is_success() {
+async fn text(state: &AppState, policy: &Policy, url: &str) -> Result<String, ApiError> {
+    let response = resource_relay::fetch_with_policy_options(
+        state,
+        url,
+        policy,
+        resource_relay::FetchOptions {
+            user_agent: "",
+            max_size: 8 * 1024 * 1024,
+            timeout: Duration::from_secs(30),
+        },
+    )
+    .await?
+    .response;
+    if !(200..300).contains(&response.status) {
         return Err(ApiError::unavailable(format!(
             "network list source returned {}",
-            response.status()
+            response.status
         )));
     }
-    let body = response
-        .bytes()
-        .await
-        .map_err(|error| ApiError::unavailable(format!("network list read failed: {error}")))?;
-    if body.len() > 8 * 1024 * 1024 {
-        return Err(ApiError::unavailable("network list source is too large"));
-    }
-    String::from_utf8(body.to_vec()).map_err(|_| ApiError::unavailable("network list is not UTF-8"))
+    String::from_utf8(response.content)
+        .map_err(|_| ApiError::unavailable("network list is not UTF-8"))
 }
 
 fn lines(value: &str) -> Vec<String> {
@@ -96,16 +102,16 @@ fn lines(value: &str) -> Vec<String> {
         .collect()
 }
 
-async fn fetch_geoip() -> Result<Vec<String>, ApiError> {
+async fn fetch_geoip(state: &AppState, policy: &Policy) -> Result<Vec<String>, ApiError> {
     const PRIMARY: &str =
         "https://raw.githubusercontent.com/17mon/china_ip_list/master/china_ip_list.txt";
-    if let Ok(value) = text(PRIMARY).await {
+    if let Ok(value) = text(state, policy, PRIMARY).await {
         let items = lines(&value);
         if !items.is_empty() {
             return Ok(items);
         }
     }
-    let value = text(APNIC).await?;
+    let value = text(state, policy, APNIC).await?;
     let items = value
         .lines()
         .filter_map(|line| {
@@ -126,10 +132,10 @@ async fn fetch_geoip() -> Result<Vec<String>, ApiError> {
     Ok(items)
 }
 
-async fn fetch_geosite() -> Result<Vec<String>, ApiError> {
+async fn fetch_geosite(state: &AppState, policy: &Policy) -> Result<Vec<String>, ApiError> {
     const SOURCE: &str =
         "https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/direct-list.txt";
-    let items = lines(&text(SOURCE).await?);
+    let items = lines(&text(state, policy, SOURCE).await?);
     if items.is_empty() {
         return Err(ApiError::unavailable("no CN domains were found"));
     }

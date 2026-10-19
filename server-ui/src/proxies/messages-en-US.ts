@@ -26,7 +26,7 @@ export default {
   "proxies.deleteConfirm": "Delete this proxy?",
   "proxies.deleteHelp": "Replace referenced proxies in subscription and relay settings before deleting.",
   "proxies.sourceLabel": "Proxy",
-  "proxies.sourceHelp": "Choose system mode or the proxy used to fetch this source.",
+  "proxies.sourceHelp": "Choose direct access or the proxy used to fetch this source. Direct access ignores environment proxies.",
   "proxies.unavailable": "Proxy unavailable",
   "proxies.refresh": "Refresh",
   "proxies.import": "Import link / configuration",

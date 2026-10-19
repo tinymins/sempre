@@ -58,7 +58,7 @@ async fn convert(state: &AppState, url: &str, version: u8) -> Result<Json<Value>
         state,
         SourceRequest {
             url,
-            ua: "sempre-rule-set/1",
+            ua: "sempre-resource-relay/1",
             fetch_mode: "relay",
             proxy: None,
             source_id: "public-rule-conversion",

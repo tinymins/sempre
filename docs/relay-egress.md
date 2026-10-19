@@ -1,8 +1,13 @@
 # Relay egress policy
 
 Only administrators and superadministrators can read or change the global relay
-policy. It applies to upstream requests made by the public resource relay;
-subscription-source proxy choices remain independent. The server remains
+policy. It applies to business resource requests, including public resource relay
+requests, rule conversion, rule-provider snapshots prepared for subscription
+exports and debug output, and network GeoIP/Geosite lists, including the APNIC
+fallback for GeoIP. Subscription-source proxy choices take precedence:
+a configured source proxy is used explicitly, and null/absent `proxyId` means
+direct access without environment proxies. Node tests and startup probes use the
+specific proxy being tested. The server remains
 core-free and resolves managed connections through the optional `sempre-proxy`
 service.
 
@@ -47,9 +52,12 @@ Resource requests use the selected outbound's DNS and connection behavior withou
 a local public-IP precheck or DNS pinning. Recursive requests to this service's
 relay paths are rejected.
 
-Raw responses have no server-side body cache. Rule conversion retains its
-existing retry/cache behavior, with saved-policy and referenced-provider
-revisions included in cache identity. Administrator probes bypass body caches.
+Raw responses have no server-side body cache. Rule conversion and rule-provider
+snapshots retain their existing retry/cache behavior. Their cache identities, the
+24-hour in-memory network GeoIP/Geosite cache, and the revision identity used for
+final subscription artifact fallback all include the saved-policy and referenced
+proxy revisions. Changes to those revisions prevent reuse of a cached result or
+fallback artifact from the previous policy. Administrator probes bypass body caches.
 
 ## Administrator API
 

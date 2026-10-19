@@ -128,8 +128,9 @@ Nonempty `subscribeItems` takes priority over the old `subscribeUrl` field;
 an empty list falls back to the old field for migrated records. Each item
 has `id`, `type` (`url` or `raw`), `enabled`, `prefix`, and `remark`.
 URL items carry `url` and optional `cacheTtlMinutes`, `fetchUa`, and `proxyId`.
-Null/absent `proxyId` selects system mode; a UUID selects any configured
-subscription proxy from the catalog available to all authenticated accounts. RAW items carry `content` and never fetch over HTTP. Old
+Null/absent `proxyId` selects direct access without environment proxies; a UUID
+selects any configured subscription proxy from the catalog available to all
+authenticated accounts. RAW items carry `content` and never fetch over HTTP. Old
 `fetchMode` fields are rejected and require a manual database edit before upgrade.
 Existing items without a type are URLs. The list preserves mixed source order. The old
 `subscribeUrl` value remains readable and editable for existing rows.
@@ -262,8 +263,8 @@ if one exists. An invalid
 editor JSONC field still fails explicitly. With `useSystemRuleList` or
 `useSystemGroup` false, an empty/null custom value falls back to the system
 default, whereas an invalid nonempty JSONC value fails. An empty custom filter
-intentionally stays empty. Rule-provider fetching uses system mode. Subscription
-proxy selection applies to each URL subscription source.
+intentionally stays empty. Rule-provider fetching uses the global proxy rules.
+Each URL subscription source instead uses its explicit proxy selection or direct access.
 
 ## Known migration differences
 
@@ -281,9 +282,11 @@ Remote subscription sources and rule providers use the selected HTTP client
 route for DNS resolution and connections. The server validates HTTP(S) URLs,
 rejects embedded URL credentials, and bounds redirects, time, and response
 size; it does not perform a separate system-DNS public-IP check or pin the
-destination IP. System mode retains reqwest's system proxy behavior. A selected
-subscription proxy uses its authenticated HTTP listener in `sempre-proxy`, without
-silently falling back to system mode. In either route, the deployment's DNS and
+destination IP. Subscription sources without a proxy explicitly disable environment
+proxies. Other business resource requests use the global proxy rules, whose system
+mode retains reqwest's environment proxy behavior. A selected subscription proxy
+uses its authenticated HTTP listener in `sempre-proxy`, without silently falling
+back to direct or system mode. For every route, the deployment's DNS and
 egress policy is responsible for
 blocking access to internal destinations. In particular, an HTTP CONNECT
 proxy resolves the destination independently of the server process. A local

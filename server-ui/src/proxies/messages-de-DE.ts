@@ -26,7 +26,7 @@ export default {
   "proxies.deleteConfirm": "Diesen Proxy löschen?",
   "proxies.deleteHelp": "Verwendete Proxys vor dem Löschen in Abonnement- und Relay-Einstellungen ersetzen.",
   "proxies.sourceLabel": "Proxy",
-  "proxies.sourceHelp": "Systemmodus oder Proxy zum Abrufen dieser Quelle auswählen.",
+  "proxies.sourceHelp": "Direktzugriff oder Proxy zum Abrufen dieser Quelle auswählen. Direktzugriff ignoriert Umgebungsproxys.",
   "proxies.unavailable": "Proxy nicht verfügbar",
   "proxies.refresh": "Aktualisieren",
   "proxies.import": "Link / Konfiguration importieren",
