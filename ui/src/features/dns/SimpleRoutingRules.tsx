@@ -27,7 +27,7 @@ export function SimpleRoutingRules({ builtin, settings, proxyGroups, saving, pen
   const zh = locale === 'zh-CN'
   const rows = useMemo(() => flattenRules(settings, proxyGroups), [settings, proxyGroups])
   const [editing, setEditing] = useState<SimpleRoutingRow | null>(null)
-  const options = useMemo(() => targetOptions(settings, proxyGroups, editing ? [...rows, editing] : rows), [settings, proxyGroups, rows, editing])
+  const options = useMemo(() => targetOptions(settings, proxyGroups, editing ? [...rows, editing] : rows, zh), [settings, proxyGroups, rows, editing, zh])
 
   const saveRows = (update: (current: SimpleRoutingRow[]) => SimpleRoutingRow[]) => {
     const { selections } = composeSimpleRouting(settings, update(rows), proxyGroups)
@@ -53,7 +53,7 @@ export function SimpleRoutingRules({ builtin, settings, proxyGroups, saving, pen
       <div className="space-y-3">
         {rows.map((row, index) => <div key={row.id} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,18rem)_5rem]">
           <span className="self-center truncate text-sm">{row.domain}</span>
-          <Select aria-label={`${zh ? '分流节点' : 'Routing node'} ${index + 1}`} disabled={saving} className="w-full" popupMatchSelectWidth value={row.target} options={options} onChange={(target) => void saveRows((current) => current.map((item) => item.id === row.id ? { ...item, target: String(target) } : item)).catch(() => undefined)} />
+          <Select aria-label={`${zh ? '分流节点' : 'Routing node'} ${index + 1}`} disabled={saving} className="w-full" popupMatchSelectWidth showSearch value={row.target} options={options} onChange={(target) => void saveRows((current) => current.map((item) => item.id === row.id ? { ...item, target: String(target) } : item)).catch(() => undefined)} />
           <div className="flex gap-1"><Button size="small" variant="text" disabled={saving} aria-label={zh ? '编辑域名' : 'Edit domain'} icon={<Pencil size={16} />} onClick={() => setEditing({ ...row })} /><Button size="small" variant="text" disabled={saving} aria-label={zh ? '删除域名' : 'Delete domain'} icon={<Trash2 size={16} />} onClick={() => void saveRows((current) => current.filter((item) => item.id !== row.id)).catch(() => undefined)} /></div>
         </div>)}
         {!rows.length ? <p className="py-6 text-center text-sm text-[var(--muted)]">{zh ? '还没有分流域名。' : 'No routed domains yet.'}</p> : null}
@@ -63,7 +63,7 @@ export function SimpleRoutingRules({ builtin, settings, proxyGroups, saving, pen
     <Modal open={Boolean(editing)} title={zh ? '域名分流' : 'Domain routing'} okText={zh ? '保存' : 'Save'} cancelText={zh ? '取消' : 'Cancel'} confirmLoading={saving} okButtonProps={{ disabled: !normalizeDomain(editing?.domain ?? '') }} onOk={() => submit().catch(() => undefined)} onCancel={() => { if (!saving) setEditing(null) }} destroyOnClose>
       {editing ? <div className="grid gap-4">
         <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '域名' : 'Domain'}</span><Input autoFocus value={editing.domain} placeholder="example.com" onChange={(event) => setEditing({ ...editing, domain: event.target.value })} /></label>
-        <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '分流节点' : 'Routing node'}</span><Select className="w-full" value={editing.target} options={options} onChange={(target) => setEditing({ ...editing, target: String(target) })} /></label>
+        <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '分流节点' : 'Routing node'}</span><Select className="w-full" showSearch value={editing.target} options={options} onChange={(target) => setEditing({ ...editing, target: String(target) })} /></label>
       </div> : null}
     </Modal>
   </div>
@@ -125,14 +125,31 @@ function currentTarget(ruleSet: DnsRoutingRuleSet, proxyGroups: ProxyNode[]) {
   return current ? `${NODE_PREFIX}${current}` : `${GROUP_PREFIX}${ruleSet.id}`
 }
 
-function targetOptions(settings: DnsSettings, proxyGroups: ProxyNode[], rows: SimpleRoutingRow[]) {
-  const nodes = [...new Set(proxyGroups.flatMap((group) => group.all ?? []).filter((name) => !isBuiltinDirect(name) && name !== 'REJECT'))].sort((left, right) => left.localeCompare(right))
+function targetOptions(settings: DnsSettings, proxyGroups: ProxyNode[], rows: SimpleRoutingRow[], zh: boolean) {
+  const ownedGroups = new Set(settings.rule_sets.map((ruleSet) => `DNS · ${ruleSet.name}`))
+  const selector = proxyGroups.find((group) => ownedGroups.has(group.name) && group.all?.length)
+    ?? proxyGroups.find((group) => group.name.startsWith('DNS · ') && group.all?.length)
+  const fallback = fallbackTargets(proxyGroups)
+  const nodes = [...new Set(selector?.all ?? fallback)].sort((left, right) => left.localeCompare(right))
   const unresolved = [...new Set(rows.map((row) => row.target).filter((target) => target.startsWith(GROUP_PREFIX)))]
   return [
-    { value: DIRECT, label: directLabel(DIRECT) },
-    ...nodes.map((node) => ({ value: `${NODE_PREFIX}${node}`, label: directLabel(node) })),
+    { value: DIRECT, label: zh ? '前置直连（RealIP）' : 'Frontend direct (RealIP)' },
+    ...nodes.map((node) => ({ value: `${NODE_PREFIX}${node}`, label: isBuiltinDirect(node) ? directLabel(node) : node === '中国地址' ? (zh ? '中国地址（跟随）' : 'China addresses (follow)') : directLabel(node) })),
     ...unresolved.map((target) => ({ value: target, label: settings.rule_sets.find((item) => item.id === target.slice(GROUP_PREFIX.length))?.name ?? '原有代理规则' })),
   ]
+}
+
+function fallbackTargets(proxyGroups: ProxyNode[]) {
+  const byName = new Map(proxyGroups.map((group) => [group.name, group]))
+  const allowed = (name: string, ancestors: Set<string>): boolean => {
+    const group = byName.get(name)
+    if (!group || name === 'GLOBAL' || name.startsWith('DNS · ') || ancestors.has(name)) return false
+    if (['reject', 'block', 'dns'].includes(group.type.toLowerCase()) || ['reject', 'block', 'dns'].includes(name.toLowerCase())) return false
+    if (!group.all) return true
+    const path = new Set([...ancestors, name])
+    return group.all.length > 0 && group.all.every((member) => allowed(member, path))
+  }
+  return proxyGroups.filter((group) => allowed(group.name, new Set())).map((group) => group.name)
 }
 
 function pickRuleSet(target: string, rows: SimpleRoutingRow[], ruleSets: DnsRoutingRuleSet[], proxyGroups: ProxyNode[], used: Set<string>) {

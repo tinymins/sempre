@@ -40,6 +40,7 @@ impl DnsSettings {
         let rule_sets = self.routing_rule_sets()?;
         for rule_set in rule_sets
             .iter()
+            .filter(|rule_set| !(self.enabled && rule_set.mode == "direct"))
             .filter(|rule_set| preserve_empty || !rule_set.domains.is_empty())
         {
             let provider_tag = format!("sempre-dns-rule-set:{}", rule_set.id);
@@ -105,7 +106,10 @@ impl DnsSettings {
         content: &str,
     ) -> Result<String, ManagerError> {
         let rule_sets = self.routing_rule_sets()?;
-        let active = rule_sets.iter().collect::<Vec<_>>();
+        let active = rule_sets
+            .iter()
+            .filter(|rule_set| !(self.enabled && rule_set.mode == "direct"))
+            .collect::<Vec<_>>();
         if active.is_empty() {
             return Ok(content.into());
         }
@@ -134,10 +138,9 @@ impl DnsSettings {
                     .clone()
             } else {
                 if proxy_names.is_empty() {
-                    return Err(ManagerError::InvalidOperation(format!(
-                        "DNS routing rule set {:?} has no proxy nodes to select",
-                        rule_set.name
-                    )));
+                    return Err(ManagerError::InvalidOperation(
+                        "DNS routing has no selectable destinations".into(),
+                    ));
                 }
                 let group_name = proxy_group_name(rule_set);
                 outbounds.push(json!({
@@ -194,6 +197,7 @@ impl DnsSettings {
             .max()
             .unwrap_or(0);
         rules.splice(insert_at..insert_at, route_rules);
+        sempre_converter::populate_dns_selectors(&mut document);
         let mut content = serde_json::to_string_pretty(&document).map_err(|error| {
             ManagerError::InvalidOperation(format!(
                 "encode remote sing-box configuration with DNS routing rules: {error}"

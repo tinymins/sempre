@@ -4,7 +4,7 @@ use sempre_converter::{
 use serde_json::{Value, json};
 
 #[test]
-fn cn_routes_compile_real_ip_dns_and_disable_native_auto_routes_on_all_platforms() {
+fn cn_routes_preserve_fakeip_and_disable_native_auto_routes_on_all_platforms() {
     for (platform, mode) in ["macos", "windows", "linux"]
         .into_iter()
         .flat_map(|platform| {
@@ -29,7 +29,7 @@ fn cn_routes_compile_real_ip_dns_and_disable_native_auto_routes_on_all_platforms
         profile.transparent_proxy.mode = "tun-router".into();
         let profile = apply_dns_frontend_settings(&profile, &target, true).expect("policy");
         assert!(
-            !dns_frontend_policy(&profile, &target)
+            dns_frontend_policy(&profile, &target)
                 .expect("DNS")
                 .fakeip_enabled
         );
@@ -54,7 +54,15 @@ fn cn_routes_compile_real_ip_dns_and_disable_native_auto_routes_on_all_platforms
                 .find(|item| item["tag"] == sempre_converter::CN_PROXY_GROUP)
                 .expect("CN group");
             assert_eq!(group["default"], "test-node");
-            assert_eq!(group["outbounds"], json!(["test-node"]));
+            assert!(
+                group["outbounds"]
+                    .as_array()
+                    .expect("members")
+                    .contains(&json!("test-node"))
+            );
+            let members = group["outbounds"].as_array().expect("members");
+            assert!(members.contains(&json!(sempre_converter::DIRECT_OUTBOUND_NAME)));
+            assert!(members.contains(&json!("中国地址")));
             let rules = config["route"]["rules"].as_array().expect("routes");
             let cn = rules
                 .iter()
@@ -65,6 +73,11 @@ fn cn_routes_compile_real_ip_dns_and_disable_native_auto_routes_on_all_platforms
                 .position(|item| item["domain"] == "example.cn")
                 .expect("domain rule");
             assert!(cn < domain);
+            assert_eq!(rules[cn]["rules"][0]["inbound"], json!(["tun-in"]));
+            assert_eq!(
+                rules[cn]["rules"][1]["rules"],
+                json!([{"ip_version": 4}, {"ip_version": 6}])
+            );
         }
         let tun = config["inbounds"]
             .as_array()
@@ -79,7 +92,7 @@ fn cn_routes_compile_real_ip_dns_and_disable_native_auto_routes_on_all_platforms
                 .as_array()
                 .expect("DNS servers")
                 .iter()
-                .all(|s| s["type"] != "fakeip")
+                .any(|s| s["type"] == "fakeip")
         );
         assert!(
             config["route"]["rule_set"]

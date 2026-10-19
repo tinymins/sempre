@@ -9,15 +9,8 @@ pub(super) fn compiled_proxy_names(document: &Value) -> Result<Vec<String>, Mana
         .ok_or_else(|| {
             ManagerError::InvalidOperation("remote sing-box configuration has no outbounds".into())
         })?;
-    Ok(outbounds
-        .iter()
-        .filter_map(|outbound| {
-            let kind = outbound.get("type")?.as_str()?;
-            let tag = outbound.get("tag")?.as_str()?;
-            (!matches!(kind, "direct" | "block" | "dns" | "selector" | "urltest"))
-                .then(|| tag.to_owned())
-        })
-        .collect())
+    let _ = outbounds;
+    Ok(sempre_converter::dns_outbound_members(document))
 }
 
 pub(super) fn compiled_direct_outbound(document: &Value) -> Result<String, ManagerError> {

@@ -96,12 +96,13 @@ pub(super) fn render(
         "route": route,
         "experimental": config::experimental(profile, target, store_fakeip)
     });
-    if crate::cn_pre_routing(profile) && !crate::cn_direct_routes(profile) {
-        crate::apply_cn_proxy(&mut output)?;
-    }
     if !private.endpoints.is_empty() {
         output["endpoints"] = json!(private.endpoints);
     }
+    if crate::cn_pre_routing(profile) && !crate::cn_direct_routes(profile) {
+        crate::apply_cn_proxy(&mut output)?;
+    }
+    crate::populate_dns_selectors(&mut output);
     super::super::dns::apply_sing_box_platform_policy(profile, target, &mut output, &mut warnings);
     config::normalize_for_version(&mut output, target);
     super::direct_outbound::restore_direct_name(&mut output);

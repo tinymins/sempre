@@ -32,12 +32,13 @@ export function RoutingRules() {
   const { mode: uiMode } = useUIMode()
   const queryClient = useQueryClient()
   const zh = locale === 'zh-CN'
-  const [selectedId, setSelectedId] = useState(BUILTIN_ID)
+  const [selectedId, setSelectedId] = useState(CN_ID)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [ruleSetInput, setRuleSetInput] = useState({ name: '', mode: 'direct' as DnsRoutingRuleSet['mode'] })
   const [domainDialog, setDomainDialog] = useState<DomainDialogState | null>(null)
   const [pendingSelections, setPendingSelections] = useState<Record<string, string>>({})
   const selectingPending = useRef(new Set<string>())
+  const failedSelections = useRef(new Map<string, string>())
 
   const { settings, save } = useDnsSettings()
   const proxies = useQuery({
@@ -49,13 +50,17 @@ export function RoutingRules() {
   })
   const network = useQuery({ queryKey: ['network', 'settings'], queryFn: () => api<NetworkSettingsResponse>(session!, '/network/settings'), enabled: Boolean(session) })
   const selectProxy = useMutation({
-    mutationFn: ({ group, proxy }: { group: string; proxy: string }) => api(session!, '/runtime/proxies/select', { method: 'POST', body: JSON.stringify({ group, proxy }) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runtime', 'proxies'] }),
+    mutationFn: async ({ group, proxy }: { group: string; proxy: string }) => {
+      await api(session!, '/runtime/proxies/select', { method: 'POST', body: JSON.stringify({ group, proxy }) })
+      const latest = await api<ProxyNode[]>(session!, '/runtime/proxies')
+      queryClient.setQueryData(['runtime', 'proxies'], latest)
+      if (latest.find((item) => item.name === group)?.now !== proxy) throw new Error(zh ? '核心未确认所选节点，请重试。' : 'The core did not confirm the selected node. Please retry.')
+    },
   })
 
   useEffect(() => {
     Object.entries(pendingSelections).forEach(([group, proxy]) => {
-      if (!proxies.data?.some((item) => item.name === group) || selectingPending.current.has(group)) return
+      if (!proxies.data?.some((item) => item.name === group) || selectingPending.current.has(group) || failedSelections.current.get(group) === proxy) return
       selectingPending.current.add(group)
       void selectProxy.mutateAsync({ group, proxy }).then(() => {
         setPendingSelections((current) => {
@@ -64,9 +69,9 @@ export function RoutingRules() {
           delete next[group]
           return next
         })
-      }).catch(() => undefined).finally(() => selectingPending.current.delete(group))
+      }).catch((error: Error) => { failedSelections.current.set(group, proxy); message.error(error.message) }).finally(() => selectingPending.current.delete(group))
     })
-  }, [pendingSelections, proxies.data, selectProxy])
+  }, [pendingSelections, proxies.data, selectProxy, message])
 
   const current = settings.data?.settings
   const active = current?.rule_sets.find((item) => item.id === selectedId)
@@ -131,6 +136,7 @@ export function RoutingRules() {
       if (proxies.data?.some((item) => item.name === group)) await selectProxy.mutateAsync({ group, proxy }).catch((error: Error) => { message.error(error.message); throw error })
       else remaining[group] = proxy
     }
+    failedSelections.current.clear()
     setPendingSelections(remaining)
   }
 
@@ -148,8 +154,8 @@ export function RoutingRules() {
       <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
         <div className="border-b border-[var(--border)] px-4 py-3 text-sm font-medium">{zh ? '规则集' : 'Rule sets'}</div>
         <div className="space-y-1 p-2">
+          <RuleSetButton selected={selectedId === CN_ID} name={zh ? 'CN 路由分流' : 'CN routing'} directRouteLabel={zh ? '直连路由' : 'Direct system route'} mode={network.data?.settings.cn_direct_routes ? (network.data.settings.cn_routing_mode ?? 'direct-route') : 'disabled'} builtin onClick={() => setSelectedId(CN_ID)} />
           <RuleSetButton selected={selectedId === BUILTIN_ID} name={zh ? '中国大陆域名' : 'Mainland China domains'} mode={current.domestic_domains.enabled ? current.domestic_domains.mode : 'disabled'} count={builtinCount} builtin onClick={() => setSelectedId(BUILTIN_ID)} />
-          <RuleSetButton selected={selectedId === CN_ID} name={zh ? 'CN 前置分流' : 'CN pre-routing'} directRouteLabel={zh ? '直连路由' : 'Direct system route'} mode={network.data?.settings.cn_direct_routes ? (network.data.settings.cn_routing_mode ?? 'direct-route') : 'disabled'} builtin onClick={() => setSelectedId(CN_ID)} />
           {current.rule_sets.map((ruleSet) => <RuleSetButton key={ruleSet.id} selected={selectedId === ruleSet.id} name={ruleSet.name} mode={ruleSet.mode} count={ruleSet.domains.length} onClick={() => setSelectedId(ruleSet.id)} saving={save.isPending} onDelete={() => void deleteSet(ruleSet.id).catch(() => undefined)} />)}
         </div>
       </Card>

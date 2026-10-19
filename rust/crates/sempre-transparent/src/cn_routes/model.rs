@@ -132,9 +132,12 @@ pub(crate) fn plan(
         {
             return Err(invalid("a TUN capture prefix overlaps CN direct routes"));
         }
-        if uplinks
+        // FakeIP capture also works without a physical uplink of that family.
+        if intent
+            .tun_addresses
             .iter()
-            .any(|u| u.gateway.contains(':') == prefix.contains(':'))
+            .filter_map(|s| s.parse::<IpNet>().ok())
+            .any(|address| address.addr().is_ipv6() == capture.addr().is_ipv6())
         {
             routes.push(Route {
                 prefix: capture.trunc().to_string(),

@@ -211,19 +211,7 @@ pub(crate) async fn configure(
         &fs::read(runtime).map_err(|e| ManagerError::io("read CN runtime", e))?,
     )
     .map_err(|error| invalid(error.to_string()))?;
-    if document
-        .pointer("/dns/fakeip/enabled")
-        .and_then(Value::as_bool)
-        == Some(true)
-        || document
-            .pointer("/dns/servers")
-            .and_then(Value::as_array)
-            .is_some_and(|s| s.iter().any(|s| s["type"] == "fakeip"))
-    {
-        return Err(invalid(
-            "CN pre-routing requires a compiled real-IP DNS configuration",
-        ));
-    }
+    let fakeip_prefixes = fakeip_capture_prefixes(&document);
     let tun = document["inbounds"]
         .as_array_mut()
         .and_then(|a| {
@@ -232,14 +220,19 @@ pub(crate) async fn configure(
         })
         .and_then(Value::as_object_mut)
         .ok_or_else(|| invalid("CN pre-routing requires the managed sing-box TUN"))?;
-    let capture_prefixes = tun
+    let mut capture_prefixes = tun
         .get("route_address")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
         .map(str::to_owned)
-        .collect();
+        .collect::<Vec<_>>();
+    for prefix in fakeip_prefixes {
+        if !capture_prefixes.contains(&prefix) {
+            capture_prefixes.push(prefix);
+        }
+    }
     tun.insert("auto_route".into(), json!(false));
     tun.insert("auto_redirect".into(), json!(false));
     tun.insert("strict_route".into(), json!(false));
@@ -281,7 +274,6 @@ pub(crate) async fn configure(
             .as_ref()
             .ok_or_else(|| invalid("CN routing requires an IPv4 uplink"))?
     );
-    document["experimental"]["cache_file"]["store_fakeip"] = json!(false);
     sempre_state::write_atomic(
         runtime,
         &serde_json::to_vec(&document).map_err(|error| invalid(error.to_string()))?,
@@ -296,6 +288,34 @@ pub(crate) async fn configure(
         outbound_interfaces,
     });
     Ok(())
+}
+
+fn fakeip_capture_prefixes(document: &Value) -> Vec<String> {
+    let servers = document["dns"]["servers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|server| server["type"] == "fakeip");
+    let legacy = document
+        .pointer("/dns/fakeip")
+        .filter(|config| config["enabled"] == true);
+    let mut prefixes = Vec::new();
+    for config in servers.chain(legacy) {
+        for field in ["inet4_range", "inet6_range"] {
+            let Some(prefix) = config[field]
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                continue;
+            };
+            let prefix = prefix.to_owned();
+            if !prefixes.contains(&prefix) {
+                prefixes.push(prefix);
+            }
+        }
+    }
+    prefixes
 }
 
 pub(crate) async fn read_prefixes(

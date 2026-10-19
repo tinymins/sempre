@@ -9,7 +9,7 @@ impl DnsConfig {
         listen_port: u16,
         local_upstreams: Vec<String>,
         remote_upstream: String,
-        mut rule_sets: Vec<DnsRuleSet>,
+        rule_sets: Vec<DnsRuleSet>,
         domestic_domains: &DomesticDomainPolicy,
     ) -> Result<Self, DnsError> {
         if local_upstreams.is_empty() {
@@ -17,17 +17,7 @@ impl DnsConfig {
                 "managed DNS frontend requires at least one direct DNS upstream",
             ));
         }
-        if domestic_domains.enabled {
-            push_inline_rules(
-                &mut rule_sets,
-                "domestic-domains",
-                bundled_domestic_domains()?,
-                match domestic_domains.mode {
-                    DomesticDomainMode::Direct => "local",
-                    DomesticDomainMode::Proxy => "remote",
-                },
-            );
-        }
+        let rule_sets = Self::managed_rule_sets(rule_sets, domestic_domains)?;
         let config = Self {
             enabled: true,
             listen_hosts: vec!["127.0.0.1".into()],
@@ -49,6 +39,24 @@ impl DnsConfig {
         } else {
             Err(DnsError::invalid(errors.join("; ")))
         }
+    }
+
+    pub fn managed_rule_sets(
+        mut rule_sets: Vec<DnsRuleSet>,
+        domestic_domains: &DomesticDomainPolicy,
+    ) -> Result<Vec<DnsRuleSet>, DnsError> {
+        if domestic_domains.enabled {
+            push_inline_rules(
+                &mut rule_sets,
+                "domestic-domains",
+                bundled_domestic_domains()?,
+                match domestic_domains.mode {
+                    DomesticDomainMode::Direct => "local",
+                    DomesticDomainMode::Proxy => "remote",
+                },
+            );
+        }
+        Ok(rule_sets)
     }
 }
 

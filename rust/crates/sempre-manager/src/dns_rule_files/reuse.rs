@@ -64,10 +64,11 @@ fn reuse_runtime_domains(
     {
         return Ok(None);
     }
+    let mut empty_definitions = Vec::new();
     let definitions = candidate["route"]["rule_set"]
         .as_array_mut()
-        .expect("validated managed rule definitions");
-    for rule_set in &metadata.settings.rule_sets {
+        .unwrap_or(&mut empty_definitions);
+    for rule_set in projection::core_rule_sets(&metadata.settings) {
         let definition = definitions
             .iter_mut()
             .find(|value| value["tag"] == projection::tag(rule_set))

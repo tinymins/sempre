@@ -83,13 +83,11 @@ pub(crate) fn prepare(
     } else {
         snapshot.settings
     };
-    if settings.rule_sets.is_empty() {
-        return Ok(None);
-    }
+    let mut empty_definitions = Vec::new();
     let definitions = document["route"]["rule_set"]
         .as_array_mut()
-        .expect("validated definitions");
-    for rule_set in &settings.rule_sets {
+        .unwrap_or(&mut empty_definitions);
+    for rule_set in projection::core_rule_sets(&settings) {
         let path = projection::file_path(config, rule_set);
         write(&path, &projection::source(rule_set)?)?;
         let definition = definitions
@@ -177,15 +175,20 @@ pub(crate) fn prepare_update(
         return Ok(None);
     }
     let mut validation: Value = decode(&data)?;
-    let Some(definitions) = validation["route"]["rule_set"].as_array_mut() else {
-        return Ok(None);
+    let mut empty_definitions = Vec::new();
+    let definitions = match validation["route"]["rule_set"].as_array_mut() {
+        Some(definitions) => definitions,
+        None if projection::core_rule_sets(candidate).next().is_none() => &mut empty_definitions,
+        None => return Ok(None),
     };
     let directory = tempfile::Builder::new()
         .prefix("dns-rule-update-")
         .tempdir_in(&layout.runtime)
         .map_err(|error| ManagerError::io("create DNS rule validation directory", error))?;
     let mut files = Vec::new();
-    for (rule_set, applied) in candidate.rule_sets.iter().zip(&snapshot.settings.rule_sets) {
+    for (rule_set, applied) in
+        projection::core_rule_sets(candidate).zip(projection::core_rule_sets(&snapshot.settings))
+    {
         let path = projection::file_path(config, rule_set);
         let matching = definitions
             .iter()

@@ -15,6 +15,13 @@ pub(super) fn same_structure(left: &DnsSettings, right: &DnsSettings) -> bool {
             .all(|(a, b)| a.id == b.id && a.name == b.name && a.mode == b.mode)
 }
 
+pub(super) fn core_rule_sets(settings: &DnsSettings) -> impl Iterator<Item = &DnsRoutingRuleSet> {
+    settings
+        .rule_sets
+        .iter()
+        .filter(|rules| !settings.enabled || rules.mode == "proxy")
+}
+
 pub(super) fn tag(rule_set: &DnsRoutingRuleSet) -> String {
     format!("sempre-dns-rule-set:{}", rule_set.id)
 }
@@ -41,14 +48,31 @@ pub(super) fn local(rule_set: &DnsRoutingRuleSet, path: &Path) -> Value {
 }
 
 pub(super) fn matches_inline(document: &Value, settings: &DnsSettings) -> bool {
+    if settings.enabled
+        && settings
+            .rule_sets
+            .iter()
+            .filter(|rules| rules.mode == "direct")
+            .any(|rules| {
+                let tag = tag(rules);
+                document["route"]["rule_set"]
+                    .as_array()
+                    .is_some_and(|values| values.iter().any(|value| value["tag"] == tag))
+                    || document["route"]["rules"]
+                        .as_array()
+                        .is_some_and(|values| values.iter().any(|value| references(value, &tag)))
+            })
+    {
+        return false;
+    }
     let Some(definitions) = document["route"]["rule_set"].as_array() else {
-        return settings.rule_sets.is_empty();
+        return core_rule_sets(settings).next().is_none();
     };
     let Some(routes) = document["route"]["rules"].as_array() else {
         return false;
     };
     let mut last_index = None;
-    for rule_set in &settings.rule_sets {
+    for rule_set in core_rule_sets(settings) {
         let tag = tag(rule_set);
         let matching = definitions
             .iter()

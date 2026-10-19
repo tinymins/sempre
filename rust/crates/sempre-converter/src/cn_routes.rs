@@ -26,19 +26,10 @@ pub const CN_PROXY_GROUP: &str = "DNS · CN pre-routing";
 pub fn apply_cn_proxy(document: &mut serde_json::Value) -> Result<(), crate::CompileError> {
     use serde_json::json;
     let invalid = |message: &str| crate::CompileError::Render(message.into());
+    let names = crate::dns_outbound_members(document);
     let outbounds = document["outbounds"]
         .as_array_mut()
         .ok_or_else(|| invalid("CN proxy routing requires outbounds"))?;
-    let names = outbounds
-        .iter()
-        .filter(|item| {
-            !matches!(
-                item["type"].as_str(),
-                Some("direct" | "block" | "dns" | "selector" | "urltest")
-            )
-        })
-        .filter_map(|item| item["tag"].as_str().map(str::to_owned))
-        .collect::<Vec<_>>();
     if names.is_empty() {
         return Err(invalid("CN proxy routing has no proxy nodes to select"));
     }
@@ -63,10 +54,16 @@ pub fn apply_cn_proxy(document: &mut serde_json::Value) -> Result<(), crate::Com
     let rules = document["route"]["rules"]
         .as_array_mut()
         .ok_or_else(|| invalid("CN proxy routing requires route rules"))?;
-    if !rules
+    let existing = rules
         .iter()
-        .any(|rule| rule["rule_set"] == json!(["geoip-cn"]) && rule["outbound"] == CN_PROXY_GROUP)
-    {
+        .filter(|rule| rule["outbound"] == CN_PROXY_GROUP)
+        .collect::<Vec<_>>();
+    if !existing.is_empty() && (existing.len() != 1 || *existing[0] != proxy_rule()) {
+        return Err(invalid(
+            "CN routing proxy rule is reserved for original TUN IP traffic",
+        ));
+    }
+    if existing.is_empty() {
         let at = rules
             .iter()
             .position(|rule| {
@@ -75,10 +72,22 @@ pub fn apply_cn_proxy(document: &mut serde_json::Value) -> Result<(), crate::Com
                     && rule["ip_is_private"] != true
             })
             .unwrap_or(rules.len());
-        rules.insert(
-            at,
-            json!({"rule_set": ["geoip-cn"], "outbound": CN_PROXY_GROUP}),
-        );
+        rules.insert(at, proxy_rule());
     }
+    crate::populate_dns_selectors(document);
     Ok(())
+}
+
+/// `FakeIP` restoration clears the destination IP before sing-box sets `IPVersion`.
+/// Resolved addresses must never turn a restored domain into CN packet traffic.
+pub(crate) fn proxy_rule() -> serde_json::Value {
+    serde_json::json!({
+        "type": "logical", "mode": "and",
+        "rules": [
+            {"inbound": ["tun-in"]},
+            {"type": "logical", "mode": "or", "rules": [{"ip_version": 4}, {"ip_version": 6}]},
+            {"rule_set": ["geoip-cn"]}
+        ],
+        "outbound": CN_PROXY_GROUP
+    })
 }

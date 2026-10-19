@@ -36,7 +36,6 @@ pub fn apply_dns_frontend_settings(
     }
     let shared = shared_mut(&mut profile.dns);
     if cn_routes {
-        shared.insert("fakeipEnabled".into(), Value::Bool(false));
         shared.insert("cnIpRuleSetEnabled".into(), Value::Bool(true));
     }
     shared.insert("systemDnsTakeoverEnabled".into(), Value::Bool(enabled));

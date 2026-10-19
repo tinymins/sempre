@@ -21,7 +21,7 @@ pub(super) fn sing_box_inbounds(
         }
         if target.platform == "macos" && matches!(target.version.as_str(), "11" | "12") {
             inbound["sniff"] = json!(true);
-            inbound["sniff_override_destination"] = json!(true);
+            inbound["sniff_override_destination"] = json!(!crate::cn_pre_routing(profile));
         }
         if crate::cn_pre_routing(profile) {
             inbound["auto_route"] = json!(false);

@@ -21,7 +21,7 @@ export function BuiltinRuleSet({ policy, count, saving, proxyGroups, selecting, 
   const proxyGroup = proxyGroups.find((item) => item.name === `DNS · ${BUILTIN_NAME}` && item.all?.length)
   return <div className="space-y-4">
     <div className="flex items-start justify-between gap-3">
-      <div><h2 className="font-semibold">{title}</h2><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '内置 domains-min，随 Sempre 版本更新。' : 'Built-in domains-min, updated with Sempre.'}</p></div>
+      <div><h2 className="font-semibold">{title}</h2><p className="mt-1 text-sm text-[var(--muted)]">{zh ? '内置 domains-min，随 Sempre 版本更新；前置直连返回 RealIP，代理模式返回 FakeIP。' : 'Built-in domains-min, updated with Sempre. Frontend direct returns real IPs; proxy mode returns FakeIPs.'}</p></div>
       <Switch aria-label={zh ? '启用中国大陆域名' : 'Enable Mainland China domains'} checked={policy.enabled} disabled={saving} onChange={(enabled) => onChange({ enabled })} />
     </div>
     <label className="flex flex-wrap items-center justify-between gap-3 text-sm">

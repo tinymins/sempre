@@ -54,7 +54,7 @@ pub(super) fn route(
     }
     rules.extend(private.route_rules.iter().cloned());
     if crate::cn_pre_routing(profile) && !crate::cn_direct_routes(profile) {
-        rules.push(json!({ "rule_set": ["geoip-cn"], "outbound": crate::CN_PROXY_GROUP }));
+        rules.push(crate::cn_routes::proxy_rule());
     }
     let direct_modes = if profile
         .network_policy

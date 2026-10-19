@@ -1,5 +1,7 @@
 mod cn_routes;
 pub use cn_routes::{CN_PROXY_GROUP, apply_cn_proxy, cn_direct_routes, cn_pre_routing};
+mod outbound_members;
+pub use outbound_members::{dns_outbound_members, populate_dns_selectors};
 mod defaults;
 mod domain_policy;
 mod editor;
