@@ -39,10 +39,10 @@ pub(super) async fn uplinks(
         let output = runner
             .run("/sbin/route", &["-n", "get", family, "default"], None)
             .await?;
+        if family == "-inet6" && output.stderr.contains("not in table") {
+            continue;
+        }
         if !output.success {
-            if family == "-inet6" && output.stderr.contains("not in table") {
-                continue;
-            }
             command::require_success("route", output)?;
             continue;
         }
