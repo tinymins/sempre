@@ -57,7 +57,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         startup_grace: Duration,
     ) -> Result<(), ManagerError> {
         recovery::recover_stale_process(self).await?;
-        self.transparent.recover_stale_system_dns().await?;
+        if let Err(error) = self.transparent.recover_stale_system_dns().await {
+            self.log_supervisor(&format!("system DNS recovery failed: {error}"));
+        }
         loop {
             let document = self.store.read()?;
             if *shutdown.borrow() {
@@ -69,25 +71,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 state::mark_intentional_exit(self, true)?;
                 return Ok(());
             }
-            if document.desired_state == DesiredState::Stopped {
+            let service_stopped = document.desired_state == DesiredState::Stopped;
+            if service_stopped || document.active.is_none() {
                 self.dns_frontend.stop().await;
                 self.stop_gateway().await;
                 if transparent_cleanup_required(&document) {
                     self.transparent.cleanup().await?;
                 }
-                state::mark_inactive(self, true)?;
-                if wait_inactive(self, &mut shutdown).await {
-                    return Ok(());
-                }
-                continue;
-            }
-            if document.active.is_none() {
-                self.dns_frontend.stop().await;
-                self.stop_gateway().await;
-                if transparent_cleanup_required(&document) {
-                    self.transparent.cleanup().await?;
-                }
-                state::mark_inactive(self, false)?;
+                state::mark_inactive(self, service_stopped)?;
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
                 }
@@ -199,7 +190,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
 
         match wait_startup(self, shutdown, &mut process, plan, startup_grace).await {
-            ProcessEvent::Healthy(Ok(())) => {
+            ProcessEvent::Healthy => {
                 process.synchronize_output().await;
                 if let Err(error) = self.mark_runtime_healthy(plan) {
                     let _ = process.terminate(STOP_GRACE).await;
@@ -211,11 +202,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     self.remove_control();
                     return Err(error);
                 }
-            }
-            ProcessEvent::Healthy(Err(error)) => {
-                return self
-                    .fail_transparent_startup(plan, &mut process, &error)
-                    .await;
             }
             ProcessEvent::Reload => {
                 self.startup_tasks.interrupt_cycle();
@@ -258,7 +244,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 self.handle_process_failure(plan, "core exited", &error)?;
                 Ok(CycleResult::Failed)
             }
-            ProcessEvent::Healthy(_) => unreachable!("running process has no startup timer"),
+            ProcessEvent::Healthy => unreachable!("running process has no startup timer"),
         }
     }
 
@@ -312,27 +298,16 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         );
         state::mark_started(self, plan, pid)
             .and_then(|()| self.write_control(plan.control.as_ref()))?;
-        if let Some(prepared) = &plan.dns_rule_files {
-            crate::dns_rule_files::record_started(prepared, &self.store.read()?)?;
+        if let Some(prepared) = &plan.dns_rule_files
+            && let Err(error) = crate::dns_rule_files::record_started(prepared, &self.store.read()?)
+        {
+            self.log_supervisor(&format!("DNS rule runtime snapshot failed: {error}"));
         }
         self.log_supervisor(&format!(
             "started {} with PID {pid}",
             deployment_label(&plan.deployment)
         ));
         Ok(())
-    }
-
-    async fn fail_transparent_startup(
-        &self,
-        plan: &RuntimePlan,
-        process: &mut ManagedProcess,
-        error: &sempre_transparent::TransparentError,
-    ) -> Result<CycleResult, ManagerError> {
-        let _ = process.terminate(STOP_GRACE).await;
-        let error = with_cleanup_failure(error, self.cleanup_after_core_failure().await);
-        self.remove_control();
-        self.handle_process_failure(plan, "transparent proxy startup failed", &error)?;
-        Ok(CycleResult::Failed)
     }
 
     fn handle_process_failure(

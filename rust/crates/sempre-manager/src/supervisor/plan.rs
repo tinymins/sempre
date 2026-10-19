@@ -20,18 +20,19 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 "managed core is stopped".into(),
             ));
         }
-        self.validate_cn_core(&deployment.core)?;
         let reference = CoreRef {
             core: deployment.core.clone(),
             repository: deployment.repository.clone(),
             reference: deployment.reference.clone(),
         };
         self.startup_tasks.runtime_log("network", "");
-        self.ensure_local_proxy_ports_available(&document, &deployment)?;
         let dns_frontend = self
             .prepare_dns_frontend_plan(&document, &deployment, &reference)
             .await?;
-        self.dns_frontend.prepare(dns_frontend.as_ref()).await?;
+        if let Err(error) = self.dns_frontend.prepare(dns_frontend.as_ref()).await {
+            self.dns_frontend.record_failure(&error);
+            self.log_supervisor(&format!("DNS frontend startup failed: {error}"));
+        }
         let adapter = self.registry.get(&deployment.core)?;
         let binary = self.store.layout().core_binary(
             &deployment.core,
@@ -77,23 +78,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             &mut transparent,
         )
         .await?;
-        self.startup_tasks.runtime_log("validating", "");
-        self.validate_config_path(&reference, &deployment.version, &runtime.config)
-            .await?;
         self.startup_tasks
             .capture_config(&deployment.config_hash, &config);
         let runtime_data = fs::read(&runtime.config)
             .map_err(|error| ManagerError::io("read runtime configuration", error))?;
         let runtime_config_hash = format!("{:x}", Sha256::digest(runtime_data));
-        let managed_system_dns = transparent
-            .system_dns
-            .as_ref()
-            .is_some_and(|system_dns| system_dns.managed_frontend);
-        if managed_system_dns != dns_frontend.is_some() {
-            return Err(ManagerError::InvalidOperation(
-                "runtime and daemon DNS frontend plans do not match".into(),
-            ));
-        }
         let binary = path_text(&binary)?;
         let runtime_config = path_text(&runtime.config)?;
         Ok(RuntimePlan {

@@ -29,7 +29,7 @@ impl ValidationRunner for FakeRunner {
         _: &'a Path,
         _: &'a Path,
     ) -> Pin<Box<dyn Future<Output = Result<(), ManagerError>> + Send + 'a>> {
-        Box::pin(async { Ok(()) })
+        Box::pin(async { panic!("automatic startup must not prevalidate the core configuration") })
     }
 }
 
@@ -156,7 +156,7 @@ async fn supervisor_starts_commits_and_stops_the_real_process() {
 #[cfg(unix)]
 #[tokio::test]
 async fn early_exit_keeps_the_pending_deployment() {
-    let (_root, manager) = fixture("#!/bin/sh\nexit 7\n");
+    let (_root, manager) = fixture("#!/bin/sh\necho core-rejected-config >&2\nexit 7\n");
     let profiles = manager
         .subscriptions
         .update(|catalog| {
@@ -211,6 +211,12 @@ async fn early_exit_keeps_the_pending_deployment() {
     assert_eq!(
         document.active_profile_id.as_deref(),
         Some(candidate_profile_id.as_str())
+    );
+    assert!(
+        String::from_utf8_lossy(
+            &fs::read(&manager.store.layout().core_stderr_log).expect("stderr")
+        )
+        .contains("core-rejected-config")
     );
     let failure = document.runtime.last_failure.expect("failure");
     assert_eq!(failure.failed.expect("failed").config_hash, "a".repeat(64));

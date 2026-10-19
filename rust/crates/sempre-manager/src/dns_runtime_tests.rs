@@ -68,49 +68,49 @@ fn plan(hash: &str, port: u16, local: String, remote: String) -> DnsFrontendPlan
         fakeip_ranges: vec!["198.18.0.0/15".parse::<IpNet>().expect("range")],
         core_upstream: remote,
         original_upstreams: Vec::new(),
-        local_probe: Some("baidu.com".into()),
-        remote_probe: "example.com".into(),
     }
 }
 
 #[tokio::test]
 async fn frontend_starts_and_keeps_domestic_dns_when_core_is_down() {
-    let (local, local_task) = answering_upstream(1, [223, 5, 5, 5]).await;
-    let dead = UdpSocket::bind("127.0.0.1:0").await.expect("dead port");
-    let remote = dead.local_addr().expect("dead address").to_string();
-    drop(dead);
-    let port = frontend_port().await;
-    let plan = plan("first", port, local, remote);
-    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
-
-    runtime
-        .prepare(Some(&plan))
-        .await
-        .expect("prepare frontend");
-    runtime
-        .activate_core(Some(&plan), Duration::from_millis(10))
-        .await;
-
-    let status = runtime.status();
-    assert!(status.running);
-    assert!(!status.core_dns_healthy);
-    let domestic = probe_dns(&format!("127.0.0.1:{port}"), "baidu.com", "A")
-        .await
-        .expect("domestic response");
-    assert_eq!(domestic.response_code, 0);
-    assert_eq!(
-        domestic.addresses,
-        ["223.5.5.5".parse::<IpAddr>().expect("IP")]
-    );
-
-    local_task.await.expect("local responder");
-    runtime.stop().await;
+    for fakeip_enabled in [true, false] {
+        let (local, local_task) = answering_upstream(1, [223, 5, 5, 5]).await;
+        let dead = UdpSocket::bind("127.0.0.1:0").await.expect("dead port");
+        let remote = dead.local_addr().expect("dead address").to_string();
+        drop(dead);
+        let port = frontend_port().await;
+        let mut plan = plan("first", port, local, remote.clone());
+        plan.fakeip_enabled = fakeip_enabled;
+        let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
+        runtime
+            .prepare(Some(&plan))
+            .await
+            .expect("prepare frontend");
+        tokio::time::timeout(Duration::from_secs(1), runtime.activate_core(Some(&plan)))
+            .await
+            .expect("activation does not wait for DNS")
+            .expect("activate frontend");
+        let status = runtime.status();
+        assert!(status.running);
+        assert!(status.last_error.is_empty());
+        assert_eq!(status.core_upstream, remote);
+        let domestic = probe_dns(&format!("127.0.0.1:{port}"), "baidu.com", "A")
+            .await
+            .expect("domestic response");
+        assert_eq!(domestic.response_code, 0);
+        assert_eq!(
+            domestic.addresses,
+            ["223.5.5.5".parse::<IpAddr>().expect("IP")]
+        );
+        local_task.await.expect("local responder");
+        runtime.stop().await;
+    }
 }
 
 #[tokio::test]
 async fn healthy_candidate_promotes_new_core_upstream_without_stopping_frontend() {
     for fakeip_enabled in [true, false] {
-        let (local, local_task) = answering_upstream(2, [223, 5, 5, 5]).await;
+        let (local, local_task) = answering_upstream(1, [223, 5, 5, 5]).await;
         let first_address = if fakeip_enabled {
             [198, 18, 0, 1]
         } else {
@@ -121,38 +121,53 @@ async fn healthy_candidate_promotes_new_core_upstream_without_stopping_frontend(
         } else {
             [192, 0, 2, 2]
         };
-        let (first, first_task) = answering_upstream(2, first_address).await;
-        let (second, second_task) = answering_upstream(2, second_address).await;
+        let (first, first_task) = answering_upstream(1, first_address).await;
+        let (second, second_task) = answering_upstream(1, second_address).await;
         let port = frontend_port().await;
         let mut first_plan = plan("first", port, local.clone(), first);
         first_plan.fakeip_enabled = fakeip_enabled;
         let mut second_plan = plan("second", port, local, second.clone());
         second_plan.fakeip_enabled = fakeip_enabled;
         let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
-
         runtime
             .prepare(Some(&first_plan))
             .await
             .expect("prepare frontend");
         runtime
-            .activate_core(Some(&first_plan), Duration::from_secs(1))
-            .await;
+            .activate_core(Some(&first_plan))
+            .await
+            .expect("activate first");
+        let endpoint = format!("127.0.0.1:{port}");
+        let first_answer = probe_dns(&endpoint, "example.com", "A")
+            .await
+            .expect("first response");
+        assert_eq!(first_answer.addresses, [IpAddr::from(first_address)]);
         runtime
             .prepare(Some(&second_plan))
             .await
             .expect("retain frontend");
         runtime
-            .activate_core(Some(&second_plan), Duration::from_secs(1))
-            .await;
-
+            .activate_core(Some(&second_plan))
+            .await
+            .expect("activate second");
         let status = runtime.status();
-        assert!(status.enabled && status.running && status.core_dns_healthy);
+        assert!(status.enabled && status.running);
         assert_eq!(
             status.mode,
             if fakeip_enabled { "fake-ip" } else { "real-ip" }
         );
         assert_eq!(status.core_upstream, second);
-
+        let second_answer = probe_dns(&endpoint, "example.com", "A")
+            .await
+            .expect("second response");
+        assert_eq!(second_answer.addresses, [IpAddr::from(second_address)]);
+        let direct = probe_dns(&endpoint, "baidu.com", "A")
+            .await
+            .expect("direct response");
+        assert_eq!(
+            direct.addresses,
+            ["223.5.5.5".parse::<IpAddr>().expect("IP")]
+        );
         local_task.await.expect("local responder");
         first_task.await.expect("first responder");
         second_task.await.expect("second responder");
@@ -161,45 +176,66 @@ async fn healthy_candidate_promotes_new_core_upstream_without_stopping_frontend(
 }
 
 #[tokio::test]
-async fn unhealthy_candidate_keeps_the_last_healthy_core_upstream() {
-    let (local, local_task) = answering_upstream(1, [223, 5, 5, 5]).await;
-    let (first, first_task) = answering_upstream(3, [198, 18, 0, 1]).await;
-    let dead = UdpSocket::bind("127.0.0.1:0").await.expect("dead port");
-    let second = dead.local_addr().expect("dead address").to_string();
-    drop(dead);
-    let port = frontend_port().await;
-    let first_plan = plan("first", port, local.clone(), first.clone());
-    let second_plan = plan("second", port, local, second);
-    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
-
-    runtime
-        .prepare(Some(&first_plan))
+async fn unreachable_candidate_is_promoted_without_dns_readiness_gate() {
+    for fakeip_enabled in [true, false] {
+        let (local, local_task) = answering_upstream(1, [223, 5, 5, 5]).await;
+        let (first, first_task) = answering_upstream(1, [198, 18, 0, 1]).await;
+        let dead = UdpSocket::bind("127.0.0.1:0").await.expect("dead port");
+        let second = dead.local_addr().expect("dead address").to_string();
+        drop(dead);
+        let port = frontend_port().await;
+        let mut first_plan = plan("first", port, local.clone(), first);
+        first_plan.fakeip_enabled = fakeip_enabled;
+        let mut second_plan = plan("second", port, local, second.clone());
+        second_plan.fakeip_enabled = fakeip_enabled;
+        let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
+        runtime
+            .prepare(Some(&first_plan))
+            .await
+            .expect("prepare frontend");
+        runtime
+            .activate_core(Some(&first_plan))
+            .await
+            .expect("activate first");
+        let endpoint = format!("127.0.0.1:{port}");
+        probe_dns(&endpoint, "example.com", "A")
+            .await
+            .expect("first response");
+        runtime
+            .prepare(Some(&second_plan))
+            .await
+            .expect("retain frontend");
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            runtime.activate_core(Some(&second_plan)),
+        )
         .await
-        .expect("prepare frontend");
-    runtime
-        .activate_core(Some(&first_plan), Duration::from_secs(1))
-        .await;
-    runtime
-        .prepare(Some(&second_plan))
-        .await
-        .expect("retain frontend");
-    runtime
-        .activate_core(Some(&second_plan), Duration::from_millis(10))
-        .await;
-
-    let status = runtime.status();
-    assert!(status.running);
-    assert!(!status.core_dns_healthy);
-    assert_eq!(status.core_upstream, first);
-    let remote = probe_dns(&format!("127.0.0.1:{port}"), "example.com", "A")
-        .await
-        .expect("retained remote response");
-    assert_eq!(
-        remote.addresses,
-        ["198.18.0.1".parse::<IpAddr>().expect("IP")]
-    );
-
-    local_task.await.expect("local responder");
-    first_task.await.expect("first responder");
-    runtime.stop().await;
+        .expect("activation does not wait for DNS")
+        .expect("activate unreachable candidate");
+        let status = runtime.status();
+        assert!(status.running);
+        assert!(status.last_error.is_empty());
+        assert_eq!(status.core_upstream, second);
+        assert_eq!(
+            runtime
+                .running
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .plan
+                .deployment_hash,
+            "second"
+        );
+        let direct = probe_dns(&endpoint, "baidu.com", "A")
+            .await
+            .expect("direct response");
+        assert_eq!(
+            direct.addresses,
+            ["223.5.5.5".parse::<IpAddr>().expect("IP")]
+        );
+        local_task.await.expect("local responder");
+        first_task.await.expect("first responder");
+        runtime.stop().await;
+    }
 }

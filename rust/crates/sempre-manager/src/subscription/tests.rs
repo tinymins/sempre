@@ -121,7 +121,7 @@ fn raw_source() -> Source {
 }
 
 #[tokio::test]
-async fn failed_dns_rebuild_keeps_the_saved_settings() {
+async fn dns_rebuild_stages_saved_settings_without_automatic_validation() {
     let (_root, manager, profile_id) = fixture();
     manager
         .activate_subscription_profile(&profile_id)
@@ -132,10 +132,13 @@ async fn failed_dns_rebuild_keeps_the_saved_settings() {
     let mut candidate = before.clone();
     candidate.enabled = true;
 
-    manager
+    let (change, returned) = manager
         .update_dns_settings(candidate)
         .await
-        .expect_err("rebuild must fail");
+        .expect("stage DNS settings without prevalidation");
+    assert!(change.changed && change.needs_restart);
+    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
+    assert_eq!(returned, manager.dns_settings());
 
     let saved = manager.dns_settings();
     assert!(saved.enabled);
@@ -150,7 +153,7 @@ async fn failed_dns_rebuild_keeps_the_saved_settings() {
 }
 
 #[tokio::test]
-async fn failed_network_rebuild_keeps_the_saved_settings() {
+async fn network_rebuild_stages_saved_settings_without_automatic_validation() {
     let (_root, manager, profile_id) = fixture();
     manager
         .activate_subscription_profile(&profile_id)
@@ -161,10 +164,13 @@ async fn failed_network_rebuild_keeps_the_saved_settings() {
     let mut candidate = before.clone();
     candidate.automatic_switching = true;
 
-    manager
+    let (change, returned) = manager
         .update_network_settings(candidate)
         .await
-        .expect_err("rebuild must fail");
+        .expect("stage network settings without prevalidation");
+    assert!(change.changed && change.needs_restart);
+    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
+    assert_eq!(returned, manager.network_settings());
 
     let saved = manager.network_settings();
     assert!(saved.automatic_switching);

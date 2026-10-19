@@ -35,7 +35,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         F: Future<Output = Result<(), io::Error>>,
     {
         let _instance = self.store.acquire_instance()?;
-        let plan = self.direct_plan(reference).await?;
+        let plan = self.direct_plan(reference)?;
         started(&plan.label);
         let mut process = ManagedProcess::spawn_foreground(&plan.spec)?;
         tokio::pin!(shutdown);
@@ -61,7 +61,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
     }
 
-    async fn direct_plan(&self, value: Option<&str>) -> Result<DirectPlan, ManagerError> {
+    fn direct_plan(&self, value: Option<&str>) -> Result<DirectPlan, ManagerError> {
         let document = self.store.read()?;
         let deployment = match value.filter(|value| !value.trim().is_empty()) {
             Some(value) => self.direct_deployment(&document, value)?,
@@ -87,8 +87,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             repository: deployment.repository.clone(),
             reference: deployment.reference.clone(),
         };
-        self.validate_config_path(&reference, &deployment.version, &config)
-            .await?;
         let data = self.store.layout().runtime.join(&deployment.core);
         fs::create_dir_all(&data)
             .map_err(|error| ManagerError::io("create foreground core data directory", error))?;

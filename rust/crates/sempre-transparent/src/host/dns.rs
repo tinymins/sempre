@@ -89,11 +89,7 @@ impl Controller {
         if !cfg!(target_os = "linux") {
             return Ok(None);
         }
-        if !self.system_dns.allowed() {
-            return Err(TransparentError::Invalid(
-                "managed DNS frontend requires system mode".into(),
-            ));
-        }
+
         system_dns.original_upstreams = self.system_dns.discover_upstreams()?;
         Ok(Some(system_dns))
     }

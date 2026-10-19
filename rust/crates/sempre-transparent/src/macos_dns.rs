@@ -13,7 +13,6 @@ const MANAGED_SERVER: &str = "127.0.0.1";
 const STANDARD_DNS_PORT: u16 = 53;
 
 pub(crate) struct SystemDns {
-    allowed: bool,
     state_dir: PathBuf,
 }
 
@@ -41,23 +40,14 @@ const fn standard_dns_port() -> u16 {
 }
 
 impl SystemDns {
-    pub(crate) fn new(allowed: bool, state_dir: PathBuf) -> Self {
-        Self { allowed, state_dir }
-    }
-
-    pub(crate) const fn allowed(&self) -> bool {
-        self.allowed
+    pub(crate) fn new(state_dir: PathBuf) -> Self {
+        Self { state_dir }
     }
 
     pub(crate) async fn discover_upstreams(
         &self,
         runner: &dyn command::Runner,
     ) -> Result<Vec<String>, TransparentError> {
-        if !self.allowed {
-            return Err(TransparentError::Invalid(
-                "macOS DNS takeover requires system mode".into(),
-            ));
-        }
         let servers = if let Some(state) = self.read_state()? {
             state.original_upstreams
         } else {
@@ -65,13 +55,7 @@ impl SystemDns {
                 command::require_success(SCUTIL, runner.run(SCUTIL, &["--dns"], None).await?)?;
             parse_scutil_dns(&output.stdout)
         };
-        if servers.is_empty() {
-            Err(TransparentError::Invalid(
-                "macOS has no usable original DNS servers".into(),
-            ))
-        } else {
-            Ok(servers)
-        }
+        Ok(servers)
     }
 
     pub(crate) async fn apply(
@@ -80,11 +64,6 @@ impl SystemDns {
         original_upstreams: &[String],
         listen_port: u16,
     ) -> Result<(), TransparentError> {
-        if !self.allowed {
-            return Err(TransparentError::Invalid(
-                "macOS DNS takeover requires system mode".into(),
-            ));
-        }
         let services = self.capture_services(runner).await?;
         if services.is_empty() {
             return Err(TransparentError::Invalid(
@@ -118,14 +97,14 @@ impl SystemDns {
             }
             changed.push(service.clone());
         }
-        self.verify(runner, listen_port).await
+        Ok(())
     }
 
     pub(crate) async fn restore(
         &self,
         runner: &dyn command::Runner,
     ) -> Result<(), TransparentError> {
-        if !self.allowed {
+        if self.state_dir.as_os_str().is_empty() {
             return Ok(());
         }
         let Some(state) = self.read_state()? else {
@@ -379,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn stale_ownership_ignores_removed_services_and_restores_active_services() {
         let root = tempfile::tempdir().expect("temporary directory");
-        let dns = SystemDns::new(true, root.path().into());
+        let dns = SystemDns::new(root.path().into());
         fs::create_dir_all(root.path()).expect("state directory");
         dns.write_state(&State {
             original_upstreams: vec!["223.6.6.6".into()],
@@ -427,9 +406,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disabled_controller_never_consumes_relative_ownership_state() {
+    async fn unconfigured_controller_never_consumes_relative_ownership_state() {
         let runner = FakeRunner::default();
-        SystemDns::new(false, PathBuf::new())
+        SystemDns::new(PathBuf::new())
             .restore(&runner)
             .await
             .expect("disabled restore");

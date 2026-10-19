@@ -103,10 +103,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         Ok(())
     }
 
-    pub(crate) async fn prepare_config_content_for(
+    pub(crate) fn prepare_config_content_for(
         &self,
         reference: &CoreRef,
-        version: &str,
         content: &[u8],
     ) -> Result<PreparedConfig, ManagerError> {
         if content.len() > MAX_CONFIG_SIZE {
@@ -114,20 +113,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 limit: MAX_CONFIG_SIZE,
             });
         }
-        let mut candidate = tempfile::Builder::new()
-            .prefix("config-candidate-")
-            .suffix(".json")
-            .tempfile_in(&self.store.layout().runtime)
-            .map_err(|error| ManagerError::io("create configuration candidate", error))?;
-        candidate
-            .write_all(content)
-            .map_err(|error| ManagerError::io("write configuration candidate", error))?;
-        candidate
-            .flush()
-            .map_err(|error| ManagerError::io("flush configuration candidate", error))?;
-        self.validate_config_path(reference, version, candidate.path())
-            .await?;
-
         let hash = format!("{:x}", Sha256::digest(content));
         let path = self.store.layout().config(&reference.core, &hash);
         let created = if path.exists() {
@@ -150,7 +135,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         })
     }
 
-    pub async fn activate_config_content(
+    pub fn activate_config_content(
         &self,
         content: &[u8],
         build: ConfigBuild,
@@ -165,10 +150,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 );
             }
         })
-        .await
     }
 
-    pub(crate) async fn activate_config_content_updating(
+    pub(crate) fn activate_config_content_updating(
         &self,
         content: &[u8],
         build: ConfigBuild,
@@ -177,9 +161,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let _config = self.store.acquire_config()?;
         let before = self.store.read()?;
         let (reference, version) = configuration_target(&before)?;
-        let prepared = self
-            .prepare_config_content_for(&reference, &version, content)
-            .await?;
+        let prepared = self.prepare_config_content_for(&reference, content)?;
         let hash = prepared.hash.clone();
 
         let mut change = CoreChange::default();
@@ -218,9 +200,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             document
                 .configs
                 .insert(reference.core.clone(), hash.clone());
-            document
-                .config_builds
-                .insert(reference.core.clone(), build.clone());
+            document.config_builds.insert(reference.core.clone(), build);
             change.changed = config_changed || deployment_changed;
             update(document, change.changed);
             change.previous_detail = short_hash(&old_hash);
@@ -232,7 +212,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             return Err(error);
         }
         change.message = if change.changed {
-            "configuration updated and validated"
+            "configuration updated"
         } else {
             "configuration is already current"
         }

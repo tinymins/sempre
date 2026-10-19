@@ -1,9 +1,9 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use sempre_state::DesiredState;
-use sempre_subscription::{Fetcher, RuleSetSnapshot};
+use sempre_subscription::Fetcher;
 
-use super::{RemoteRule, config_error, materialize, normalize_rule, proxy_fetcher};
+use super::{RemoteRule, config_error, normalize_rule, proxy_fetcher};
 use crate::{Manager, ManagerError, ValidationRunner, VersionRunner, supervisor::RuntimePlan};
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
@@ -17,7 +17,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             match result {
                 Ok(true) if plan.rules.pending_count() > 0 => {
                     self.log_supervisor(
-                        "online rules validated; switching from basic to complete configuration",
+                        "online rules downloaded; switching from basic to complete configuration",
                     );
                     return;
                 }
@@ -75,7 +75,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         if candidates.is_empty() {
             return Ok(false);
         }
-        self.validate_rule_candidates(plan, &candidates).await?;
         let _gate = self.runtime_rules_gate.lock().await;
         if let Some(candidate) = candidates.get("geoip-cn")
             && let Some(intent) = &plan.transparent.cn_routes
@@ -102,7 +101,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             self.transparent.apply_cn_routes(&union).await?;
         }
         // No await between the deployment check and publication: cancellation cannot
-        // publish a partially downloaded or unvalidated candidate.
+        // publish a partially downloaded candidate.
         let document = self.store.read()?;
         if document.desired_state != DesiredState::Running
             || document.active.as_ref() != Some(&plan.deployment)
@@ -118,21 +117,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
         }
         Ok(true)
-    }
-
-    async fn validate_rule_candidates(
-        &self,
-        plan: &RuntimePlan,
-        candidates: &HashMap<String, RuleSetSnapshot>,
-    ) -> Result<(), ManagerError> {
-        let (config, missing) = materialize(&self.fetcher, &plan.rules.original, candidates)?;
-        if !missing.is_empty() {
-            return Err(ManagerError::InvalidOperation(
-                "downloaded rule sets are unusable".into(),
-            ));
-        }
-        self.validate_config_content(&serde_json::to_vec(&config).map_err(config_error)?)
-            .await
     }
 }
 

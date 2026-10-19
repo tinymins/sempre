@@ -78,7 +78,7 @@ fn reuse_runtime_domains(
     if candidate != old {
         return Ok(None);
     }
-    let Some(update) = prepare_update(layout, document, saved, saved)? else {
+    let Some(update) = prepare_update(document, saved, saved)? else {
         return Ok(None);
     };
     if !update.files.is_empty() {

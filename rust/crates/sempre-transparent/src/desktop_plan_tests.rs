@@ -210,26 +210,3 @@ fn windows_real_ip_keeps_full_tun_routing() {
         json!(["223.6.6.6/32"])
     );
 }
-
-#[test]
-fn windows_rejects_core_without_configurable_tun_dns() {
-    let mut config = json!({
-        "inbounds": [{ "type": "tun", "tag": "tun-in" }],
-        "route": { "rules": [] }
-    });
-    let plan = Plan {
-        core: "sing-box".into(),
-        system_dns: Some(crate::SystemDnsPlan {
-            listen_port: 20_554,
-            listen_hosts: vec!["127.0.0.1".into()],
-            core_listen_port: 1053,
-            original_upstreams: vec!["223.6.6.6".into()],
-            managed_frontend: true,
-            takeover_host: true,
-        }),
-        ..Plan::default()
-    };
-    let error = configure_windows_dns_redirect(&mut config, &plan, "1.13.18")
-        .expect_err("sing-box 1.13 must be rejected");
-    assert!(error.to_string().contains("requires sing-box 1.14"));
-}

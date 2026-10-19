@@ -29,7 +29,7 @@ pub(super) fn sing_box(
         return Ok(value.clone());
     }
     let shared = SharedDns::resolve(&profile.dns);
-    shared.validate(profile, target)?;
+    shared.validate()?;
     if target.is_openwrt() {
         Ok(openwrt::render(target, &shared, &profile.dns))
     } else {
@@ -270,83 +270,12 @@ impl SharedDns {
         }
     }
 
-    fn validate(&self, profile: &Profile, target: &Target) -> Result<(), CompileError> {
+    fn validate(&self) -> Result<(), CompileError> {
         if !matches!(self.local_transport.as_str(), "system" | "udp" | "tls") {
             return Err(CompileError::Render(format!(
                 "unsupported local DNS transport {:?}",
                 self.local_transport
             )));
-        }
-        for (name, rule_set) in [
-            ("CN domain", &self.cn_domain_rule_set),
-            ("CN IP", &self.cn_ip_rule_set),
-            ("HK IP", &self.hk_ip_rule_set),
-        ] {
-            if rule_set.enabled && rule_set.url.trim().is_empty() {
-                return Err(CompileError::Render(format!(
-                    "{name} DNS rule-set URL is required when enabled"
-                )));
-            }
-        }
-        if self.system_takeover() {
-            let frontend = managed_frontend(self, target);
-            if target.is_desktop() && !frontend {
-                return Err(CompileError::Render(
-                    "system DNS takeover is only available for Linux system or managed desktop sing-box runtime".into(),
-                ));
-            }
-            if frontend && target.version == "11" {
-                return Err(CompileError::Render(
-                    "managed desktop DNS frontend requires sing-box 1.12 or newer".into(),
-                ));
-            }
-            if !frontend && self.system_dns_listen_port != 53 {
-                return Err(CompileError::Render(
-                    "system DNS takeover requires listen port 53 because resolv.conf cannot specify ports".into(),
-                ));
-            }
-            if !self
-                .system_dns_listen_hosts
-                .iter()
-                .any(|host| matches!(host.as_str(), "127.0.0.1" | "0.0.0.0"))
-            {
-                return Err(CompileError::Render(
-                    "system DNS takeover listen hosts must include 127.0.0.1 or 0.0.0.0".into(),
-                ));
-            }
-            if self.local_server().1 {
-                return Err(CompileError::Render(
-                    "system DNS takeover requires an explicit local DNS upstream instead of local"
-                        .into(),
-                ));
-            }
-            let active_ports = [
-                u64::from(profile.local_proxy.socks_port),
-                u64::from(profile.local_proxy.http_port),
-                u64::from(profile.transparent_proxy.tproxy.listen_port),
-            ];
-            if active_ports.contains(&self.system_dns_listen_port) {
-                return Err(CompileError::Render(format!(
-                    "system DNS takeover port {} conflicts with another managed listener",
-                    self.system_dns_listen_port
-                )));
-            }
-            if frontend && active_ports.contains(&u64::from(crate::DEFAULT_CORE_DNS_PORT)) {
-                return Err(CompileError::Render(format!(
-                    "core DNS port {} conflicts with another managed listener",
-                    crate::DEFAULT_CORE_DNS_PORT
-                )));
-            }
-            if !frontend
-                && profile.transparent_proxy.mode == "tproxy"
-                && self.system_dns_listen_port
-                    == u64::from(profile.transparent_proxy.tproxy.dns_listen_port)
-            {
-                return Err(CompileError::Render(format!(
-                    "system DNS takeover port {} conflicts with the TProxy DNS listener",
-                    self.system_dns_listen_port
-                )));
-            }
         }
         Ok(())
     }

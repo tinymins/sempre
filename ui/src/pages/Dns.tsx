@@ -141,10 +141,9 @@ function Settings({ current, update, saving, status, zh }: { current: DnsSetting
   const captured = status?.original_upstreams ?? []
   const port53 = status?.port_53
   return <div className="space-y-5 pt-4">
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Metric label={zh ? '前置 DNS' : 'DNS frontend'} value={status?.running ? (zh ? '运行中' : 'Running') : status?.enabled ? (zh ? '待启动' : 'Pending') : (zh ? '未启用' : 'Disabled')} />
       <Metric label={zh ? '核心 DNS 模式' : 'Core DNS mode'} value={status?.mode || '-'} />
-      <Metric label={zh ? '核心 DNS' : 'Core DNS'} value={status?.core_dns_healthy ? (zh ? '正常' : 'Healthy') : '-'} />
       {port53 ? <Metric label={zh ? 'DNS 53 端口' : 'DNS port 53'} value={port53.listening ? (zh ? '已接管' : 'Captured') : (zh ? '未接管' : 'Not captured')} /> : null}
       <Metric label={zh ? '国内域名规则' : 'Domestic domains'} value={String(status?.domestic_domain_count ?? 0)} />
     </div>

@@ -221,18 +221,6 @@ fn managed_desktop_frontend_supports_windows_and_macos_modes() {
 }
 
 #[test]
-fn managed_desktop_frontend_rejects_legacy_sing_box() {
-    for format in ["sing-box-windows", "sing-box-macos"] {
-        assert!(
-            compile(&takeover_request(format))
-                .expect_err("legacy desktop frontend must fail")
-                .to_string()
-                .contains("1.12 or newer")
-        );
-    }
-}
-
-#[test]
 fn managed_windows_frontend_supports_sing_box_v13() {
     assert_managed_desktop_frontend("sing-box-v13-windows");
 }

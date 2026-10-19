@@ -31,12 +31,6 @@ pub(crate) trait Backend: Default + Send + Sync + 'static {
         runner: &'a dyn command::Runner,
         add: bool,
     ) -> impl Future<Output = Result<(), TransparentError>> + Send + 'a;
-    fn verify<'a>(
-        &'a self,
-        runner: &'a dyn command::Runner,
-        routes: &'a [Route],
-        proxy_prefixes: &'a [String],
-    ) -> impl Future<Output = Result<(), TransparentError>> + Send + 'a;
 }
 
 #[derive(Default)]
@@ -79,13 +73,5 @@ impl Backend for Native {
         add: bool,
     ) -> Result<(), TransparentError> {
         platform::policy(runner, add).await
-    }
-    async fn verify(
-        &self,
-        runner: &dyn command::Runner,
-        routes: &[Route],
-        proxy_prefixes: &[String],
-    ) -> Result<(), TransparentError> {
-        platform::verify(runner, routes, proxy_prefixes).await
     }
 }

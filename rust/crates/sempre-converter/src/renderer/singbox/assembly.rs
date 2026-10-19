@@ -48,7 +48,7 @@ pub(super) fn render(
         diffs.push(diff);
     }
     outbounds.extend(private.outbounds.iter().cloned());
-    outbounds.extend(selector_outbounds(&profile.groups, &names, target)?);
+    outbounds.extend(selector_outbounds(&profile.groups, &names, target));
 
     let mut dns = super::super::dns::sing_box(profile, proxies, target)?;
     let direct_modes = network_direct_modes(&profile.network_policy);
@@ -143,11 +143,7 @@ fn network_direct_modes(policy: &Value) -> Vec<String> {
         .collect()
 }
 
-fn selector_outbounds(
-    groups: &[ProxyGroup],
-    names: &[String],
-    target: &Target,
-) -> Result<Vec<Value>, CompileError> {
+fn selector_outbounds(groups: &[ProxyGroup], names: &[String], target: &Target) -> Vec<Value> {
     let mut configured = if groups.is_empty() {
         vec![ProxyGroup {
             name: "proxy".into(),
@@ -161,9 +157,6 @@ fn selector_outbounds(
     super::super::address_groups::append_missing(&mut configured);
     let mut outbounds = Vec::new();
     for group in configured {
-        if group.name.trim().is_empty() {
-            return Err(CompileError::Render("proxy group name is required".into()));
-        }
         if builtin(&group.name) {
             continue;
         }
@@ -177,12 +170,7 @@ fn selector_outbounds(
         } else if !group.readonly || group.include_all {
             append_unique(&mut members, names);
         }
-        if members.is_empty() {
-            return Err(CompileError::Render(format!(
-                "proxy group {:?} has no members",
-                group.name
-            )));
-        }
+
         let kind = if group.group_type == "url-test" {
             "urltest"
         } else {
@@ -212,7 +200,7 @@ fn selector_outbounds(
         }
         outbounds.push(outbound);
     }
-    Ok(outbounds)
+    outbounds
 }
 
 fn selector_default(group: &ProxyGroup, members: &[Value], target: &Target) -> String {
@@ -228,7 +216,11 @@ fn selector_default(group: &ProxyGroup, members: &[Value], target: &Target) -> S
     {
         return value.into();
     }
-    members[0].as_str().unwrap_or_default().into()
+    members
+        .first()
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .into()
 }
 
 fn append_unique(target: &mut Vec<String>, values: &[String]) {

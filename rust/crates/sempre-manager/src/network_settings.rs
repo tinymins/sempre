@@ -136,11 +136,6 @@ fn validate(settings: &NetworkSettings) -> Result<(), ManagerError> {
             "network settings schema must be {SCHEMA_VERSION}"
         )));
     }
-    if settings.cn_direct_routes && settings.mode != NetworkMode::Local {
-        return Err(ManagerError::InvalidOperation(
-            "CN pre-routing requires local TUN mode".into(),
-        ));
-    }
     if settings.known_networks.len() > 64 {
         return Err(ManagerError::InvalidOperation(
             "at most 64 known networks may be configured".into(),

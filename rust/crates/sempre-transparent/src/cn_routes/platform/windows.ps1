@@ -17,12 +17,6 @@ if ($request.operation -eq 'uplinks') {
     ConvertTo-Json -InputObject @($items) -Compress
     exit
 }
-if ($request.operation -eq 'lookup') {
-    $route = Find-NetRoute -RemoteIPAddress $request.address | Where-Object DestinationPrefix | Select-Object -First 1
-    if (-not $route) { throw 'Route lookup failed' }
-    [string]$route.InterfaceAlias
-    exit
-}
 if ($request.operation -eq 'preflight') {
     $prefixes = @{}
     foreach ($route in $request.routes) { $prefixes[[string]$route.prefix] = $true }

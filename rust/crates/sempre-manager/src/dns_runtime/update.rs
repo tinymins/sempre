@@ -1,4 +1,4 @@
-use sempre_dns::{DnsConfig, managed_probe_names};
+use sempre_dns::DnsConfig;
 
 use super::DnsFrontendRuntime;
 use crate::{DnsSettings, ManagerError};
@@ -39,10 +39,7 @@ impl DnsFrontendRuntime {
         config
             .local_upstreams
             .clone_from(&settings.direct_upstreams);
-        let (local_probe, remote_probe) = managed_probe_names(&config)?;
         current.service.update(config.clone())?;
-        current.plan.local_probe = local_probe;
-        current.plan.remote_probe = remote_probe;
         current.plan.config = config;
         self.status
             .write()
@@ -65,10 +62,7 @@ impl DnsFrontendRuntime {
                 "DNS frontend stopped during rule set publication".into(),
             ));
         };
-        let (local_probe, remote_probe) = managed_probe_names(&config)?;
         current.service.update(config.clone())?;
-        current.plan.local_probe = local_probe;
-        current.plan.remote_probe = remote_probe;
         self.status
             .write()
             .expect("DNS frontend status")

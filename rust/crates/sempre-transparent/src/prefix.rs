@@ -10,17 +10,7 @@ pub(crate) fn resolve_tun_address(
 ) -> Result<String, TransparentError> {
     let occupied = parse_all(occupied);
     if !explicit.is_empty() {
-        let prefix = parse(explicit)?;
-        if !matches!(prefix, IpNet::V4(value) if value.prefix_len() == 30) {
-            return Err(TransparentError::Invalid(format!(
-                "TUN address {explicit:?} must be an IPv4 /30 prefix"
-            )));
-        }
-        if occupied.iter().any(|current| overlaps(&prefix, current)) {
-            return Err(TransparentError::Invalid(format!(
-                "TUN address {explicit} conflicts with an existing address or route"
-            )));
-        }
+        parse(explicit)?;
         return Ok(explicit.into());
     }
     for (base, bits) in [

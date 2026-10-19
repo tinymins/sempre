@@ -8,26 +8,20 @@ const STATE_FILE: &str = "resolv-conf.json";
 const MANAGED_CONTENT: &[u8] = b"# Managed by Sempre system DNS takeover. Do not edit while enabled.\nnameserver 127.0.0.1\noptions timeout:1 attempts:1\n";
 
 pub(crate) struct SystemDns {
-    allowed: bool,
     state_dir: PathBuf,
     resolv_conf: PathBuf,
 }
 
 impl SystemDns {
-    pub(crate) fn new(allowed: bool, state_dir: PathBuf, resolv_conf: PathBuf) -> Self {
+    pub(crate) fn new(state_dir: PathBuf, resolv_conf: PathBuf) -> Self {
         Self {
-            allowed,
             state_dir,
             resolv_conf,
         }
     }
 
     pub(crate) fn disabled() -> Self {
-        Self::new(false, PathBuf::new(), PathBuf::new())
-    }
-
-    pub(crate) const fn allowed(&self) -> bool {
-        self.allowed
+        Self::new(PathBuf::new(), PathBuf::new())
     }
 
     pub(crate) fn discover_upstreams(&self) -> Result<Vec<String>, TransparentError> {
@@ -48,20 +42,11 @@ impl SystemDns {
                 upstreams.push(address);
             }
         }
-        if upstreams.is_empty() {
-            return Err(TransparentError::Invalid(
-                "system resolver has no usable original DNS upstream".into(),
-            ));
-        }
+
         Ok(upstreams)
     }
 
     pub(crate) fn apply(&self) -> Result<(), TransparentError> {
-        if !self.allowed {
-            return Err(TransparentError::Invalid(
-                "system DNS takeover is only available in Linux system mode".into(),
-            ));
-        }
         let metadata = fs::symlink_metadata(&self.resolv_conf)
             .map_err(|source| self.io("inspect system resolver", source))?;
         if metadata.file_type().is_symlink() {
@@ -123,22 +108,6 @@ impl SystemDns {
         }
     }
 
-    pub(crate) fn verify(&self) -> Result<(), TransparentError> {
-        if !self.allowed {
-            return Ok(());
-        }
-        let current = fs::read(&self.resolv_conf)
-            .map_err(|source| self.io("read system resolver", source))?;
-        if managed(&current) {
-            Ok(())
-        } else {
-            Err(TransparentError::Invalid(format!(
-                "{} is not managed by Sempre system DNS takeover",
-                self.resolv_conf.display()
-            )))
-        }
-    }
-
     fn state_path(&self) -> PathBuf {
         self.state_dir.join(STATE_FILE)
     }
@@ -197,7 +166,7 @@ mod tests {
         let resolver = root.path().join("resolv.conf");
         let original = b"nameserver 10.251.1.1\nnameserver 223.6.6.6\n";
         fs::write(&resolver, original).expect("resolver");
-        let manager = SystemDns::new(true, root.path().join("state"), resolver.clone());
+        let manager = SystemDns::new(root.path().join("state"), resolver.clone());
         manager.apply().expect("take over resolver");
         assert!(managed(&fs::read(&resolver).expect("managed resolver")));
         manager.restore().expect("restore resolver");
@@ -222,7 +191,7 @@ mod tests {
         let resolver = root.path().join("resolv.conf");
         fs::write(&target, b"nameserver 1.1.1.1\n").expect("target");
         symlink(target, &resolver).expect("symlink");
-        let manager = SystemDns::new(true, root.path().join("state"), resolver);
+        let manager = SystemDns::new(root.path().join("state"), resolver);
         assert!(
             manager
                 .apply()

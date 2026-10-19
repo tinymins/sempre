@@ -49,44 +49,12 @@ impl<B: Backend> Controller<B> {
                 .backend
                 .discover(runner.as_ref(), &intent)
                 .await?;
-            let mut interfaces = [None, None];
             let previous = controller.read()?;
-            let index_changed = uplinks.iter().any(|uplink| {
-                previous.routes.iter().any(|r| {
-                    !r.fallback
-                        && r.endpoint.interface == uplink.interface
-                        && r.endpoint.index != uplink.index
-                })
-            });
-            for uplink in &uplinks {
-                interfaces[usize::from(uplink.gateway.contains(':'))] =
-                    Some(uplink.interface.clone());
-            }
-            if interfaces != intent.outbound_interfaces || index_changed {
-                controller.cleanup_locked(runner.as_ref()).await?;
-                return Err(invalid(
-                    "physical interface changed; rebuild the core egress binding",
-                ));
-            }
             let desired = model::plan(&intent, &uplinks, &tun)?;
-            let proxy_prefixes = if intent.direct {
-                &[][..]
-            } else {
-                &intent.prefixes
-            };
             if previous.routes == desired {
-                let result = controller
-                    .backend
-                    .verify(runner.as_ref(), &desired, proxy_prefixes)
-                    .await;
-                if result.is_err() {
-                    controller.cleanup_locked(runner.as_ref()).await?;
-                }
-                return result;
+                return Ok(());
             }
-            controller
-                .replace(runner.as_ref(), desired, proxy_prefixes)
-                .await
+            controller.replace(runner.as_ref(), desired).await
         })
         .await
         .map_err(|e| invalid(e.to_string()))?
@@ -96,7 +64,6 @@ impl<B: Backend> Controller<B> {
         &self,
         runner: &dyn command::Runner,
         desired: Vec<Route>,
-        proxy_prefixes: &[String],
     ) -> Result<(), TransparentError> {
         let previous = self.read()?;
         let additions = difference(&desired, &previous.routes);
@@ -114,9 +81,6 @@ impl<B: Backend> Controller<B> {
             self.backend.policy(runner, true).await?;
             self.change(runner, &removals, true, false).await?;
             self.change(runner, &removals, false, false).await?;
-            self.backend
-                .verify(runner, &desired, proxy_prefixes)
-                .await?;
             self.write(&Journal {
                 routes: desired,
                 policy: true,
@@ -195,7 +159,7 @@ impl<B: Backend> Controller<B> {
         let path = self
             .path
             .as_ref()
-            .ok_or_else(|| invalid("CN routing requires a persistent system-mode journal"))?;
+            .ok_or_else(|| invalid("CN routing requires a persistent journal"))?;
         let bytes = serde_json::to_vec(journal).map_err(|e| invalid(e.to_string()))?;
         sempre_state::write_atomic(path, &bytes, 0o600)
             .map_err(|e| invalid(format!("write CN route journal: {e}")))

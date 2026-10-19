@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sempre_state::{Document, Layout, RuntimeState};
+use sempre_state::{Document, RuntimeState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -43,8 +43,6 @@ pub(crate) struct RuleFileUpdate {
     snapshot_path: PathBuf,
     old_snapshot: Vec<u8>,
     snapshot: RuntimeSnapshot,
-    validation_config: PathBuf,
-    _validation_directory: tempfile::TempDir,
     published: usize,
     committed: bool,
 }
@@ -142,7 +140,6 @@ pub(crate) fn legacy_inline(document: &Document, previous: &DnsSettings) -> bool
 }
 
 pub(crate) fn prepare_update(
-    layout: &Layout,
     document: &Document,
     previous: &DnsSettings,
     candidate: &DnsSettings,
@@ -181,10 +178,6 @@ pub(crate) fn prepare_update(
         None if projection::core_rule_sets(candidate).next().is_none() => &mut empty_definitions,
         None => return Ok(None),
     };
-    let directory = tempfile::Builder::new()
-        .prefix("dns-rule-update-")
-        .tempdir_in(&layout.runtime)
-        .map_err(|error| ManagerError::io("create DNS rule validation directory", error))?;
     let mut files = Vec::new();
     for (rule_set, applied) in
         projection::core_rule_sets(candidate).zip(projection::core_rule_sets(&snapshot.settings))
@@ -207,9 +200,6 @@ pub(crate) fn prepare_update(
             return Ok(None);
         }
         let candidate_data = projection::source(rule_set)?;
-        let validation_path = directory.path().join(format!("{}.json", rule_set.id));
-        write(&validation_path, &candidate_data)?;
-        definitions[*index] = projection::local(rule_set, &validation_path);
         if old_data != candidate_data {
             files.push(Replacement {
                 path,
@@ -218,26 +208,18 @@ pub(crate) fn prepare_update(
             });
         }
     }
-    let validation_config = directory.path().join("config.json");
-    write(&validation_config, &encode(&validation)?)?;
     snapshot.settings = candidate.clone();
     Ok(Some(RuleFileUpdate {
         files,
         snapshot_path,
         old_snapshot,
         snapshot,
-        validation_config,
-        _validation_directory: directory,
         published: 0,
         committed: false,
     }))
 }
 
 impl RuleFileUpdate {
-    pub(crate) fn validation_config(&self) -> &Path {
-        &self.validation_config
-    }
-
     pub(crate) fn publish(&mut self) -> Result<(), ManagerError> {
         if !crate::runtime::process_alive(self.snapshot.pid) {
             return Err(invalid("sing-box exited before publishing DNS rules"));

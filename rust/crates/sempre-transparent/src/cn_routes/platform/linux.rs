@@ -84,9 +84,6 @@ pub(super) async fn preflight(
                     "CN routing policy priority is owned by another service",
                 ));
             }
-            if priority > 0 && priority < 20241 {
-                return Err(invalid("an earlier policy rule may override CN routing"));
-            }
         }
     }
     Ok(())
@@ -190,16 +187,4 @@ pub(super) async fn policy(
         }
     }
     Ok(())
-}
-
-pub(super) async fn lookup(
-    runner: &dyn command::Runner,
-    address: &str,
-) -> Result<String, TransparentError> {
-    let family = if address.contains(':') { "-6" } else { "-4" };
-    let rows = json(runner, &["-j", family, "route", "get", address]).await?;
-    rows[0]["dev"]
-        .as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| invalid("route lookup returned no interface"))
 }

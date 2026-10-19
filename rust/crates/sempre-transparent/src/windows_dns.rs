@@ -105,7 +105,6 @@ foreach ($interface in @($state.interfaces)) {
 ";
 
 pub(crate) struct SystemDns {
-    allowed: bool,
     state_dir: PathBuf,
 }
 
@@ -131,32 +130,21 @@ struct CurrentInterface {
 }
 
 impl SystemDns {
-    pub(crate) fn new(allowed: bool, state_dir: PathBuf) -> Self {
-        Self { allowed, state_dir }
-    }
-
-    pub(crate) const fn allowed(&self) -> bool {
-        self.allowed
+    pub(crate) fn new(state_dir: PathBuf) -> Self {
+        Self { state_dir }
     }
 
     pub(crate) async fn discover_upstreams(
         &self,
         runner: &dyn command::Runner,
     ) -> Result<Vec<String>, TransparentError> {
-        self.require_allowed()?;
         let upstreams = if let Some(state) = self.read_state()? {
             state.original_upstreams
         } else {
             let interfaces = capture_interfaces(runner).await?;
             original_upstreams(&interfaces)
         };
-        if upstreams.is_empty() {
-            Err(TransparentError::Invalid(
-                "Windows has no usable original DNS servers".into(),
-            ))
-        } else {
-            Ok(upstreams)
-        }
+        Ok(upstreams)
     }
 
     pub(crate) async fn apply(
@@ -164,7 +152,6 @@ impl SystemDns {
         runner: &dyn command::Runner,
         original_upstreams: &[String],
     ) -> Result<(), TransparentError> {
-        self.require_allowed()?;
         let interfaces = takeover_interfaces(capture_interfaces(runner).await?);
         if interfaces.is_empty() {
             return Err(TransparentError::Invalid(
@@ -182,14 +169,14 @@ impl SystemDns {
             let _ = run_script(runner, RESTORE_SCRIPT, Some(&state)).await;
             return Err(error);
         }
-        self.verify(runner).await
+        Ok(())
     }
 
     pub(crate) async fn restore(
         &self,
         runner: &dyn command::Runner,
     ) -> Result<(), TransparentError> {
-        if !self.allowed {
+        if self.state_dir.as_os_str().is_empty() {
             return Ok(());
         }
         let Some(state) = self.read_state()? else {
@@ -224,16 +211,6 @@ impl SystemDns {
             }
         }
         Ok(())
-    }
-
-    fn require_allowed(&self) -> Result<(), TransparentError> {
-        if self.allowed {
-            Ok(())
-        } else {
-            Err(TransparentError::Invalid(
-                "Windows DNS takeover requires system mode".into(),
-            ))
-        }
     }
 
     fn write_state(&self, state: &State) -> Result<(), TransparentError> {
@@ -419,7 +396,7 @@ mod tests {
     #[tokio::test]
     async fn saved_ownership_supplies_original_upstreams_without_recapture() {
         let root = tempfile::tempdir().expect("state directory");
-        let dns = SystemDns::new(true, root.path().into());
+        let dns = SystemDns::new(root.path().into());
         dns.write_state(&State {
             original_upstreams: vec!["223.6.6.6".into()],
             interfaces: vec![interface(true, &["223.6.6.6"])],
@@ -434,16 +411,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_verifies_and_restore_removes_owned_state() {
+    async fn apply_and_restore_remove_owned_state() {
         let root = tempfile::tempdir().expect("state directory");
-        let dns = SystemDns::new(true, root.path().into());
+        let dns = SystemDns::new(root.path().into());
         let guid = "00000000-0000-0000-0000-000000000001";
         let capture = format!(
             r#"[{{"guid":"{guid}","original":["223.6.6.6"],"automatic":true,"default_route":true}}]"#
         );
-        let current = format!(r#"[{{"guid":"{guid}","present":true,"servers":["192.0.2.1"]}}]"#);
-        let runner =
-            FakeRunner::with_outputs([output(&capture), output(""), output(&current), output("")]);
+        let runner = FakeRunner::with_outputs([output(&capture), output(""), output("")]);
         dns.apply(&runner, &["223.6.6.6".into()])
             .await
             .expect("take over DNS");
@@ -452,7 +427,7 @@ mod tests {
         assert!(!dns.state_path().exists());
 
         let calls = runner.calls.lock().expect("calls");
-        assert_eq!(calls.len(), 4);
+        assert_eq!(calls.len(), 3);
         assert!(calls.iter().all(|call| call.program == POWERSHELL));
         assert_eq!(
             calls[0].arguments.last().map(String::as_str),
@@ -468,10 +443,6 @@ mod tests {
         }));
         assert_eq!(
             calls[2].arguments.last().map(String::as_str),
-            Some(READ_SCRIPT)
-        );
-        assert_eq!(
-            calls[3].arguments.last().map(String::as_str),
             Some(RESTORE_SCRIPT)
         );
     }

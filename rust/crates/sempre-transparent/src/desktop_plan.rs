@@ -60,7 +60,6 @@ fn prepare_with_windows_ipv6(
         system_dns: Some(system_dns),
         ..Plan::default()
     };
-    crate::validate_system_dns_config(&plan, &config)?;
     let capture_prefixes = config["inbounds"]
         .as_array()
         .and_then(|a| a.iter().find(|r| r["type"] == "tun"))
@@ -224,13 +223,8 @@ fn configure_windows_routes(config: &mut Value, plan: &Plan) -> Result<(), Trans
 fn configure_windows_dns_redirect(
     config: &mut Value,
     plan: &Plan,
-    core_version: &str,
+    _core_version: &str,
 ) -> Result<(), TransparentError> {
-    if !supports_configurable_tun_dns(core_version) {
-        return Err(TransparentError::Invalid(format!(
-            "Windows managed DNS frontend requires sing-box 1.14 or newer; selected version is {core_version}"
-        )));
-    }
     let system_dns = plan
         .system_dns
         .as_ref()
@@ -295,17 +289,6 @@ fn configure_windows_dns_redirect(
         }),
     );
     Ok(())
-}
-
-fn supports_configurable_tun_dns(version: &str) -> bool {
-    let mut parts = version.trim_start_matches('v').split('.');
-    matches!(
-        (
-            parts.next().and_then(|value| value.parse::<u32>().ok()),
-            parts.next().and_then(|value| value.parse::<u32>().ok()),
-        ),
-        (Some(1), Some(14..))
-    )
 }
 
 fn merge_array(object: &mut serde_json::Map<String, Value>, key: &str, values: Vec<String>) {

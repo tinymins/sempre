@@ -52,7 +52,7 @@ fn tproxy_does_not_require_a_duplicate_dns_inbound() {
         ..Inventory::default()
     };
 
-    let plan = prepare_with_inventory_authorized("sing-box", &profile, &path, &inventory, true)
+    let plan = prepare_with_inventory("sing-box", &profile, &path, &inventory)
         .expect("prepare managed frontend TProxy");
 
     assert_eq!(plan.dns_port, 20_554);

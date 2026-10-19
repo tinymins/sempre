@@ -83,7 +83,7 @@ async fn rejects_oversized_candidate_before_running_a_core() {
 }
 
 #[tokio::test]
-async fn activation_validates_then_stages_a_content_addressed_deployment() {
+async fn activation_stages_without_validation_and_manual_validation_remains_available() {
     let (_root, manager) = fixture();
     let build = sempre_state::ConfigBuild {
         profile_id: "profile-1".into(),
@@ -95,7 +95,6 @@ async fn activation_validates_then_stages_a_content_addressed_deployment() {
     let content = br#"{"log":{"level":"info"}}"#;
     let first = manager
         .activate_config_content(content, build.clone())
-        .await
         .expect("activate");
     assert!(first.changed && first.needs_restart);
     let document = manager.state().expect("state");
@@ -110,7 +109,12 @@ async fn activation_validates_then_stages_a_content_addressed_deployment() {
 
     let second = manager
         .activate_config_content(content, build)
-        .await
         .expect("activate again");
     assert!(!second.changed && !second.needs_restart);
+    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
+    manager
+        .validate_config_content(content)
+        .await
+        .expect("manual validation");
+    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 1);
 }

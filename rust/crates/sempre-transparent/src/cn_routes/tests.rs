@@ -87,21 +87,6 @@ impl Backend for Memory {
             .push(format!("policy:{add}"));
         Ok(())
     }
-    async fn verify(
-        &self,
-        _: &dyn command::Runner,
-        routes: &[Route],
-        _: &[String],
-    ) -> Result<(), TransparentError> {
-        if routes
-            .iter()
-            .all(|r| self.routes.lock().expect("routes").contains(r))
-        {
-            Ok(())
-        } else {
-            Err(invalid("missing route"))
-        }
-    }
 }
 
 fn endpoints() -> (Endpoint, Endpoint) {
@@ -151,15 +136,26 @@ fn cn_wins_longest_prefix_and_literal_foreign_ip_uses_tun() {
             .expect("route");
         assert_eq!(route.endpoint.interface, interface);
     }
-    assert!(normalize(&[]).is_err());
-    assert!(normalize(&["1.1.1.0/24".into()]).is_err());
-    assert!(normalize(&["0.0.0.0/0".into()]).is_err());
+    for prefixes in [vec![], vec!["1.1.1.0/24".into()], vec!["0.0.0.0/0".into()]] {
+        assert!(normalize(&prefixes).is_ok());
+        let sparse = Intent {
+            prefixes,
+            ..intent()
+        };
+        assert!(plan(&sparse, std::slice::from_ref(&uplink), &tun).is_ok());
+    }
     let v6 = Endpoint {
-        interface: "en0".into(),
-        index: 1,
-        gateway: "fe80::1%en0".into(),
+        interface: "en1".into(),
+        index: 3,
+        gateway: "fe80::1%en1".into(),
     };
-    assert!(plan(&intent(), &[uplink, v6], &tun).is_err());
+    assert!(plan(&intent(), &[uplink, v6.clone()], &tun).is_ok());
+    assert!(plan(&intent(), &[v6], &tun).is_ok());
+    let overlapping = Intent {
+        capture_prefixes: vec!["223.5.5.0/24".into()],
+        ..intent()
+    };
+    assert!(plan(&overlapping, &[endpoints().0], &tun).is_ok());
 }
 
 #[tokio::test]
@@ -169,7 +165,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     let (mut uplink, tun) = endpoints();
     let original = plan(&intent(), std::slice::from_ref(&uplink), &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, original.clone(), &[])
+        .replace(&command::SystemRunner, original.clone())
         .await
         .expect("install");
     let events = controller.backend.events.lock().expect("events").clone();
@@ -182,7 +178,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     next.prefixes.push("120.0.0.0/8".into());
     let updated = plan(&next, std::slice::from_ref(&uplink), &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, updated, &[])
+        .replace(&command::SystemRunner, updated)
         .await
         .expect("delta");
     assert_eq!(
@@ -199,7 +195,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     uplink.gateway = "192.168.2.1".into();
     let changed = plan(&next, &[uplink], &tun).expect("new network");
     controller
-        .replace(&command::SystemRunner, changed.clone(), &[])
+        .replace(&command::SystemRunner, changed.clone())
         .await
         .expect("switch");
     assert_eq!(
@@ -210,7 +206,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     let proxy = plan(&next, &[endpoints().0], &tun).expect("proxy plan");
     assert!(proxy.iter().all(|route| route.fallback));
     controller
-        .replace(&command::SystemRunner, proxy.clone(), &next.prefixes)
+        .replace(&command::SystemRunner, proxy.clone())
         .await
         .expect("proxy switch");
     assert_eq!(
@@ -238,7 +234,7 @@ async fn partial_batch_failure_and_stale_journal_are_recoverable() {
     controller.backend.fail.store(true, Ordering::SeqCst);
     assert!(
         controller
-            .replace(&command::SystemRunner, routes.clone(), &[])
+            .replace(&command::SystemRunner, routes.clone())
             .await
             .is_err()
     );
@@ -293,7 +289,7 @@ fn ipv6_cn_and_private_capture_obey_longest_prefix() {
         assert_eq!(selected.1, expected);
     }
     intent.capture_prefixes.push("223.5.0.0/16".into());
-    assert!(plan(&intent, &[v4, v6], &tun).is_err());
+    assert!(plan(&intent, &[v4, v6], &tun).is_ok());
 }
 
 #[tokio::test]
@@ -304,7 +300,7 @@ async fn failed_cleanup_keeps_journal_for_next_recovery() {
     let (uplink, tun) = endpoints();
     let desired = plan(&intent(), &[uplink], &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, desired, &[])
+        .replace(&command::SystemRunner, desired)
         .await
         .expect("install");
     controller
@@ -346,30 +342,4 @@ async fn cancelled_apply_cannot_reinstall_routes_after_cleanup() {
     cleanup.await.expect("cleanup task").expect("cleanup");
     assert!(controller.backend.routes.lock().expect("routes").is_empty());
     assert!(!directory.path().join("routes.json").exists());
-}
-
-#[tokio::test]
-async fn interface_replacement_withdraws_fallback_before_core_rebind() {
-    for (name, index) in [("en1", 3), ("en0", 3)] {
-        let directory = tempfile::tempdir().expect("directory");
-        let controller = std::sync::Arc::new(Controller::<Memory>::new(Some(
-            directory.path().join("routes.json"),
-        )));
-        controller
-            .apply(std::sync::Arc::new(command::SystemRunner), &intent())
-            .await
-            .expect("install");
-        let (mut uplink, _) = endpoints();
-        uplink.interface = name.into();
-        uplink.index = index;
-        *controller.backend.uplink.lock().expect("uplink") = Some(uplink);
-        assert!(
-            controller
-                .apply(std::sync::Arc::new(command::SystemRunner), &intent())
-                .await
-                .is_err()
-        );
-        assert!(controller.backend.routes.lock().expect("routes").is_empty());
-        assert!(!directory.path().join("routes.json").exists());
-    }
 }

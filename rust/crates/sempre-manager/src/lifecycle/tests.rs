@@ -161,18 +161,46 @@ fn seed_v12_configuration(manager: &Manager<FakeRunner>) -> String {
 }
 
 #[tokio::test]
-async fn rejected_candidate_preserves_the_complete_v12_state() {
+async fn selection_stages_the_candidate_without_automatic_validation() {
     let (_root, manager) = fixture();
-    seed_v12_configuration(&manager);
+    let previous_hash = seed_v12_configuration(&manager);
     let before = manager.state().expect("state before");
     manager.runner.reject.store(true, Ordering::Relaxed);
+    let change = manager
+        .select_core("sing-box@1.14.0-beta.13")
+        .await
+        .expect("stage selected core without prevalidation");
+    assert!(change.changed && change.needs_restart);
+    assert_eq!(manager.runner.validation_calls.load(Ordering::Relaxed), 0);
     assert!(
         manager
-            .select_core("sing-box@1.14.0-beta.13")
-            .await
-            .is_err()
+            .runner
+            .validations
+            .lock()
+            .expect("validations")
+            .is_empty()
     );
-    assert_eq!(manager.state().expect("state after"), before);
+    let after = manager.state().expect("state after");
+    assert_eq!(after.selected.as_ref().unwrap().reference, "1.14.0-beta.13");
+    let active = after.active.as_ref().expect("staged deployment");
+    assert_eq!(active.version, "1.14.0-beta.13");
+    assert_eq!(after.configs["sing-box"], active.config_hash);
+    assert!(
+        manager
+            .store
+            .layout()
+            .config("sing-box", &active.config_hash)
+            .is_file()
+    );
+    assert!(
+        manager
+            .store
+            .layout()
+            .config("sing-box", &previous_hash)
+            .is_file()
+    );
+    assert!(after.pending);
+    assert_eq!(after.runtime, before.runtime);
 }
 
 #[test]

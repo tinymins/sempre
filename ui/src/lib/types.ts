@@ -79,7 +79,6 @@ export interface ManagedRuntimeStatus {
   dns_frontend?: {
     enabled: boolean
     running: boolean
-    core_dns_healthy: boolean
     mode: 'fake-ip' | 'real-ip' | ''
     core_upstream: string
     original_upstreams: string[]

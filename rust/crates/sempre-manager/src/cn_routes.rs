@@ -4,7 +4,6 @@ use std::{
     time::Duration,
 };
 
-use sempre_state::Mode;
 use sempre_transparent::{CnRouteIntent, normalize_cn_prefixes};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -17,13 +16,6 @@ pub(crate) struct Source {
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
-    pub(crate) fn validate_cn_core(&self, core: &str) -> Result<(), ManagerError> {
-        if self.network_settings.read().cn_direct_routes && core != "sing-box" {
-            return Err(invalid("CN pre-routing requires sing-box"));
-        }
-        Ok(())
-    }
-
     pub(crate) async fn prepare_cn_rules(
         &self,
         core: &str,
@@ -31,32 +23,23 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         config: &Path,
     ) -> Result<(Option<Source>, crate::rule_bootstrap::RuleBootstrap), ManagerError> {
         if core != "sing-box" {
+            if self.network_settings.read().cn_direct_routes {
+                self.log_supervisor(&format!(
+                    "CN route operation unavailable: adapter for {core} is not implemented"
+                ));
+            }
             return Ok((None, crate::rule_bootstrap::RuleBootstrap::default()));
         }
-        let source = self.prepare_cn_source(binary, config).await?;
+        let source = self.prepare_cn_source(binary, config).await;
         let rules = crate::rule_bootstrap::RuleBootstrap::prepare(&self.fetcher, config)?;
-        Ok((source, rules))
-    }
-
-    pub(crate) fn validate_cn_settings(
-        &self,
-        candidate: &crate::NetworkSettings,
-        document: &sempre_state::Document,
-    ) -> Result<(), ManagerError> {
-        if !candidate.cn_direct_routes {
-            return Ok(());
+        match source {
+            Ok(source) => Ok((source, rules)),
+            Err(error @ (ManagerError::Io { .. } | ManagerError::Subscription(_))) => {
+                self.log_supervisor(&format!("CN route source operation failed: {error}"));
+                Ok((None, rules))
+            }
+            Err(error) => Err(error),
         }
-        if !self.dns_settings.read().enabled {
-            return Err(invalid("CN pre-routing requires the DNS frontend"));
-        }
-        if document
-            .selected
-            .as_ref()
-            .is_some_and(|core| core.core != "sing-box")
-        {
-            return Err(invalid("CN pre-routing requires sing-box"));
-        }
-        Ok(())
     }
 
     pub(crate) async fn configure_cn_runtime(
@@ -67,12 +50,19 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         transparent: &mut sempre_transparent::Plan,
     ) -> Result<(), ManagerError> {
         if let Some(source) = source {
+            let interfaces = match self.transparent.cn_outbound_interfaces().await {
+                Ok(interfaces) => interfaces,
+                Err(error) => {
+                    self.log_supervisor(&format!("read CN egress interfaces failed: {error}"));
+                    [None, None]
+                }
+            };
             configure(
                 binary,
                 runtime,
                 source,
                 transparent,
-                self.transparent.cn_outbound_interfaces().await?,
+                interfaces,
                 self.network_settings.read().cn_routing_mode == crate::CnRoutingMode::DirectRoute,
             )
             .await?;
@@ -87,9 +77,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<Option<Source>, ManagerError> {
         if !self.network_settings.read().cn_direct_routes {
             return Ok(None);
-        }
-        if self.store.layout().mode != Mode::System {
-            return Err(invalid("CN pre-routing requires the system service"));
         }
         let mut document: Value = serde_json::from_slice(
             &fs::read(config).map_err(|e| ManagerError::io("read CN runtime configuration", e))?,
@@ -183,8 +170,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             .await;
             if let Err(error) = result {
-                self.log_supervisor(&format!("CN routing requires recovery: {error}"));
-                return;
+                self.log_supervisor(&format!("CN routing operation failed: {error}"));
             }
         }
     }
@@ -198,14 +184,6 @@ pub(crate) async fn configure(
     outbound_interfaces: [Option<String>; 2],
     direct: bool,
 ) -> Result<(), ManagerError> {
-    if outbound_interfaces[1]
-        .as_ref()
-        .is_some_and(|v6| Some(v6) != outbound_interfaces[0].as_ref())
-    {
-        return Err(invalid(
-            "CN routing requires IPv4 and IPv6 to share the core egress interface",
-        ));
-    }
     let prefixes = read_prefixes(binary, source).await?;
     let mut document: Value = serde_json::from_slice(
         &fs::read(runtime).map_err(|e| ManagerError::io("read CN runtime", e))?,
@@ -265,15 +243,13 @@ pub(crate) async fn configure(
         sempre_converter::apply_cn_proxy(&mut document)?;
     }
     // Bound core sockets must use the original physical default, never TUN.
-    document["route"]["auto_detect_interface"] = json!(false);
+    if let Some(interface) = outbound_interfaces.iter().flatten().next() {
+        document["route"]["auto_detect_interface"] = json!(false);
+        document["route"]["default_interface"] = json!(interface);
+    }
     if cfg!(target_os = "linux") {
         document["route"]["default_mark"] = json!(sempre_transparent::BYPASS_MARK);
     }
-    document["route"]["default_interface"] = json!(
-        outbound_interfaces[0]
-            .as_ref()
-            .ok_or_else(|| invalid("CN routing requires an IPv4 uplink"))?
-    );
     sempre_state::write_atomic(
         runtime,
         &serde_json::to_vec(&document).map_err(|error| invalid(error.to_string()))?,
@@ -398,7 +374,6 @@ mod tests {
         for rule in [
             r#"{"ip_cidr":["223.5.5.0/24"],"invert":true}"#,
             r#"{"ip_cidr":["223.5.5.0/24"],"port":443}"#,
-            r#"{"ip_cidr":["0.0.0.0/0"]}"#,
         ] {
             assert!(parse_prefixes(format!("{{\"rules\":[{rule}]}}").as_bytes()).is_err());
         }

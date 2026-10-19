@@ -65,26 +65,6 @@ fn field<'a>(output: &'a str, key: &str) -> Option<&'a str> {
         .map(|(_, v)| v.trim())
 }
 
-pub(super) async fn lookup(
-    runner: &dyn command::Runner,
-    address: &str,
-) -> Result<String, TransparentError> {
-    let family = if address.contains(':') {
-        "-inet6"
-    } else {
-        "-inet"
-    };
-    let output = command::require_success(
-        "route",
-        runner
-            .run("/sbin/route", &["-n", "get", family, address], None)
-            .await?,
-    )?;
-    field(&output.stdout, "interface")
-        .map(str::to_owned)
-        .ok_or_else(|| invalid("route lookup has no interface"))
-}
-
 #[allow(clippy::unused_async)] // Policy rules are required only on Linux.
 pub(super) async fn policy(_: &dyn command::Runner, _: bool) -> Result<(), TransparentError> {
     Ok(())

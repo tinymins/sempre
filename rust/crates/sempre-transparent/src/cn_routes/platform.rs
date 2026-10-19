@@ -56,12 +56,7 @@ pub(super) async fn discover(
     }
     let tun = native::endpoint(runner, &names[0]).await?;
     let uplinks = native::uplinks(runner).await?;
-    if uplinks
-        .iter()
-        .any(|uplink| uplink.interface == tun.interface)
-    {
-        return Err(invalid("default uplink resolves to the managed TUN"));
-    }
+
     Ok((uplinks, tun))
 }
 
@@ -87,50 +82,6 @@ pub(super) async fn policy(
     native::policy(runner, add).await
 }
 
-pub(super) async fn verify(
-    runner: &dyn command::Runner,
-    routes: &[Route],
-    proxy_prefixes: &[String],
-) -> Result<(), TransparentError> {
-    let tun = &routes
-        .iter()
-        .find(|r| r.fallback)
-        .ok_or_else(|| invalid("missing TUN fallback"))?
-        .endpoint
-        .interface;
-    if native::lookup(runner, "1.1.1.1").await? != *tun {
-        return Err(invalid("1.1.1.1 is not routed into the managed TUN"));
-    }
-    for v6 in [false, true] {
-        if let Some(prefix) = proxy_prefixes.iter().find(|p| p.contains(':') == v6) {
-            if (v6 && !routes.iter().any(|r| r.prefix == "::/1"))
-                || (!v6 && !routes.iter().any(|r| r.prefix == "0.0.0.0/1"))
-            {
-                continue;
-            }
-            let address = prefix.split('/').next().expect("validated prefix");
-            if native::lookup(runner, address).await? != *tun {
-                return Err(invalid(format!(
-                    "CN proxy route {prefix} does not enter the managed TUN"
-                )));
-            }
-        }
-        if let Some(route) = routes
-            .iter()
-            .find(|r| !r.fallback && r.prefix.contains(':') == v6)
-        {
-            let address = route.prefix.split('/').next().expect("validated prefix");
-            if native::lookup(runner, address).await? != route.endpoint.interface {
-                return Err(invalid(format!(
-                    "CN route {} does not use its physical uplink",
-                    route.prefix
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod native {
     use super::{Endpoint, Route, TransparentError, command, invalid};
@@ -152,8 +103,5 @@ mod native {
     }
     pub async fn policy(_: &dyn command::Runner, _: bool) -> Result<(), TransparentError> {
         Ok(())
-    }
-    pub async fn lookup(_: &dyn command::Runner, _: &str) -> Result<String, TransparentError> {
-        Err(invalid("unsupported CN routing platform"))
     }
 }

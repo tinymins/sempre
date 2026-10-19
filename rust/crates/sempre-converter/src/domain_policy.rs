@@ -29,11 +29,6 @@ pub fn apply_dns_frontend_settings(
             .insert("use_system_dns".into(), Value::Bool(false));
     }
     let cn_routes = crate::cn_pre_routing(&profile);
-    if cn_routes && !enabled {
-        return Err(CompileError::Render(
-            "CN pre-routing requires the managed DNS frontend".into(),
-        ));
-    }
     let shared = shared_mut(&mut profile.dns);
     if cn_routes {
         shared.insert("cnIpRuleSetEnabled".into(), Value::Bool(true));

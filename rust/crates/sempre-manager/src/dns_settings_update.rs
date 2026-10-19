@@ -1,6 +1,5 @@
 use std::fmt::Write as _;
 
-use sempre_core::CoreRef;
 use sempre_state::PendingConfigField;
 
 use crate::{CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner};
@@ -11,16 +10,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         mut candidate: crate::DnsSettings,
     ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
         candidate.normalize_and_validate()?;
-        if !candidate.enabled && self.network_settings.read().cn_direct_routes {
-            return Err(ManagerError::InvalidOperation(
-                "DNS frontend must remain enabled with CN direct routes".into(),
-            ));
-        }
-        if !candidate.enabled && self.network_settings.read().mode == crate::NetworkMode::Gateway {
-            return Err(ManagerError::InvalidOperation(
-                "DNS frontend must remain enabled in gateway mode".into(),
-            ));
-        }
         let _operation = self.store.acquire_operation()?;
         let _runtime = self.runtime_rules_gate.lock().await;
         let document = self.store.read()?;
@@ -33,16 +22,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         if requires_core_rebuild
             && previous.enabled == candidate.enabled
             && previous.domestic_domains == candidate.domestic_domains
-            && let Some(update) = crate::dns_rule_files::prepare_update(
-                self.store.layout(),
-                &document,
-                &previous,
-                &candidate,
-            )?
+            && let Some(update) =
+                crate::dns_rule_files::prepare_update(&document, &previous, &candidate)?
         {
-            return self
-                .publish_dns_rule_update(&document, candidate, update)
-                .await;
+            return self.publish_dns_rule_update(candidate, update).await;
         }
         if !requires_core_rebuild {
             self.dns_frontend
@@ -99,23 +82,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 
     async fn publish_dns_rule_update(
         &self,
-        document: &sempre_state::Document,
         candidate: crate::DnsSettings,
         mut update: crate::dns_rule_files::RuleFileUpdate,
     ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
-        let reference = CoreRef {
-            core: "sing-box".into(),
-            repository: document.runtime.repository.clone(),
-            reference: document.runtime.reference.clone().ok_or_else(|| {
-                ManagerError::InvalidOperation("running core has no reference".into())
-            })?,
-        };
-        let version =
-            document.runtime.version.as_deref().ok_or_else(|| {
-                ManagerError::InvalidOperation("running core has no version".into())
-            })?;
-        self.validate_config_path(&reference, version, update.validation_config())
-            .await?;
         if let Err(error) = update.publish() {
             return Err(publication_error(error, update.rollback().err(), None));
         }

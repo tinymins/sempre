@@ -48,19 +48,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         candidate: crate::NetworkSettings,
     ) -> Result<(CoreChange, crate::NetworkSettings), ManagerError> {
-        if candidate.mode == crate::NetworkMode::Gateway && std::env::consts::OS != "linux" {
-            return Err(ManagerError::InvalidOperation(
-                "gateway mode is only available on Linux".into(),
-            ));
-        }
-        if candidate.mode == crate::NetworkMode::Gateway && !self.dns_settings.read().enabled {
-            return Err(ManagerError::InvalidOperation(
-                "enable the DNS frontend before switching to gateway mode".into(),
-            ));
-        }
         let _operation = self.store.acquire_operation()?;
         let document = self.store.read()?;
-        self.validate_cn_settings(&candidate, &document)?;
         let previous = self.network_settings.read();
         let saved = self.network_settings.replace(candidate)?;
         if saved.same_routing(&previous) {
@@ -210,21 +199,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                         "no change".into()
                     });
                 },
-            )
-            .await?
+            )?
         } else {
-            self.validate_config_content(rendered.render.content.as_bytes())
-                .await?;
             self.subscriptions
                 .save_blob(rendered.render.content.as_bytes())?;
             CoreChange {
                 changed: true,
-                message: "subscription profile refreshed, compiled, and validated".into(),
+                message: "subscription profile refreshed and compiled".into(),
                 ..CoreChange::default()
             }
         };
         change.changed |= profile_changed;
-        rendered.render.runtime_validated = true;
         record_compilation(
             &self.subscriptions,
             &profile,
@@ -233,7 +218,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             now,
         )?;
         if active {
-            change.message = "subscription profile refreshed, validated, and staged".into();
+            change.message = "subscription profile refreshed, compiled, and staged".into();
         }
         Ok((change, rendered.render))
     }
@@ -310,7 +295,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         if profile_mode(profile) == "remote" {
             self.local_transport_profile(profile, &target)?;
             let mut remote = self.remote.render(profile, &target).await?;
-            validate_runtime_profile(&remote.profile)?;
             let dns_settings = self.dns_settings.read();
             if dns_settings.enabled && target.core == "sing-box" {
                 remote.content = dns_settings.apply_compiled_sing_box_overlay(&remote.content)?;
@@ -340,7 +324,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 dns_frontend_policy: Some(dns_frontend_policy),
             });
         }
-        validate_runtime_profile(profile)?;
         let mut updated = profile.clone();
         let loaded = self
             .load_profile_sources(&mut updated, refresh, !refresh, true)
@@ -467,20 +450,6 @@ pub(crate) fn profile_mode(profile: &Profile) -> &str {
         .unwrap_or("local")
 }
 
-fn validate_runtime_profile(profile: &Profile) -> Result<(), ManagerError> {
-    if profile.transparent_proxy.mode != "tun-router" {
-        return Ok(());
-    }
-    let name = profile.transparent_proxy.tun.interface_name.trim();
-    if name.is_empty() || name.len() > 15 {
-        return Err(SubscriptionError::Invalid(
-            "TUN interface name must contain 1 to 15 characters".into(),
-        )
-        .into());
-    }
-    Ok(())
-}
-
 pub(crate) fn record_compilation(
     store: &sempre_subscription::SubscriptionStore,
     original: &Profile,
@@ -509,17 +478,17 @@ pub(crate) fn record_compilation(
             }
         }
         item.extra.insert("last_check".into(), json!(now));
-        item.extra.insert(
-            "last_result".into(),
-            json!("configuration compiled and runtime validated"),
-        );
+        item.extra
+            .insert("last_result".into(), json!("configuration compiled"));
         if item.extra.get("last_config_hash") != Some(&json!(render.artifact_hash)) {
             item.extra.insert("last_change".into(), json!(now));
         }
         item.extra
             .insert("last_config_hash".into(), json!(render.artifact_hash));
-        item.extra
-            .insert("last_runtime_validated".into(), json!(true));
+        item.extra.insert(
+            "last_runtime_validated".into(),
+            json!(render.runtime_validated),
+        );
         item.extra
             .insert("last_compiler_target".into(), json!(render.format));
         item.extra

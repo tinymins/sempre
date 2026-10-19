@@ -1,23 +1,19 @@
 mod update;
 
 use std::{
-    net::IpAddr,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
-    time::Duration,
 };
 
 use ipnet::IpNet;
 use sempre_converter::DnsFrontendPolicy;
 use sempre_core::CoreRef;
-use sempre_dns::{DnsConfig, DnsRuntimePolicy, DnsService, managed_probe_names, probe_dns};
+use sempre_dns::{DnsConfig, DnsRuntimePolicy, DnsService};
 use sempre_state::{Deployment, Document};
 use sempre_transparent::Plan as TransparentPlan;
-use tokio::{sync::Mutex, time::sleep};
+use tokio::sync::Mutex;
 
 use crate::{DnsFrontendStatus, Manager, ManagerError, ValidationRunner, VersionRunner};
-
-const PROBE_INTERVAL: Duration = Duration::from_millis(200);
 
 pub(crate) struct DnsFrontendRuntime {
     running: Mutex<Option<RunningFrontend>>,
@@ -41,8 +37,6 @@ pub(crate) struct DnsFrontendPlan {
     fakeip_ranges: Vec<IpNet>,
     core_upstream: String,
     original_upstreams: Vec<String>,
-    local_probe: Option<String>,
-    remote_probe: String,
 }
 
 impl DnsFrontendRuntime {
@@ -69,36 +63,15 @@ impl DnsFrontendRuntime {
     pub(crate) async fn activate_core(
         &self,
         frontend: Option<&DnsFrontendPlan>,
-        timeout: Duration,
-    ) {
+    ) -> Result<(), ManagerError> {
         let Some(frontend) = frontend else {
-            return;
+            return Ok(());
         };
-        if let Err(error) = wait_for_answer(
-            frontend,
-            &frontend.core_upstream,
-            &frontend.remote_probe,
-            frontend.fakeip_enabled,
-            timeout,
-        )
-        .await
-        {
-            self.record_failure(&error);
-            return;
+        let result = self.promote(frontend).await;
+        if let Err(error) = &result {
+            self.record_failure(error);
         }
-        if let Err(error) = self.promote(frontend, timeout).await {
-            self.record_failure(&error);
-            return;
-        }
-        self.status
-            .write()
-            .expect("DNS frontend status")
-            .core_dns_healthy = true;
-        self.status
-            .write()
-            .expect("DNS frontend status")
-            .last_error
-            .clear();
+        result
     }
 
     pub(crate) async fn stop(&self) {
@@ -112,7 +85,7 @@ impl DnsFrontendRuntime {
         *self.capture_error.write().expect("capture status") = None;
     }
 
-    fn configure(&self, plan: &DnsFrontendPlan, core_dns_healthy: bool) {
+    fn configure(&self, plan: &DnsFrontendPlan) {
         let port_53 = self
             .status
             .read()
@@ -122,7 +95,6 @@ impl DnsFrontendRuntime {
         *self.status.write().expect("DNS frontend status") = DnsFrontendStatus {
             enabled: true,
             running: true,
-            core_dns_healthy,
             fakeip_ranges: if plan.fakeip_enabled {
                 plan.fakeip_ranges.clone()
             } else {
@@ -156,7 +128,6 @@ impl DnsFrontendRuntime {
 
     pub(crate) fn record_failure(&self, error: &impl ToString) {
         let mut status = self.status.write().expect("DNS frontend status");
-        status.core_dns_healthy = false;
         status.last_error = error.to_string();
     }
 
@@ -195,65 +166,23 @@ impl DnsFrontendRuntime {
             service,
             capture,
         });
-        self.configure(plan, false);
+        self.configure(plan);
         self.status.write().expect("DNS frontend status").port_53 = port_53;
         Ok(())
     }
 
-    async fn promote(&self, plan: &DnsFrontendPlan, timeout: Duration) -> Result<(), ManagerError> {
-        let previous = {
-            let mut running = self.running.lock().await;
-            let current = running.as_mut().expect("prepared DNS frontend");
-            if current.plan.deployment_hash == plan.deployment_hash
-                && current.plan.config == plan.config
-            {
-                current.plan.clone()
-            } else {
-                let previous = current.plan.clone();
-                current.service.update(plan.config.clone())?;
-                current.plan = plan.clone();
-                previous
-            }
-        };
-        self.configure(plan, false);
-        if let Err(error) = self.probe_frontend(plan, timeout).await {
-            let mut running = self.running.lock().await;
-            let current = running.as_mut().expect("prepared DNS frontend");
-            let _ = current.service.update(previous.config.clone());
-            current.plan = previous.clone();
-            self.configure(&previous, false);
-            return Err(error);
+    async fn promote(&self, plan: &DnsFrontendPlan) -> Result<(), ManagerError> {
+        self.start_if_missing(plan).await?;
+        let mut running = self.running.lock().await;
+        let current = running.as_mut().expect("started DNS frontend");
+        if current.plan.deployment_hash != plan.deployment_hash
+            || current.plan.config != plan.config
+        {
+            current.service.update(plan.config.clone())?;
+            current.plan = plan.clone();
         }
+        self.configure(plan);
         Ok(())
-    }
-
-    async fn probe_local(
-        &self,
-        plan: &DnsFrontendPlan,
-        timeout: Duration,
-    ) -> Result<(), ManagerError> {
-        let upstream = dns_endpoint("127.0.0.1", plan.config.listen_port);
-        if let Some(name) = &plan.local_probe {
-            wait_for_answer(plan, &upstream, name, false, timeout).await?;
-        }
-        Ok(())
-    }
-
-    async fn probe_frontend(
-        &self,
-        plan: &DnsFrontendPlan,
-        timeout: Duration,
-    ) -> Result<(), ManagerError> {
-        self.probe_local(plan, timeout).await?;
-        let upstream = dns_endpoint("127.0.0.1", plan.config.listen_port);
-        wait_for_answer(
-            plan,
-            &upstream,
-            &plan.remote_probe,
-            plan.fakeip_enabled,
-            timeout,
-        )
-        .await
     }
 }
 
@@ -281,20 +210,20 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             &target,
             self.dns_settings.read().enabled,
         )?;
-        let Some(system_dns) = self
+        let policy = sempre_converter::dns_frontend_policy(&profile, &target)?;
+        let system_dns = match self
             .transparent
             .prepare_managed_dns_frontend(&deployment.core, &profile)
-            .await?
-        else {
-            return Ok(None);
+            .await
+        {
+            Ok(Some(plan)) => plan,
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                self.dns_frontend.record_failure(&error);
+                self.log_supervisor(&format!("DNS frontend plan preparation failed: {error}"));
+                return Ok(None);
+            }
         };
-        let policy = sempre_converter::dns_frontend_policy(&profile, &target)?;
-        if policy.core_listen_port != system_dns.core_listen_port {
-            return Err(ManagerError::InvalidOperation(
-                "managed DNS frontend and core listener ports do not match".into(),
-            ));
-        }
-        crate::runtime_ports::ensure_dns_available(policy.core_listen_port)?;
         let mut plan = DnsFrontendPlan::from_policy(
             &deployment.config_hash,
             &policy,
@@ -304,7 +233,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             &self.dns_settings.read(),
         )?;
         if sempre_converter::cn_pre_routing(&profile) {
-            plan.config.outbound_interfaces = self.transparent.cn_outbound_interfaces().await?;
+            match self.transparent.cn_outbound_interfaces().await {
+                Ok(interfaces) => plan.config.outbound_interfaces = interfaces,
+                Err(error) => self
+                    .log_supervisor(&format!("DNS outbound interface discovery failed: {error}")),
+            }
         }
         Ok(Some(plan))
     }
@@ -333,7 +266,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             &target,
             self.dns_settings.read().enabled,
         )?;
-        Ok(self
+        match self
             .transparent
             .prepare(
                 &deployment.core,
@@ -341,7 +274,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 &profile,
                 runtime_config,
             )
-            .await?)
+            .await
+        {
+            Ok(plan) => Ok(plan),
+            Err(error) if operational_error(&error) => {
+                self.log_supervisor(&format!(
+                    "transparent proxy plan preparation failed: {error}"
+                ));
+                Ok(TransparentPlan::default())
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 }
 
@@ -368,15 +311,14 @@ impl DnsFrontendPlan {
         listen_hosts: &[String],
         settings: &crate::DnsSettings,
     ) -> Result<Self, ManagerError> {
-        if !policy.enabled || !policy.complete {
-            return Err(ManagerError::InvalidOperation(
-                "managed DNS frontend policy is disabled or incomplete".into(),
-            ));
-        }
-        let mut fakeip_ranges = vec![parse_range(&policy.fakeip_ipv4_range)?];
-        if !policy.fakeip_ipv6_range.trim().is_empty() {
-            fakeip_ranges.push(parse_range(&policy.fakeip_ipv6_range)?);
-        }
+        let fakeip_ranges = if policy.fakeip_enabled {
+            [&policy.fakeip_ipv4_range, &policy.fakeip_ipv6_range]
+                .into_iter()
+                .filter_map(|range| range.parse().ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
         let local_upstreams = if settings.direct_upstreams.is_empty() {
             sempre_dns::default_upstreams()
         } else {
@@ -391,73 +333,26 @@ impl DnsFrontendPlan {
         )?;
         config.listen_hosts = listen_hosts.to_vec();
         config.outbound_mark = cfg!(target_os = "linux").then_some(sempre_transparent::BYPASS_MARK);
-        let (local_probe, remote_probe) = managed_probe_names(&config)?;
         Ok(Self {
             deployment_hash: deployment_hash.into(),
             core_upstream: config.remote_upstream.clone(),
             original_upstreams: original_upstreams.to_vec(),
-            local_probe,
-            remote_probe,
             config,
             fakeip_enabled: policy.fakeip_enabled,
             fakeip_ranges,
         })
     }
-
-    fn valid_answer(&self, expected_fake: bool, addresses: &[IpAddr]) -> bool {
-        if addresses.is_empty() {
-            return false;
-        }
-        let fake = addresses.iter().all(|address| {
-            self.fakeip_ranges
-                .iter()
-                .any(|range| range.contains(address))
-        });
-        fake == expected_fake
-    }
 }
 
-async fn wait_for_answer(
-    plan: &DnsFrontendPlan,
-    upstream: &str,
-    name: &str,
-    expected_fake: bool,
-    timeout: Duration,
-) -> Result<(), ManagerError> {
-    let started = tokio::time::Instant::now();
-    let mut last_error = String::new();
-    while started.elapsed() < timeout {
-        let attempt_timeout = timeout
-            .checked_sub(started.elapsed())
-            .unwrap_or_default()
-            .min(Duration::from_secs(2));
-        match tokio::time::timeout(attempt_timeout, probe_dns(upstream, name, "A")).await {
-            Err(_) => last_error = "DNS probe timed out".into(),
-            Ok(Ok(result))
-                if result.response_code == 0
-                    && plan.valid_answer(expected_fake, &result.addresses) =>
-            {
-                return Ok(());
-            }
-            Ok(Ok(result)) => {
-                last_error = format!(
-                    "DNS probe returned code {} and addresses {:?}",
-                    result.response_code, result.addresses
-                );
-            }
-            Ok(Err(error)) => last_error = error.to_string(),
-        }
-        sleep(PROBE_INTERVAL).await;
-    }
-    Err(ManagerError::RuntimeNotReady(format!(
-        "DNS health probe {name} via {upstream} failed: {last_error}"
-    )))
-}
-
-fn parse_range(value: &str) -> Result<IpNet, ManagerError> {
-    value.parse().map_err(|_| {
-        ManagerError::InvalidOperation(format!("invalid managed FakeIP range {value:?}"))
-    })
+fn operational_error(error: &sempre_transparent::TransparentError) -> bool {
+    matches!(
+        error,
+        sempre_transparent::TransparentError::Network(_)
+            | sempre_transparent::TransparentError::Io { .. }
+            | sempre_transparent::TransparentError::CommandStart { .. }
+            | sempre_transparent::TransparentError::CommandTimeout { .. }
+            | sempre_transparent::TransparentError::CommandFailed { .. }
+    )
 }
 
 fn dns_endpoint(ip: &str, port: u16) -> String {

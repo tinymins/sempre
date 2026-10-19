@@ -131,30 +131,6 @@ pub(crate) async fn delete(runner: &dyn command::Runner) -> Result<(), Transpare
     failure.map_or(Ok(()), Err)
 }
 
-pub(crate) async fn verify(runner: &dyn command::Runner) -> Result<(), TransparentError> {
-    for family in ["-4", "-6"] {
-        let rules = json_command(runner, &["-j", family, "rule", "show"]).await?;
-        if !rules
-            .as_array()
-            .is_some_and(|values| values.iter().any(owned_rule))
-        {
-            return Err(TransparentError::Invalid(format!(
-                "Sempre {family} policy rule is missing"
-            )));
-        }
-        let routes = route_json(runner, &["-j", family, "route", "show", "table", "20240"]).await?;
-        if !routes
-            .as_array()
-            .is_some_and(|values| values.iter().any(|route| owned_route(route, family)))
-        {
-            return Err(TransparentError::Invalid(format!(
-                "Sempre {family} policy route is missing"
-            )));
-        }
-    }
-    Ok(())
-}
-
 async fn json_command(
     runner: &dyn command::Runner,
     arguments: &[&str],

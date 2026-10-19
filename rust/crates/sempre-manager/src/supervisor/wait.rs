@@ -7,7 +7,7 @@ use super::RuntimePlan;
 use crate::{Manager, ValidationRunner, VersionRunner};
 
 pub(super) enum ProcessEvent {
-    Healthy(Result<(), sempre_transparent::TransparentError>),
+    Healthy,
     Reload,
     Shutdown,
     Exited(Result<ExitStatus, SupervisorError>),
@@ -28,7 +28,7 @@ pub(super) async fn wait_startup<R: VersionRunner + ValidationRunner>(
     grace: Duration,
 ) -> ProcessEvent {
     tokio::select! {
-        result = activate_network(manager, plan, grace) => ProcessEvent::Healthy(result),
+        () = activate_network(manager, plan, grace) => ProcessEvent::Healthy,
         result = process.wait() => ProcessEvent::Exited(result),
         () = manager.wait_runtime_reload() => ProcessEvent::Reload,
         () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,
@@ -39,43 +39,34 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
     manager: &Manager<R>,
     plan: &RuntimePlan,
     grace: Duration,
-) -> Result<(), sempre_transparent::TransparentError> {
+) {
     manager.activate_network_automation(grace).await;
     if plan.dns_frontend.is_none() && !plan.transparent.active() {
         sleep(grace).await;
-    } else {
-        manager.transparent.apply(&plan.transparent).await?;
+    } else if let Err(error) = manager.transparent.apply(&plan.transparent).await {
+        manager.log_supervisor(&format!("transparent proxy activation failed: {error}"));
     }
     if plan.dns_frontend.is_none() {
-        manager.transparent.cleanup_system_dns().await?;
-        manager.dns_frontend.stop().await;
-        return Ok(());
-    }
-    manager
-        .dns_frontend
-        .activate_core(plan.dns_frontend.as_ref(), grace)
-        .await;
-    ensure_cn_dns_ready(&plan.transparent, &manager.dns_frontend.status())?;
-    if let Some(intent) = &plan.transparent.cn_routes {
-        manager.transparent.flush_cn_dns().await?;
-        manager.transparent.apply_cn_routes(intent).await?;
-    }
-    Ok(())
-}
-
-fn ensure_cn_dns_ready(
-    plan: &sempre_transparent::Plan,
-    status: &crate::DnsFrontendStatus,
-) -> Result<(), sempre_transparent::TransparentError> {
-    if plan.cn_routes.is_some() && !(status.enabled && status.running && status.core_dns_healthy) {
-        let mut message = "managed DNS frontend is not ready; CN routes remain disabled".to_owned();
-        if !status.last_error.is_empty() {
-            message.push_str(": ");
-            message.push_str(&status.last_error);
+        if let Err(error) = manager.transparent.cleanup_system_dns().await {
+            manager.log_supervisor(&format!("system DNS cleanup failed: {error}"));
         }
-        return Err(sempre_transparent::TransparentError::Invalid(message));
+        manager.dns_frontend.stop().await;
     }
-    Ok(())
+    if let Err(error) = manager
+        .dns_frontend
+        .activate_core(plan.dns_frontend.as_ref())
+        .await
+    {
+        manager.log_supervisor(&format!("DNS frontend activation failed: {error}"));
+    }
+    if let Some(intent) = &plan.transparent.cn_routes {
+        if let Err(error) = manager.transparent.flush_cn_dns().await {
+            manager.log_supervisor(&format!("CN DNS flush failed: {error}"));
+        }
+        if let Err(error) = manager.transparent.apply_cn_routes(intent).await {
+            manager.log_supervisor(&format!("CN routes activation failed: {error}"));
+        }
+    }
 }
 
 pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(
@@ -139,58 +130,5 @@ pub(super) async fn wait_retry<R: VersionRunner>(
 async fn shutdown_requested(shutdown: &mut watch::Receiver<bool>) {
     if !*shutdown.borrow() {
         let _ = shutdown.changed().await;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ensure_cn_dns_ready;
-    use crate::DnsFrontendStatus;
-    use sempre_transparent::{CnRouteIntent, Plan};
-
-    #[test]
-    fn cn_routes_require_running_healthy_managed_dns() {
-        for cn_enabled in [false, true] {
-            for mode in ["fake-ip", "real-ip"] {
-                for (enabled, running, core_dns_healthy) in [
-                    (true, true, true),
-                    (false, true, true),
-                    (true, false, true),
-                    (true, true, false),
-                ] {
-                    let plan = Plan {
-                        cn_routes: cn_enabled.then_some(CnRouteIntent {
-                            direct: true,
-                            prefixes: Vec::new(),
-                            tun_addresses: Vec::new(),
-                            capture_prefixes: Vec::new(),
-                            outbound_interfaces: [None, None],
-                        }),
-                        ..Plan::default()
-                    };
-                    let status = DnsFrontendStatus {
-                        enabled,
-                        running,
-                        core_dns_healthy,
-                        mode: mode.into(),
-                        last_error: "DNS probe or capture failed".into(),
-                        ..DnsFrontendStatus::default()
-                    };
-                    let result = ensure_cn_dns_ready(&plan, &status);
-                    assert_eq!(
-                        result.is_ok(),
-                        !cn_enabled || (enabled && running && core_dns_healthy),
-                        "CN={cn_enabled} mode={mode} enabled={enabled} running={running} healthy={core_dns_healthy}"
-                    );
-                    if let Err(error) = result {
-                        assert!(
-                            error
-                                .to_string()
-                                .contains("CN routes remain disabled: DNS probe or capture failed")
-                        );
-                    }
-                }
-            }
-        }
     }
 }

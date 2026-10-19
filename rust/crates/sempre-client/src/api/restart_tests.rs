@@ -42,7 +42,7 @@ async fn startup_task_and_configuration_require_authentication() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn restart_http_response_does_not_wait_for_validation_or_allow_a_second_restart() {
+async fn restart_http_response_stages_without_prevalidation_or_allowing_a_second_restart() {
     use axum::body::to_bytes;
     use chrono::Utc;
     use sempre_state::{Installation, Selection};
@@ -53,7 +53,11 @@ async fn restart_http_response_does_not_wait_for_validation_or_allow_a_second_re
     let layout = state.manager.store().layout();
     let binary = layout.core_binary("sing-box", None, "1.14.0-beta.13");
     fs::create_dir_all(binary.parent().unwrap()).unwrap();
-    fs::write(&binary, "#!/bin/sh\nsleep 1\necho validation-output\n").unwrap();
+    fs::write(
+        &binary,
+        "#!/bin/sh\ntouch \"$0.validation-called\"\nsleep 1\necho validation-output\n",
+    )
+    .unwrap();
     fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
     state
         .manager
@@ -121,10 +125,11 @@ async fn restart_http_response_does_not_wait_for_validation_or_allow_a_second_re
     .await
     .unwrap();
     let task = state.manager.startup_task().unwrap();
+    assert!(!binary.with_file_name("sing-box.validation-called").exists());
     assert!(
         task.logs
             .iter()
-            .any(|entry| entry.message.contains("validation-output"))
+            .all(|entry| !entry.message.contains("validation-output"))
     );
     assert!(state.manager.startup_task_config(&task.id).is_some());
 }

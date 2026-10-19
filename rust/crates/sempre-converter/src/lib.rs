@@ -72,7 +72,7 @@ pub fn compile_with_overlay(
 ) -> Result<CompileResult, CompileError> {
     let target = normalized_target(&request.target)?;
     let mut profile = prepare_profile(&request.profile, &target)?;
-    apply_compile_overlay(&mut profile, overlay)?;
+    apply_compile_overlay(&mut profile, overlay);
     let snapshots: HashMap<&str, &SourceSnapshot> = request
         .snapshots
         .iter()
@@ -165,41 +165,13 @@ pub fn compile_with_overlay(
     })
 }
 
-fn apply_compile_overlay(
-    profile: &mut Profile,
-    overlay: &CompileOverlay,
-) -> Result<(), CompileError> {
-    for group in &overlay.groups {
-        if profile
-            .groups
-            .iter()
-            .any(|existing| existing.name == group.name)
-        {
-            return Err(CompileError::Render(format!(
-                "managed proxy group {:?} conflicts with the profile",
-                group.name
-            )));
-        }
-    }
-    for provider in &overlay.rule_providers {
-        if profile
-            .rule_providers
-            .iter()
-            .any(|existing| existing.tag == provider.tag)
-        {
-            return Err(CompileError::Render(format!(
-                "managed rule provider {:?} conflicts with the profile",
-                provider.tag
-            )));
-        }
-    }
+fn apply_compile_overlay(profile: &mut Profile, overlay: &CompileOverlay) {
     let mut groups = overlay.groups.clone();
     groups.append(&mut profile.groups);
     profile.groups = groups;
     let mut providers = overlay.rule_providers.clone();
     providers.append(&mut profile.rule_providers);
     profile.rule_providers = providers;
-    Ok(())
 }
 
 pub fn prepare_profile(profile: &Profile, target: &Target) -> Result<Profile, CompileError> {

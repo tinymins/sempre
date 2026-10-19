@@ -30,50 +30,33 @@ pub fn apply_cn_proxy(document: &mut serde_json::Value) -> Result<(), crate::Com
     let outbounds = document["outbounds"]
         .as_array_mut()
         .ok_or_else(|| invalid("CN proxy routing requires outbounds"))?;
-    if names.is_empty() {
-        return Err(invalid("CN proxy routing has no proxy nodes to select"));
+    let previous_default = outbounds
+        .iter()
+        .find(|item| item["tag"] == CN_PROXY_GROUP)
+        .and_then(|group| group["default"].as_str())
+        .filter(|name| names.iter().any(|candidate| candidate == name))
+        .map(str::to_owned);
+    let default = previous_default.or_else(|| names.first().cloned());
+    outbounds.retain(|item| item["tag"] != CN_PROXY_GROUP);
+    let mut group = json!({"type": "selector", "tag": CN_PROXY_GROUP,
+        "outbounds": names, "interrupt_exist_connections": true});
+    if let Some(default) = default {
+        group["default"] = json!(default);
     }
-    if let Some(group) = outbounds.iter().find(|item| item["tag"] == CN_PROXY_GROUP) {
-        let valid = group["type"] == "selector"
-            && group["outbounds"].as_array().is_some_and(|members| {
-                !members.is_empty()
-                    && members.iter().all(|member| {
-                        member
-                            .as_str()
-                            .is_some_and(|name| names.iter().any(|n| n == name))
-                    })
-                    && members.contains(&group["default"])
-            });
-        if !valid {
-            return Err(invalid("CN pre-routing proxy group name is reserved"));
-        }
-    } else {
-        outbounds.push(json!({"type": "selector", "tag": CN_PROXY_GROUP,
-            "outbounds": names, "default": names[0], "interrupt_exist_connections": true}));
-    }
+    outbounds.push(group);
     let rules = document["route"]["rules"]
         .as_array_mut()
         .ok_or_else(|| invalid("CN proxy routing requires route rules"))?;
-    let existing = rules
+    rules.retain(|rule| rule["outbound"] != CN_PROXY_GROUP);
+    let at = rules
         .iter()
-        .filter(|rule| rule["outbound"] == CN_PROXY_GROUP)
-        .collect::<Vec<_>>();
-    if !existing.is_empty() && (existing.len() != 1 || *existing[0] != proxy_rule()) {
-        return Err(invalid(
-            "CN routing proxy rule is reserved for original TUN IP traffic",
-        ));
-    }
-    if existing.is_empty() {
-        let at = rules
-            .iter()
-            .position(|rule| {
-                !matches!(rule["action"].as_str(), Some("sniff" | "hijack-dns"))
-                    && rule["protocol"] != "dns"
-                    && rule["ip_is_private"] != true
-            })
-            .unwrap_or(rules.len());
-        rules.insert(at, proxy_rule());
-    }
+        .position(|rule| {
+            !matches!(rule["action"].as_str(), Some("sniff" | "hijack-dns"))
+                && rule["protocol"] != "dns"
+                && rule["ip_is_private"] != true
+        })
+        .unwrap_or(rules.len());
+    rules.insert(at, proxy_rule());
     crate::populate_dns_selectors(document);
     Ok(())
 }

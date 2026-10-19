@@ -63,10 +63,3 @@ pub(super) async fn change(
 pub(super) async fn policy(_: &dyn command::Runner, _: bool) -> Result<(), TransparentError> {
     Ok(())
 }
-
-pub(super) async fn lookup(
-    runner: &dyn command::Runner,
-    address: &str,
-) -> Result<String, TransparentError> {
-    run(runner, json!({"operation":"lookup", "address":address})).await
-}

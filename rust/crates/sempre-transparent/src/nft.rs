@@ -64,17 +64,6 @@ pub(crate) async fn apply(
     Ok(())
 }
 
-pub(crate) async fn verify(runner: &dyn command::Runner) -> Result<(), TransparentError> {
-    let owned = check_collisions(runner).await?;
-    if owned == ["ip", "ip6"] {
-        Ok(())
-    } else {
-        Err(TransparentError::Invalid(
-            "Sempre TProxy nftables tables are incomplete".into(),
-        ))
-    }
-}
-
 pub(crate) fn script(plan: &Plan) -> String {
     let mut output = String::new();
     for family in ["ip", "ip6"] {

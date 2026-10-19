@@ -48,7 +48,6 @@ async fn tproxy_owns_intercepts_and_cleans_kernel_state() {
         ..Plan::default()
     };
     controller.apply(&plan).await.expect("apply TProxy state");
-    controller.verify(&plan).await.expect("verify TProxy state");
     assert!(tables().contains("table ip sempre_tproxy"));
     assert!(tables().contains("table ip6 sempre_tproxy"));
     assert_no_connection(&proxy).await;

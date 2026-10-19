@@ -68,12 +68,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 &self.network_settings.read(),
             )?;
             let candidate = self
-                .prepare_config_content_for(
-                    reference,
-                    version,
-                    compilation_item.1.render.content.as_bytes(),
-                )
-                .await
+                .prepare_config_content_for(reference, compilation_item.1.render.content.as_bytes())
                 .map_err(|source| ManagerError::CandidateRejected {
                     reference: reference.to_string(),
                     source: Box::new(source),
@@ -83,15 +78,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             candidate_build = Some(build);
             compilation = Some(compilation_item);
             prepared = Some(candidate);
-        } else if let Some(hash) = &previous_hash {
-            let config = self.store.layout().config(&reference.core, hash);
-            self.validate_config_path(reference, version, &config)
-                .await
-                .map_err(|source| ManagerError::CandidateRejected {
-                    reference: reference.to_string(),
-                    source: Box::new(source),
-                })?;
         }
+
         Ok(SelectionConfig {
             previous_hash,
             previous_build,

@@ -33,7 +33,6 @@ fn cn_routes_preserve_fakeip_and_disable_native_auto_routes_on_all_platforms() {
                 .expect("DNS")
                 .fakeip_enabled
         );
-        assert!(apply_dns_frontend_settings(&profile, &target, false).is_err());
         let result = compile(&CompileRequest {
             protocol: 1,
             profile,

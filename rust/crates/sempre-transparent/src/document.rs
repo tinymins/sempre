@@ -161,34 +161,18 @@ pub(crate) fn prepare_tproxy(
     config: &mut Value,
 ) -> Result<(), TransparentError> {
     let transparent = &profile.transparent_proxy;
-    let interfaces = resolve_lan_interfaces(&transparent.lan_interfaces, inventory)?;
-    if interfaces.is_empty() && !transparent.capture_host {
-        return Err(TransparentError::Invalid(
-            "TProxy mode needs a LAN interface or capture_host enabled".into(),
-        ));
-    }
+    let interfaces = resolve_lan_interfaces(&transparent.lan_interfaces, inventory);
+
     match plan.core.as_str() {
         "sing-box" => {
-            find_inbound(config, "tproxy-in", "type", "tproxy")?;
-            if !plan
-                .system_dns
-                .as_ref()
-                .is_some_and(|system_dns| system_dns.managed_frontend)
-            {
-                find_inbound(config, "dns-in", "type", "direct")?;
-            }
             let route = object_mut(config, "route");
             route.insert("default_mark".into(), json!(BYPASS_MARK));
             route.insert("auto_detect_interface".into(), json!(true));
         }
         "mihomo" | "clash-rs" => {
-            require_number(config, "tproxy-port", transparent.tproxy.listen_port)?;
-            require_listener(config, transparent.tproxy.dns_listen_port)?;
             config["routing-mark"] = json!(BYPASS_MARK);
         }
         "xray" | "v2ray" => {
-            find_inbound(config, "tproxy-in", "protocol", "dokodemo-door")?;
-            find_inbound(config, "dns-in", "protocol", "dokodemo-door")?;
             mark_v2ray_outbounds(config)?;
         }
         _ => return Err(unsupported(&plan.core, "tproxy")),
@@ -211,10 +195,7 @@ pub(crate) fn prepare_tproxy(
     Ok(())
 }
 
-fn resolve_lan_interfaces(
-    configured: &[String],
-    inventory: &Inventory,
-) -> Result<Vec<String>, TransparentError> {
+fn resolve_lan_interfaces(configured: &[String], inventory: &Inventory) -> Vec<String> {
     let source = if configured.is_empty() {
         &inventory.recommended_lan_interfaces
     } else {
@@ -222,16 +203,11 @@ fn resolve_lan_interfaces(
     };
     let mut result = Vec::new();
     for name in source {
-        if !inventory.interfaces.iter().any(|item| item.name == *name) {
-            return Err(TransparentError::Invalid(format!(
-                "configured LAN interface {name:?} does not exist"
-            )));
-        }
         if !result.contains(name) {
             result.push(name.clone());
         }
     }
-    Ok(result)
+    result
 }
 
 pub(crate) fn fake_ip_prefixes(core: &str, config: &Value) -> Vec<String> {
@@ -309,30 +285,6 @@ fn find_inbound<'a>(
                 "runtime configuration is missing {tag} {kind} inbound"
             ))
         })
-}
-
-fn require_number(config: &Value, key: &str, expected: u16) -> Result<(), TransparentError> {
-    if config.get(key).and_then(Value::as_u64) == Some(u64::from(expected)) {
-        Ok(())
-    } else {
-        Err(TransparentError::Invalid(format!(
-            "runtime configuration is missing {key} {expected}"
-        )))
-    }
-}
-
-fn require_listener(config: &Value, port: u16) -> Result<(), TransparentError> {
-    if config["listeners"].as_array().is_some_and(|listeners| {
-        listeners
-            .iter()
-            .any(|item| item["type"] == "tproxy" && item["port"] == port)
-    }) {
-        Ok(())
-    } else {
-        Err(TransparentError::Invalid(format!(
-            "runtime configuration is missing DNS TProxy listener {port}"
-        )))
-    }
 }
 
 fn object_mut<'a>(config: &'a mut Value, key: &str) -> &'a mut Map<String, Value> {

@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::{CompileError, Profile, ProxyGroup};
+use crate::{CompileError, Profile};
 
 #[derive(Debug, Deserialize)]
 struct EditorRuleProvider {
@@ -54,7 +54,6 @@ pub(super) fn apply(input: &Profile) -> Result<Profile, CompileError> {
     if !editor.servers.trim().is_empty() {
         profile.manual_servers = parse("servers", &editor.servers)?;
     }
-    validate_groups(&profile.groups)?;
     Ok(profile)
 }
 
@@ -189,18 +188,6 @@ fn parse<T: serde::de::DeserializeOwned>(
 
 pub fn parse_jsonc_value(input: &str) -> Result<Value, CompileError> {
     parse("jsonc", input)
-}
-
-fn validate_groups(groups: &[ProxyGroup]) -> Result<(), CompileError> {
-    for group in groups {
-        if group.name.trim().is_empty() {
-            return Err(CompileError::InvalidEditor {
-                field: "group",
-                detail: "group name is required".into(),
-            });
-        }
-    }
-    Ok(())
 }
 
 fn clean_jsonc(input: &str) -> Result<String, String> {

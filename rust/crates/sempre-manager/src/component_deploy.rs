@@ -1,5 +1,5 @@
 use sempre_bundle::{DeployComponent, RestoreTransaction};
-use sempre_core::{Adapter, CoreRef};
+use sempre_core::Adapter;
 use sempre_service::State;
 use sempre_state::{Document, Layout, Mode, SourceState};
 
@@ -51,7 +51,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .await?;
         }
         if includes_data(component) {
-            self.validate_active_deployment(&document).await?;
             require_replacement_confirmation(source, target, allow_replace)?;
         }
         if includes_bin(component) {
@@ -59,23 +58,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
         let transaction = sempre_bundle::stage_deploy(source, target, component, &document)?;
         activate_component(target, component, previous, transaction).await
-    }
-
-    async fn validate_active_deployment(&self, document: &Document) -> Result<(), ManagerError> {
-        let Some(deployment) = &document.active else {
-            return Ok(());
-        };
-        let reference = CoreRef {
-            core: deployment.core.clone(),
-            repository: deployment.repository.clone(),
-            reference: deployment.reference.clone(),
-        };
-        let config = self
-            .store
-            .layout()
-            .config(&deployment.core, &deployment.config_hash);
-        self.validate_config_path(&reference, &deployment.version, &config)
-            .await
     }
 }
 
