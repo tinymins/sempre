@@ -122,19 +122,45 @@ fn cn_wins_longest_prefix_and_literal_foreign_ip_uses_tun() {
         ("223.5.5.5", "en0"),
         ("114.114.114.114", "en0"),
         ("1.1.1.1", "utun9"),
+        ("10.23.0.200", "utun9"),
     ] {
         let address = address.parse::<std::net::IpAddr>().expect("IP");
         let route = routes
             .iter()
             .filter(|r| {
-                r.prefix
-                    .parse::<ipnet::IpNet>()
-                    .expect("CIDR")
-                    .contains(&address)
+                !r.scoped
+                    && r.prefix
+                        .parse::<ipnet::IpNet>()
+                        .expect("CIDR")
+                        .contains(&address)
             })
             .max_by_key(|r| r.prefix.parse::<ipnet::IpNet>().expect("CIDR").prefix_len())
             .expect("route");
         assert_eq!(route.endpoint.interface, interface);
+    }
+    let scoped = routes
+        .iter()
+        .filter(|route| route.scoped)
+        .collect::<Vec<_>>();
+    assert_eq!(scoped.len(), usize::from(cfg!(target_os = "macos")));
+    if let Some(route) = scoped.first() {
+        assert_eq!(route.prefix, "0.0.0.0/0");
+        assert_eq!(route.endpoint, uplink);
+        assert!(!route.fallback);
+        assert!(
+            route
+                .prefix
+                .parse::<ipnet::IpNet>()
+                .expect("default")
+                .contains(&"10.23.0.200".parse::<std::net::IpAddr>().expect("IP"))
+        );
+        let mut journal = serde_json::to_value(route).expect("route journal");
+        assert_eq!(
+            serde_json::from_value::<Route>(journal.clone()).expect("round trip"),
+            **route
+        );
+        journal.as_object_mut().expect("object").remove("scoped");
+        assert!(serde_json::from_value::<Route>(journal).is_err());
     }
     for prefixes in [vec![], vec!["1.1.1.0/24".into()], vec!["0.0.0.0/0".into()]] {
         assert!(normalize(&prefixes).is_ok());
@@ -169,9 +195,15 @@ async fn installation_updates_and_cleanup_preserve_order() {
         .await
         .expect("install");
     let events = controller.backend.events.lock().expect("events").clone();
+    let physical_count = original.iter().filter(|route| !route.fallback).count();
+    assert!(
+        events[..physical_count]
+            .iter()
+            .all(|event| event == "true:false")
+    );
     assert_eq!(
-        &events[..4],
-        &["true:false", "true:false", "true:true", "true:true"]
+        &events[physical_count..physical_count + 2],
+        &["true:true", "true:true"]
     );
     controller.backend.events.lock().expect("events").clear();
     let mut next = intent();
@@ -204,7 +236,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     );
     next.direct = false;
     let proxy = plan(&next, &[endpoints().0], &tun).expect("proxy plan");
-    assert!(proxy.iter().all(|route| route.fallback));
+    assert!(proxy.iter().all(|route| route.fallback || route.scoped));
     controller
         .replace(&command::SystemRunner, proxy.clone())
         .await
@@ -279,6 +311,7 @@ fn ipv6_cn_and_private_capture_obey_longest_prefix() {
         let address = address.parse::<std::net::IpAddr>().expect("address");
         let selected = routes
             .iter()
+            .filter(|route| !route.scoped)
             .filter_map(|r| {
                 let net = r.prefix.parse::<ipnet::IpNet>().expect("prefix");
                 net.contains(&address)
@@ -287,6 +320,21 @@ fn ipv6_cn_and_private_capture_obey_longest_prefix() {
             .max_by_key(|(length, _)| *length)
             .expect("route");
         assert_eq!(selected.1, expected);
+    }
+    let physical_defaults = routes
+        .iter()
+        .filter(|route| route.scoped)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        physical_defaults.len(),
+        if cfg!(target_os = "macos") { 2 } else { 0 }
+    );
+    if cfg!(target_os = "macos") {
+        assert!(
+            physical_defaults
+                .iter()
+                .any(|route| route.prefix == "::/0" && route.endpoint == v6)
+        );
     }
     intent.capture_prefixes.push("223.5.0.0/16".into());
     assert!(plan(&intent, &[v4, v6], &tun).is_ok());

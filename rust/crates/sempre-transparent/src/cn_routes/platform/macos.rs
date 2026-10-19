@@ -1,9 +1,5 @@
-use std::{
-    net::IpAddr,
-    os::fd::{AsRawFd, OwnedFd},
-};
+use std::os::fd::{AsRawFd, OwnedFd};
 
-use ipnet::IpNet;
 use nix::{
     net::if_::if_nametoindex,
     sys::{
@@ -15,8 +11,8 @@ use nix::{
 use super::{Endpoint, Route, invalid};
 use crate::{TransparentError, command};
 
-const HEADER: usize = 92; // Darwin rt_msghdr: 36-byte header and 56-byte rt_metrics.
-const OWNER: i32 = 0x8000; // RTF_PROTO1, checked together with full route identity.
+mod message;
+use message::{Current, HEADER, integer};
 
 #[allow(clippy::unused_async)] // Shared asynchronous platform contract.
 pub(super) async fn endpoint(
@@ -78,13 +74,8 @@ pub(super) async fn preflight(
     tokio::task::spawn_blocking(move || {
         let mut connection = Connection::open()?;
         for route in routes {
-            if let Some(current) = connection.get(&route)?
-                && current.flags & OWNER == 0
-            {
-                return Err(invalid(format!(
-                    "route {} is already owned by another service",
-                    route.prefix
-                )));
+            if let Some(current) = connection.get(&route)? {
+                current.operation(&route, true)?;
             }
         }
         Ok(())
@@ -102,34 +93,18 @@ pub(super) async fn change(
     tokio::task::spawn_blocking(move || {
         let mut connection = Connection::open()?;
         for route in routes {
-            let current = connection.get(&route)?;
-            if add {
-                if let Some(current) = &current
-                    && current.flags & OWNER == 0
-                {
-                    return Err(invalid(format!("route {} ownership changed", route.prefix)));
-                }
-                let operation = if current.is_some() { 3 } else { 1 };
+            let operation = match connection.get(&route)? {
+                Some(current) => current.operation(&route, add)?,
+                None => add.then_some(1),
+            };
+            if let Some(operation) = operation {
                 connection.request(&route, operation)?;
-            } else if let Some(current) = current
-                && current.flags & OWNER != 0
-                && current.index == route.endpoint.index
-                && same_gateway(&current.gateway, &gateway(&route)?)
-            {
-                // Never delete a replacement installed by another owner or uplink.
-                connection.request(&route, 2)?;
             }
         }
         Ok(())
     })
     .await
     .map_err(|e| invalid(e.to_string()))?
-}
-
-struct Current {
-    flags: i32,
-    index: u32,
-    gateway: Vec<u8>,
 }
 
 struct Connection {
@@ -157,72 +132,12 @@ impl Connection {
             }
             Err(error) => return Err(error),
         };
-        let addresses = addresses(&response)?;
-        let net: IpNet = route
-            .prefix
-            .parse()
-            .map_err(|_| invalid("invalid route prefix"))?;
-        let mask = address_bytes(net.netmask(), 0);
-        let destination = address_bytes(net.network(), 0);
-        // GET is longest-prefix lookup. Only an exact destination AND mask is ours.
-        if addresses[0].as_deref() != Some(destination.as_slice()) {
-            return Ok(None);
-        }
-        if net.prefix_len() != if net.addr().is_ipv4() { 32 } else { 128 }
-            && addresses[2]
-                .as_ref()
-                .is_none_or(|value| !same_mask(value, &mask))
-        {
-            return Ok(None);
-        }
-        Ok(Some(Current {
-            flags: integer(&response, 8)?,
-            index: u32::from(u16::from_ne_bytes([response[4], response[5]])),
-            gateway: addresses[1].clone().unwrap_or_default(),
-        }))
+        message::current(route, &response)
     }
 
     fn request(&mut self, route: &Route, operation: u8) -> Result<Vec<u8>, TransparentError> {
         self.sequence += 1;
-        let net: IpNet = route
-            .prefix
-            .parse()
-            .map_err(|_| invalid("invalid route prefix"))?;
-        let mut message = vec![0_u8; HEADER];
-        message[2] = 5;
-        message[3] = operation;
-        if operation != 4 {
-            message[4..6].copy_from_slice(
-                &u16::try_from(route.endpoint.index)
-                    .map_err(|_| invalid("interface index exceeds Darwin route ABI"))?
-                    .to_ne_bytes(),
-            );
-        }
-        let mut flags: i32 = 1 | 0x800 | OWNER;
-        if !route.endpoint.gateway.is_empty() {
-            flags |= 2;
-        }
-        if net.prefix_len() == if net.addr().is_ipv4() { 32 } else { 128 } {
-            flags |= 4;
-        }
-        message[8..12].copy_from_slice(&flags.to_ne_bytes());
-        let fields: i32 = if operation == 4 { 0x11 } else { 0x17 };
-        message[12..16].copy_from_slice(&fields.to_ne_bytes());
-        message[16..20].copy_from_slice(&std::process::id().to_ne_bytes());
-        message[20..24].copy_from_slice(&self.sequence.to_ne_bytes());
-        message.extend(address_bytes(net.network(), 0));
-        if operation == 4 {
-            // A GET carrying NETMASK can return the default instead of a host route.
-            // Query longest-prefix first, then verify the returned destination/mask.
-            message.extend([8, 18, 0, 0, 0, 0, 0, 0]);
-        } else {
-            message.extend(gateway(route)?);
-            message.extend(mask_bytes(net));
-            message.extend(link_address(&route.endpoint)?);
-        }
-        let length =
-            u16::try_from(message.len()).map_err(|_| invalid("route message too large"))?;
-        message[..2].copy_from_slice(&length.to_ne_bytes());
+        let message = message::encode(route, operation, self.sequence)?;
         socket::send(self.socket.as_raw_fd(), &message, MsgFlags::empty()).map_err(|error| {
             TransparentError::Io {
                 context: "send Darwin route message".into(),
@@ -255,137 +170,10 @@ impl Connection {
     }
 }
 
-fn integer(data: &[u8], offset: usize) -> Result<i32, TransparentError> {
-    Ok(i32::from_ne_bytes(
-        data.get(offset..offset + 4)
-            .ok_or_else(|| invalid("short Darwin route header"))?
-            .try_into()
-            .map_err(|_| invalid("invalid route integer"))?,
-    ))
-}
-
-fn address_bytes(address: IpAddr, scope: u32) -> Vec<u8> {
-    match address {
-        IpAddr::V4(address) => {
-            let mut bytes = vec![0; 16];
-            bytes[0] = 16;
-            bytes[1] = 2;
-            bytes[4..8].copy_from_slice(&address.octets());
-            bytes
-        }
-        IpAddr::V6(address) => {
-            let mut bytes = vec![0; 28];
-            bytes[0] = 28;
-            bytes[1] = 30;
-            bytes[8..24].copy_from_slice(&address.octets());
-            bytes[24..28].copy_from_slice(&scope.to_ne_bytes());
-            bytes
-        }
-    }
-}
-
-fn mask_bytes(net: IpNet) -> Vec<u8> {
-    let mut bytes = address_bytes(net.netmask(), 0);
-    bytes[0] = 0;
-    bytes[1] = 0;
-    let length = bytes
-        .iter()
-        .rposition(|byte| *byte != 0)
-        .map_or(0, |last| last + 1);
-    bytes[0] = u8::try_from(length).expect("IP sockaddr length");
-    bytes.truncate(if length == 0 { 4 } else { (length + 3) & !3 });
-    bytes
-}
-
-fn link_address(endpoint: &Endpoint) -> Result<Vec<u8>, TransparentError> {
-    let name = endpoint.interface.as_bytes();
-    let length = 8 + name.len();
-    let mut bytes = vec![0; (length + 3) & !3];
-    bytes[0] = u8::try_from(length).map_err(|_| invalid("interface name too long"))?;
-    bytes[1] = 18;
-    bytes[2..4].copy_from_slice(
-        &u16::try_from(endpoint.index)
-            .map_err(|_| invalid("interface index too large"))?
-            .to_ne_bytes(),
-    );
-    bytes[5] = u8::try_from(name.len()).map_err(|_| invalid("interface name too long"))?;
-    bytes[8..length].copy_from_slice(name);
-    Ok(bytes)
-}
-
-fn gateway(route: &Route) -> Result<Vec<u8>, TransparentError> {
-    if route.endpoint.gateway.is_empty() {
-        return link_address(&route.endpoint);
-    }
-    let address: IpAddr = route
-        .endpoint
-        .gateway
-        .split('%')
-        .next()
-        .unwrap_or_default()
-        .parse()
-        .map_err(|_| invalid("invalid gateway"))?;
-    let scope = if matches!(address, IpAddr::V6(ip) if ip.is_unicast_link_local()) {
-        route.endpoint.index
-    } else {
-        0
-    };
-    Ok(address_bytes(address, scope))
-}
-
-fn addresses(message: &[u8]) -> Result<[Option<Vec<u8>>; 8], TransparentError> {
-    let flags = integer(message, 12)?;
-    let mut result = [const { None }; 8];
-    let mut offset = HEADER;
-    for (index, slot) in result.iter_mut().enumerate() {
-        if flags & (1 << index) == 0 {
-            continue;
-        }
-        let length = usize::from(
-            *message
-                .get(offset)
-                .ok_or_else(|| invalid("short route sockaddr"))?,
-        );
-        let padded = if length == 0 { 4 } else { (length + 3) & !3 };
-        let bytes = message
-            .get(offset..offset + padded)
-            .ok_or_else(|| invalid("invalid route sockaddr length"))?;
-        *slot = Some(bytes.to_vec());
-        offset += padded;
-    }
-    Ok(result)
-}
-
-fn same_mask(actual: &[u8], expected: &[u8]) -> bool {
-    let start = if expected[1] == 2 { 4 } else { 8 };
-    (start..expected.len()).all(|i| actual.get(i).copied().unwrap_or(0) == expected[i])
-}
-
-fn same_gateway(actual: &[u8], expected: &[u8]) -> bool {
-    if actual.get(1) != expected.get(1) {
-        return false;
-    }
-    match expected.get(1) {
-        Some(18) => actual.get(2..4) == expected.get(2..4),
-        Some(2) => actual.get(4..8) == expected.get(4..8),
-        Some(30) => {
-            let normalize = |bytes: &[u8]| {
-                let mut address = bytes.get(8..24)?.to_vec();
-                if address[0] == 0xfe && address[1] & 0xc0 == 0x80 {
-                    address[2] = 0;
-                    address[3] = 0;
-                }
-                Some(address)
-            };
-            normalize(actual) == normalize(expected)
-        }
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message::{IFSCOPE, OWNER, address_bytes, addresses, same_gateway, same_mask};
 
     #[test]
     fn compact_masks_and_scoped_gateways_decode() {
@@ -404,6 +192,78 @@ mod tests {
         let decoded = addresses(&message).expect("sockaddrs");
         assert!(same_mask(decoded[2].as_ref().expect("mask"), &mask));
         assert!(addresses(&message[..HEADER + 2]).is_err());
+
+        for (prefix, gateway) in [("0.0.0.0/0", "192.168.1.1"), ("::/0", "fe80::1%en0")] {
+            let route = Route {
+                prefix: prefix.into(),
+                endpoint: Endpoint {
+                    interface: "en0".into(),
+                    index: 7,
+                    gateway: gateway.into(),
+                },
+                fallback: false,
+                scoped: true,
+            };
+            for operation in [1, 2, 3, 4] {
+                let encoded = message::encode(&route, operation, 42).expect("scoped message");
+                assert_eq!(integer(&encoded, 8).expect("flags") & IFSCOPE, IFSCOPE);
+                assert_eq!(u16::from_ne_bytes([encoded[4], encoded[5]]), 7);
+            }
+            let mut response = message::encode(&route, 1, 42).expect("default response");
+            // Darwin embeds interface scope in sockaddr padding as well as the header.
+            let scope_offset = HEADER + if prefix.contains(':') { 24 } else { 8 };
+            response[scope_offset..scope_offset + 4].copy_from_slice(&7_u32.to_ne_bytes());
+            let owned = message::current(&route, &response)
+                .expect("decode")
+                .expect("scoped default");
+            assert_eq!(owned.operation(&route, true).expect("update"), Some(3));
+            assert_eq!(owned.operation(&route, false).expect("delete"), Some(2));
+            let mut changed = route.clone();
+            changed.endpoint.gateway = if prefix.contains(':') {
+                "fe80::2%en0"
+            } else {
+                "192.168.1.2"
+            }
+            .into();
+            assert_eq!(owned.operation(&changed, false).expect("replacement"), None);
+            let system_flags = integer(&response, 8).expect("flags") & !OWNER;
+            response[8..12].copy_from_slice(&system_flags.to_ne_bytes());
+            let borrowed = message::current(&route, &response)
+                .expect("decode")
+                .expect("system default");
+            assert_eq!(borrowed.operation(&route, true).expect("borrow"), None);
+            assert_eq!(borrowed.operation(&route, false).expect("preserve"), None);
+            assert!(borrowed.operation(&changed, true).is_err());
+            let mut unscoped = route.clone();
+            unscoped.scoped = false;
+            assert!(
+                message::current(&unscoped, &response)
+                    .expect("scope mismatch")
+                    .is_none()
+            );
+            response[8..12].copy_from_slice(&(system_flags & !IFSCOPE).to_ne_bytes());
+            assert!(
+                message::current(&route, &response)
+                    .expect("unscoped default")
+                    .is_none()
+            );
+            response[8..12].copy_from_slice(&system_flags.to_ne_bytes());
+            response[4..6].copy_from_slice(&8_u16.to_ne_bytes());
+            assert!(
+                message::current(&route, &response)
+                    .expect("other interface")
+                    .is_none()
+            );
+            response[4..6].copy_from_slice(&7_u16.to_ne_bytes());
+            response[8..12].copy_from_slice(&(system_flags | 0x1000).to_ne_bytes());
+            assert!(
+                message::current(&route, &response)
+                    .expect("decode")
+                    .expect("blackhole")
+                    .operation(&route, true)
+                    .is_err()
+            );
+        }
     }
 
     #[test]
@@ -417,6 +277,7 @@ mod tests {
                 gateway: String::new(),
             },
             fallback: false,
+            scoped: false,
         };
         let current = Connection::open()
             .expect("route socket")

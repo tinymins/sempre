@@ -26,6 +26,7 @@ pub(crate) struct Route {
     pub prefix: String,
     pub endpoint: Endpoint,
     pub fallback: bool,
+    pub scoped: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -69,6 +70,14 @@ pub(crate) fn plan(
             .parse::<IpAddr>()
             .map_err(|_| invalid("uplink has no IP gateway"))?;
         let v4 = gateway.is_ipv4();
+        if cfg!(target_os = "macos") {
+            routes.push(Route {
+                prefix: if v4 { "0.0.0.0/0" } else { "::/0" }.into(),
+                endpoint: uplink.clone(),
+                fallback: false,
+                scoped: true,
+            });
+        }
         let family = prefixes
             .iter()
             .filter(|prefix| prefix.contains(':') != v4)
@@ -79,6 +88,7 @@ pub(crate) fn plan(
                 prefix: prefix.clone(),
                 endpoint: uplink.clone(),
                 fallback: false,
+                scoped: false,
             }));
         }
         // Keep the physical default intact. Longer CN prefixes win over these.
@@ -91,6 +101,7 @@ pub(crate) fn plan(
                 prefix: prefix.into(),
                 endpoint: tun.clone(),
                 fallback: true,
+                scoped: false,
             });
         }
     }
@@ -110,6 +121,7 @@ pub(crate) fn plan(
                 prefix: capture.trunc().to_string(),
                 endpoint: tun.clone(),
                 fallback: true,
+                scoped: false,
             });
         }
     }
