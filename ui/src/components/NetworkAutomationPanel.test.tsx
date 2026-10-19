@@ -7,7 +7,7 @@ import { AcmeContentBoundary } from './AcmeContentBoundary'
 import { RoutingRules } from '../pages/RoutingRules'
 import { NetworkAutomationPanel } from './NetworkAutomationPanel'
 
-describe('CN pre-routing rule set', () => {
+describe('CN routing rule set', () => {
   beforeEach(() => {
     localStorage.setItem('sempre.locale', 'en')
     sessionStorage.setItem('sempre.session.v1', JSON.stringify({ baseURL: 'http://sempre.test', token: 'session', expiresAt: '2099-01-01T00:00:00Z' }))
@@ -25,15 +25,15 @@ describe('CN pre-routing rule set', () => {
     }))
     renderPanel()
     expect(await screen.findByRole('heading', { name: 'Mainland China domains' })).toBeInTheDocument()
-    const toggle = await screen.findByRole('switch', { name: 'Enable CN pre-routing' })
+    const toggle = await screen.findByRole('switch', { name: 'Enable CN routing' })
     await waitFor(() => expect(toggle).toBeEnabled())
     expect(toggle).not.toBeChecked()
-    expect(screen.getByRole('combobox', { name: 'CN pre-routing mode' })).toHaveTextContent('Direct system route')
+    expect(screen.getByRole('combobox', { name: 'CN routing mode' })).toHaveTextContent('Direct system route')
     expect(screen.queryByRole('switch', { name: 'Enable CN direct system routes' })).not.toBeInTheDocument()
     fireEvent.click(toggle)
     await waitFor(() => expect(saved).toEqual({ ...settings, cn_direct_routes: true }))
-    expect(screen.getByText(/CN IPs use the physical uplink/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('combobox', { name: 'CN pre-routing mode' }))
+    expect(screen.getByText(/Real CN IPs use the physical uplink/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('combobox', { name: 'CN routing mode' }))
     fireEvent.click(await screen.findByText('Proxy', { exact: true }))
     await waitFor(() => expect(saved).toEqual({ ...settings, cn_direct_routes: true, cn_routing_mode: 'proxy' }))
     expect(await screen.findByText('DNS · CN pre-routing')).toBeInTheDocument()
@@ -44,10 +44,10 @@ describe('CN pre-routing rule set', () => {
       settings: { mode: 'gateway', cn_direct_routes: false, known_networks: [] }, current: {},
     })))
     renderPanel()
-    fireEvent.click(await screen.findByRole('button', { name: /CN pre-routing/ }))
-    expect(await screen.findByRole('switch', { name: 'Enable CN pre-routing' })).toBeDisabled()
-    expect(screen.getByRole('heading', { name: 'CN pre-routing' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'CN pre-routing mode' })).toHaveTextContent('Direct system route')
+    fireEvent.click(await screen.findByRole('button', { name: /CN routing/ }))
+    expect(await screen.findByRole('switch', { name: 'Enable CN routing' })).toBeDisabled()
+    expect(screen.getByRole('heading', { name: 'CN routing' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'CN routing mode' })).toHaveTextContent('Direct system route')
   })
 })
 
