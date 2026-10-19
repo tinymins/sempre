@@ -109,37 +109,55 @@ async fn frontend_starts_and_keeps_domestic_dns_when_core_is_down() {
 
 #[tokio::test]
 async fn healthy_candidate_promotes_new_core_upstream_without_stopping_frontend() {
-    let (local, local_task) = answering_upstream(2, [223, 5, 5, 5]).await;
-    let (first, first_task) = answering_upstream(2, [198, 18, 0, 1]).await;
-    let (second, second_task) = answering_upstream(2, [198, 18, 0, 2]).await;
-    let port = frontend_port().await;
-    let first_plan = plan("first", port, local.clone(), first);
-    let second_plan = plan("second", port, local, second.clone());
-    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
+    for fakeip_enabled in [true, false] {
+        let (local, local_task) = answering_upstream(2, [223, 5, 5, 5]).await;
+        let first_address = if fakeip_enabled {
+            [198, 18, 0, 1]
+        } else {
+            [192, 0, 2, 1]
+        };
+        let second_address = if fakeip_enabled {
+            [198, 18, 0, 2]
+        } else {
+            [192, 0, 2, 2]
+        };
+        let (first, first_task) = answering_upstream(2, first_address).await;
+        let (second, second_task) = answering_upstream(2, second_address).await;
+        let port = frontend_port().await;
+        let mut first_plan = plan("first", port, local.clone(), first);
+        first_plan.fakeip_enabled = fakeip_enabled;
+        let mut second_plan = plan("second", port, local, second.clone());
+        second_plan.fakeip_enabled = fakeip_enabled;
+        let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
 
-    runtime
-        .prepare(Some(&first_plan))
-        .await
-        .expect("prepare frontend");
-    runtime
-        .activate_core(Some(&first_plan), Duration::from_secs(1))
-        .await;
-    runtime
-        .prepare(Some(&second_plan))
-        .await
-        .expect("retain frontend");
-    runtime
-        .activate_core(Some(&second_plan), Duration::from_secs(1))
-        .await;
+        runtime
+            .prepare(Some(&first_plan))
+            .await
+            .expect("prepare frontend");
+        runtime
+            .activate_core(Some(&first_plan), Duration::from_secs(1))
+            .await;
+        runtime
+            .prepare(Some(&second_plan))
+            .await
+            .expect("retain frontend");
+        runtime
+            .activate_core(Some(&second_plan), Duration::from_secs(1))
+            .await;
 
-    let status = runtime.status();
-    assert!(status.running && status.core_dns_healthy);
-    assert_eq!(status.core_upstream, second);
+        let status = runtime.status();
+        assert!(status.enabled && status.running && status.core_dns_healthy);
+        assert_eq!(
+            status.mode,
+            if fakeip_enabled { "fake-ip" } else { "real-ip" }
+        );
+        assert_eq!(status.core_upstream, second);
 
-    local_task.await.expect("local responder");
-    first_task.await.expect("first responder");
-    second_task.await.expect("second responder");
-    runtime.stop().await;
+        local_task.await.expect("local responder");
+        first_task.await.expect("first responder");
+        second_task.await.expect("second responder");
+        runtime.stop().await;
+    }
 }
 
 #[tokio::test]

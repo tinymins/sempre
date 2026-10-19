@@ -55,15 +55,25 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
         .dns_frontend
         .activate_core(plan.dns_frontend.as_ref(), grace)
         .await;
+    ensure_cn_dns_ready(&plan.transparent, &manager.dns_frontend.status())?;
     if let Some(intent) = &plan.transparent.cn_routes {
-        let status = manager.dns_frontend.status();
-        if !status.core_dns_healthy || status.mode != "real-ip" {
-            return Err(sempre_transparent::TransparentError::Invalid(
-                "real-IP DNS frontend is not ready; TUN fallback remains disabled".into(),
-            ));
-        }
         manager.transparent.flush_cn_dns().await?;
         manager.transparent.apply_cn_routes(intent).await?;
+    }
+    Ok(())
+}
+
+fn ensure_cn_dns_ready(
+    plan: &sempre_transparent::Plan,
+    status: &crate::DnsFrontendStatus,
+) -> Result<(), sempre_transparent::TransparentError> {
+    if plan.cn_routes.is_some() && !(status.enabled && status.running && status.core_dns_healthy) {
+        let mut message = "managed DNS frontend is not ready; CN routes remain disabled".to_owned();
+        if !status.last_error.is_empty() {
+            message.push_str(": ");
+            message.push_str(&status.last_error);
+        }
+        return Err(sempre_transparent::TransparentError::Invalid(message));
     }
     Ok(())
 }
@@ -129,5 +139,58 @@ pub(super) async fn wait_retry<R: VersionRunner>(
 async fn shutdown_requested(shutdown: &mut watch::Receiver<bool>) {
     if !*shutdown.borrow() {
         let _ = shutdown.changed().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_cn_dns_ready;
+    use crate::DnsFrontendStatus;
+    use sempre_transparent::{CnRouteIntent, Plan};
+
+    #[test]
+    fn cn_routes_require_running_healthy_managed_dns() {
+        for cn_enabled in [false, true] {
+            for mode in ["fake-ip", "real-ip"] {
+                for (enabled, running, core_dns_healthy) in [
+                    (true, true, true),
+                    (false, true, true),
+                    (true, false, true),
+                    (true, true, false),
+                ] {
+                    let plan = Plan {
+                        cn_routes: cn_enabled.then_some(CnRouteIntent {
+                            direct: true,
+                            prefixes: Vec::new(),
+                            tun_addresses: Vec::new(),
+                            capture_prefixes: Vec::new(),
+                            outbound_interfaces: [None, None],
+                        }),
+                        ..Plan::default()
+                    };
+                    let status = DnsFrontendStatus {
+                        enabled,
+                        running,
+                        core_dns_healthy,
+                        mode: mode.into(),
+                        last_error: "DNS probe or capture failed".into(),
+                        ..DnsFrontendStatus::default()
+                    };
+                    let result = ensure_cn_dns_ready(&plan, &status);
+                    assert_eq!(
+                        result.is_ok(),
+                        !cn_enabled || (enabled && running && core_dns_healthy),
+                        "CN={cn_enabled} mode={mode} enabled={enabled} running={running} healthy={core_dns_healthy}"
+                    );
+                    if let Err(error) = result {
+                        assert!(
+                            error
+                                .to_string()
+                                .contains("CN routes remain disabled: DNS probe or capture failed")
+                        );
+                    }
+                }
+            }
+        }
     }
 }
