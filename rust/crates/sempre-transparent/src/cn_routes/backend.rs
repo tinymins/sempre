@@ -37,14 +37,6 @@ pub(crate) trait Backend: Default + Send + Sync + 'static {
 pub(crate) struct Native;
 
 impl Backend for Native {
-    fn batch_size(&self) -> usize {
-        // Amortize PowerShell and Add-Type startup across thousands of routes.
-        if cfg!(target_os = "windows") {
-            4096
-        } else {
-            128
-        }
-    }
     async fn discover(
         &self,
         runner: &dyn command::Runner,
