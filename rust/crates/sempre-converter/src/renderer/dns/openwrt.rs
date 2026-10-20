@@ -88,6 +88,7 @@ pub(super) fn render(target: &Target, shared: &SharedDns, source: &Value) -> Val
         });
         if modern {
             fakeip["action"] = json!("route");
+            fakeip["strategy"] = json!("ipv4_only");
         }
         rules.push(fakeip);
     }

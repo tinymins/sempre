@@ -203,6 +203,21 @@ fn openwrt_uses_tproxy_local_dns_and_first_selector_member_across_versions() {
 }
 
 #[test]
+fn openwrt_modern_fakeip_preserves_ipv4_only_strategy() {
+    for version in ["sing-box-v12", "sing-box-v13", "sing-box-v14"] {
+        let config = render(version);
+        let rule = config["dns"]["rules"]
+            .as_array()
+            .expect("DNS rules")
+            .iter()
+            .find(|rule| rule["server"] == "fakeip")
+            .expect("FakeIP rule");
+        assert_eq!(rule["strategy"], "ipv4_only", "{version}");
+        assert_eq!(rule["query_type"], json!(["A", "AAAA"]), "{version}");
+    }
+}
+
+#[test]
 fn openwrt_v14_uses_response_matching_for_address_filters() {
     let config = render("sing-box-v14");
     let rules = config["dns"]["rules"].as_array().expect("DNS rules");
