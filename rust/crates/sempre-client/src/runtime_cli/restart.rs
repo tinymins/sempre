@@ -33,7 +33,7 @@ pub(super) async fn wait(client: &LocalApi, mut task: Task) -> Result<RuntimeSta
             return Err(ClientError::Runtime("timed out waiting for core restart; the task continues in the background and can be viewed in the Web console".into()));
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
-        let current: Output = client.get("/api/v1/runtime/restart").await?;
+        let current: Output = client.get("/api/v1/runtime/startup-task").await?;
         task = current
             .task
             .filter(|current| current.id == task.id)
