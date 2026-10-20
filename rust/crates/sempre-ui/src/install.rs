@@ -239,14 +239,14 @@ fn extract(path: &Path, destination: &Path) -> Result<(), UiError> {
                     "UI archive expands beyond {MAX_EXPANDED_SIZE} bytes"
                 ))
             })?;
-        let target = safe_target(destination, entry.name())?;
+        let name = entry.name().map_err(UiError::Zip)?.into_owned();
+        let target = safe_target(destination, &name)?;
         let mode = entry
             .unix_mode()
             .unwrap_or(if entry.is_dir() { 0o040_700 } else { 0o100_600 });
         if mode & 0o170_000 == 0o120_000 {
             return Err(invalid(format!(
-                "UI archive contains a symbolic link {:?}",
-                entry.name()
+                "UI archive contains a symbolic link {name:?}"
             )));
         }
         if entry.is_dir() {
@@ -255,8 +255,7 @@ fn extract(path: &Path, destination: &Path) -> Result<(), UiError> {
         }
         if mode & 0o170_000 != 0o100_000 {
             return Err(invalid(format!(
-                "UI archive contains an unsupported entry {:?}",
-                entry.name()
+                "UI archive contains an unsupported entry {name:?}"
             )));
         }
         if let Some(parent) = target.parent() {
@@ -274,8 +273,7 @@ fn extract(path: &Path, destination: &Path) -> Result<(), UiError> {
         .map_err(UiError::Write)?;
         if copied != entry_size {
             return Err(invalid(format!(
-                "UI archive entry {:?} has an invalid size",
-                entry.name()
+                "UI archive entry {name:?} has an invalid size"
             )));
         }
     }

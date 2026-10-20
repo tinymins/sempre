@@ -132,7 +132,12 @@ fn extract_zip(path: &Path, destination: &Path, single_file_name: Option<&str>) 
                     "ZIP archive expands beyond {MAX_EXPANDED_SIZE} bytes"
                 ))
             })?;
-        let target = safe_target(destination, entry.name())?;
+        let target = safe_target(
+            destination,
+            &entry
+                .name()
+                .map_err(|error| ArtifactError::zip("read ZIP entry name", error))?,
+        )?;
         if entry.is_dir() {
             fs::create_dir_all(&target)
                 .map_err(|error| ArtifactError::io("create ZIP directory", error))?;
