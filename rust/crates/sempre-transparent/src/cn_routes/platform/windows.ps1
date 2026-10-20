@@ -2,9 +2,27 @@
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
 $ErrorActionPreference = 'Stop'
 $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
-if ($request.operation -eq 'endpoint') {
-    $item = Get-NetIPInterface | Where-Object InterfaceAlias -eq $request.name | Select-Object -First 1
-    if (-not $item) { throw 'TUN interface is unavailable' }
+if ($request.operation -eq 'discover_tun') {
+    $wanted = @($request.addresses | ForEach-Object { [System.Net.IPAddress]::Parse($_) })
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $interfaces = @{}
+        foreach ($address in Get-NetIPAddress) {
+            $ip = [System.Net.IPAddress]::Parse($address.IPAddress)
+            foreach ($candidate in $wanted) {
+                if ($candidate.Equals($ip)) {
+                    $interfaces[[uint32]$address.InterfaceIndex] = $address
+                    break
+                }
+            }
+        }
+        if ($interfaces.Count -ne 0 -or $timer.Elapsed.TotalSeconds -ge 20) { break }
+        Start-Sleep -Milliseconds 100
+    } while ($true)
+    if ($interfaces.Count -ne 1) {
+        throw 'managed TUN is not ready or its address conflicts with another interface'
+    }
+    $item = @($interfaces.Values)[0]
     @{ interface = [string]$item.InterfaceAlias; index = [uint32]$item.InterfaceIndex; gateway = '' } | ConvertTo-Json -Compress
     exit
 }

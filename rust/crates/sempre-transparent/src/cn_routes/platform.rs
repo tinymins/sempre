@@ -35,6 +35,20 @@ pub(super) async fn discover(
         .filter_map(|s| s.parse::<ipnet::IpNet>().ok())
         .map(|n| n.addr())
         .collect::<Vec<_>>();
+    #[cfg(target_os = "windows")]
+    let tun = native::discover_tun(runner, &wanted).await?;
+    #[cfg(not(target_os = "windows"))]
+    let tun = discover_tun(runner, &wanted).await?;
+    let uplinks = native::uplinks(runner).await?;
+
+    Ok((uplinks, tun))
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn discover_tun(
+    runner: &dyn command::Runner,
+    wanted: &[std::net::IpAddr],
+) -> Result<Endpoint, TransparentError> {
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
     let names = loop {
         let networks = sysinfo::Networks::new_with_refreshed_list();
@@ -54,10 +68,7 @@ pub(super) async fn discover(
             "managed TUN is not ready or its address conflicts with another interface",
         ));
     }
-    let tun = native::endpoint(runner, &names[0]).await?;
-    let uplinks = native::uplinks(runner).await?;
-
-    Ok((uplinks, tun))
+    native::endpoint(runner, &names[0]).await
 }
 
 pub(super) async fn preflight(

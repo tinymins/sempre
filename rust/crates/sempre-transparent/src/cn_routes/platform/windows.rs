@@ -23,12 +23,18 @@ async fn run(runner: &dyn command::Runner, request: Value) -> Result<String, Tra
     Ok(output.stdout.trim().into())
 }
 
-pub(super) async fn endpoint(
+pub(super) async fn discover_tun(
     runner: &dyn command::Runner,
-    name: &str,
+    addresses: &[std::net::IpAddr],
 ) -> Result<Endpoint, TransparentError> {
-    serde_json::from_str(&run(runner, json!({"operation":"endpoint", "name":name})).await?)
-        .map_err(|e| invalid(e.to_string()))
+    serde_json::from_str(
+        &run(
+            runner,
+            json!({"operation":"discover_tun", "addresses":addresses}),
+        )
+        .await?,
+    )
+    .map_err(|e| invalid(e.to_string()))
 }
 
 pub(super) async fn uplinks(
