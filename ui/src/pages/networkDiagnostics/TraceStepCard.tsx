@@ -3,17 +3,16 @@ import { AlertTriangle, Check, ChevronDown, Circle, X } from 'lucide-react'
 import { Button, Tag } from '@acme/components'
 import type { NetworkTraceStep } from '../../lib/networkDiagnosticsTypes'
 
-export function TraceStepCard({ step, zh, preview = false, active = false, onInspect }: {
+export function TraceStepCard({ step, zh, preview = false, active = false }: {
   step: NetworkTraceStep
   zh: boolean
   preview?: boolean
   active?: boolean
-  onInspect?: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const detailId = useId()
   const unfinished = step.status === 'running' && !active
-  const color = preview || unfinished ? 'text-[var(--muted)] bg-zinc-500/10' : step.status === 'failed' ? 'text-red-600 bg-red-500/10'
+  const color = preview || step.status === 'running' ? 'text-[var(--muted)] bg-zinc-500/10' : step.status === 'failed' ? 'text-red-600 bg-red-500/10'
     : step.status === 'unknown' ? 'text-amber-600 bg-amber-500/10' : 'text-emerald-600 bg-emerald-500/10'
   const sources = zh
     ? { session: '诊断会话', frontend: 'Sempre 前置', core: '内核 API', socket: 'Socket / TLS', http: 'HTTP 响应', config: '配置推演' }
@@ -25,10 +24,7 @@ export function TraceStepCard({ step, zh, preview = false, active = false, onIns
       {preview || unfinished ? <Circle size={11} /> : step.status === 'running' ? <span className="size-2 rounded-full bg-current motion-safe:animate-pulse" /> : step.status === 'passed' ? <Check size={13} /> : step.status === 'failed' ? <X size={13} /> : <AlertTriangle size={12} />}
     </span>
     <div className="overflow-hidden rounded-lg border border-[var(--border)]">
-      <Button variant="unstyled" className="w-full !justify-start gap-3 px-3 py-3 text-left hover:bg-[var(--surface-hover)]" aria-expanded={expanded} aria-controls={detailId} onClick={() => {
-        setExpanded(!expanded)
-        if (!expanded) onInspect?.()
-      }}>
+      <Button variant="unstyled" className="w-full !justify-start gap-3 px-3 py-3 text-left hover:bg-[var(--surface-hover)]" aria-expanded={expanded} aria-controls={detailId} onClick={() => setExpanded(!expanded)}>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="text-sm font-medium">{step.title}</span><span className="text-[11px] text-[var(--muted)]">{sources[step.source]}</span></span>
           <span className="mt-1 block break-words text-xs text-[var(--muted)]">{step.detail}</span>
