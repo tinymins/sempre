@@ -7,33 +7,6 @@ use crate::{TransparentError, command};
 const POWERSHELL: &str = "powershell.exe";
 pub(crate) const MANAGED_SERVER: &str = "192.0.2.1";
 
-const CAPTURE_SCRIPT: &str = r"
-[Console]::OutputEncoding = [Text.UTF8Encoding]::new()
-$ErrorActionPreference = 'Stop'
-$connected = @(Get-NetIPInterface -AddressFamily IPv4 |
-    Where-Object { $_.ConnectionState -eq 'Connected' } |
-    Select-Object -ExpandProperty InterfaceIndex)
-$defaults = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
-    Select-Object -ExpandProperty InterfaceIndex)
-$items = foreach ($dns in Get-DnsClientServerAddress -AddressFamily IPv4) {
-    if ($connected -notcontains $dns.InterfaceIndex -or @($dns.ServerAddresses).Count -eq 0) { continue }
-    $adapter = Get-NetAdapter -IncludeHidden |
-        Where-Object { $_.ifIndex -eq $dns.InterfaceIndex } |
-        Select-Object -First 1
-    if (-not $adapter) { continue }
-    $guid = $adapter.InterfaceGuid.ToString()
-    $key = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{' + $guid.Trim('{}') + '}'
-    $nameServer = [string](Get-ItemProperty -LiteralPath $key -Name NameServer -ErrorAction SilentlyContinue).NameServer
-    [pscustomobject]@{
-        guid = $guid
-        original = @($dns.ServerAddresses)
-        automatic = [string]::IsNullOrWhiteSpace($nameServer)
-        default_route = $defaults -contains $dns.InterfaceIndex
-    }
-}
-ConvertTo-Json -InputObject @($items) -Compress
-";
-
 const APPLY_SCRIPT: &str = r"
 [Console]::InputEncoding = [Text.UTF8Encoding]::new()
 $ErrorActionPreference = 'Stop'
@@ -244,13 +217,36 @@ impl SystemDns {
     }
 }
 
+#[cfg(target_os = "windows")]
+#[allow(clippy::unused_async)] // Shared controller interface; discovery uses native read-only APIs.
 async fn capture_interfaces(
-    runner: &dyn command::Runner,
+    _: &dyn command::Runner,
 ) -> Result<Vec<InterfaceState>, TransparentError> {
-    let output = run_script::<State>(runner, CAPTURE_SCRIPT, None).await?;
-    serde_json::from_str(&output.stdout).map_err(|error| {
-        TransparentError::Invalid(format!("decode Windows DNS interfaces: {error}"))
-    })
+    sempre_network::windows::dns_interfaces()
+        .map(|interfaces| {
+            interfaces
+                .into_iter()
+                .map(|interface| InterfaceState {
+                    guid: interface.guid,
+                    original: interface.original,
+                    automatic: interface.automatic,
+                    default_route: interface.default_route,
+                })
+                .collect()
+        })
+        .map_err(|error| {
+            TransparentError::Invalid(format!("capture Windows DNS interfaces: {error}"))
+        })
+}
+
+#[cfg(not(target_os = "windows"))]
+#[allow(clippy::unused_async)] // Windows-only system operation.
+async fn capture_interfaces(
+    _: &dyn command::Runner,
+) -> Result<Vec<InterfaceState>, TransparentError> {
+    Err(TransparentError::Invalid(
+        "Windows DNS discovery is unavailable on this platform".into(),
+    ))
 }
 
 fn original_upstreams(interfaces: &[InterfaceState]) -> Vec<String> {

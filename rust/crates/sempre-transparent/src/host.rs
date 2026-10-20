@@ -241,16 +241,8 @@ impl Controller {
 
     async fn is_root(&self) -> Result<bool, TransparentError> {
         if cfg!(target_os = "windows") {
-            let script = "$p=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()); if($p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){exit 0}else{exit 1}";
-            let output = self
-                .runner
-                .run(
-                    "powershell.exe",
-                    &["-NoProfile", "-NonInteractive", "-Command", script],
-                    None,
-                )
-                .await?;
-            return Ok(output.success);
+            #[cfg(target_os = "windows")]
+            return windows_security::is_administrator();
         }
         if cfg!(target_os = "macos") {
             let output = command::require_success(
@@ -276,3 +268,6 @@ impl Controller {
         Ok(uid == 0)
     }
 }
+
+#[cfg(target_os = "windows")]
+mod windows_security;

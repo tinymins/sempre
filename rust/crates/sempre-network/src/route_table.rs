@@ -1,4 +1,7 @@
-use std::{io, process::Command};
+#[cfg(not(target_os = "windows"))]
+use std::io;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::process::Command;
 
 use serde::Serialize;
 
@@ -20,7 +23,7 @@ pub fn route_table() -> Result<Vec<SystemRoute>, NetworkError> {
     platform_routes()
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn output(program: &str, arguments: &[&str]) -> Result<String, NetworkError> {
     let result = Command::new(program).args(arguments).output()?;
     if !result.status.success() {
@@ -136,35 +139,18 @@ fn platform_routes() -> Result<Vec<SystemRoute>, NetworkError> {
 
 #[cfg(target_os = "windows")]
 fn platform_routes() -> Result<Vec<SystemRoute>, NetworkError> {
-    let text = output(
-        "powershell.exe",
-        &[
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ConvertTo-Json -Compress -InputObject @(Get-NetRoute -PolicyStore ActiveStore | Select-Object AddressFamily,DestinationPrefix,NextHop,InterfaceAlias,RouteMetric)",
-        ],
-    )?;
-    let entries: Vec<serde_json::Value> = serde_json::from_str(text.trim_start_matches('\u{feff}'))
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    Ok(entries
+    let adapters = crate::windows::adapters()?;
+    Ok(crate::windows::routes()?
         .into_iter()
-        .map(|entry| SystemRoute {
-            family: if entry["DestinationPrefix"]
-                .as_str()
-                .is_some_and(|prefix| prefix.contains(':'))
-            {
-                "ipv6"
-            } else {
-                "ipv4"
-            },
-            destination: entry["DestinationPrefix"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned(),
-            gateway: entry["NextHop"].as_str().map(str::to_owned),
-            interface: entry["InterfaceAlias"].as_str().map(str::to_owned),
-            metric: entry["RouteMetric"].as_u64(),
+        .map(|route| SystemRoute {
+            family: if route.ipv6 { "ipv6" } else { "ipv4" },
+            destination: route.destination,
+            gateway: Some(route.gateway),
+            interface: adapters
+                .iter()
+                .find(|adapter| adapter.index == route.index || adapter.ipv6_index == route.index)
+                .map(|adapter| adapter.name.clone()),
+            metric: Some(u64::from(route.metric)),
             kind: None,
             table: None,
         })

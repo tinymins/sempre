@@ -24,18 +24,9 @@ impl Controller {
         }
         #[cfg(target_os = "windows")]
         crate::command::require_success(
-            "Clear-DnsClientCache",
+            "ipconfig.exe",
             self.runner
-                .run(
-                    "powershell.exe",
-                    &[
-                        "-NoProfile",
-                        "-NonInteractive",
-                        "-Command",
-                        "Clear-DnsClientCache",
-                    ],
-                    None,
-                )
+                .run("ipconfig.exe", &["/flushdns"], None)
                 .await?,
         )?;
         Ok(())

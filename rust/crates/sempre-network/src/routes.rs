@@ -1,4 +1,6 @@
-use std::{io, net::IpAddr, process::Command};
+use std::net::IpAddr;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::{io, process::Command};
 
 #[cfg(target_os = "linux")]
 use serde_json::Value;
@@ -45,40 +47,43 @@ fn platform_routes(interfaces: &[String]) -> Result<Vec<String>, NetworkError> {
 
 #[cfg(target_os = "windows")]
 fn platform_routes(interfaces: &[String]) -> Result<Vec<String>, NetworkError> {
-    let adapters = ipconfig::get_adapters().map_err(io::Error::other)?;
     let has_names = interfaces
         .iter()
         .any(|interface| interface.parse::<IpAddr>().is_err());
-    let owned = adapters
-        .iter()
+    let owned = crate::windows::adapters()?
+        .into_iter()
         .filter(|adapter| {
             interfaces.iter().any(|interface| {
-                interface == adapter.friendly_name()
-                    || interface == adapter.adapter_name()
+                interface == &adapter.name
+                    || interface
+                        .trim_matches(['{', '}'])
+                        .eq_ignore_ascii_case(&adapter.guid)
                     || (!has_names
-                        && interface
-                            .parse::<IpAddr>()
-                            .is_ok_and(|address| adapter.ip_addresses().contains(&address)))
+                        && interface.parse::<IpAddr>().is_ok_and(|ip| {
+                            adapter.addresses.iter().any(|address| {
+                                address
+                                    .split('/')
+                                    .next()
+                                    .and_then(|value| value.parse::<IpAddr>().ok())
+                                    == Some(ip)
+                            })
+                        }))
             })
         })
         .collect::<Vec<_>>();
-    let addresses = owned
-        .iter()
-        .flat_map(|adapter| adapter.ip_addresses())
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    let indexes = owned
-        .iter()
-        .map(|adapter| adapter.ipv6_if_index())
-        .filter(|index| *index != 0)
-        .collect::<Vec<_>>();
-    let mut routes =
-        parse_windows_ipv4_routes(&command_output("route.exe", &["PRINT", "-4"])?, &addresses);
-    routes.extend(parse_windows_ipv6_routes(
-        &command_output("route.exe", &["PRINT", "-6"])?,
-        &indexes,
-    ));
-    Ok(routes)
+    Ok(crate::windows::routes()?
+        .into_iter()
+        .filter(|route| {
+            !owned.iter().any(|adapter| {
+                if route.ipv6 {
+                    adapter.ipv6_index == route.index
+                } else {
+                    adapter.index == route.index
+                }
+            })
+        })
+        .filter_map(|route| parse_route_destination(&route.destination))
+        .collect())
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -86,6 +91,7 @@ fn platform_routes(_interfaces: &[String]) -> Result<Vec<String>, NetworkError> 
     Ok(Vec::new())
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn command_output(program: &str, arguments: &[&str]) -> Result<String, NetworkError> {
     let output = Command::new(program).args(arguments).output()?;
     if !output.status.success() {
@@ -136,43 +142,6 @@ fn parse_linux_routes(output: &str, interfaces: &[String]) -> Result<Vec<String>
                 .and_then(parse_route_destination)
         })
         .collect())
-}
-
-#[cfg(target_os = "windows")]
-fn parse_windows_ipv4_routes(output: &str, interfaces: &[String]) -> Vec<String> {
-    output
-        .lines()
-        .filter_map(|line| {
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            if fields.len() != 5 || interfaces.iter().any(|interface| interface == fields[3]) {
-                return None;
-            }
-            let address = fields[0].parse::<std::net::Ipv4Addr>().ok()?;
-            let mask = u32::from(fields[1].parse::<std::net::Ipv4Addr>().ok()?);
-            let prefix = u8::try_from(mask.count_ones()).ok()?;
-            let expected = if prefix == 0 {
-                0
-            } else {
-                u32::MAX << (32 - prefix)
-            };
-            (mask == expected).then(|| format!("{address}/{prefix}"))
-        })
-        .collect()
-}
-
-#[cfg(target_os = "windows")]
-fn parse_windows_ipv6_routes(output: &str, indexes: &[u32]) -> Vec<String> {
-    output
-        .lines()
-        .filter_map(|line| {
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            let index = fields.first()?.parse::<u32>().ok()?;
-            if indexes.contains(&index) {
-                return None;
-            }
-            parse_route_destination(fields.get(2)?).filter(|route| route.contains(':'))
-        })
-        .collect()
 }
 
 fn parse_route_destination(value: &str) -> Option<String> {

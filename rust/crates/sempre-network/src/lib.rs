@@ -38,3 +38,6 @@ pub enum NetworkError {
 
 mod trace;
 pub use trace::{TraceTransportEvent, parse_trace_target, trace_transport};
+
+#[cfg(target_os = "windows")]
+pub mod windows;

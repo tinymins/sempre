@@ -212,82 +212,25 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use std::{io, net::IpAddr, process::Command};
-
-    use sysinfo::Networks;
-
-    use super::{DefaultInterface, NetworkError, normalize_mac, warm_neighbor};
+    use super::{DefaultInterface, NetworkError, warm_neighbor};
 
     pub fn detect() -> Result<DefaultInterface, NetworkError> {
-        let output = Command::new("route.exe").args(["PRINT", "-4"]).output()?;
-        if !output.status.success() {
-            return Err(io::Error::other("route PRINT -4 failed").into());
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let route = parse_route(&stdout)
-            .ok_or_else(|| io::Error::other("default route has no interface address"))?;
-        let networks = Networks::new_with_refreshed_list();
-        let Some((name, data)) = networks.iter().find(|(_, data)| {
-            data.ip_networks()
-                .iter()
-                .any(|network| network.addr == route.address)
-        }) else {
-            return Err(io::Error::other("default route interface was not found").into());
-        };
-        let mut addresses: Vec<String> =
-            data.ip_networks().iter().map(ToString::to_string).collect();
+        let route = crate::windows::default_route()?;
+        let adapter = crate::windows::adapters()?
+            .into_iter()
+            .find(|adapter| adapter.index == route.index)
+            .ok_or_else(|| std::io::Error::other("default route interface was not found"))?;
+        let mut addresses = adapter.addresses;
         addresses.sort();
-        warm_neighbor(&route.gateway.to_string());
-        let gateway_mac = Command::new("arp.exe")
-            .args(["-a", &route.gateway.to_string()])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .and_then(|output| {
-                parse_arp(
-                    &String::from_utf8_lossy(&output.stdout),
-                    &route.gateway.to_string(),
-                )
-            })
-            .unwrap_or_default();
+        warm_neighbor(&route.gateway);
+        let gateway_mac =
+            crate::windows::neighbor_mac(route.index, &route.gateway).unwrap_or_default();
         Ok(DefaultInterface {
             supported: true,
-            name: name.clone(),
+            name: adapter.name,
             addresses,
-            gateway: route.gateway.to_string(),
+            gateway: route.gateway,
             gateway_mac,
-        })
-    }
-
-    #[derive(Debug, Eq, PartialEq)]
-    struct Route {
-        gateway: IpAddr,
-        address: IpAddr,
-    }
-
-    fn parse_route(output: &str) -> Option<Route> {
-        output
-            .lines()
-            .filter_map(|line| {
-                let fields = line.split_whitespace().collect::<Vec<_>>();
-                if fields.first() != Some(&"0.0.0.0") || fields.get(1) != Some(&"0.0.0.0") {
-                    return None;
-                }
-                let gateway = fields.get(2)?.parse().ok()?;
-                let address = fields.get(3)?.parse().ok()?;
-                let metric = fields.get(4)?.parse::<u32>().ok()?;
-                Some((metric, Route { gateway, address }))
-            })
-            .min_by_key(|(metric, _)| *metric)
-            .map(|(_, route)| route)
-    }
-
-    fn parse_arp(output: &str, gateway: &str) -> Option<String> {
-        output.lines().find_map(|line| {
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            (fields.first() == Some(&gateway))
-                .then(|| fields.get(1).and_then(|value| normalize_mac(value)))
-                .flatten()
         })
     }
 }

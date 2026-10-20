@@ -1,4 +1,6 @@
-use std::{net::IpAddr, process::Command};
+use std::net::IpAddr;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::process::Command;
 
 use serde::Serialize;
 
@@ -52,18 +54,10 @@ fn route_for(address: IpAddr) -> Option<RouteDecision> {
 
 #[cfg(target_os = "windows")]
 fn route_for(address: IpAddr) -> Option<RouteDecision> {
-    let IpAddr::V4(address) = address else {
+    if address.is_ipv6() {
         return None;
-    };
-    let output = Command::new("route.exe")
-        .args(["PRINT", "-4"])
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| parse_windows_route(address, &String::from_utf8_lossy(&output.stdout)))
-        .flatten()
+    }
+    crate::windows::route_for(address).ok()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -103,33 +97,6 @@ fn parse_linux_route(address: IpAddr, output: &str) -> Option<RouteDecision> {
         interface: value_after("dev")?,
         gateway: value_after("via").unwrap_or_default(),
     })
-}
-
-#[cfg(target_os = "windows")]
-fn parse_windows_route(address: std::net::Ipv4Addr, output: &str) -> Option<RouteDecision> {
-    let target = u32::from(address);
-    output
-        .lines()
-        .filter_map(|line| {
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            if fields.len() != 5 {
-                return None;
-            }
-            let destination = fields[0].parse::<std::net::Ipv4Addr>().ok()?;
-            let mask = fields[1].parse::<std::net::Ipv4Addr>().ok()?;
-            let mask = u32::from(mask);
-            (target & mask == u32::from(destination) & mask).then_some((
-                mask.count_ones(),
-                fields[4].parse::<u32>().ok()?,
-                RouteDecision {
-                    address: IpAddr::V4(address),
-                    interface: fields[3].to_owned(),
-                    gateway: fields[2].to_owned(),
-                },
-            ))
-        })
-        .max_by(|left, right| left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1)))
-        .map(|(_, _, route)| route)
 }
 
 pub fn fake_ip_routes_conflict(routes: &[RouteDecision]) -> bool {
