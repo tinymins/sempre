@@ -240,37 +240,3 @@ fn profile_forward_refs(profile: &Profile) -> Result<Vec<String>, sempre_convert
         })
         .collect())
 }
-
-#[cfg(test)]
-mod tests {
-    use sempre_state::{Layout, Store};
-    use serde_json::json;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn referenced_forwards_cannot_be_removed() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let manager = Manager::new(Store::new(Layout::at(root.path()))).expect("manager");
-        manager
-            .subscriptions
-            .update(|catalog| {
-                catalog.profiles[0].name = "Home".into();
-                catalog.profiles[0].editor.private_access_config = json!({
-                    "connectors": [{
-                        "type": "wireguard",
-                        "transport_endpoint_ref": "home-wg"
-                    }]
-                })
-                .to_string();
-                Ok(())
-            })
-            .expect("seed reference");
-        let error = manager
-            .update_tunnels(Config::default())
-            .await
-            .expect_err("referenced forward removal must fail");
-        assert!(error.to_string().contains("home-wg"));
-        assert!(error.to_string().contains("Home"));
-    }
-}

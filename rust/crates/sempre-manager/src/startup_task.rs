@@ -57,15 +57,6 @@ impl StartupTasks {
             })
     }
 
-    #[cfg(test)]
-    pub fn running(&self) -> bool {
-        self.current
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|task| task.state == "running")
-    }
-
     pub(crate) fn begin(
         &self,
         action: &'static str,

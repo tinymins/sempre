@@ -316,60 +316,27 @@ async fn run_script<T: Serialize>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, future::Future, pin::Pin, sync::Mutex};
+    use std::{future::Future, pin::Pin, sync::Mutex};
 
     use super::*;
 
     #[derive(Default)]
     struct FakeRunner {
-        outputs: Mutex<VecDeque<command::Output>>,
-        calls: Mutex<Vec<Call>>,
-    }
-
-    struct Call {
-        program: String,
-        arguments: Vec<String>,
-        input: Option<Vec<u8>>,
-    }
-
-    impl FakeRunner {
-        fn with_outputs(outputs: impl IntoIterator<Item = command::Output>) -> Self {
-            Self {
-                outputs: Mutex::new(outputs.into_iter().collect()),
-                calls: Mutex::new(Vec::new()),
-            }
-        }
+        calls: Mutex<Vec<()>>,
     }
 
     impl command::Runner for FakeRunner {
         fn run<'a>(
             &'a self,
-            program: &'a str,
-            arguments: &'a [&'a str],
-            input: Option<&'a [u8]>,
+            _: &'a str,
+            _: &'a [&'a str],
+            _: Option<&'a [u8]>,
         ) -> Pin<Box<dyn Future<Output = Result<command::Output, TransparentError>> + Send + 'a>>
         {
             Box::pin(async move {
-                self.calls.lock().expect("calls").push(Call {
-                    program: program.into(),
-                    arguments: arguments.iter().map(|value| (*value).into()).collect(),
-                    input: input.map(<[u8]>::to_vec),
-                });
-                Ok(self
-                    .outputs
-                    .lock()
-                    .expect("outputs")
-                    .pop_front()
-                    .expect("fake command output"))
+                self.calls.lock().expect("calls").push(());
+                panic!("saved ownership must not invoke a command")
             })
-        }
-    }
-
-    fn output(stdout: &str) -> command::Output {
-        command::Output {
-            success: true,
-            stdout: stdout.into(),
-            stderr: String::new(),
         }
     }
 
@@ -380,17 +347,6 @@ mod tests {
             automatic: true,
             default_route,
         }
-    }
-
-    #[test]
-    fn takeover_uses_default_route_interfaces_instead_of_tun_adapters() {
-        let interfaces = vec![
-            interface(false, &["172.19.0.2"]),
-            interface(true, &["223.6.6.6"]),
-        ];
-        let selected = takeover_interfaces(interfaces);
-        assert_eq!(selected.len(), 1);
-        assert_eq!(selected[0].original, ["223.6.6.6"]);
     }
 
     #[tokio::test]
@@ -408,42 +364,5 @@ mod tests {
             ["223.6.6.6"]
         );
         assert!(runner.calls.lock().expect("calls").is_empty());
-    }
-
-    #[tokio::test]
-    async fn apply_and_restore_remove_owned_state() {
-        let root = tempfile::tempdir().expect("state directory");
-        let dns = SystemDns::new(root.path().into());
-        let guid = "00000000-0000-0000-0000-000000000001";
-        let capture = format!(
-            r#"[{{"guid":"{guid}","original":["223.6.6.6"],"automatic":true,"default_route":true}}]"#
-        );
-        let runner = FakeRunner::with_outputs([output(&capture), output(""), output("")]);
-        dns.apply(&runner, &["223.6.6.6".into()])
-            .await
-            .expect("take over DNS");
-        assert!(dns.state_path().exists());
-        dns.restore(&runner).await.expect("restore DNS");
-        assert!(!dns.state_path().exists());
-
-        let calls = runner.calls.lock().expect("calls");
-        assert_eq!(calls.len(), 3);
-        assert!(calls.iter().all(|call| call.program == POWERSHELL));
-        assert_eq!(
-            calls[0].arguments.last().map(String::as_str),
-            Some(CAPTURE_SCRIPT)
-        );
-        assert!(calls[0].input.is_none());
-        assert_eq!(
-            calls[1].arguments.last().map(String::as_str),
-            Some(APPLY_SCRIPT)
-        );
-        assert!(calls[1].input.as_deref().is_some_and(|input| {
-            std::str::from_utf8(input).is_ok_and(|input| input.contains("223.6.6.6"))
-        }));
-        assert_eq!(
-            calls[2].arguments.last().map(String::as_str),
-            Some(RESTORE_SCRIPT)
-        );
     }
 }

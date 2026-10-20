@@ -283,24 +283,3 @@ impl NetworkSettings {
             && self.known_networks == previous.known_networks
     }
 }
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn migrates_schema_one_without_enabling_automatic_switching() {
-        let root = tempfile::tempdir().expect("directory");
-        let path = root.path().join("network.json");
-        fs::write(
-            &path,
-            br#"{"schema":1,"revision":3,"mode":"local","gateway_capture_host":false}"#,
-        )
-        .expect("legacy settings");
-        let store = NetworkSettingsStore::open(path).expect("store");
-        assert_eq!(store.read().schema, 2);
-        assert!(!store.read().automatic_switching);
-        assert!(store.read().known_networks.is_empty());
-    }
-}

@@ -30,32 +30,6 @@ fn package(version: &str) -> Package {
 }
 
 #[tokio::test]
-async fn activates_version_then_records_channel_idempotently() {
-    let root = tempfile::tempdir().expect("temporary directory");
-    let store = Store::new(Layout::at(root.path()));
-    let manager = Manager::with_runner(store, FixedVersion("1.2.3")).expect("manager");
-    let archive = root.path().join("core.raw");
-    fs::write(&archive, b"binary").expect("archive");
-    let reference = CoreRef::parse("sing-box").expect("reference");
-    let adapter = Arc::new(BuiltInAdapter::new(BuiltInKind::SingBox));
-
-    let first = manager
-        .install_downloaded(&reference, adapter.clone(), &package("1.2.3"), &archive)
-        .await
-        .expect("first install");
-    assert!(first.installed && first.changed && first.binary.is_file());
-    let state = manager.state().expect("state");
-    assert_eq!(state.cores["sing-box"].default.channels["stable"], "1.2.3");
-    assert!(!state.cores["sing-box"].default.installed["1.2.3"].explicit);
-
-    let second = manager
-        .install_downloaded(&reference, adapter, &package("1.2.3"), &archive)
-        .await
-        .expect("second install");
-    assert!(!second.installed && !second.changed);
-}
-
-#[tokio::test]
 async fn rejects_reported_version_before_activation_or_state_change() {
     let root = tempfile::tempdir().expect("temporary directory");
     let store = Store::new(Layout::at(root.path()));

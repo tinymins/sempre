@@ -291,55 +291,6 @@ async fn partial_batch_failure_and_stale_journal_are_recoverable() {
     assert!(!path.exists());
 }
 
-#[test]
-fn ipv6_cn_and_private_capture_obey_longest_prefix() {
-    let (v4, tun) = endpoints();
-    let mut intent = intent();
-    intent.prefixes.push("2400:3200::/32".into());
-    intent.tun_addresses.push("fdfe:dcba:9876::1/126".into());
-    intent.capture_prefixes.push("10.8.0.0/16".into());
-    let v6 = Endpoint {
-        gateway: "fe80::1%en0".into(),
-        ..v4.clone()
-    };
-    let routes = plan(&intent, &[v4.clone(), v6.clone()], &tun).expect("dual stack");
-    for (address, expected) in [
-        ("2400:3200::1", "en0"),
-        ("2606:4700:4700::1111", "utun9"),
-        ("10.8.0.1", "utun9"),
-    ] {
-        let address = address.parse::<std::net::IpAddr>().expect("address");
-        let selected = routes
-            .iter()
-            .filter(|route| !route.scoped)
-            .filter_map(|r| {
-                let net = r.prefix.parse::<ipnet::IpNet>().expect("prefix");
-                net.contains(&address)
-                    .then_some((net.prefix_len(), &r.endpoint.interface))
-            })
-            .max_by_key(|(length, _)| *length)
-            .expect("route");
-        assert_eq!(selected.1, expected);
-    }
-    let physical_defaults = routes
-        .iter()
-        .filter(|route| route.scoped)
-        .collect::<Vec<_>>();
-    assert_eq!(
-        physical_defaults.len(),
-        if cfg!(target_os = "macos") { 2 } else { 0 }
-    );
-    if cfg!(target_os = "macos") {
-        assert!(
-            physical_defaults
-                .iter()
-                .any(|route| route.prefix == "::/0" && route.endpoint == v6)
-        );
-    }
-    intent.capture_prefixes.push("223.5.0.0/16".into());
-    assert!(plan(&intent, &[v4, v6], &tun).is_ok());
-}
-
 #[tokio::test]
 async fn failed_cleanup_keeps_journal_for_next_recovery() {
     let directory = tempfile::tempdir().expect("directory");

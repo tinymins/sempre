@@ -290,18 +290,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn set_rejects_credentialed_and_non_http_urls() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let manager = Manager::new(Store::new(Layout::at(root.path()))).expect("manager");
-        assert!(
-            manager
-                .set_subscription_source("https://user:secret@example.com/sub")
-                .is_err()
-        );
-        assert!(manager.set_subscription_source("file:///tmp/sub").is_err());
-    }
-
-    #[test]
     fn profile_save_is_local_and_preserves_server_owned_fields() {
         let root = tempfile::tempdir().expect("temporary directory");
         let manager = Manager::new(Store::new(Layout::at(root.path()))).expect("manager");

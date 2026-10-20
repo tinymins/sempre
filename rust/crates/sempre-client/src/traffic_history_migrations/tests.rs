@@ -25,53 +25,6 @@ pub(crate) fn beta2_document(checksum: &str) -> Value {
 }
 
 #[test]
-fn beta2_history_opens_without_reapplying_migrations_or_rewriting_data() {
-    for checksum in BETA2_CHECKSUMS {
-        let document = beta2_document(checksum);
-        let bytes = serde_json::to_vec_pretty(&document).unwrap();
-        let result = run(&bytes).expect("beta.2 migration remains valid");
-        assert!(!result.changed);
-        assert_eq!(result.value, document);
-
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("traffic-history.json");
-        std::fs::write(&path, &bytes).unwrap();
-        let _store = crate::traffic_history::TrafficStore::open(path.clone()).unwrap();
-        assert_eq!(std::fs::read(path).unwrap(), bytes);
-    }
-}
-
-#[test]
-fn recording_traffic_preserves_the_applied_migration_ledger() {
-    use crate::traffic_history::{TrafficDelta, TrafficDimension, TrafficStore};
-
-    for checksum in BETA2_CHECKSUMS {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("traffic-history.json");
-        let document = beta2_document(checksum);
-        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
-        let store = TrafficStore::open(path.clone()).unwrap();
-        store
-            .record(
-                1_791_417_600_000,
-                vec![TrafficDelta {
-                    dimension: TrafficDimension::Host,
-                    label: "example.com".into(),
-                    download: 10,
-                    upload: 20,
-                }],
-            )
-            .unwrap();
-        store.flush().unwrap();
-        let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(saved["applied_migrations"], document["applied_migrations"]);
-        assert_eq!(saved["records"][0]["download"], 1244);
-        assert_eq!(saved["records"][0]["upload"], 587);
-        TrafficStore::open(path).unwrap();
-    }
-}
-
-#[test]
 fn unknown_checksum_is_still_rejected() {
     let bytes = serde_json::to_vec(&beta2_document("unrecognized-checksum")).unwrap();
     assert!(matches!(

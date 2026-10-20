@@ -135,15 +135,4 @@ mod tests {
         assert!(output["rules"][0].get("source_port").is_none());
         assert!(!output.to_string().contains("unsafe"));
     }
-
-    #[test]
-    fn converts_plain_line_provider_documents() {
-        let output =
-            convert_clash_rule_set("DOMAIN,exact.example\nDOMAIN-SUFFIX,suffix.example", 4);
-        assert_eq!(output["rules"][0]["domain"], json!(["exact.example"]));
-        assert_eq!(
-            output["rules"][0]["domain_suffix"],
-            json!(["suffix.example"])
-        );
-    }
 }

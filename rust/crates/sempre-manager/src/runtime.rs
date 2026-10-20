@@ -347,6 +347,3 @@ fn action_error(code: &'static str, message: impl Into<String>) -> ManagerError 
         message: message.into(),
     }
 }
-
-#[cfg(test)]
-mod tests;

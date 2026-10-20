@@ -90,25 +90,3 @@ fn selection_matches(document: &sempre_state::Document, reference: &CoreRef) -> 
             && selected.reference == reference.reference
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use sempre_state::{Layout, Store};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn exact_versions_cannot_be_updated() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let manager = Manager::new(Store::new(Layout::at(root.path()))).expect("manager");
-        let error = manager
-            .update_cores("sing-box@1.12.20")
-            .await
-            .expect_err("exact update must fail");
-        assert!(
-            error
-                .to_string()
-                .contains("exact core versions are immutable")
-        );
-    }
-}

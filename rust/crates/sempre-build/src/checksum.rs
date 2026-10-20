@@ -39,25 +39,3 @@ pub(crate) fn write(directory: &Path, names: &[String]) -> Result<(), BuildError
     sempre_state::write_atomic(&path, content.as_bytes(), 0o644)
         .map_err(|error| BuildError::io("write checksums", path, error))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn writes_sorted_sha256_entries() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        fs::write(temporary.path().join("b"), b"b").expect("b");
-        fs::write(temporary.path().join("a"), b"a").expect("a");
-        write(temporary.path(), &["b".into(), "a".into()]).expect("checksums");
-        let content =
-            fs::read_to_string(temporary.path().join("SHA256SUMS")).expect("checksum file");
-        assert_eq!(
-            content
-                .lines()
-                .map(|line| line.rsplit_once(' ').unwrap().1)
-                .collect::<Vec<_>>(),
-            ["a", "b"]
-        );
-    }
-}

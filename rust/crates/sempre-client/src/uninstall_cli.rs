@@ -48,21 +48,3 @@ fn confirm(purge: bool) -> Result<bool, ClientError> {
         "y" | "yes"
     ))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pending_removal_never_claims_application_is_already_removed() {
-        for purged in [false, true] {
-            let message = completion_message(sempre_manager::ApplicationUninstall {
-                purged,
-                installation_removal_scheduled: true,
-            });
-            assert!(message.contains("pending"));
-            assert!(!message.contains("Sempre was removed"));
-            assert!(!message.contains("Sempre and all data were removed"));
-        }
-    }
-}

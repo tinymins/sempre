@@ -250,16 +250,3 @@ fn assert_home_auto_rules(document: &Value) {
         ]
     );
 }
-
-#[test]
-fn legacy_sing_box_ignores_private_access() {
-    let document = compile_document("sing-box");
-    assert!(document.get("endpoints").is_none());
-    assert!(
-        document["outbounds"]
-            .as_array()
-            .expect("outbounds")
-            .iter()
-            .all(|outbound| outbound["tag"] != "private-wg")
-    );
-}

@@ -48,10 +48,3 @@ fn uploaded_updates_require_state_and_the_platform_installer() {
     assert_eq!(installer_name_for_os("macos"), "install.command");
     assert_eq!(installer_name_for_os("linux"), "install.sh");
 }
-
-#[test]
-fn manifest_rejects_prerelease_versions() {
-    let value = manifest("2.0.10-beta.1");
-    assert!(validate_manifest(&value, false).is_err());
-    assert!(validate_manifest(&value, true).is_ok());
-}

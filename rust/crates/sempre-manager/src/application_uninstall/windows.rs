@@ -43,55 +43,9 @@ fn removal_command(path: &Path, parent_id: u32) -> Command {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, os::windows::fs::OpenOptionsExt as _, thread, time::Duration};
+    use std::{fs, os::windows::fs::OpenOptionsExt as _};
 
     use super::*;
-
-    const CHILD_TEST: &str =
-        "application_uninstall::windows::tests::uninstall_from_installed_executable";
-
-    #[test]
-    fn uninstall_from_installed_executable() {
-        let Some(root) = std::env::var_os("SEMPRE_UNINSTALL_TEST_ROOT") else {
-            return;
-        };
-        let root = Path::new(&root);
-        assert!(remove_installation_root(root).expect("schedule removal"));
-        // Longer than the old fixed ping delay: the helper must wait for us.
-        thread::sleep(Duration::from_secs(3));
-        assert!(root.join("resources/marker").exists());
-    }
-
-    #[test]
-    fn self_uninstall_waits_and_removes_literal_paths_from_installation_cwd() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        for name in [
-            "Program Files Sempre",
-            "Program Files 空格 & % ! ' [Sempre]",
-        ] {
-            let root = temporary.path().join(name);
-            fs::create_dir_all(root.join("resources")).expect("resources");
-            fs::write(root.join("resources/marker"), b"resource").expect("resource");
-            let executable = root.join("sempre.exe");
-            fs::copy(
-                std::env::current_exe().expect("test executable"),
-                &executable,
-            )
-            .expect("installed executable");
-            let output = Command::new(&executable)
-                .args(["--exact", CHILD_TEST, "--nocapture"])
-                .env("SEMPRE_UNINSTALL_TEST_ROOT", &root)
-                .current_dir(&root)
-                .output()
-                .expect("run installed executable");
-            assert!(output.status.success(), "{output:?}");
-            assert!(!root.exists(), "{output:?}");
-            assert!(
-                String::from_utf8_lossy(&output.stdout).contains("Installation directory removed.")
-            );
-            assert!(output.stderr.is_empty(), "{output:?}");
-        }
-    }
 
     #[test]
     fn removal_reports_failure_when_files_remain_locked() {

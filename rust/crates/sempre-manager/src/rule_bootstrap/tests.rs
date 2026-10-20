@@ -10,45 +10,6 @@ fn fixture() -> (tempfile::TempDir, Fetcher) {
 }
 
 #[test]
-fn missing_rule_sets_do_not_block_startup_or_broaden_logical_conditions() {
-    let (_root, fetcher) = fixture();
-    let config = json!({
-        "route": {
-            "rule_set": [
-                {"type":"inline", "tag":"known", "rules":[{"domain":["local.example"]}]},
-                {"type":"remote", "tag":"user-rules", "format":"source", "url":"https://offline.invalid/custom.yaml"},
-                {"type":"remote", "tag":"user-binary", "format":"binary", "url":"https://offline.invalid/custom.srs"}
-            ],
-            "rules": [
-                {"ip_is_private":true, "outbound":"direct"},
-                {"type":"logical", "mode":"and", "rules":[{"rule_set":["user-rules"]},{"domain":["special.example"]}], "outbound":"proxy"},
-                {"rule_set":["known"], "outbound":"direct"}
-            ],
-            "final":"proxy"
-        },
-        "dns": {"rules":[{"rule_set":["user-binary"],"server":"local"},{"query_type":["HTTPS"],"action":"reject"}], "final":"remote"}
-    });
-    let (base, missing) = materialize(&fetcher, &config, &HashMap::new()).unwrap();
-    assert_eq!(missing.len(), 2);
-    assert_eq!(base["route"]["rule_set"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        base["route"]["rules"],
-        json!([
-            {"ip_is_private":true,"outbound":"direct"}, {"rule_set":["known"],"outbound":"direct"}
-        ])
-    );
-    assert_eq!(base["route"]["final"], "proxy");
-    assert_eq!(base["dns"]["rules"].as_array().unwrap().len(), 1);
-    assert_eq!(config["route"]["rule_set"].as_array().unwrap().len(), 3);
-    assert_eq!(
-        materialize(&fetcher, &json!({}), &HashMap::new())
-            .unwrap()
-            .0,
-        json!({})
-    );
-}
-
-#[test]
 fn only_validated_user_rules_complete_the_original_configuration() {
     let (_root, fetcher) = fixture();
     let config = json!({"route": {

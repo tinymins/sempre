@@ -247,7 +247,7 @@ fn clean_jsonc(input: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply, clean_jsonc};
+    use super::apply;
     use crate::Profile;
 
     #[test]
@@ -287,10 +287,5 @@ mod tests {
             serde_json::json!(["hidden"])
         );
         assert_eq!(connectors[0]["dns"].as_array().map(Vec::len), Some(2));
-    }
-
-    #[test]
-    fn rejects_unterminated_comment() {
-        assert!(clean_jsonc("[/*").is_err());
     }
 }

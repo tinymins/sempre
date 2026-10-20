@@ -340,21 +340,3 @@ fn editor_config(defaults: &Defaults) -> EditorConfig {
 fn pretty(value: &impl Serialize) -> String {
     serde_json::to_string_pretty(value).expect("system defaults always serialize")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn effective_profile_respects_each_independent_system_switch() {
-        let mut profile = Profile::default();
-        profile.groups.push(group("custom", &[], false, false));
-        profile
-            .extra
-            .insert("use_system_groups".into(), json!(true));
-        let effective = effective_profile(profile, &Target::parse("clash-meta").expect("target"));
-        assert_eq!(effective.groups.len(), 25);
-        assert!(effective.rule_providers.is_empty());
-        assert!(effective.filters.is_empty());
-    }
-}

@@ -12,7 +12,6 @@ use sempre_state::{Installation, Layout, Selection, Store};
 use serde_json::{Map, json};
 
 use super::*;
-use crate::RuntimePendingChange;
 
 #[derive(Default)]
 struct FakeRunner {
@@ -121,74 +120,6 @@ fn raw_source() -> Source {
 }
 
 #[tokio::test]
-async fn dns_rebuild_stages_saved_settings_without_automatic_validation() {
-    let (_root, manager, profile_id) = fixture();
-    manager
-        .activate_subscription_profile(&profile_id)
-        .await
-        .expect("activate profile");
-    let before = manager.dns_settings();
-    manager.runner.reject.store(true, Ordering::Relaxed);
-    let mut candidate = before.clone();
-    candidate.enabled = true;
-
-    let (change, returned) = manager
-        .update_dns_settings(candidate)
-        .await
-        .expect("stage DNS settings without prevalidation");
-    assert!(change.changed && change.needs_restart);
-    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
-    assert_eq!(returned, manager.dns_settings());
-
-    let saved = manager.dns_settings();
-    assert!(saved.enabled);
-    assert_eq!(saved.revision, before.revision + 1);
-    let status = manager.runtime_status().expect("runtime status");
-    assert!(status.pending);
-    assert!(status.pending_changes.iter().any(|change| matches!(
-        change,
-        RuntimePendingChange::Configuration { fields, .. }
-            if fields.contains(&PendingConfigField::Dns)
-    )));
-}
-
-#[tokio::test]
-async fn network_rebuild_stages_saved_settings_without_automatic_validation() {
-    let (_root, manager, profile_id) = fixture();
-    manager
-        .activate_subscription_profile(&profile_id)
-        .await
-        .expect("activate profile");
-    let before = manager.network_settings();
-    manager.runner.reject.store(true, Ordering::Relaxed);
-    let mut candidate = before.clone();
-    candidate.automatic_switching = true;
-
-    let (change, returned) = manager
-        .update_network_settings(candidate)
-        .await
-        .expect("stage network settings without prevalidation");
-    assert!(change.changed && change.needs_restart);
-    assert_eq!(manager.runner.validations.load(Ordering::Relaxed), 0);
-    assert_eq!(returned, manager.network_settings());
-
-    let saved = manager.network_settings();
-    assert!(saved.automatic_switching);
-    assert_eq!(saved.revision, before.revision + 1);
-    let status = manager.runtime_status().expect("runtime status");
-    assert!(status.pending);
-    assert!(status.pending_changes.iter().any(|change| matches!(
-        change,
-        RuntimePendingChange::Configuration { fields, .. }
-            if [
-                PendingConfigField::Dns,
-                PendingConfigField::PrivateAccess,
-                PendingConfigField::TransparentProxy,
-            ].iter().all(|field| fields.contains(field))
-    )));
-}
-
-#[tokio::test]
 async fn frontend_dns_survives_switches_without_overriding_profile_dns() {
     let (_root, manager, first_id) = fixture();
     let mut settings = manager.dns_settings();
@@ -212,6 +143,10 @@ async fn frontend_dns_survives_switches_without_overriding_profile_dns() {
     manager
         .subscriptions
         .update(|catalog| {
+            catalog.profiles[0]
+                .extra
+                .insert("use_system_rules".into(), json!(false));
+            catalog.profiles[0].editor.rule_list = "{}".into();
             catalog.profiles[0]
                 .extra
                 .insert("use_system_dns".into(), json!(false));

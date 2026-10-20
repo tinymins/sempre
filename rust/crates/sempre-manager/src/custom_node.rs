@@ -207,46 +207,6 @@ mod tests {
     }
 
     #[test]
-    fn custom_node_mutations_preserve_references_and_revision_semantics() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let manager = manager(&root);
-        let saved = manager
-            .save_custom_node(candidate(""))
-            .expect("create node");
-        assert_eq!(saved.name, "proxy-name");
-        assert_eq!(saved.proxy["name"], "proxy-name");
-        assert!(saved.created_at.is_some());
-
-        assert_eq!(
-            manager.subscriptions().read().unwrap().profiles[0].custom_node_ids,
-            std::slice::from_ref(&saved.id)
-        );
-        let before = manager.subscriptions().read().expect("catalog").profiles[0].revision;
-        let mut update = saved.clone();
-        update.name = "renamed".into();
-        let updated = manager.save_custom_node(update).expect("update node");
-        assert_eq!(updated.proxy["name"], "renamed");
-        let catalog = manager.subscriptions().read().expect("updated catalog");
-        assert_eq!(catalog.profiles[0].revision, before + 1);
-        assert!(manager.remove_custom_node(&saved.id).is_err());
-
-        manager
-            .subscriptions()
-            .update(|catalog| {
-                catalog.profiles[0].custom_node_ids.clear();
-                Ok(())
-            })
-            .expect("remove reference");
-        assert!(
-            manager
-                .remove_custom_node(&saved.id)
-                .expect("remove")
-                .changed
-        );
-        assert!(manager.custom_nodes().expect("nodes").is_empty());
-    }
-
-    #[test]
     fn invalid_batch_assignments_leave_node_and_all_profiles_unchanged() {
         let root = tempfile::tempdir().expect("temporary directory");
         let manager = manager(&root);

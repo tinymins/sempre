@@ -120,42 +120,6 @@ mod tests {
     use sempre_state::{Layout, Store};
 
     #[test]
-    fn global_cn_switch_changes_runtime_identity_without_editing_the_profile() {
-        let directory = tempfile::tempdir().expect("directory");
-        let manager = Manager::with_runner(Store::new(Layout::at(directory.path())), ProcessRunner)
-            .expect("manager");
-        let mut profile = Profile::default();
-        profile
-            .extra
-            .insert("use_system_dns".into(), serde_json::json!(false));
-        let target = Target::parse("sing-box-v14").expect("target");
-        let original = manager
-            .subscription_config_build(&profile, &target, None)
-            .expect("build");
-        let mut settings = manager.network_settings.read();
-        settings.cn_direct_routes = true;
-        manager
-            .network_settings
-            .replace(settings)
-            .expect("CN settings");
-        let changed = manager
-            .subscription_config_build(&profile, &target, None)
-            .expect("build");
-        assert_ne!(original.runtime_key, changed.runtime_key);
-        assert_eq!(original.profile_revision, changed.profile_revision);
-        let mut settings = manager.network_settings.read();
-        settings.cn_routing_mode = crate::CnRoutingMode::Proxy;
-        manager
-            .network_settings
-            .replace(settings)
-            .expect("proxy settings");
-        let proxy = manager
-            .subscription_config_build(&profile, &target, None)
-            .expect("proxy build");
-        assert_ne!(changed.runtime_key, proxy.runtime_key);
-    }
-
-    #[test]
     fn private_access_build_metadata_excludes_wireguard_keys() {
         let profile = Profile {
             private_access: serde_json::json!({

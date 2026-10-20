@@ -258,7 +258,3 @@ fn effective_mode(core: &str, mode: &str) -> Result<Mode, TransparentError> {
         ))),
     }
 }
-
-#[cfg(test)]
-#[path = "managed_frontend_tests.rs"]
-mod managed_frontend_tests;

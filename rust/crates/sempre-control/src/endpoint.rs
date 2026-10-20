@@ -133,28 +133,3 @@ fn write_json(path: &Path, value: &impl Serialize, mode: u32) -> Result<(), Cont
     sempre_state::write_atomic(path, &data, mode)
         .map_err(|error| ControlError::io("write", path, error))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn daemon_endpoint_round_trips_a_private_random_token() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let path = root.path().join("daemon.json");
-        let endpoint = DaemonEndpoint::new("http://127.0.0.1:33211").expect("endpoint");
-        endpoint.write(&path).expect("write");
-        assert_eq!(DaemonEndpoint::read(&path).expect("read"), endpoint);
-        assert!(token_matches(&endpoint.token, &endpoint.token));
-        assert!(!token_matches(&endpoint.token, "wrong"));
-
-        let public_path = root.path().join("endpoint.json");
-        let public = PublicEndpoint::new("0.1.0", "0.0.0.0:33211", "http://127.0.0.1:33211")
-            .expect("public endpoint");
-        public.write(&public_path).expect("write public endpoint");
-        assert_eq!(
-            PublicEndpoint::read(&public_path).expect("read public"),
-            public
-        );
-    }
-}

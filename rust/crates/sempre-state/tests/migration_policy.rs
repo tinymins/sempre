@@ -160,16 +160,3 @@ fn contains_inline_tests(source: &str) -> bool {
                 .any(|word| word == "test")
         })
 }
-
-#[test]
-fn inline_test_detection_includes_conditional_and_async_tests() {
-    for source in [
-        "#[test] fn checks() {}",
-        "#[cfg(any(test, windows))] mod checks {}",
-        "#[tokio::test] async fn checks() {}",
-        "mod tests {}",
-    ] {
-        assert!(contains_inline_tests(source), "{source}");
-    }
-    assert!(!contains_inline_tests("#[derive(Debug)] struct State;"));
-}

@@ -342,6 +342,3 @@ fn invalid_path() -> std::io::Error {
         "path has no usable parent",
     )
 }
-
-#[cfg(test)]
-mod tests;

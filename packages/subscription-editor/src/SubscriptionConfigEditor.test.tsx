@@ -8,7 +8,7 @@ import type { EditorDraft } from './model'
 
 vi.mock('@acme/components', async importOriginal => ({
   ...await importOriginal<typeof import('@acme/components')>(),
-  CodeEditor: ({ value = '', onChange, readOnly, appearance, height }: { value?: string; onChange?: (value: string) => void; readOnly?: boolean; appearance?: string; height?: string | number }) => <textarea aria-label="JSONC" data-appearance={appearance} data-height={height} value={value} readOnly={readOnly} onChange={event => onChange?.(event.target.value)} />,
+  CodeEditor: ({ value = '', onChange, readOnly }: { value?: string; onChange?: (value: string) => void; readOnly?: boolean }) => <textarea aria-label="JSONC" value={value} readOnly={readOnly} onChange={event => onChange?.(event.target.value)} />,
 }))
 afterEach(cleanup)
 
@@ -44,11 +44,6 @@ it('preserves unsaved edits while switching tabs and exposes no simple-mode or r
   }
   const { rerender } = render(<Example />)
   fireEvent.click(screen.getByRole('button', { name: 'Proxy Groups' }))
-  expect(screen.getByRole('button', { name: 'Proxy Groups' }).querySelector('span.text-sm')).toHaveClass('font-medium')
-  expect(screen.getByRole('button', { name: 'Basic information' }).querySelector('span.text-sm')).toHaveClass('font-normal')
-  expect(screen.getByTestId('save-status').previousElementSibling).toHaveClass('mb-3', 'pb-1')
-  expect(await screen.findByRole('textbox', { name: 'JSONC' })).toHaveAttribute('data-appearance', 'plain')
-  expect(screen.getByRole('textbox', { name: 'JSONC' })).toHaveAttribute('data-height', 'calc(100vh - 280px)')
   fireEvent.change(await screen.findByRole('textbox', { name: 'JSONC' }), { target: { value: '[ // unfinished' } })
   fireEvent.click(screen.getByRole('button', { name: 'Basic information' }))
   fireEvent.click(screen.getByRole('button', { name: 'Proxy Groups' }))

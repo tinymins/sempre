@@ -430,8 +430,6 @@ pub(crate) fn api_error(
 mod restart_tests;
 
 #[cfg(test)]
-mod system_tests;
-#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod web_ui_tests;

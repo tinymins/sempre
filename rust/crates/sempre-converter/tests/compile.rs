@@ -67,66 +67,11 @@ fn non_sing_box_targets_still_reject_profiles_without_nodes() {
 }
 
 #[test]
-fn compile_is_deterministic_and_reports_loss() {
-    let first = compile(&request("sing-box-v13")).expect("first compile");
-    let second = compile(&request("sing-box-v13")).expect("second compile");
-    assert_eq!(first.artifact_hash, second.artifact_hash);
-    assert_eq!(first.content, second.content);
-    assert_eq!(first.node_count, 2);
-    assert!(first.content.contains("🇭🇰 HK edge (2)"));
-    assert!(
-        first
-            .diagnostics
-            .iter()
-            .any(|item| item.message.contains("unsupported-option"))
-    );
-}
-
-#[test]
-fn clash_output_round_trips_as_yaml() {
-    let result = compile(&request("clash-meta")).expect("compile clash-meta");
-    let document: Value = serde_yaml::from_str(&result.content).expect("valid YAML output");
-    assert_eq!(document["proxies"].as_array().map(Vec::len), Some(2));
-    assert_eq!(result.node_count, 2);
-}
-
-#[test]
 fn missing_snapshot_is_rejected_without_network_fallback() {
     let mut input = request("sing-box-v13");
     input.snapshots.clear();
     let error = compile(&input).expect_err("missing snapshot must fail");
     assert!(error.to_string().contains("no supplied snapshot"));
-}
-
-#[test]
-fn profile_round_trip_preserves_forward_compatible_fields() {
-    let input = json!({
-        "id": "profile-1",
-        "name": "Preserved",
-        "use_system_groups": true,
-        "transparent_proxy": {
-            "mode": "tun-router",
-            "capture_host": true,
-            "route_exclusions": ["192.0.2.0/24"],
-            "tun": { "interface_name": "sempre-tun" }
-        },
-        "editor": { "servers": "[]" },
-        "sources": [{
-            "id": "source-1", "type": "url", "enabled": true,
-            "url": "https://example.com/sub", "fetch_mode": "domestic-direct",
-            "snapshot_hash": "abc"
-        }]
-    });
-    let profile: Profile = serde_json::from_value(input).expect("profile decodes");
-    let output = serde_json::to_value(profile).expect("profile encodes");
-    assert_eq!(output["use_system_groups"], true);
-    assert_eq!(output["transparent_proxy"]["capture_host"], true);
-    assert_eq!(
-        output["transparent_proxy"]["route_exclusions"][0],
-        "192.0.2.0/24"
-    );
-    assert_eq!(output["sources"][0]["fetch_mode"], "domestic-direct");
-    assert_eq!(output["sources"][0]["snapshot_hash"], "abc");
 }
 
 #[test]

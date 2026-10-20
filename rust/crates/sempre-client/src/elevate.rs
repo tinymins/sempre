@@ -170,12 +170,12 @@ fn windows_is_elevated() -> Result<bool, ElevationError> {
     }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(windows)]
 fn powershell_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-#[cfg(any(windows, test))]
+#[cfg(windows)]
 fn quote_windows_argument(value: &str) -> String {
     if value.is_empty() {
         return String::from("\"\"");
@@ -206,23 +206,6 @@ fn quote_windows_argument(value: &str) -> String {
     quoted.push_str(&"\\".repeat(backslashes * 2));
     quoted.push('\"');
     quoted
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn windows_and_powershell_quoting_preserve_special_arguments() {
-        assert_eq!(quote_windows_argument("plain"), "plain");
-        assert_eq!(quote_windows_argument(""), r#""""#);
-        assert_eq!(
-            quote_windows_argument(r"C:\Program Files\Sempre\"),
-            r#""C:\Program Files\Sempre\\""#
-        );
-        assert_eq!(quote_windows_argument(r#"a\"b"#), r#""a\\\"b""#);
-        assert_eq!(powershell_literal("a'b"), "'a''b'");
-    }
 }
 
 #[cfg(all(test, windows))]

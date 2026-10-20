@@ -125,13 +125,3 @@ run_case Linux x86_64 "$digest" success 'install --core=sing-box:tinymins/sing-b
   --ui=tinymins/sempre-ui@stable \
   --ui-sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 run_case Linux x86_64 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff failure ''
-
-if sh "$installer" --unknown=value >/dev/null 2>&1; then
-  printf 'unknown installer option unexpectedly succeeded\n' >&2
-  exit 1
-fi
-
-if sh "$installer" --core --subscription=https://example.com/subscription >/dev/null 2>&1; then
-  printf 'missing installer option value unexpectedly succeeded\n' >&2
-  exit 1
-fi

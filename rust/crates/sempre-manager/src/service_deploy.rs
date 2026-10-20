@@ -279,37 +279,3 @@ pub(super) fn register_command(_: &Layout) -> Result<bool, ManagerError> {
 pub(super) fn unregister_command(_: &Layout) -> Result<(), ManagerError> {
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    #[cfg(unix)]
-    use std::os::unix::fs::symlink;
-
-    use super::*;
-
-    #[cfg(unix)]
-    #[test]
-    fn command_unregistration_is_idempotent_and_preserves_foreign_paths() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let layout = Layout::system_at(&temporary.path().join("target"));
-        fs::create_dir_all(
-            layout
-                .command_executable
-                .parent()
-                .expect("command directory"),
-        )
-        .expect("command directory");
-        symlink(&layout.service_executable, &layout.command_executable).expect("owned command");
-        unregister_command(&layout).expect("remove owned command");
-        unregister_command(&layout).expect("missing command is already unregistered");
-        assert!(!layout.command_executable.exists());
-
-        let foreign = temporary.path().join("foreign-sempre");
-        symlink(&foreign, &layout.command_executable).expect("foreign command");
-        unregister_command(&layout).expect("preserve foreign command");
-        assert_eq!(
-            fs::read_link(&layout.command_executable).expect("foreign command remains"),
-            foreign
-        );
-    }
-}

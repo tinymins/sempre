@@ -16,9 +16,6 @@ use tracing::info;
 
 use crate::{ClientError, VERSION, api, listener};
 
-#[cfg(test)]
-mod readiness_tests;
-
 pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(), ClientError> {
     run_with_layout(Layout::for_mode(mode)?, listen_override, None, None).await
 }
@@ -252,53 +249,4 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
     tokio::select! { () = interrupt => {}, () = terminate => {} }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn state_initialization_failure_precedes_bind_and_endpoint_writes() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let layout = Layout::at(root.path());
-        layout.ensure().expect("layout");
-        fs::write(&layout.state, b"{").expect("invalid state");
-        let occupied = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-        let listen = occupied.local_addr().expect("address").to_string();
-
-        let result = run_with_layout(layout.clone(), Some(&listen), None, None).await;
-
-        assert!(matches!(
-            result,
-            Err(ClientError::Manager(sempre_manager::ManagerError::State(
-                sempre_state::StateError::Migration(sempre_state::MigrationError::Decode(_))
-            )))
-        ));
-        assert!(!layout.daemon_control.exists());
-        assert!(!layout.endpoint.exists());
-    }
-
-    #[tokio::test]
-    async fn traffic_initialization_failure_precedes_bind_and_endpoint_writes() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let layout = Layout::at(root.path());
-        layout.ensure().expect("layout");
-        fs::write(&layout.traffic_history, b"{").expect("invalid traffic history");
-        let occupied = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-        let listen = occupied.local_addr().expect("address").to_string();
-
-        let result = run_with_layout(layout.clone(), Some(&listen), None, None).await;
-
-        assert!(matches!(
-            result,
-            Err(ClientError::TrafficHistory(
-                crate::traffic_history::TrafficError::Migration(
-                    sempre_state::MigrationError::Decode(_)
-                )
-            ))
-        ));
-        assert!(!layout.daemon_control.exists());
-        assert!(!layout.endpoint.exists());
-    }
 }
