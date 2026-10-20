@@ -25,6 +25,7 @@ const defaultResults: NetworkTestRow[] = [
   { id: 'foreign-ip', name: 'Foreign IP', region: 'foreign', category: 'ip', url: 'https://api64.ipify.org?format=json', ok: false, latency_ms: 0 },
   { id: 'baidu', name: 'Baidu', region: 'domestic', category: 'reachability', url: 'https://www.baidu.com/', ok: false, latency_ms: 0 },
   { id: 'google', name: 'Google', region: 'foreign', category: 'reachability', url: 'https://www.google.com/generate_204', ok: false, latency_ms: 0 },
+  { id: 'cloudflare', name: '1.1.1.1', region: 'foreign', category: 'reachability', url: 'https://1.1.1.1/', ok: false, latency_ms: 0 },
 ]
 
 export function NetworkTest() {

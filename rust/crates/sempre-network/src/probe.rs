@@ -59,7 +59,7 @@ struct Probe {
 
 type ParseResponse = fn(&[u8]) -> Result<String, String>;
 
-const PROBES: [Probe; 7] = [
+const PROBES: [Probe; 8] = [
     Probe {
         id: DOMESTIC_IP_PROBE.id,
         name: DOMESTIC_IP_PROBE.name,
@@ -94,6 +94,15 @@ const PROBES: [Probe; 7] = [
         category: "reachability",
         url: "https://www.google.com/generate_204",
         success: status_204,
+        parse: None,
+    },
+    Probe {
+        id: "cloudflare",
+        name: "1.1.1.1",
+        region: "foreign",
+        category: "reachability",
+        url: "https://1.1.1.1/",
+        success: status_2xx_3xx,
         parse: None,
     },
     Probe {

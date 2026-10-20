@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { AlertTriangle, CheckCircle2, MinusCircle, RefreshCw, Search, ShieldAlert, XCircle } from 'lucide-react'
-import { Alert, Button, Card, CodePanel, Input, Tag } from '@acme/components'
+import { Alert, AutoComplete, Button, Card, CodePanel, Tag } from '@acme/components'
 import { streamRequest } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import type { NetworkDiagnosticFinding, NetworkDiagnosticLayer, NetworkDiagnosticLayerID, NetworkDiagnosticReport, NetworkDiagnosticStatus } from '../lib/types'
 
 const DEFAULT_TARGET = 'https://www.google.com/generate_204'
+const DIAGNOSTIC_TARGETS = [DEFAULT_TARGET, 'https://1.1.1.1/', 'https://www.baidu.com/', 'https://ip.3322.net', 'https://api64.ipify.org?format=json']
 const LAYER_IDS: NetworkDiagnosticLayerID[] = ['runtime', 'dns', 'route', 'tcp', 'tls', 'http']
 const STEP_DELAY_MS = 180
 
@@ -95,7 +96,7 @@ export function NetworkDiagnostics() {
     <div><h1 className="text-xl font-semibold">{t('networkDiagnostics')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('networkDiagnosticsDetail')}</p></div>
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
       <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submit}>
-        <label className="min-w-0 flex-1"><span className="mb-2 block text-xs font-medium text-[var(--muted)]">{zh ? '诊断目标' : 'Diagnostic target'}</span><Input value={draft} inputMode="url" placeholder={DEFAULT_TARGET} disabled={running} onChange={(event) => setDraft(event.target.value)} /></label>
+        <label className="min-w-0 flex-1"><span className="mb-2 block text-xs font-medium text-[var(--muted)]">{zh ? '诊断目标' : 'Diagnostic target'}</span><AutoComplete className="w-full" value={draft} options={DIAGNOSTIC_TARGETS} filterOption={(input, option) => DIAGNOSTIC_TARGETS.includes(input) || option.value.toLowerCase().includes(input.toLowerCase())} placeholder={DEFAULT_TARGET} disabled={running} onChange={setDraft} /></label>
         <Button className="self-end" htmlType="submit" variant="primary" disabled={!draft.trim() || running} loading={running} icon={<Search size={16} />}>{zh ? (report ? '重新诊断' : '开始诊断') : (report ? 'Run again' : 'Run diagnostics')}</Button>
       </form>
     </Card>
