@@ -23,6 +23,18 @@ pub struct EventStream {
 
 impl Client {
     pub async fn stream(&self, topic: &str) -> Result<EventStream, ControlError> {
+        self.stream_with_interval(topic, None).await
+    }
+
+    pub async fn connection_trace_stream(&self) -> Result<EventStream, ControlError> {
+        self.stream_with_interval("connections", Some(100)).await
+    }
+
+    async fn stream_with_interval(
+        &self,
+        topic: &str,
+        interval_ms: Option<u64>,
+    ) -> Result<EventStream, ControlError> {
         let path = match topic {
             "traffic" => "traffic",
             "memory" => "memory",
@@ -33,6 +45,11 @@ impl Client {
         let mut endpoint = self.base.join(path).map_err(|_| {
             ControlError::InvalidMetadata("base URL cannot join stream path".into())
         })?;
+        if let Some(interval) = interval_ms {
+            endpoint
+                .query_pairs_mut()
+                .append_pair("interval", &interval.to_string());
+        }
         endpoint
             .set_scheme("ws")
             .map_err(|()| ControlError::InvalidMetadata("stream URL scheme is invalid".into()))?;

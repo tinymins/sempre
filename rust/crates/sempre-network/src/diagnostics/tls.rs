@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock};
 
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 
-pub(super) fn tls_config() -> Arc<ClientConfig> {
+pub(crate) fn tls_config() -> Arc<ClientConfig> {
     static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
     Arc::clone(CONFIG.get_or_init(|| {
         let roots = webpki_roots::TLS_SERVER_ROOTS

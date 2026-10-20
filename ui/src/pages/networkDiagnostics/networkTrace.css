@@ -1,0 +1,4 @@
+@keyframes trace-arrive {
+  from { opacity: 0.25; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}

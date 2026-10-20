@@ -187,6 +187,15 @@ impl DnsFrontendRuntime {
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
+    pub async fn dns_diagnostic_handle(&self) -> Option<sempre_dns::DnsDiagnosticHandle> {
+        self.dns_frontend
+            .running
+            .lock()
+            .await
+            .as_ref()
+            .map(|running| running.service.diagnostic_handle())
+    }
+
     pub(crate) async fn prepare_dns_frontend_plan(
         &self,
         document: &Document,

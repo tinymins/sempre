@@ -25,3 +25,34 @@ export interface NetworkDiagnosticReport {
   layers: NetworkDiagnosticLayer[]
   findings: NetworkDiagnosticFinding[]
 }
+
+export interface NetworkTraceStep {
+  id: string
+  phase: 'frontend' | 'dns' | 'connection' | 'core' | 'tls' | 'http'
+  title: string
+  status: 'running' | 'passed' | 'failed' | 'unknown'
+  source: 'session' | 'frontend' | 'core' | 'socket' | 'http' | 'config'
+  detail: string
+  evidence: string[]
+  attempt_id?: string
+  elapsed_ms: number
+  rule?: { type: string; payload: string }
+  chains?: string[]
+  chain_order?: 'core_api'
+}
+
+export interface NetworkTracePreview {
+  mode: 'preview'
+  target: string
+  steps: NetworkTraceStep[]
+}
+
+export interface NetworkTraceRun {
+  generation: number
+  target: string
+  traceId?: string
+  steps: NetworkTraceStep[]
+  running: boolean
+  status?: 'passed' | 'failed' | 'warning'
+  error?: string
+}

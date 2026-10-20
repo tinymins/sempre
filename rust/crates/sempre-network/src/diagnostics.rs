@@ -15,7 +15,7 @@ use crate::{NetworkError, dns_probe, route_probe};
 mod findings;
 mod progress;
 
-mod tls;
+pub(crate) mod tls;
 
 use findings::{
     dns_finding, fake_ip_conflict_finding, http_finding, runtime_finding, tcp_finding, tls_finding,
@@ -209,10 +209,11 @@ where
     Ok(())
 }
 
-fn parse_target(target: &str) -> Result<(Url, String, u16), NetworkError> {
+pub(crate) fn parse_target(target: &str) -> Result<(Url, String, u16), NetworkError> {
     let url = Url::parse(target).map_err(|error| NetworkError::InvalidTarget(error.to_string()))?;
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
+        || url.password().is_some()
         || url.host_str().is_none()
     {
         return Err(NetworkError::InvalidTarget(

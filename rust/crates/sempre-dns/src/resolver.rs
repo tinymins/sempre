@@ -1,3 +1,6 @@
+mod diagnostic;
+pub use diagnostic::{DnsDiagnosticHandle, DnsDiagnosticResult};
+
 use std::{
     net::Ipv4Addr,
     sync::{Arc, RwLock},
@@ -149,6 +152,15 @@ impl ResolverState {
         packet: &[u8],
         policy: &dyn DnsRuntimePolicy,
     ) -> Result<Resolved, DnsError> {
+        self.resolve_observed(packet, policy, None).await
+    }
+
+    async fn resolve_observed(
+        &self,
+        packet: &[u8],
+        policy: &dyn DnsRuntimePolicy,
+        mut steps: Option<&mut (dyn FnMut(String) + Send)>,
+    ) -> Result<Resolved, DnsError> {
         let question = parse_question(packet)?;
         let Some(question) = question else {
             return Ok(Resolved {
@@ -159,6 +171,7 @@ impl ResolverState {
         };
         let record_type = type_name(question.record_type);
         if let Some(rewrite) = policy.rewrite(&question.name, record_type) {
+            observe(&mut steps, || format!("rewrite:{} matched", rewrite.id));
             return Ok(Resolved {
                 packet: response_with_answer(
                     packet,
@@ -170,34 +183,58 @@ impl ResolverState {
                 detail: format!("rewrite:{}", rewrite.id),
             });
         }
+        observe(&mut steps, || "rewrite: no match".into());
         if (self.config.reject_https || policy.reject_https()) && question.record_type == TYPE_HTTPS
         {
+            observe(&mut steps, || "HTTPS rejection: matched".into());
             return Ok(Resolved {
                 packet: response_with_code(packet, 3)?,
                 upstream: "reject".into(),
                 detail: "https-rejected".into(),
             });
         }
-        if let Some(rule_set) = self.match_rule(&question.name) {
+        observe(&mut steps, || "HTTPS rejection: not applied".into());
+        if let Some(rule_set) = self.rule_sets.iter().find(|rule| {
+            let matched = rule.matcher.matches(&question.name);
+            observe(&mut steps, || {
+                format!(
+                    "rule-set:{} {}",
+                    rule.id,
+                    if matched { "matched" } else { "not matched" }
+                )
+            });
+            matched
+        }) {
+            observe(&mut steps, || {
+                format!("query selected upstream: {}", rule_set.upstream)
+            });
             let mut resolved = self.exchange_named(packet, &rule_set.upstream).await?;
             resolved.detail = format!("rule-set:{}", rule_set.id);
             return Ok(resolved);
         }
         if self.config.strategy == "rules-first" {
+            observe(&mut steps, || "default: query remote upstream".into());
             let mut resolved = self.exchange(packet, &self.config.remote_upstream).await?;
             resolved.detail = "default-remote".into();
             return Ok(resolved);
         }
+        observe(&mut steps, || "response-first: query local upstream".into());
         let local = self.exchange_local(packet).await;
         if local
             .as_ref()
             .is_ok_and(|response| self.domestic_response(&response.packet))
         {
+            observe(&mut steps, || {
+                "local response: domestic address matched".into()
+            });
             return local.map(|mut response| {
                 response.detail = "local-response".into();
                 response
             });
         }
+        observe(&mut steps, || {
+            "local response not accepted: query remote upstream".into()
+        });
         match self.exchange(packet, &self.config.remote_upstream).await {
             Ok(mut remote) => {
                 remote.detail = "remote-response".into();
@@ -333,4 +370,10 @@ fn in_prefix(address: Ipv4Addr, network: Ipv4Addr, prefix: u8) -> bool {
         u32::MAX << (32 - prefix)
     };
     u32::from(address) & mask == u32::from(network) & mask
+}
+
+fn observe(steps: &mut Option<&mut (dyn FnMut(String) + Send)>, message: impl FnOnce() -> String) {
+    if let Some(steps) = steps {
+        steps(message());
+    }
 }

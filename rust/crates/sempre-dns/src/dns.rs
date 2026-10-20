@@ -95,6 +95,10 @@ impl DnsServer {
         ))
     }
 
+    pub(crate) fn diagnostic_handle(&self) -> crate::DnsDiagnosticHandle {
+        crate::DnsDiagnosticHandle(self.resolver.clone())
+    }
+
     pub(crate) fn update(&self, config: DnsConfig) -> Result<(), DnsError> {
         self.resolver.update(config)
     }

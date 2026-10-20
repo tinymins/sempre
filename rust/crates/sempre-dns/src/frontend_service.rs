@@ -43,6 +43,10 @@ impl DnsService {
         Ok((Self { server }, optional_error))
     }
 
+    pub fn diagnostic_handle(&self) -> crate::DnsDiagnosticHandle {
+        self.server.diagnostic_handle()
+    }
+
     pub async fn stop(self) {
         self.server.stop().await;
     }

@@ -35,3 +35,6 @@ pub enum NetworkError {
     #[error("invalid diagnostic target: {0}")]
     InvalidTarget(String),
 }
+
+mod trace;
+pub use trace::{TraceTransportEvent, parse_trace_target, trace_transport};

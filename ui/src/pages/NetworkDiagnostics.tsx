@@ -4,12 +4,14 @@ import { Alert, AutoComplete, Button, Card, CodePanel, Tag } from '@acme/compone
 import { streamRequest } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
+import { RulePreview } from './networkDiagnostics/RulePreview'
+import { TracePanel } from './networkDiagnostics/TracePanel'
+import { useNetworkTrace } from './networkDiagnostics/useNetworkTrace'
 import type { NetworkDiagnosticFinding, NetworkDiagnosticLayer, NetworkDiagnosticLayerID, NetworkDiagnosticReport, NetworkDiagnosticStatus } from '../lib/types'
 
 const DEFAULT_TARGET = 'https://www.google.com/generate_204'
 const DIAGNOSTIC_TARGETS = [DEFAULT_TARGET, 'https://1.1.1.1/', 'https://www.baidu.com/', 'https://ip.3322.net', 'https://api64.ipify.org?format=json']
 const LAYER_IDS: NetworkDiagnosticLayerID[] = ['runtime', 'dns', 'route', 'tcp', 'tls', 'http']
-const STEP_DELAY_MS = 180
 
 type StepPhase = 'pending' | 'running' | 'completed'
 type DiagnosticStep = { id: NetworkDiagnosticLayerID; phase: StepPhase; result?: NetworkDiagnosticLayer }
@@ -26,6 +28,9 @@ export function NetworkDiagnostics() {
   const [error, setError] = useState<string | null>(null)
   const controllerRef = useRef<AbortController | null>(null)
   const zh = locale === 'zh-CN'
+  const trace = useNetworkTrace(session, zh)
+  const [previewExpanded, setPreviewExpanded] = useState(true)
+  const [auxiliaryTarget, setAuxiliaryTarget] = useState<string | null>(null)
 
   useEffect(() => () => controllerRef.current?.abort(), [])
 
@@ -37,47 +42,35 @@ export function NetworkDiagnostics() {
     setReport(null)
     setError(null)
     setRunning(true)
+    setAuxiliaryTarget(target)
 
     let terminalReceived = false
-    let presentation = Promise.resolve()
-    const enqueue = (update: () => void, delay = STEP_DELAY_MS) => {
-      presentation = presentation.then(async () => {
-        if (controller.signal.aborted) return
-        update()
-        if (delay > 0) await new Promise((resolve) => window.setTimeout(resolve, delay))
-      })
-    }
 
     void (async () => {
       try {
         await streamRequest(session!, '/network/diagnostics', { target }, (event, data) => {
+          if (controller.signal.aborted) return
           if (event === 'layer-started') {
             const { layer } = data as { layer: NetworkDiagnosticLayerID }
-            enqueue(() => setSteps((current) => current.map((step) => step.id === layer ? { ...step, phase: 'running' } : step)))
+            setSteps((current) => current.map((step) => step.id === layer ? { ...step, phase: 'running' } : step))
           } else if (event === 'layer-completed') {
             const { layer } = data as { layer: NetworkDiagnosticLayer }
-            enqueue(() => setSteps((current) => current.map((step) => step.id === layer.id ? { id: step.id, phase: 'completed', result: layer } : step)))
+            setSteps((current) => current.map((step) => step.id === layer.id ? { id: step.id, phase: 'completed', result: layer } : step))
           } else if (event === 'result') {
             terminalReceived = true
-            enqueue(() => {
-              setReport(data as NetworkDiagnosticReport)
-              setRunning(false)
-            }, 0)
+            setReport(data as NetworkDiagnosticReport)
+            setRunning(false)
           } else if (event === 'error') {
             terminalReceived = true
-            enqueue(() => {
-              setError((data as { message?: string }).message ?? (zh ? '诊断流返回错误' : 'The diagnostic stream returned an error'))
-              setRunning(false)
-            }, 0)
+            setError((data as { message?: string }).message ?? (zh ? '诊断流返回错误' : 'The diagnostic stream returned an error'))
+            setRunning(false)
           }
         }, controller.signal)
-        await presentation
         if (!terminalReceived && !controller.signal.aborted) {
           setError(zh ? '诊断流在返回最终结果前结束' : 'The diagnostic stream ended before returning a result')
           setRunning(false)
         }
       } catch (streamError) {
-        await presentation
         if (!controller.signal.aborted) {
           setError(streamError instanceof Error ? streamError.message : String(streamError))
           setRunning(false)
@@ -89,19 +82,25 @@ export function NetworkDiagnostics() {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const target = draft.trim()
-    if (target && !running) startDiagnostics(target)
+    if (target && !running && !trace.run?.running) {
+      setPreviewExpanded(false)
+      trace.start(target)
+    }
   }
 
   return <div className="space-y-5">
     <div><h1 className="text-xl font-semibold">{t('networkDiagnostics')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('networkDiagnosticsDetail')}</p></div>
     <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
       <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submit}>
-        <label className="min-w-0 flex-1"><span className="mb-2 block text-xs font-medium text-[var(--muted)]">{zh ? '诊断目标' : 'Diagnostic target'}</span><AutoComplete className="w-full" value={draft} options={DIAGNOSTIC_TARGETS} filterOption={(input, option) => DIAGNOSTIC_TARGETS.includes(input) || option.value.toLowerCase().includes(input.toLowerCase())} placeholder={DEFAULT_TARGET} disabled={running} onChange={setDraft} /></label>
-        <Button className="self-end" htmlType="submit" variant="primary" disabled={!draft.trim() || running} loading={running} icon={<Search size={16} />}>{zh ? (report ? '重新诊断' : '开始诊断') : (report ? 'Run again' : 'Run diagnostics')}</Button>
+        <label className="min-w-0 flex-1"><span className="mb-2 block text-xs font-medium text-[var(--muted)]">{zh ? '诊断目标' : 'Diagnostic target'}</span><AutoComplete className="w-full" value={draft} options={DIAGNOSTIC_TARGETS} filterOption={(input, option) => DIAGNOSTIC_TARGETS.includes(input) || option.value.toLowerCase().includes(input.toLowerCase())} placeholder={DEFAULT_TARGET} disabled={running || trace.run?.running} onChange={(value) => { setDraft(value); setPreviewExpanded(true) }} /></label>
+        <Button className="self-end" htmlType="submit" variant="primary" disabled={!draft.trim() || running || trace.run?.running} icon={<Search size={16} />}>{zh ? (trace.run ? '重新测试' : '开始测试') : (trace.run ? 'Test again' : 'Run test')}</Button>
       </form>
+      <RulePreview target={draft} session={session} zh={zh} expanded={previewExpanded} onToggle={() => setPreviewExpanded((value) => !value)} />
     </Card>
+    <TracePanel key={trace.run?.generation ?? 0} run={trace.run} zh={zh} onStop={trace.stop} />
+    <div className="space-y-2 border-t border-[var(--border)] pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">{zh ? '辅助分层检查' : 'Additional layered checks'}</h2><Button disabled={!draft.trim() || running || trace.run?.running} onClick={() => startDiagnostics(draft.trim())}>{zh ? (running ? '检查中…' : '运行分层检查') : (running ? 'Checking…' : 'Run layered checks')}</Button></div><p className="text-xs text-[var(--muted)]">{zh ? '以下 DNS、TCP、TLS、HTTP 检查使用独立请求，不属于上方同一次实测连接。' : 'These DNS, TCP, TLS and HTTP checks use independent requests and are not the measured connection above.'}</p>{auxiliaryTarget ? <p className="break-all text-xs text-[var(--muted)]">{auxiliaryTarget}</p> : null}</div>
     {error ? <Alert type="error" showIcon message={zh ? '诊断运行失败' : 'Diagnostics failed'} description={error} /> : null}
-    <DiagnosticTimeline steps={steps} zh={zh} />
+    {auxiliaryTarget ? <DiagnosticTimeline steps={steps} zh={zh} /> : null}
     {report ? <>
       <DiagnosticSummary report={report} zh={zh} />
       <Findings findings={report.findings} zh={zh} />
@@ -110,19 +109,12 @@ export function NetworkDiagnostics() {
 }
 
 function DiagnosticTimeline({ steps, zh }: { steps: DiagnosticStep[]; zh: boolean }) {
-  const stepRefs = useRef<Partial<Record<NetworkDiagnosticLayerID, HTMLDivElement | null>>>({})
-  const runningStep = steps.find((step) => step.phase === 'running')?.id
-
-  useEffect(() => {
-    if (runningStep) stepRefs.current[runningStep]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [runningStep])
-
-  return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem 1rem 0' }}><section aria-label={zh ? '分层诊断进度' : 'Layered diagnostic progress'}>{steps.map((step, index) => <div key={step.id} ref={(element) => { stepRefs.current[step.id] = element }} className="flex gap-3"><div className="flex flex-col items-center"><StepIcon step={step} index={index} />{index < steps.length - 1 ? <div className={`my-1 w-0.5 flex-1 ${step.phase === 'completed' ? 'bg-emerald-500/40' : 'bg-[var(--border)]'}`} /> : null}</div><div className="min-w-0 flex-1 pb-5"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{index + 1}. {layerName(step.id, zh)}</h2><StepStatus step={step} zh={zh} /></div><p className="mt-1 text-sm text-[var(--muted)]">{step.result ? layerSummary(step.result, zh) : step.phase === 'running' ? (zh ? '正在检查这一层…' : 'Checking this layer…') : (zh ? '等待前一层完成' : 'Waiting for the previous layer')}</p>{step.result?.evidence?.length ? <CodePanel title={zh ? '证据' : 'Evidence'} className="mt-3" maxHeight={220} bodyClassName="font-mono text-xs"><ul className="space-y-1">{step.result.evidence.map((item) => <li key={item} className="break-all">{item}</li>)}</ul></CodePanel> : null}</div></div>)}</section></Card>
+  return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem 1rem 0' }}><section aria-label={zh ? '分层诊断进度' : 'Layered diagnostic progress'}>{steps.map((step, index) => <div key={step.id} className="flex gap-3"><div className="flex flex-col items-center"><StepIcon step={step} index={index} />{index < steps.length - 1 ? <div className={`my-1 w-0.5 flex-1 ${step.phase === 'completed' ? 'bg-emerald-500/40' : 'bg-[var(--border)]'}`} /> : null}</div><div className="min-w-0 flex-1 pb-5"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{index + 1}. {layerName(step.id, zh)}</h2><StepStatus step={step} zh={zh} /></div><p className="mt-1 text-sm text-[var(--muted)]">{step.result ? layerSummary(step.result, zh) : step.phase === 'running' ? (zh ? '正在检查这一层…' : 'Checking this layer…') : (zh ? '等待前一层完成' : 'Waiting for the previous layer')}</p>{step.result?.evidence?.length ? <CodePanel title={zh ? '证据' : 'Evidence'} className="mt-3" maxHeight={220} bodyClassName="font-mono text-xs"><ul className="space-y-1">{step.result.evidence.map((item) => <li key={item} className="break-all">{item}</li>)}</ul></CodePanel> : null}</div></div>)}</section></Card>
 }
 
 function StepIcon({ step, index }: { step: DiagnosticStep; index: number }) {
   if (step.phase === 'pending') return <span className="grid size-8 shrink-0 place-items-center rounded-full bg-zinc-500/10 text-sm font-semibold text-[var(--muted)]">{index + 1}</span>
-  if (step.phase === 'running') return <span className="grid size-8 shrink-0 place-items-center rounded-full bg-blue-500/10 text-blue-600"><RefreshCw className="animate-spin" size={16} /></span>
+  if (step.phase === 'running') return <span className="grid size-8 shrink-0 place-items-center rounded-full bg-blue-500/10 text-blue-600"><RefreshCw className="motion-safe:animate-spin" size={16} /></span>
   if (step.result?.status === 'failed') return <span className="grid size-8 shrink-0 place-items-center rounded-full bg-red-500/10 text-red-600"><XCircle size={18} /></span>
   if (step.result?.status === 'warning') return <span className="grid size-8 shrink-0 place-items-center rounded-full bg-amber-500/10 text-amber-600"><AlertTriangle size={17} /></span>
   if (step.result?.status === 'skipped') return <span className="grid size-8 shrink-0 place-items-center rounded-full bg-zinc-500/10 text-[var(--muted)]"><MinusCircle size={18} /></span>
@@ -138,7 +130,7 @@ function StepStatus({ step, zh }: { step: DiagnosticStep; zh: boolean }) {
 function DiagnosticSummary({ report, zh }: { report: NetworkDiagnosticReport; zh: boolean }) {
   const failed = report.layers.find((layer) => layer.status === 'failed')
   const healthy = report.status === 'passed'
-  return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><div className="flex flex-wrap items-start gap-3"><span className={`grid size-10 shrink-0 place-items-center rounded-full ${healthy ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'}`}>{healthy ? <CheckCircle2 size={21} /> : <ShieldAlert size={21} />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{healthy ? (zh ? '网络路径正常' : 'Network path is healthy') : (zh ? `问题定位在${layerName(failed?.id, zh)}层` : `Issue located at the ${layerName(failed?.id, zh)} layer`)}</h2><StatusTag status={report.status} zh={zh} /></div><p className="mt-1 break-all text-xs text-[var(--muted)]">{report.target} · {report.host}:{report.port}</p></div></div></Card>
+  return <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}><div className="flex flex-wrap items-start gap-3"><span className={`grid size-10 shrink-0 place-items-center rounded-full ${healthy ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'}`}>{healthy ? <CheckCircle2 size={21} /> : <ShieldAlert size={21} />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{healthy ? (zh ? '分层检查通过' : 'Layered checks passed') : (zh ? `问题定位在${layerName(failed?.id, zh)}层` : `Issue located at the ${layerName(failed?.id, zh)} layer`)}</h2><StatusTag status={report.status} zh={zh} /></div><p className="mt-1 break-all text-xs text-[var(--muted)]">{report.target} · {report.host}:{report.port}</p></div></div></Card>
 }
 
 function Findings({ findings, zh }: { findings: NetworkDiagnosticFinding[]; zh: boolean }) {
