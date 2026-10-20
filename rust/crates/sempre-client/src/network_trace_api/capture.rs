@@ -6,6 +6,30 @@ use tokio::{sync::mpsc, time::timeout};
 
 use super::{AppState, Session};
 
+struct FakeIpAnswer<'a> {
+    host: &'a str,
+    range: ipnet::IpNet,
+}
+
+impl<'a> FakeIpAnswer<'a> {
+    fn from_frontend(state: &AppState, host: Option<&'a str>, remote: SocketAddr) -> Option<Self> {
+        let host = host?;
+        state
+            .manager
+            .runtime_fakeip_ranges()
+            .ok()?
+            .into_iter()
+            .find(|range| range.contains(&remote.ip()))
+            .map(|range| Self { host, range })
+    }
+}
+
+#[derive(Default)]
+struct Correlation {
+    connection_id: Option<String>,
+    ambiguous: bool,
+}
+
 pub(super) async fn run(
     state: &AppState,
     session: &Session,
@@ -13,6 +37,7 @@ pub(super) async fn run(
     remote: SocketAddr,
     observed_host: Option<&str>,
 ) -> &'static str {
+    let fakeip_answer = FakeIpAnswer::from_frontend(state, observed_host, remote);
     session.step(
         "attempt-1-core",
         "core",
@@ -67,24 +92,25 @@ pub(super) async fn run(
     });
     tokio::pin!(work);
     let mut local = None;
-    let mut observed = None;
+    let mut observed = Correlation::default();
     let mut phase = "connection";
     let outcome = loop {
         tokio::select! {
             biased;
             Some(event) = events.recv() => {
                 transport_event(session, event, &mut local, &mut phase);
-                inspect(session, &snapshot, &old_ids, local, remote, observed_host, &mut observed);
+                inspect(session, &snapshot, &old_ids, local, remote, fakeip_answer.as_ref(), &mut observed);
             }
             result = async { stream.as_mut().expect("guarded stream").next_connections().await }, if stream.is_some() => {
                 match result {
                     Ok(next) => {
                         snapshot = next;
-                        inspect(session, &snapshot, &old_ids, local, remote, observed_host, &mut observed);
+                        inspect(session, &snapshot, &old_ids, local, remote, fakeip_answer.as_ref(), &mut observed);
                     }
                     Err(error) => {
                         stream = None;
-                        if observed.is_none() {
+                        snapshot.connections.clear();
+                        if observed.connection_id.is_none() {
                             session.step("attempt-1-core", "core", "unknown", "session", "内核采集已中断，不能据此推断直连", vec![error.to_string()]);
                         }
                     }
@@ -101,11 +127,11 @@ pub(super) async fn run(
             &old_ids,
             local,
             remote,
-            observed_host,
+            fakeip_answer.as_ref(),
             &mut observed,
         );
     }
-    finish(session, outcome, observed.is_some(), phase)
+    finish(session, outcome, &observed, stream.is_some(), phase)
 }
 
 fn transport_event(
@@ -156,9 +182,12 @@ fn inspect(
     old_ids: &HashSet<String>,
     local: Option<SocketAddr>,
     remote: SocketAddr,
-    observed_host: Option<&str>,
-    observed: &mut Option<String>,
+    fakeip_answer: Option<&FakeIpAnswer<'_>>,
+    observed: &mut Correlation,
 ) {
+    if observed.ambiguous {
+        return;
+    }
     let Some(local) = local else {
         return;
     };
@@ -168,16 +197,33 @@ fn inspect(
         .filter(|connection| {
             !connection.id.is_empty()
                 && !old_ids.contains(&connection.id)
-                && matches_socket(connection, local, remote, observed_host)
+                && matches_socket(connection, local, remote, fakeip_answer)
         })
         .collect::<Vec<_>>();
+    if matches.len() > 1
+        || matches.first().is_some_and(|connection| {
+            observed
+                .connection_id
+                .as_ref()
+                .is_some_and(|id| id != &connection.id)
+        })
+    {
+        observed.connection_id = None;
+        observed.ambiguous = true;
+        session.step(
+            "attempt-1-core",
+            "core",
+            "unknown",
+            "session",
+            "本次 socket 出现多个内核连接候选，不能唯一关联",
+            vec![],
+        );
+        return;
+    }
     let [connection] = matches.as_slice() else {
         return;
     };
-    if observed.as_ref().is_some_and(|id| id != &connection.id) {
-        return;
-    }
-    *observed = Some(connection.id.clone());
+    observed.connection_id = Some(connection.id.clone());
     let mut evidence = vec![
         format!(
             "correlation={}",
@@ -190,7 +236,7 @@ fn inspect(
             {
                 "exact socket tuple"
             } else {
-                "exact source endpoint + TCP + destination port + core fake-ip mode + observed frontend answer-to-host mapping"
+                "exact source endpoint + TCP + destination port + configured FakeIP range + observed frontend answer-to-host mapping"
             }
         ),
         format!("connection_id={}", connection.id),
@@ -202,6 +248,14 @@ fn inspect(
         format!("chains (core API order)={}", connection.chains.join(" → ")),
         "内核原始策略组链，不是多条规则依次命中；出站选择不等于请求成功。".into(),
     ];
+    if let Some(answer) = fakeip_answer {
+        evidence.push(format!(
+            "frontend answer={} -> {}; running core FakeIP range={}",
+            answer.host,
+            remote.ip(),
+            answer.range
+        ));
+    }
     if let Ok(raw) = serde_json::to_string(connection) {
         evidence.push(raw);
     }
@@ -218,42 +272,46 @@ fn matches_socket(
     connection: &Connection,
     local: SocketAddr,
     remote: SocketAddr,
-    observed_host: Option<&str>,
+    fakeip_answer: Option<&FakeIpAnswer<'_>>,
 ) -> bool {
     let metadata = &connection.metadata;
     metadata.network.eq_ignore_ascii_case("tcp")
         && metadata.source_ip.parse::<std::net::IpAddr>().ok() == Some(local.ip())
         && metadata.source_port.parse::<u16>().ok() == Some(local.port())
         && (metadata.destination_ip.parse::<std::net::IpAddr>().ok() == Some(remote.ip())
-            || (metadata.dns_mode == "fake-ip"
-                && observed_host.is_some_and(|host| {
-                    metadata
+            || fakeip_answer.is_some_and(|answer| {
+                answer.range.contains(&remote.ip())
+                    && metadata
                         .host
                         .trim_end_matches('.')
-                        .eq_ignore_ascii_case(host.trim_end_matches('.'))
-                })))
+                        .eq_ignore_ascii_case(answer.host.trim_end_matches('.'))
+            }))
         && metadata.destination_port.parse::<u16>().ok() == Some(remote.port())
 }
 
 fn finish(
     session: &Session,
     outcome: Result<(), String>,
-    observed: bool,
+    observed: &Correlation,
+    collecting: bool,
     phase: &str,
 ) -> &'static str {
-    if !observed {
+    if observed.connection_id.is_none() && !observed.ambiguous && collecting {
         session.step(
             "attempt-1-core",
             "core",
             "unknown",
             "session",
-            "未捕获可唯一关联的内核连接；不能判定直连",
-            vec!["采集仅覆盖实际请求期间；短连接可能未出现在内核快照中。".into()],
+            "内核采集正常结束，但未捕获可唯一关联的连接；不能判定直连",
+            vec![
+                "关联要求完整源端点、TCP 和目标端口一致；FakeIP 还需本次前置 DNS 映射及运行配置范围证据。".into(),
+                "采集仅覆盖实际请求期间；短连接可能未出现在内核快照中。".into(),
+            ],
         );
     }
     match outcome {
         Ok(()) => {
-            if observed {
+            if observed.connection_id.is_some() {
                 "passed"
             } else {
                 "warning"

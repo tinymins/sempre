@@ -3,6 +3,26 @@ use std::{collections::BTreeSet, fs, path::Path};
 use ipnet::IpNet;
 use serde_json::Value;
 
+impl<R: crate::VersionRunner> crate::Manager<R> {
+    pub fn runtime_fakeip_ranges(&self) -> Result<Vec<IpNet>, crate::ManagerError> {
+        let runtime = self.store.read()?.runtime;
+        if runtime.state != sempre_state::RuntimeState::Running {
+            return Ok(Vec::new());
+        }
+        let Some(path) = runtime.runtime_config else {
+            return Ok(Vec::new());
+        };
+        let data = fs::read(path)
+            .map_err(|error| crate::ManagerError::io("read running core configuration", error))?;
+        let document = serde_yaml::from_slice(&data).map_err(|error| {
+            crate::ManagerError::RuntimeNotReady(format!(
+                "decode running core configuration: {error}"
+            ))
+        })?;
+        Ok(runtime_fakeip_ranges(&document))
+    }
+}
+
 #[derive(Debug, Default, Eq, PartialEq)]
 struct RouteRefinement {
     additions: Vec<IpNet>,
