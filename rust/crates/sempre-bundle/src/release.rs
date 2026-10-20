@@ -1,14 +1,15 @@
 use std::{
-    fs::{self, File},
+    fs,
     path::{Path, PathBuf},
 };
 
-use flate2::{Compression, write::GzEncoder};
 use sempre_state::{Document, Layout, write_atomic};
 
 use crate::{
-    BundleError, Export, copy_file, copy_optional_file, copy_tree, mark_release_directory,
-    write_document, write_web_config, zip_directory,
+    BundleError, Export,
+    archive::{tar_gz_directory, zip_directory_with_target},
+    copy_file, copy_optional_file, copy_tree, mark_release_directory, write_document,
+    write_web_config,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,7 +39,7 @@ impl ReleaseTarget {
         format!("sempre-{}-{}", self.os, self.arch)
     }
 
-    fn executable_name(&self) -> &'static str {
+    pub(super) fn executable_name(&self) -> &'static str {
         if self.os == "windows" {
             "sempre.exe"
         } else {
@@ -80,7 +81,9 @@ pub fn package_release(
 
     let zip_name = format!("sempre-bundle-{}-{}.zip", target.os, target.arch);
     let zip_archive = output.join(&zip_name);
-    if let Err(error) = zip_directory(&zip_archive, &package, &package_name) {
+    if let Err(error) =
+        zip_directory_with_target(&zip_archive, &package, &package_name, Some(target))
+    {
         let _ = fs::remove_file(&zip_archive);
         return Err(error);
     }
@@ -91,7 +94,7 @@ pub fn package_release(
     if target.os != "windows" {
         let tar_name = format!("sempre-bundle-{}-{}.tar.gz", target.os, target.arch);
         let tar_archive = output.join(&tar_name);
-        if let Err(error) = tar_gz_directory(&tar_archive, &package, &package_name) {
+        if let Err(error) = tar_gz_directory(&tar_archive, &package, &package_name, target) {
             for export in &exports {
                 let _ = fs::remove_file(&export.archive);
             }
@@ -104,36 +107,6 @@ pub fn package_release(
         });
     }
     Ok(exports)
-}
-
-fn tar_gz_directory(destination: &Path, source: &Path, prefix: &str) -> Result<(), BundleError> {
-    let file = File::create(destination).map_err(|source_error| BundleError::Io {
-        operation: "create release tar.gz",
-        path: destination.to_path_buf(),
-        source: source_error,
-    })?;
-    let encoder = GzEncoder::new(file, Compression::default());
-    let mut archive = tar::Builder::new(encoder);
-    archive
-        .append_dir_all(prefix, source)
-        .map_err(|source_error| BundleError::Io {
-            operation: "archive release tar.gz",
-            path: source.to_path_buf(),
-            source: source_error,
-        })?;
-    let encoder = archive
-        .into_inner()
-        .map_err(|source_error| BundleError::Io {
-            operation: "finish release tar",
-            path: destination.to_path_buf(),
-            source: source_error,
-        })?;
-    encoder.finish().map_err(|source_error| BundleError::Io {
-        operation: "finish release gzip",
-        path: destination.to_path_buf(),
-        source: source_error,
-    })?;
-    Ok(())
 }
 
 fn write_release_directory(

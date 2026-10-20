@@ -1,14 +1,13 @@
 use std::{
-    fs::{self, File},
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
+use archive::zip_directory;
 use sempre_state::{Document, Layout, PORTABLE_MARKER, Runtime, write_atomic};
 use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
-use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 pub use deploy::{DeployComponent, stage_deploy};
 pub use install::stage_install;
@@ -308,104 +307,10 @@ fn write_restore_script(root: &Path) -> Result<(), BundleError> {
     })
 }
 
-fn zip_directory(destination: &Path, source: &Path, prefix: &str) -> Result<(), BundleError> {
-    let file = File::create(destination).map_err(|source_error| BundleError::Io {
-        operation: "create snapshot archive",
-        path: destination.to_path_buf(),
-        source: source_error,
-    })?;
-    let mut archive = ZipWriter::new(file);
-    append_directory(&mut archive, source, source, prefix)?;
-    archive.finish()?;
-    Ok(())
-}
-
-fn append_directory(
-    archive: &mut ZipWriter<File>,
-    root: &Path,
-    directory: &Path,
-    prefix: &str,
-) -> Result<(), BundleError> {
-    let mut entries = fs::read_dir(directory)
-        .map_err(|source_error| BundleError::Io {
-            operation: "read snapshot archive directory",
-            path: directory.to_path_buf(),
-            source: source_error,
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|source_error| BundleError::Io {
-            operation: "read snapshot archive entry",
-            path: directory.to_path_buf(),
-            source: source_error,
-        })?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
-    for entry in entries {
-        let path = entry.path();
-        let metadata = entry.file_type().map_err(|source_error| BundleError::Io {
-            operation: "inspect snapshot archive entry",
-            path: path.clone(),
-            source: source_error,
-        })?;
-        if metadata.is_symlink() {
-            return Err(BundleError::SymbolicLink(path));
-        }
-        let relative = path
-            .strip_prefix(root)
-            .expect("entry is below archive root");
-        let name = format!("{prefix}/{}", relative.to_string_lossy().replace('\\', "/"));
-        if metadata.is_dir() {
-            archive.add_directory(
-                format!("{name}/"),
-                SimpleFileOptions::default().unix_permissions(0o700),
-            )?;
-            append_directory(archive, root, &path, prefix)?;
-        } else if metadata.is_file() {
-            let mode = archive_mode(&path)?;
-            archive.start_file(
-                name,
-                SimpleFileOptions::default()
-                    .compression_method(CompressionMethod::Deflated)
-                    .unix_permissions(mode),
-            )?;
-            let mut input = File::open(&path).map_err(|source_error| BundleError::Io {
-                operation: "open snapshot archive file",
-                path: path.clone(),
-                source: source_error,
-            })?;
-            io::copy(&mut input, archive).map_err(|source_error| BundleError::Io {
-                operation: "write snapshot archive file",
-                path,
-                source: source_error,
-            })?;
-        }
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn archive_mode(path: &Path) -> Result<u32, BundleError> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let metadata = path.metadata().map_err(|source| BundleError::Io {
-        operation: "read snapshot archive permissions",
-        path: path.to_path_buf(),
-        source,
-    })?;
-    Ok(metadata.permissions().mode() & 0o777)
-}
-
-#[cfg(not(unix))]
-#[allow(clippy::unnecessary_wraps)]
-fn archive_mode(path: &Path) -> Result<u32, BundleError> {
-    let executable = path.extension().is_some_and(|extension| {
-        extension.eq_ignore_ascii_case("exe")
-            || extension.eq_ignore_ascii_case("cmd")
-            || extension.eq_ignore_ascii_case("bat")
-    });
-    Ok(if executable { 0o755 } else { 0o600 })
-}
-
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+
     use super::*;
     use sempre_state::{RuntimeState, Store};
 
@@ -483,3 +388,5 @@ mod release;
 mod restore;
 
 pub use release::{ReleaseTarget, package_release};
+
+mod archive;
