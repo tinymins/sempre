@@ -1,48 +1,51 @@
 import { useId, useState } from 'react'
 import { AlertTriangle, Check, ChevronDown, Circle, X } from 'lucide-react'
-import { Button, Tag } from '@acme/components'
+import { Button } from '@acme/components'
 import type { NetworkTraceStep } from '../../lib/networkDiagnosticsTypes'
+import { TraceElapsed } from './TraceElapsed'
+import { decisionRows, traceTitle } from './tracePresentation'
 
-export function TraceStepCard({ step, zh, preview = false, active = false }: {
+export function TraceStepCard({ step, zh, preview = false, active = false, onExpand }: {
   step: NetworkTraceStep
   zh: boolean
   preview?: boolean
   active?: boolean
+  onExpand?: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [rawExpanded, setRawExpanded] = useState(false)
   const detailId = useId()
   const unfinished = step.status === 'running' && !active
-  const color = preview || step.status === 'running' ? 'text-[var(--muted)] bg-zinc-500/10' : step.status === 'failed' ? 'text-red-600 bg-red-500/10'
-    : step.status === 'unknown' ? 'text-amber-600 bg-amber-500/10' : 'text-emerald-600 bg-emerald-500/10'
+  const color = preview || unfinished ? 'text-[var(--muted)] bg-zinc-500/10' : step.status === 'failed' ? 'text-red-600 bg-red-500/10'
+    : step.status === 'unknown' ? 'text-amber-600 bg-amber-500/10' : 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10'
   const sources = zh
-    ? { session: '诊断会话', frontend: 'Sempre 前置', core: '内核 API', socket: 'Socket / TLS', http: 'HTTP 响应', config: '配置推演' }
-    : { session: 'Diagnostic session', frontend: 'Sempre frontend', core: 'Core API', socket: 'Socket / TLS', http: 'HTTP response', config: 'Configuration prediction' }
-  const states = zh ? { running: '进行中', passed: '已记录', failed: '失败', unknown: '证据缺失' }
-    : { running: 'Running', passed: 'Observed', failed: 'Failed', unknown: 'Evidence unavailable' }
-  return <li className="relative pl-8 pb-4 last:pb-0 motion-safe:animate-[trace-arrive_200ms_ease-out_both] before:absolute before:top-7 before:bottom-0 before:left-2.5 before:w-px before:bg-[var(--border)] last:before:hidden">
-    <span className={`absolute left-0 top-3 grid size-5 place-items-center rounded-full ${color}`} aria-hidden="true">
-      {preview || unfinished ? <Circle size={11} /> : step.status === 'running' ? <span className="size-2 rounded-full bg-current motion-safe:animate-pulse" /> : step.status === 'passed' ? <Check size={13} /> : step.status === 'failed' ? <X size={13} /> : <AlertTriangle size={12} />}
+    ? { session: '诊断请求', frontend: 'Sempre · DNS', core: '内核 · 同一快照', socket: step.phase === 'dns' ? '系统解析' : '连接', http: '请求结果', config: '配置推演' }
+    : { session: 'Diagnostic request', frontend: 'Sempre · DNS', core: 'Core · same snapshot', socket: 'Transport', http: 'Request result', config: 'Configuration prediction' }
+  const rows = decisionRows(step.evidence, zh)
+  const title = preview ? (zh ? '前置规则判断' : 'Frontend rule evaluation') : traceTitle(step, zh)
+  return <li className="relative pb-[15px] pl-7 sm:pl-[34px] motion-safe:animate-[trace-arrive_220ms_ease-out_both] before:absolute before:top-[21px] before:-bottom-1 before:left-2.5 before:w-px before:bg-[var(--border)] last:before:hidden">
+    <span className={`absolute left-0 top-2 z-1 grid size-[21px] place-items-center rounded-full ${color}`} aria-hidden="true">
+      {preview || unfinished ? <Circle size={11} /> : step.status === 'running' ? <span className="size-2 rounded-full bg-current motion-safe:animate-[trace-breathe_1.4s_ease-in-out_infinite]" /> : step.status === 'passed' ? <Check size={13} /> : step.status === 'failed' ? <X size={13} /> : <AlertTriangle size={12} />}
     </span>
-    <div className="overflow-hidden rounded-lg border border-[var(--border)]">
-      <Button variant="unstyled" className="w-full !justify-start gap-3 px-3 py-3 text-left hover:bg-[var(--surface-hover)]" aria-expanded={expanded} aria-controls={detailId} onClick={() => setExpanded(!expanded)}>
+    <div className={`overflow-hidden rounded-[9px] border ${step.status === 'running' && active ? 'border-emerald-600/35' : 'border-[var(--border)]'}`}>
+      <Button variant="unstyled" className="w-full !justify-start gap-2 px-3 py-[11px] text-left hover:bg-[var(--surface-hover)] sm:gap-2.5" aria-expanded={expanded} aria-controls={detailId} onClick={() => { setExpanded(!expanded); if (!expanded) onExpand?.() }}>
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="text-sm font-medium">{step.title}</span><span className="text-[11px] text-[var(--muted)]">{sources[step.source]}</span></span>
+          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><span className="text-sm font-medium">{title}</span><span className="text-[11px] text-[var(--muted)]">{sources[step.source]}{unfinished ? (zh ? ' · 未完成' : ' · unfinished') : ''}</span></span>
           <span className="mt-1 block break-words text-xs text-[var(--muted)]">{step.detail}</span>
+          {!preview ? <span className="mt-1 block sm:hidden"><TraceElapsed step={step} active={active} zh={zh} /></span> : null}
         </span>
-        <span className="flex shrink-0 flex-col items-end gap-1">
-          <span className={`rounded px-1.5 py-0.5 text-[10px] ${color}`}>{preview ? (zh ? '预测' : 'Predicted') : unfinished ? (zh ? '未完成' : 'Unfinished') : states[step.status]}</span>
-          {!preview && Number.isFinite(step.elapsed_ms) ? <span className="text-[10px] tabular-nums text-[var(--muted)]">+{step.elapsed_ms} ms</span> : null}
-        </span>
+        {!preview ? <span className="hidden sm:block"><TraceElapsed step={step} active={active} zh={zh} /></span> : null}
         <ChevronDown size={15} className={`shrink-0 text-[var(--muted)] motion-safe:transition-transform motion-safe:duration-200 ${expanded ? 'rotate-180' : ''}`} />
       </Button>
-      {!preview && step.source === 'core' && (step.rule || step.chains?.length) ? <div className="space-y-2 px-3 pb-3 text-xs">
-        {step.rule ? <div className="flex flex-wrap items-baseline gap-2"><span className="text-[var(--muted)]">{zh ? '实际命中规则' : 'Matched rule'}</span><code className="break-all rounded bg-[var(--surface-hover)] px-2 py-1">{step.rule.type}{step.rule.payload ? ` · ${step.rule.payload}` : ''}</code></div> : null}
-        {step.chains?.length ? <div><p className="mb-1.5 text-[11px] text-[var(--muted)]">{zh ? '内核返回链（API 顺序）· 策略组与节点' : 'Core chain (API order) · policy groups and nodes'}</p><div className="flex flex-wrap gap-1.5">{step.chains.map((name, index) => <span key={`${index}-${name}`} className="max-w-full break-words rounded-md bg-emerald-500/10 px-2 py-1 text-emerald-700 dark:text-emerald-400">{name}</span>)}</div></div> : null}
-      </div> : null}
       {expanded ? <div id={detailId} className="border-t border-[var(--border)] bg-[var(--surface-hover)] p-3 text-xs">
-        <div className="mb-3 flex flex-wrap items-center gap-2"><Tag color={preview ? 'default' : 'processing'}>{preview ? (zh ? '规则预览 · 不是运行证据' : 'Rule preview · not runtime evidence') : sources[step.source]}</Tag>{step.attempt_id ? <span className="break-all font-mono text-[var(--muted)]">{step.attempt_id}</span> : null}</div>
-        {step.evidence.length ? <ul className="space-y-2">{step.evidence.map((item, index) => <li key={index} className="break-words border-b border-[var(--border)] pb-2 font-mono last:border-0 last:pb-0">{item}</li>)}</ul> : <p className="text-[var(--muted)]">{zh ? '没有额外记录；不补充假定的中间步骤。' : 'No additional record; intermediate steps are not assumed.'}</p>}
-        {!preview && step.phase === 'core' ? <p className="mt-3 text-[var(--muted)]">{zh ? '内核返回的策略组链不代表逐条规则匹配过程；同一快照作为一组证据展示。' : 'A policy chain is not a rule-by-rule evaluation. One snapshot is shown as one evidence group.'}</p> : null}
+        <div className="mb-2 font-medium text-emerald-700 dark:text-emerald-300">{preview ? (zh ? '配置判断 · 不是运行证据' : 'Configuration evaluation · not runtime evidence') : sources[step.source]}</div>
+        {step.attempt_id ? <div className="flex justify-between gap-3 border-b border-[var(--border)] py-1.5"><span>{zh ? '关联连接' : 'Connection attempt'}</span><span className="break-all text-right text-[var(--muted)]">{step.attempt_id}</span></div> : null}
+        {rows.map(([label, value], index) => <div key={index} className="flex items-start justify-between gap-3 border-b border-[var(--border)] py-1.5 last:border-0"><span className="min-w-0 break-words">{label}</span><span className="max-w-[65%] break-words text-right text-[var(--muted)]">{value}</span></div>)}
+        {step.rule ? <div className="flex items-start justify-between gap-3 py-1.5"><span>{zh ? '最终命中规则' : 'Matched rule'}</span><span className="break-all text-right text-[var(--muted)]">{step.rule.type} · {step.rule.payload}</span></div> : null}
+        {step.chains?.length ? <div className="my-2"><p className="mb-2 text-[var(--muted)]">{zh ? '策略组与节点 · 内核返回顺序' : 'Policy groups and nodes · API order'}</p><div className="flex flex-wrap items-center gap-1.5">{step.chains.map((name, index) => <span key={`${index}-${name}`} className="max-w-full break-words rounded bg-[var(--surface)] px-2 py-1">{name}</span>)}</div></div> : null}
+        {step.phase === 'core' ? <p className="mt-2 text-[var(--muted)]">{zh ? '内核未提供逐条规则匹配过程；这里只展示最终命中规则和同一快照中的策略组链。' : 'The core does not expose every evaluated rule; this shows the final match and policy chain from one snapshot.'}</p> : step.phase === 'frontend' ? <p className="mt-2 text-[var(--muted)]">{zh ? 'DNS 判断只说明解析路径，不能证明业务连接直连或经过内核。' : 'DNS decisions describe resolution only; they do not prove a direct or core-routed connection.'}</p> : null}
+        {!rows.length && !step.rule ? <p className="break-words text-[var(--muted)]">{step.detail}</p> : null}
+        {step.evidence.length ? <div className="mt-3"><Button variant="unstyled" className="gap-1 text-[11px] text-[var(--muted)]" aria-expanded={rawExpanded} onClick={() => setRawExpanded(!rawExpanded)}><ChevronDown size={12} className={rawExpanded ? 'rotate-180' : ''} />{zh ? '查看原始证据' : 'View raw evidence'}</Button>{rawExpanded ? <ul className="mt-2 space-y-1 break-all font-mono text-[11px] text-[var(--muted)]">{step.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul> : null}</div> : null}
       </div> : null}
     </div>
   </li>

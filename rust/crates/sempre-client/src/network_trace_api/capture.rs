@@ -168,7 +168,11 @@ fn transport_event(
                 &format!("attempt-1-{next}"),
                 next,
                 if complete { "passed" } else { "running" },
-                if next == "http" { "http" } else { "socket" },
+                if matches!(next, "request" | "http") {
+                    "http"
+                } else {
+                    "socket"
+                },
                 &detail,
                 vec!["同一次 TCP 连接；未跟随 HTTP 重定向。".into()],
             );
@@ -318,13 +322,23 @@ fn finish(
             }
         }
         Err(error) => {
+            let detail = match phase {
+                "http" => format!("等待目标响应失败：{error}"),
+                "request" => format!("请求写入未完成：{error}"),
+                "tls" => format!("TLS 握手未完成：{error}"),
+                _ => format!("TCP 连接未建立：{error}"),
+            };
             session.step(
                 &format!("attempt-1-{phase}"),
                 phase,
                 "failed",
-                if phase == "http" { "http" } else { "socket" },
-                &error,
-                vec![],
+                if matches!(phase, "request" | "http") {
+                    "http"
+                } else {
+                    "socket"
+                },
+                &detail,
+                vec![error],
             );
             "failed"
         }

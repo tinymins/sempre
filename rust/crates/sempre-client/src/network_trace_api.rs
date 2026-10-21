@@ -2,7 +2,7 @@ mod capture;
 
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -38,6 +38,13 @@ struct Session {
     id: String,
     started: Instant,
     sender: mpsc::UnboundedSender<(&'static str, Value)>,
+    active: Arc<Mutex<Option<ActiveStep>>>,
+}
+
+struct ActiveStep {
+    id: String,
+    phase: String,
+    source: String,
 }
 
 impl Session {
@@ -54,11 +61,23 @@ impl Session {
         detail: &str,
         evidence: Vec<String>,
     ) {
+        if phase != "core" {
+            let mut active = self.active.lock().expect("active step lock");
+            if status == "running" {
+                *active = Some(ActiveStep {
+                    id: id.into(),
+                    phase: phase.into(),
+                    source: source.into(),
+                });
+            } else if active.as_ref().is_some_and(|step| step.id == id) {
+                *active = None;
+            }
+        }
         let evidence = Value::from(evidence);
         self.send(
             "trace-step",
             json!({ "trace_id": self.id, "step": {
-                "id": id, "phase": phase, "title": title(phase), "status": status,
+                "id": id, "phase": phase, "title": title(phase, status), "status": status,
                 "source": source, "detail": detail, "evidence": evidence,
                 "elapsed_ms": self.started.elapsed().as_millis(),
                 "attempt_id": if id.starts_with("attempt-1") { Some("attempt-1") } else { None },
@@ -67,14 +86,23 @@ impl Session {
     }
 }
 
-fn title(phase: &str) -> &'static str {
-    match phase {
-        "frontend" => "Sempre 前置 DNS",
-        "dns" => "地址解析",
-        "connection" => "实际连接",
-        "core" => "内核连接证据",
-        "tls" => "TLS 握手",
-        "http" => "HTTP 响应",
+fn title(phase: &str, status: &str) -> &'static str {
+    match (phase, status) {
+        ("frontend", "passed") => "前置 DNS 处理完成",
+        ("frontend", _) => "Sempre 前置 DNS",
+        ("dns", "passed") => "目标地址已确定",
+        ("dns", _) => "解析目标地址",
+        ("connection", "passed") => "TCP 连接已建立",
+        ("connection", _) => "建立实际连接",
+        ("core", _) => "内核连接证据",
+        ("tls", "passed") => "TLS 握手已完成",
+        ("tls", _) => "TLS 握手",
+        ("request", "passed") => "请求已写入",
+        ("request", "failed") => "发送请求失败",
+        ("request", _) => "正在发送请求",
+        ("http", "passed") => "目标响应已收到",
+        ("http", "failed") => "等待目标响应失败",
+        ("http", _) => "等待目标响应",
         _ => "诊断",
     }
 }
@@ -90,18 +118,25 @@ async fn preview(State(state): State<Arc<AppState>>, Json(input): Json<Input>) -
                 .into_response();
         }
     };
-    let evidence = if host.trim_matches(['[', ']']).parse::<IpAddr>().is_ok() {
-        vec!["目标为 IP 地址，无需 DNS 查询；业务连接出口待实测".into()]
+    let (dns_path, evidence) = if host.trim_matches(['[', ']']).parse::<IpAddr>().is_ok() {
+        (
+            "IP 地址 · 无需 DNS",
+            vec!["目标为 IP 地址，无需 DNS 查询；业务连接出口待实测".into()],
+        )
     } else if let Some(frontend) = state.manager.dns_diagnostic_handle().await {
-        frontend.preview(&host)
+        ("前置 DNS · 规则预览", frontend.preview(&host))
     } else {
-        vec!["当前无运行中的前置解析器；系统解析及实际出站待实测".into()]
+        (
+            "系统 DNS · 待实测",
+            vec!["当前无运行中的前置解析器；系统解析及实际出站待实测".into()],
+        )
     };
     let detail = evidence
         .last()
         .cloned()
         .unwrap_or_else(|| "等待测试".into());
-    Json(json!({"mode":"preview", "target":input.target, "steps":[{
+    Json(json!({"mode":"preview", "target":input.target,
+        "path":["目标地址", dns_path, "业务连接待实测", "实际出口待实测"], "steps":[{
         "id":"preview-frontend", "phase":"frontend", "title":"规则预览 · 尚未测试",
         "status":"unknown", "source":"config", "detail":detail,
         "evidence":evidence, "elapsed_ms":0
@@ -125,6 +160,7 @@ async fn trace(State(state): State<Arc<AppState>>, Json(input): Json<Input>) -> 
         id: uuid::Uuid::new_v4().to_string(),
         started: Instant::now(),
         sender,
+        active: Arc::new(Mutex::new(None)),
     };
     tokio::spawn(async move {
         session.send(
@@ -136,7 +172,10 @@ async fn trace(State(state): State<Arc<AppState>>, Json(input): Json<Input>) -> 
             () = session.sender.closed() => {},
             result = tokio::time::timeout(Duration::from_secs(35), work) => {
                 let status = if let Ok(status) = result { status } else {
-                        session.step("deadline", "connection", "failed", "session", "本次测试超过 35 秒，已停止采集和请求", vec![]);
+                        let active = session.active.lock().expect("active step lock").take();
+                        if let Some(active) = active {
+                            session.step(&active.id, &active.phase, "failed", &active.source, "本次测试超过 35 秒，已在当前阶段停止采集和请求", vec![]);
+                        }
                         "failed"
                 };
                 session.send("trace-completed", json!({"trace_id":session.id,"status":status}));

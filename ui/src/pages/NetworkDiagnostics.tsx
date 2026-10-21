@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { AlertTriangle, CheckCircle2, MinusCircle, RefreshCw, Search, ShieldAlert, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, MinusCircle, Play, RefreshCw, ShieldAlert, Square, XCircle } from 'lucide-react'
 import { Alert, AutoComplete, Button, Card, CodePanel, Tag } from '@acme/components'
 import { streamRequest } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -19,7 +19,7 @@ type DiagnosticStep = { id: NetworkDiagnosticLayerID; phase: StepPhase; result?:
 const initialSteps = (): DiagnosticStep[] => LAYER_IDS.map((id) => ({ id, phase: 'pending' }))
 
 export function NetworkDiagnostics() {
-  const { locale, t } = useI18n()
+  const { locale } = useI18n()
   const { session } = useSession()
   const [draft, setDraft] = useState(DEFAULT_TARGET)
   const [steps, setSteps] = useState(initialSteps)
@@ -30,6 +30,7 @@ export function NetworkDiagnostics() {
   const zh = locale === 'zh-CN'
   const trace = useNetworkTrace(session, zh)
   const [previewExpanded, setPreviewExpanded] = useState(true)
+  const [auxiliaryExpanded, setAuxiliaryExpanded] = useState(false)
   const [auxiliaryTarget, setAuxiliaryTarget] = useState<string | null>(null)
 
   useEffect(() => () => controllerRef.current?.abort(), [])
@@ -88,16 +89,26 @@ export function NetworkDiagnostics() {
     }
   }
 
-  return <div className="space-y-5">
-    <div><h1 className="text-xl font-semibold">{t('networkDiagnostics')}</h1><p className="mt-1 text-sm text-[var(--muted)]">{t('networkDiagnosticsDetail')}</p></div>
-    <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
-      <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submit}>
-        <label className="min-w-0 flex-1"><span className="mb-2 block text-xs font-medium text-[var(--muted)]">{zh ? '诊断目标' : 'Diagnostic target'}</span><AutoComplete className="w-full" value={draft} options={DIAGNOSTIC_TARGETS} filterOption={(input, option) => DIAGNOSTIC_TARGETS.includes(input) || option.value.toLowerCase().includes(input.toLowerCase())} placeholder={DEFAULT_TARGET} disabled={running || trace.run?.running} onChange={(value) => { setDraft(value); setPreviewExpanded(true) }} /></label>
-        <Button className="self-end" htmlType="submit" variant="primary" disabled={!draft.trim() || running || trace.run?.running} icon={<Search size={16} />}>{zh ? (trace.run ? '重新测试' : '开始测试') : (trace.run ? 'Test again' : 'Run test')}</Button>
-      </form>
-      <RulePreview target={draft} session={session} zh={zh} expanded={previewExpanded} onToggle={() => setPreviewExpanded((value) => !value)} />
-    </Card>
-    <TracePanel key={trace.run?.generation ?? 0} run={trace.run} zh={zh} onStop={trace.stop} />
+  return <div className="mx-auto max-w-4xl space-y-5">
+    <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[0_10px_35px_#183a2310]">
+      <header className="border-b border-[var(--border)] px-4 py-[22px] sm:px-[26px]">
+        <div className="flex items-center gap-2 text-sm font-medium"><span className="grid size-6 place-items-center rounded-[7px] bg-emerald-700 text-white dark:bg-emerald-300 dark:text-emerald-950">S</span><span>Sempre <span className="mx-2 text-[var(--muted)]">/</span> {zh ? '网络诊断' : 'Network diagnostics'}</span></div>
+        <h1 className="mt-[18px] text-[23px] font-medium tracking-tight">{zh ? '请求路径' : 'Request path'}</h1>
+        <p className="mt-2 text-xs text-[var(--muted)]">{zh ? '规则模拟与实测独立展示 · 每一步，都有对应依据' : 'Rule simulation and measured evidence are displayed separately'}</p>
+      </header>
+      <div className="px-4 pb-6 pt-[22px] sm:px-[26px]">
+        <form className="flex flex-col gap-2.5 sm:flex-row sm:items-end" onSubmit={submit}>
+          <label className="min-w-0 flex-1"><span className="mb-2 block text-sm">{zh ? '目标地址' : 'Target address'}</span><AutoComplete className="w-full" value={draft} options={DIAGNOSTIC_TARGETS} filterOption={(input, option) => DIAGNOSTIC_TARGETS.includes(input) || option.value.toLowerCase().includes(input.toLowerCase())} placeholder={DEFAULT_TARGET} disabled={running || trace.run?.running} onChange={(value) => { setDraft(value); setPreviewExpanded(true) }} /></label>
+          {trace.run?.running ? <Button key="stop-trace" htmlType="button" className="!h-9 !rounded-[9px] !bg-emerald-700 !px-4 dark:!bg-emerald-300 dark:!text-emerald-950" variant="primary" icon={<Square size={14} />} onClick={(event) => { event.preventDefault(); trace.stop() }}>{zh ? '停止测试' : 'Stop test'}</Button> : <Button key="start-trace" className="!h-9 !rounded-[9px] !bg-emerald-700 !px-4 dark:!bg-emerald-300 dark:!text-emerald-950" htmlType="submit" variant="primary" disabled={!draft.trim() || running} icon={trace.run ? <RefreshCw size={14} /> : <Play size={14} />}>{zh ? (trace.run ? '重新测试' : '开始测试') : (trace.run ? 'Test again' : 'Run test')}</Button>}
+        </form>
+        <RulePreview target={draft} session={session} zh={zh} expanded={previewExpanded} onToggle={() => setPreviewExpanded((value) => !value)} />
+        <TracePanel key={trace.run?.generation ?? 0} run={trace.run} zh={zh} />
+      </div>
+      <footer className="flex flex-wrap justify-between gap-2 border-t border-[var(--border)] px-4 py-3 text-[11px] text-[var(--muted)] sm:px-[26px]"><span>{zh ? '实测仅使用本次运行证据' : 'Measured records come from this run only'}</span><span>{zh ? '未观测的链路保持未知' : 'Unobserved paths remain unknown'}</span></footer>
+    </div>
+    <section className="space-y-3">
+      <Button variant="unstyled" className="w-full !justify-start gap-2 py-2 text-sm text-[var(--muted)]" aria-expanded={auxiliaryExpanded} onClick={() => setAuxiliaryExpanded(!auxiliaryExpanded)}><ChevronDown size={15} className={auxiliaryExpanded ? 'rotate-180' : ''} />{zh ? '辅助分层检查' : 'Additional layered checks'}</Button>
+      {auxiliaryExpanded ? <>
     <div className="space-y-2 border-t border-[var(--border)] pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">{zh ? '辅助分层检查' : 'Additional layered checks'}</h2><Button disabled={!draft.trim() || running || trace.run?.running} onClick={() => startDiagnostics(draft.trim())}>{zh ? (running ? '检查中…' : '运行分层检查') : (running ? 'Checking…' : 'Run layered checks')}</Button></div><p className="text-xs text-[var(--muted)]">{zh ? '以下 DNS、TCP、TLS、HTTP 检查使用独立请求，不属于上方同一次实测连接。' : 'These DNS, TCP, TLS and HTTP checks use independent requests and are not the measured connection above.'}</p>{auxiliaryTarget ? <p className="break-all text-xs text-[var(--muted)]">{auxiliaryTarget}</p> : null}</div>
     {error ? <Alert type="error" showIcon message={zh ? '诊断运行失败' : 'Diagnostics failed'} description={error} /> : null}
     {auxiliaryTarget ? <DiagnosticTimeline steps={steps} zh={zh} /> : null}
@@ -105,6 +116,8 @@ export function NetworkDiagnostics() {
       <DiagnosticSummary report={report} zh={zh} />
       <Findings findings={report.findings} zh={zh} />
     </> : null}
+      </> : null}
+    </section>
   </div>
 }
 

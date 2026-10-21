@@ -34,7 +34,7 @@ where
 {
     let stream = timeout(Duration::from_secs(5), TcpStream::connect(address))
         .await
-        .map_err(|_| "TCP connection timed out".to_owned())?
+        .map_err(|_| "TCP 连接超过 5 秒未建立".to_owned())?
         .map_err(|e| e.to_string())?;
     emit(TraceTransportEvent::Connected {
         local: stream.local_addr().map_err(|e| e.to_string())?,
@@ -44,7 +44,7 @@ where
         emit(TraceTransportEvent::Stage {
             phase: "tls",
             complete: false,
-            detail: "TLS handshake on the same socket".into(),
+            detail: "正在同一次 TCP 连接上协商 TLS".into(),
         });
         let name = ServerName::try_from(
             url.host_str()
@@ -56,12 +56,12 @@ where
         let connector = TlsConnector::from(crate::diagnostics::tls::tls_config());
         let stream = timeout(Duration::from_secs(6), connector.connect(name, stream))
             .await
-            .map_err(|_| "TLS handshake timed out".to_owned())?
+            .map_err(|_| "TLS 握手超过 6 秒未完成".to_owned())?
             .map_err(|e| e.to_string())?;
         emit(TraceTransportEvent::Stage {
             phase: "tls",
             complete: true,
-            detail: "TLS certificate verified; handshake completed".into(),
+            detail: "TLS 握手已完成，证书验证通过".into(),
         });
         http(stream, url, &mut emit).await
     } else {
@@ -75,9 +75,9 @@ where
     F: FnMut(TraceTransportEvent),
 {
     emit(TraceTransportEvent::Stage {
-        phase: "http",
+        phase: "request",
         complete: false,
-        detail: "Sending one HTTP GET; redirects are not followed".into(),
+        detail: "正在向已建立的连接写入本次 HTTP GET 请求".into(),
     });
     let mut path = url.path().to_owned();
     if let Some(query) = url.query() {
@@ -88,11 +88,24 @@ where
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: Sempre-diagnostics\r\nConnection: close\r\n\r\n"
     );
+    let mut waiting_response = false;
     let response = timeout(Duration::from_secs(10), async {
         stream
             .write_all(request.as_bytes())
             .await
             .map_err(|e| e.to_string())?;
+        stream.flush().await.map_err(|e| e.to_string())?;
+        emit(TraceTransportEvent::Stage {
+            phase: "request",
+            complete: true,
+            detail: "本次请求已完整写入连接".into(),
+        });
+        waiting_response = true;
+        emit(TraceTransportEvent::Stage {
+            phase: "http",
+            complete: false,
+            detail: "请求已发送，正在等待目标返回完整响应头".into(),
+        });
         let mut headers = Vec::new();
         let mut chunk = [0_u8; 1024];
         let mut received = 0;
@@ -109,10 +122,10 @@ where
                 if !matches!(version, "HTTP/1.0" | "HTTP/1.1")
                     || !code.is_some_and(|value| (100..600).contains(&value))
                 {
-                    return Err("Invalid HTTP status line".into());
+                    return Err("目标返回了无效的 HTTP 状态行".into());
                 }
                 match code {
-                    Some(101) => return Err("Unexpected HTTP protocol switch".into()),
+                    Some(101) => return Err("目标要求切换协议，无法完成本次 HTTP 检查".into()),
                     Some(200..=599) => return Ok::<String, String>(status),
                     _ => {
                         headers.drain(..end + 4);
@@ -121,22 +134,29 @@ where
             } else {
                 let count = stream.read(&mut chunk).await.map_err(|e| e.to_string())?;
                 if count == 0 {
-                    return Err("Connection closed before final HTTP headers".into());
+                    return Err("目标在完整响应头返回前关闭了连接".into());
                 }
                 received += count;
                 if received > 16 * 1024 {
-                    return Err("HTTP response headers exceed 16 KiB".into());
+                    return Err("目标响应头超过 16 KiB，已停止读取".into());
                 }
                 headers.extend_from_slice(&chunk[..count]);
             }
         }
     })
     .await
-    .map_err(|_| "HTTP response timed out".to_owned())??;
+    .map_err(|_| {
+        if waiting_response {
+            "等待目标响应超时：本次 HTTP 请求已达到 10 秒时限"
+        } else {
+            "发送请求超时：10 秒内未完成请求写入"
+        }
+        .to_owned()
+    })??;
     emit(TraceTransportEvent::Stage {
         phase: "http",
         complete: true,
-        detail: response,
+        detail: format!("已收到目标响应头 · {response}"),
     });
     Ok(())
 }

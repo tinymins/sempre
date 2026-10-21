@@ -35,9 +35,10 @@ export function useNetworkTrace(session: Session | null, zh: boolean) {
             if (!['session', 'frontend', 'core', 'socket', 'http'].includes(payload.step.source)) {
               throw new Error(zh ? '实测链路拒绝接收非运行时证据' : 'Measured traces require runtime evidence')
             }
+            const observed = { ...payload.step, receivedAt: performance.now() }
             update((current) => ({ ...current, steps: current.steps.some((step) => step.id === payload.step.id)
-              ? current.steps.map((step) => step.id === payload.step.id ? payload.step : step)
-              : [...current.steps, payload.step] }))
+              ? current.steps.map((step) => step.id === payload.step.id ? observed : step)
+              : [...current.steps, observed] }))
           } else if (event === 'trace-completed') {
             const completed = data as { trace_id: string; status: NetworkTraceRun['status'] }
             if (!traceId || completed.trace_id !== traceId) throw new Error(zh ? '链路结果的会话关联不一致' : 'Trace result does not match this session')

@@ -28,7 +28,7 @@ export interface NetworkDiagnosticReport {
 
 export interface NetworkTraceStep {
   id: string
-  phase: 'frontend' | 'dns' | 'connection' | 'core' | 'tls' | 'http'
+  phase: 'frontend' | 'dns' | 'connection' | 'core' | 'tls' | 'request' | 'http'
   title: string
   status: 'running' | 'passed' | 'failed' | 'unknown'
   source: 'session' | 'frontend' | 'core' | 'socket' | 'http' | 'config'
@@ -36,6 +36,7 @@ export interface NetworkTraceStep {
   evidence: string[]
   attempt_id?: string
   elapsed_ms: number
+  receivedAt?: number
   rule?: { type: string; payload: string }
   chains?: string[]
   chain_order?: 'core_api'
@@ -43,6 +44,7 @@ export interface NetworkTraceStep {
 
 export interface NetworkTracePreview {
   mode: 'preview'
+  path: string[]
   target: string
   steps: NetworkTraceStep[]
 }
