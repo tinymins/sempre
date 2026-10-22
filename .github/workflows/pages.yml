@@ -7,6 +7,10 @@ on:
         description: Main commit whose site checks already passed in the caller
         type: string
         default: ''
+  # The github-pages environment only accepts main; refresh release manifests from there.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
 
 permissions:
   contents: read
@@ -19,6 +23,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

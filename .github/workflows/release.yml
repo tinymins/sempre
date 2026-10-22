@@ -322,8 +322,3 @@ jobs:
             docker buildx imagetools create \
               --tag "$repository:$GITHUB_REF_NAME" --tag "$repository:$channel" "${sources[@]}"
           done
-
-  pages:
-    if: ${{ !cancelled() && needs.publish.result == 'success' }}
-    needs: publish
-    uses: ./.github/workflows/pages.yml
