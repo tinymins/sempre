@@ -131,7 +131,9 @@ jobs:
         run: bun --cwd=site run build
       - name: Install browser
         working-directory: site
-        run: bunx playwright install --with-deps chromium
+        timeout-minutes: 5
+        # Hosted Ubuntu images already ship Chromium's system libraries; skip slow apt mirrors.
+        run: bunx playwright install chromium
       - name: Verify install commands and private input
         working-directory: site
         run: bun run test:e2e
