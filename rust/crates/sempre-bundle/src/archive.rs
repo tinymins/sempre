@@ -5,7 +5,7 @@ use std::{
     io,
     path::Path,
 };
-use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
+use zip::{CompressionMethod, System, ZipWriter, write::SimpleFileOptions};
 
 pub(super) fn zip_directory(
     destination: &Path,
@@ -69,7 +69,9 @@ fn append_directory(
         if metadata.is_dir() {
             archive.add_directory(
                 format!("{name}/"),
-                SimpleFileOptions::default().unix_permissions(0o700),
+                SimpleFileOptions::default()
+                    .system(System::Unix)
+                    .unix_permissions(0o700),
             )?;
             append_directory(archive, root, &path, prefix, target)?;
         } else if metadata.is_file() {
@@ -81,6 +83,7 @@ fn append_directory(
                 name,
                 SimpleFileOptions::default()
                     .compression_method(CompressionMethod::Deflated)
+                    .system(System::Unix)
                     .unix_permissions(mode),
             )?;
             let mut input = File::open(&path).map_err(|source_error| BundleError::Io {
