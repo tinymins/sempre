@@ -75,12 +75,12 @@ mod tests {
     use super::*;
     use tokio::net::{TcpListener, UdpSocket};
 
-    async fn shared_port() -> u16 {
+    async fn shared_port() -> (UdpSocket, TcpListener) {
         for _ in 0..32 {
             let udp = UdpSocket::bind("127.0.0.1:0").await.expect("UDP port");
             let address = udp.local_addr().expect("frontend address");
-            if TcpListener::bind(address).await.is_ok() {
-                return address.port();
+            if let Ok(tcp) = TcpListener::bind(address).await {
+                return (udp, tcp);
             }
         }
         panic!("no shared UDP/TCP frontend port available");
@@ -111,8 +111,9 @@ mod tests {
 
     #[tokio::test]
     async fn occupied_optional_loopback_port_does_not_block_the_primary_listener() {
-        let primary = shared_port().await;
-        let occupied = UdpSocket::bind("127.0.0.1:0").await.expect("occupied port");
+        let (primary_udp, primary_tcp) = shared_port().await;
+        let primary = primary_udp.local_addr().expect("primary address").port();
+        let (optional_udp, occupied) = shared_port().await;
         let optional = occupied.local_addr().expect("occupied address").port();
         let config = DnsConfig {
             enabled: true,
@@ -120,6 +121,7 @@ mod tests {
             ..DnsConfig::default()
         };
 
+        drop((primary_udp, primary_tcp, optional_udp));
         let (service, error) = DnsService::start_with_policy_and_optional_loopback_port(
             config,
             std::sync::Arc::new(crate::dns_policy::NoopDnsRuntimePolicy),
@@ -130,7 +132,7 @@ mod tests {
 
         assert!(
             error.is_some_and(
-                |error| error.contains(&format!("listen DNS UDP 127.0.0.1:{optional}"))
+                |error| error.contains(&format!("listen DNS TCP 127.0.0.1:{optional}"))
             )
         );
         assert_eq!(
@@ -140,9 +142,9 @@ mod tests {
                 .kind(),
             std::io::ErrorKind::AddrInUse
         );
-        TcpListener::bind(("127.0.0.1", optional))
+        UdpSocket::bind(("127.0.0.1", optional))
             .await
-            .expect("optional TCP listener was rolled back");
+            .expect("optional UDP listener was rolled back");
         service.stop().await;
     }
 }
