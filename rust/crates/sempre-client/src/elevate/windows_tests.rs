@@ -39,8 +39,8 @@ fn elevation_waits_only_for_command_and_preserves_its_exit_code() {
         &format!("--exact {FIXTURE}"),
         temporary.path().to_str().expect("working directory"),
     )
-    // Exercise the same waiting logic without opening an interactive UAC prompt.
-    .replace(" -Verb RunAs", " -NoNewWindow");
+    // Keep the production shell-execute path while skipping the UAC prompt.
+    .replace(" -Verb RunAs", "");
     let status = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .env("SEMPRE_ELEVATION_TEST_ROOT", temporary.path())
