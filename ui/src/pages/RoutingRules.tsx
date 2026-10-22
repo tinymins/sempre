@@ -8,7 +8,6 @@ import { BuiltinRuleSet } from '../features/dns/BuiltinRuleSet'
 import { RuleSetRuntime } from '../features/dns/RuleSetRuntime'
 import type { DnsRoutingDomain, DnsRoutingRuleSet } from '../features/dns/types'
 import { api } from '../lib/api'
-import { directLabel } from '../lib/directLabel'
 import { useI18n } from '../lib/i18n'
 import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
@@ -154,9 +153,9 @@ export function RoutingRules() {
       <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
         <div className="border-b border-[var(--border)] px-4 py-3 text-sm font-medium">{zh ? '规则集' : 'Rule sets'}</div>
         <div className="space-y-1 p-2">
-          <RuleSetButton selected={selectedId === CN_ID} name={zh ? 'CN 路由分流' : 'CN routing'} directRouteLabel={zh ? '直连路由' : 'Direct system route'} mode={network.data?.settings.cn_direct_routes ? (network.data.settings.cn_routing_mode ?? 'direct-route') : 'disabled'} builtin onClick={() => setSelectedId(CN_ID)} />
-          <RuleSetButton selected={selectedId === BUILTIN_ID} name={zh ? '中国大陆域名' : 'Mainland China domains'} mode={current.domestic_domains.enabled ? current.domestic_domains.mode : 'disabled'} count={builtinCount} builtin onClick={() => setSelectedId(BUILTIN_ID)} />
-          {current.rule_sets.map((ruleSet) => <RuleSetButton key={ruleSet.id} selected={selectedId === ruleSet.id} name={ruleSet.name} mode={ruleSet.mode} count={ruleSet.domains.length} onClick={() => setSelectedId(ruleSet.id)} saving={save.isPending} onDelete={() => void deleteSet(ruleSet.id).catch(() => undefined)} />)}
+          <RuleSetButton selected={selectedId === CN_ID} name={zh ? 'CN 路由分流' : 'CN routing'} zh={zh} mode={network.data?.settings.cn_direct_routes ? (network.data.settings.cn_routing_mode ?? 'direct-route') : 'disabled'} builtin onClick={() => setSelectedId(CN_ID)} />
+          <RuleSetButton zh={zh} selected={selectedId === BUILTIN_ID} name={zh ? '中国大陆域名' : 'Mainland China domains'} mode={current.domestic_domains.enabled ? current.domestic_domains.mode : 'disabled'} count={builtinCount} builtin onClick={() => setSelectedId(BUILTIN_ID)} />
+          {current.rule_sets.map((ruleSet) => <RuleSetButton zh={zh} key={ruleSet.id} selected={selectedId === ruleSet.id} name={ruleSet.name} mode={ruleSet.mode} count={ruleSet.domains.length} onClick={() => setSelectedId(ruleSet.id)} saving={save.isPending} onDelete={() => void deleteSet(ruleSet.id).catch(() => undefined)} />)}
         </div>
       </Card>
       <Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>
@@ -166,7 +165,7 @@ export function RoutingRules() {
     <Modal open={settingsDialogOpen} title={zh ? '设置规则集' : 'Rule set settings'} okText={zh ? '保存' : 'Save'} cancelText={zh ? '取消' : 'Cancel'} okButtonProps={{ disabled: !ruleSetInput.name.trim() }} confirmLoading={save.isPending} onOk={() => applySettings().catch(() => undefined)} onCancel={() => { if (!save.isPending) setSettingsDialogOpen(false) }} destroyOnClose>
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_12rem]">
         <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '名称' : 'Name'}</span><Input autoFocus value={ruleSetInput.name} onChange={(event) => setRuleSetInput((value) => ({ ...value, name: event.target.value }))} /></label>
-        <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '模式' : 'Mode'}</span><Select className="w-full" value={ruleSetInput.mode} options={[{ value: 'direct', label: directLabel('direct') }, { value: 'proxy', label: zh ? '代理' : 'Proxy' }]} onChange={(mode) => setRuleSetInput((value) => ({ ...value, mode }))} /></label>
+        <label className="text-sm"><span className="mb-2 block font-medium">{zh ? '模式' : 'Mode'}</span><Select className="w-full" value={ruleSetInput.mode} options={[{ value: 'direct', label: zh ? '直连' : 'Direct' }, { value: 'proxy', label: zh ? '代理' : 'Proxy' }]} onChange={(mode) => setRuleSetInput((value) => ({ ...value, mode }))} /></label>
       </div>
     </Modal>
     <Modal open={Boolean(domainDialog)} title={domainDialog?.mode === 'edit' ? (zh ? '编辑规则' : 'Edit rule') : (zh ? '添加规则' : 'Add rule')} okText={domainDialog?.mode === 'edit' ? (zh ? '保存' : 'Save') : (zh ? '添加' : 'Add')} cancelText={zh ? '取消' : 'Cancel'} okButtonProps={{ disabled: !normalizeDomain(domainDialog?.entry.domain ?? '') }} confirmLoading={save.isPending} onOk={() => applyDomain().catch(() => undefined)} onCancel={() => { if (!save.isPending) setDomainDialog(null) }} destroyOnClose>
@@ -178,9 +177,9 @@ export function RoutingRules() {
   </div>
 }
 
-function RuleSetButton({ saving, selected, name, mode, count, builtin, directRouteLabel, onClick, onDelete }: { saving?: boolean; selected: boolean; name: string; mode: string; count?: number; builtin?: boolean; directRouteLabel?: string; onClick: () => void; onDelete?: () => void }) {
+function RuleSetButton({ saving, selected, name, mode, count, builtin, zh, onClick, onDelete }: { saving?: boolean; selected: boolean; name: string; mode: string; count?: number; builtin?: boolean; zh: boolean; onClick: () => void; onDelete?: () => void }) {
   return <div className={`flex items-center rounded-md ${selected ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'hover:bg-[var(--surface-hover)]'}`}>
-    <button className="min-w-0 flex-1 px-3 py-2.5 text-left" onClick={onClick}><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{name}</span>{builtin ? <LockKeyhole className="shrink-0" size={13} /> : null}</div><div className="mt-1 flex gap-2 text-xs text-[var(--muted)]"><span>{mode === 'disabled' ? 'OFF' : mode === 'direct' ? directLabel('direct') : mode === 'direct-route' ? directRouteLabel : 'PROXY'}</span>{count !== undefined ? <><span>·</span><span>{count}</span></> : null}</div></button>
+    <button className="min-w-0 flex-1 px-3 py-2.5 text-left" onClick={onClick}><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{name}</span>{builtin ? <LockKeyhole className="shrink-0" size={13} /> : null}</div><div className="mt-1 flex gap-2 text-xs text-[var(--muted)]"><span>{mode === 'disabled' ? 'OFF' : mode === 'direct' || mode === 'direct-route' ? (zh ? '直连' : 'Direct') : (zh ? '代理' : 'Proxy')}</span>{count !== undefined ? <><span>·</span><span>{count}</span></> : null}</div></button>
     {onDelete ? <Button className="mr-1" size="small" variant="text" icon={<Trash2 size={14} />} title="Delete" disabled={saving} onClick={onDelete} /> : null}
   </div>
 }

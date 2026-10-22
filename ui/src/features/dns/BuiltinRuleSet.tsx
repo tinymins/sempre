@@ -1,5 +1,4 @@
 import { Alert, Select, Switch } from '@acme/components'
-import { directLabel } from '../../lib/directLabel'
 import type { ProxyNode } from '../../lib/types'
 import type { DnsSettings } from './types'
 import { RuleSetRuntime } from './RuleSetRuntime'
@@ -26,7 +25,7 @@ export function BuiltinRuleSet({ policy, count, saving, proxyGroups, selecting, 
     </div>
     <label className="flex flex-wrap items-center justify-between gap-3 text-sm">
       <span>{zh ? '分流方式' : 'Routing mode'}</span>
-      <Select className="w-48" aria-label={zh ? '中国大陆域名分流方式' : 'Mainland China routing mode'} disabled={saving || !policy.enabled} value={policy.mode} options={[{ value: 'direct', label: directLabel('direct') }, { value: 'proxy', label: zh ? '代理' : 'Proxy' }]} onChange={(mode) => onChange({ mode })} />
+      <Select className="w-48" aria-label={zh ? '中国大陆域名分流方式' : 'Mainland China routing mode'} disabled={saving || !policy.enabled} value={policy.mode} options={[{ value: 'direct', label: zh ? '直连' : 'Direct' }, { value: 'proxy', label: zh ? '代理' : 'Proxy' }]} onChange={(mode) => onChange({ mode })} />
     </label>
     <div className="text-sm text-[var(--muted)]">{zh ? `包含 ${count.toLocaleString()} 个域名；自定义规则优先。` : `${count.toLocaleString()} domains; custom rules take priority.`}</div>
     {policy.enabled ? <RuleSetRuntime ruleSet={{ name: BUILTIN_NAME, mode: policy.mode }} proxyGroup={proxyGroup} selecting={selecting} zh={zh} onSelect={onSelectProxy} /> : <Alert type="info" showIcon message={zh ? '已关闭内置规则，域名继续按自定义规则及核心规则分流。' : 'Built-in rules are disabled. Custom and core routing rules continue to apply.'} />}
