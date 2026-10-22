@@ -22,14 +22,15 @@ permissions:
 jobs:
   rust:
     if: inputs.rust
-    name: Rust (${{ matrix.name }})
+    name: Rust ${{ matrix.check }} (${{ matrix.platform.name }})
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
     strategy:
       fail-fast: false
       matrix:
-        include:
+        check: [test, clippy]
+        platform:
           - name: linux-amd64
             runner: ubuntu-24.04
           - name: linux-arm64
@@ -42,7 +43,7 @@ jobs:
             runner: macos-15-intel
           - name: darwin-arm64
             runner: macos-15
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -51,15 +52,17 @@ jobs:
           components: clippy
       - uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Prepare Windows DNS capture SDK
-        if: matrix.name == 'windows-amd64'
+        if: matrix.platform.name == 'windows-amd64'
         shell: pwsh
         run: |
           $sdk = cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- dns-capture-sdk
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "WINDIVERT_PATH=$sdk" >> $env:GITHUB_ENV
           $sdk >> $env:GITHUB_PATH
-      - run: cargo test --locked --manifest-path=rust/Cargo.toml --workspace
-      - run: cargo clippy --locked --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings
+      - if: matrix.check == 'test'
+        run: cargo test --locked --manifest-path=rust/Cargo.toml --workspace
+      - if: matrix.check == 'clippy'
+        run: cargo clippy --locked --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings
 
   frontend:
     if: inputs.frontend
