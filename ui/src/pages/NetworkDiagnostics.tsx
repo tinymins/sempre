@@ -89,7 +89,7 @@ export function NetworkDiagnostics() {
     }
   }
 
-  return <div className="mx-auto max-w-4xl space-y-5">
+  return <div className="space-y-5">
     <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[0_10px_35px_#183a2310]">
       <header className="border-b border-[var(--border)] px-4 py-[22px] sm:px-[26px]">
         <div className="flex items-center gap-2 text-sm font-medium"><span className="grid size-6 place-items-center rounded-[7px] bg-emerald-700 text-white dark:bg-emerald-300 dark:text-emerald-950">S</span><span>Sempre <span className="mx-2 text-[var(--muted)]">/</span> {zh ? '网络诊断' : 'Network diagnostics'}</span></div>
