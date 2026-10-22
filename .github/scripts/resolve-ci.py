@@ -64,8 +64,7 @@ if runs:
         subprocess.run(['gh', 'run', 'download', str(run['id']), '--repo', repository,
                         '--name', name, '--dir', str(destination)], check=True)
         proof = json.loads((destination / 'complete-ci.json').read_text())
-        expected = {'rust', 'frontend', 'site', 'format', 'transparent-netns',
-                    'service', 'server-container', 'vulnerability'}
+        expected = {'rust', 'frontend', 'server-container', 'vulnerability'}
         reuse = (proof.get('sha') == sha and proof.get('fingerprint') == checks.fingerprint()
                  and set(proof.get('results', {})) == expected
                  and all(result == 'success' for result in proof['results'].values()))

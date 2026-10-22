@@ -18,9 +18,8 @@ def fingerprint():
 if __name__ == '__main__':
     results = {name: job['result'] for name, job in json.loads(os.environ['RESULTS']).items()}
     selected = {
-        'rust': ['rust', 'format', 'transparent-netns', 'service', 'server-container', 'vulnerability'],
+        'rust': ['rust', 'server-container', 'vulnerability'],
         'frontend': ['frontend'],
-        'site': ['site'],
     }
     required = [job for scope, jobs in selected.items()
                 if os.environ[f'CHECK_{scope.upper()}'] == 'true' for job in jobs]

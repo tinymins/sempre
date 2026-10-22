@@ -19,7 +19,6 @@ jobs:
     outputs:
       rust: ${{ steps.scope.outputs.rust }}
       frontend: ${{ steps.scope.outputs.frontend }}
-      site: ${{ steps.scope.outputs.site }}
       deploy: ${{ steps.scope.outputs.deploy }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -35,7 +34,6 @@ jobs:
     with:
       rust: ${{ needs.scope.outputs.rust == 'true' }}
       frontend: ${{ needs.scope.outputs.frontend == 'true' }}
-      site: ${{ needs.scope.outputs.site == 'true' }}
 
   pages:
     needs: [scope, checks]
@@ -47,16 +45,3 @@ jobs:
     uses: ./.github/workflows/pages.yml
     with:
       checked-sha: ${{ github.sha }}
-
-  summary:
-    if: always()
-    needs: [scope, checks, pages]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Report CI result
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-          OPTIONAL: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.scope.outputs.deploy == 'true') && 'pages' || '' }}
-          TITLE: CI
-        run: python3 .github/scripts/workflow-summary.py

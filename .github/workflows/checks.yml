@@ -12,9 +12,6 @@ on:
       audit:
         type: boolean
         default: true
-      site:
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -22,21 +19,19 @@ permissions:
 jobs:
   rust:
     if: inputs.rust
-    name: Rust ${{ matrix.check }} (${{ matrix.platform.name }})
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
+    name: Rust (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
-        check: [test, clippy]
-        platform:
+        include:
           - name: linux-amd64
             runner: ubuntu-24.04
+            smoke: true
           - name: linux-arm64
             runner: ubuntu-24.04-arm
           - name: windows-amd64
             runner: windows-2025
+            smoke: true
           - name: windows-arm64
             runner: windows-11-arm
           # Intel macOS runners are slow and scarce; tests run under Rosetta.
@@ -45,36 +40,69 @@ jobs:
             target: x86_64-apple-darwin
           - name: darwin-arm64
             runner: macos-15
-    runs-on: ${{ matrix.platform.runner }}
+            smoke: true
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      TARGET_ARGS: ${{ matrix.target && format('--target={0}', matrix.target) || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
         with:
-          components: clippy
-          targets: ${{ matrix.platform.target }}
-      - uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+          components: clippy, rustfmt
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: rust
+          key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check formatting
+        if: matrix.name == 'linux-amd64'
+        run: cargo fmt --manifest-path=rust/Cargo.toml --all -- --check
       - name: Require Rosetta for x86_64 tests
-        if: matrix.check == 'test' && matrix.platform.target == 'x86_64-apple-darwin'
+        if: matrix.target == 'x86_64-apple-darwin'
         timeout-minutes: 5
         run: |
           arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
           arch -x86_64 /usr/bin/true
       - name: Prepare Windows DNS capture SDK
-        if: matrix.platform.name == 'windows-amd64'
+        if: matrix.name == 'windows-amd64'
         shell: pwsh
         run: |
           $sdk = cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- dns-capture-sdk
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "WINDIVERT_PATH=$sdk" >> $env:GITHUB_ENV
           $sdk >> $env:GITHUB_PATH
-      - if: matrix.check == 'test'
-        run: cargo test --locked --manifest-path=rust/Cargo.toml --workspace ${{ matrix.platform.target && format('--target={0}', matrix.platform.target) || '' }}
-      - if: matrix.check == 'clippy'
-        run: cargo clippy --locked --manifest-path=rust/Cargo.toml --workspace --all-targets ${{ matrix.platform.target && format('--target={0}', matrix.platform.target) || '' }} -- -D warnings
+      - name: Clippy
+        shell: bash
+        run: cargo clippy --locked --manifest-path=rust/Cargo.toml --workspace --all-targets $TARGET_ARGS -- -D warnings
+      - name: Test
+        shell: bash
+        run: cargo test --locked --manifest-path=rust/Cargo.toml --workspace $TARGET_ARGS
+      - name: Exercise nftables, policy routes, and host interception
+        if: matrix.name == 'linux-amd64'
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update && sudo apt-get install --yes iproute2 nftables
+          test_binary=$(cargo test --locked --manifest-path=rust/Cargo.toml -p sempre-transparent \
+            --test linux_netns --no-run --message-format=json \
+            | jq -r 'select(.executable != null and .target.name == "linux_netns") | .executable')
+          test -x "$test_binary"
+          sudo env SEMPRE_NETNS_TEST=1 unshare --net --mount-proc \
+            sh -c 'ip link set lo up; exec "$1" --ignored --nocapture' \
+            sh "$test_binary"
+      - name: Exercise the native service
+        if: matrix.smoke && runner.os != 'Windows'
+        run: rust/scripts/service_smoke.sh
+      - name: Exercise the native Windows service
+        if: matrix.smoke && runner.os == 'Windows'
+        shell: pwsh
+        run: ./rust/scripts/service_smoke.ps1
 
   frontend:
     if: inputs.frontend
+    name: Frontend and site
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -87,33 +115,26 @@ jobs:
       - run: bun run lint
       - run: bun run tsc
       - run: bun run test
-
-  transparent-netns:
-    if: inputs.rust
-    name: Linux transparent network namespace
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
-      - uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Install kernel networking tools
-        timeout-minutes: 5
-        run: sudo apt-get update && sudo apt-get install --yes iproute2 nftables
-      - name: Build isolated TProxy integration test
-        run: cargo test --locked --manifest-path=rust/Cargo.toml -p sempre-transparent --test linux_netns --no-run
-      - name: Exercise nftables, policy routes, and host interception
-        shell: bash
+      - name: Validate PowerShell installer
+        shell: pwsh
         run: |
-          test_binary=$(find rust/target/debug/deps -maxdepth 1 -type f \
-            -name 'linux_netns-*' -perm -111 -print -quit)
-          test -n "$test_binary"
-          sudo env SEMPRE_NETNS_TEST=1 unshare --net --mount-proc \
-            sh -c 'ip link set lo up; exec "$1" --ignored --nocapture' \
-            sh "$PWD/$test_binary"
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path installer/install.ps1), [ref]$tokens, [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+      - name: Build site
+        run: bun --cwd=site run build
+      - name: Install browser
+        working-directory: site
+        run: bunx playwright install --with-deps chromium
+      - name: Verify install commands and private input
+        working-directory: site
+        run: bun run test:e2e
 
   vulnerability:
     if: inputs.rust && inputs.audit
@@ -145,70 +166,13 @@ jobs:
           test "$(grep -c sempre-server /tmp/sempre-server-processes)" -eq 1
           ! grep -E 'sing-box|mihomo|xray|v2ray|clash-rs|dae' /tmp/sempre-server-processes
       - name: Show service logs
-        if: always()
+        if: failure()
         run: docker compose -p sempre-server-ci -f rust/compose.yml logs
-      - name: Stop the isolated stack
-        if: always()
-        run: docker compose -p sempre-server-ci -f rust/compose.yml down --volumes
-
-  format:
-    if: inputs.rust
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
-        with:
-          components: rustfmt
-      - run: cargo fmt --manifest-path=rust/Cargo.toml --all -- --check
-
-  service:
-    if: inputs.rust
-    uses: ./.github/workflows/service-smoke.yml
-
-  site:
-    if: inputs.site
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --cwd site --frozen-lockfile
-      - name: Validate installers
-        if: ${{ !inputs.frontend }}
-        run: |
-          shellcheck installer/install.sh installer/install_test.sh
-          sh installer/install_test.sh
-      - name: Validate PowerShell installer
-        shell: pwsh
-        run: |
-          $tokens = $null
-          $errors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path installer/install.ps1), [ref]$tokens, [ref]$errors
-          )
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
-          }
-      - name: Lint site
-        if: ${{ !inputs.frontend }}
-        run: bun --cwd=site run lint
-      - name: Build site
-        run: bun --cwd=site run build
-      - name: Install browser
-        working-directory: site
-        run: bunx playwright install --with-deps chromium
-      - name: Verify install commands and private input
-        working-directory: site
-        run: bun run test:e2e
 
   result:
     name: Required checks result
     if: always()
-    needs: [rust, frontend, transparent-netns, vulnerability, server-container, format, service, site]
+    needs: [rust, frontend, vulnerability, server-container]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -218,11 +182,10 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           CHECK_RUST: ${{ inputs.rust }}
           CHECK_FRONTEND: ${{ inputs.frontend }}
-          CHECK_SITE: ${{ inputs.site }}
           CHECK_AUDIT: ${{ inputs.audit }}
         run: python3 .github/scripts/check-results.py
       - name: Store complete validation evidence
-        if: inputs.rust && inputs.frontend && inputs.site && inputs.audit
+        if: inputs.rust && inputs.frontend && inputs.audit
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: complete-ci-${{ github.sha }}-${{ github.run_attempt }}
