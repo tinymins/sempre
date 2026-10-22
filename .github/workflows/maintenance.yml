@@ -1,0 +1,30 @@
+name: Maintenance
+
+on:
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance
+  cancel-in-progress: false
+
+jobs:
+  mihomo:
+    uses: ./.github/workflows/mihomo-smoke.yml
+  audit:
+    uses: ./.github/workflows/audit.yml
+  summary:
+    if: always()
+    needs: [mihomo, audit]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Report maintenance result
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          TITLE: Maintenance
+        run: python3 .github/scripts/workflow-summary.py

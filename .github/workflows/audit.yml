@@ -1,0 +1,29 @@
+name: Dependency audit
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
+      - name: Cache cargo-audit
+        id: audit-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}-${{ runner.arch }}
+      - name: Install cargo-audit
+        if: steps.audit-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Verify ignored RSA advisory is unreachable
+        run: python3 rust/scripts/check_rsa_dependency.py
+      # rsa is locked only through SQLx's disabled MySQL feature, is absent from
+      # every target's dependency graph, and RUSTSEC-2023-0071 has no fixed release.
+      - run: cargo audit --file rust/Cargo.lock --ignore RUSTSEC-2023-0071

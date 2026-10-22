@@ -2,136 +2,61 @@ name: CI
 
 on:
   push:
-    branches:
-      - "**"
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name != 'pull_request' && github.sha || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  rust:
-    name: Rust (${{ matrix.name }})
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: linux-amd64
-            runner: ubuntu-24.04
-          - name: linux-arm64
-            runner: ubuntu-24.04-arm
-          - name: windows-amd64
-            runner: windows-2025
-          - name: windows-arm64
-            runner: windows-11-arm
-          - name: darwin-amd64
-            runner: macos-15-intel
-          - name: darwin-arm64
-            runner: macos-15
-    runs-on: ${{ matrix.runner }}
+  scope:
+    runs-on: ubuntu-24.04
+    outputs:
+      rust: ${{ steps.scope.outputs.rust }}
+      frontend: ${{ steps.scope.outputs.frontend }}
+      site: ${{ steps.scope.outputs.site }}
+      deploy: ${{ steps.scope.outputs.deploy }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
         with:
-          components: rustfmt, clippy
-      - uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - run: cargo fmt --manifest-path=rust/Cargo.toml --all -- --check
-      - name: Prepare Windows DNS capture SDK
-        if: matrix.name == 'windows-amd64'
-        shell: pwsh
-        run: |
-          $sdk = cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- dns-capture-sdk
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          "WINDIVERT_PATH=$sdk" >> $env:GITHUB_ENV
-          $sdk >> $env:GITHUB_PATH
-      - name: Verify Windows upgrade transactions
-        if: startsWith(matrix.name, 'windows-')
-        run: cargo test --manifest-path=rust/Cargo.toml -p sempre-bundle install::windows_resources::tests
-      - run: cargo test --manifest-path=rust/Cargo.toml --workspace
-      - run: cargo clippy --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings
+          fetch-depth: 0
+      - id: scope
+        run: python3 .github/scripts/ci-scope.py
 
-  frontend:
+  checks:
+    name: Checks
+    needs: scope
+    uses: ./.github/workflows/checks.yml
+    with:
+      rust: ${{ needs.scope.outputs.rust == 'true' }}
+      frontend: ${{ needs.scope.outputs.frontend == 'true' }}
+      site: ${{ needs.scope.outputs.site == 'true' }}
+
+  pages:
+    needs: [scope, checks]
+    if: ${{ !cancelled() && needs.scope.result == 'success' && needs.checks.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.scope.outputs.deploy == 'true' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      checked-sha: ${{ github.sha }}
+
+  summary:
+    if: always()
+    needs: [scope, checks, pages]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --cwd ui --frozen-lockfile
-      - run: bun install --cwd site --frozen-lockfile
-      - run: bun run lint
-      - run: bun run tsc
-      - run: bun run test
-
-  transparent-netns:
-    name: Linux transparent network namespace
-    runs-on: ubuntu-24.04
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
-      - uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Install kernel networking tools
-        run: sudo apt-get update && sudo apt-get install --yes iproute2 nftables
-      - name: Build isolated TProxy integration test
-        run: cargo test --manifest-path=rust/Cargo.toml -p sempre-transparent --test linux_netns --no-run
-      - name: Exercise nftables, policy routes, and host interception
-        shell: bash
-        run: |
-          test_binary=$(find rust/target/debug/deps -maxdepth 1 -type f \
-            -name 'linux_netns-*' -perm -111 -print -quit)
-          test -n "$test_binary"
-          sudo env SEMPRE_NETNS_TEST=1 unshare --net --mount-proc \
-            sh -c 'ip link set lo up; exec "$1" --ignored --nocapture' \
-            sh "$PWD/$test_binary"
-
-  vulnerability:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
-      - run: cargo install cargo-audit --locked
-      - name: Verify ignored RSA advisory is unreachable
-        run: test -z "$(cargo tree --manifest-path=rust/Cargo.toml --workspace --target all -i rsa 2>/dev/null)"
-      # rsa is locked only through SQLx's disabled MySQL feature, is absent from
-      # every target's dependency graph, and RUSTSEC-2023-0071 has no fixed release.
-      - run: cargo audit --file rust/Cargo.lock --ignore RUSTSEC-2023-0071
-
-  server-container:
-    name: Multi-user server container
-    runs-on: ubuntu-24.04
-    env:
-      POSTGRES_PASSWORD: ci-password
-      SEMPRE_PUBLIC_URL: http://127.0.0.1:8787/
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Build the multi-user server
-        run: docker compose -p sempre-server-ci -f rust/compose.yml build server
-      - name: Start PostgreSQL and initialize the Toolbox schema
-        run: |
-          docker compose -p sempre-server-ci -f rust/compose.yml up --detach --wait postgres
-          docker compose -p sempre-server-ci -f rust/compose.yml run --rm --no-deps server migrate
-      - name: Start the multi-user server
-        run: docker compose -p sempre-server-ci -f rust/compose.yml up --detach --wait server
-      - name: Verify publishing keeps the last successful artifact
-        run: SEMPRE_SERVER_URL=http://127.0.0.1:8787 sh rust/scripts/server_smoke.sh
-      - name: Verify the server does not run a proxy core
-        run: |
-          docker top sempre-server-ci-server-1 | tee /tmp/sempre-server-processes
-          test "$(grep -c sempre-server /tmp/sempre-server-processes)" -eq 1
-          ! grep -E 'sing-box|mihomo|xray|v2ray|clash-rs|dae' /tmp/sempre-server-processes
-      - name: Show service logs
-        if: always()
-        run: docker compose -p sempre-server-ci -f rust/compose.yml logs
-      - name: Stop the isolated stack
-        if: always()
-        run: docker compose -p sempre-server-ci -f rust/compose.yml down --volumes
+      - name: Report CI result
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          OPTIONAL: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.scope.outputs.deploy == 'true') && 'pages' || '' }}
+          TITLE: CI
+        run: python3 .github/scripts/workflow-summary.py

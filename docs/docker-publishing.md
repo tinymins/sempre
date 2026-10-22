@@ -1,12 +1,13 @@
 # Docker Hub publishing
 
-The `Docker Hub` GitHub Actions workflow publishes `ohmywrt/sempre`. The image
+The `Release` GitHub Actions workflow publishes `ohmywrt/sempre` and
+`ohmywrt/sempre-proxy` through the reusable Docker workflow. The server image
 contains `sempre-server` and its Web UI, with no proxy core. PostgreSQL runs
 separately.
 
 ## Repository configuration
 
-Create the public `ohmywrt/sempre` repository on Docker Hub. In the GitHub
+Create the public `ohmywrt/sempre` and `ohmywrt/sempre-proxy` repositories on Docker Hub. In the GitHub
 repository's Actions secrets, set:
 
 | Secret | Value |
@@ -21,26 +22,54 @@ before the token expires. Never commit the token to this repository.
 
 Push an existing-style `v*` release tag to trigger publishing. Version tags must
 have the form `vX.Y.Z` or `vX.Y.Z-prerelease`, for example `v2.0.20-beta.12`.
-The desktop release workflow continues to run independently on the same tag.
+Desktop and container builds run in parallel with validation under this one
+release entry point. No image or installer is published until every required
+check and build succeeds.
 
 | Git tag | Docker Hub tags |
 | --- | --- |
 | `v2.0.20` | `ohmywrt/sempre:v2.0.20`, `ohmywrt/sempre:latest` |
 | `v2.0.20-beta.12` | `ohmywrt/sempre:v2.0.20-beta.12`, `ohmywrt/sempre:beta` |
 
-To publish an existing tag manually, run the `Docker Hub` workflow and supply
-its exact name in the `tag` input. This builds that tag's commit and updates its
-channel tag, so rerunning an older release also moves `latest` or `beta` back to
-that release. Container checks come from the workflow run's commit, so corrections
-to the publishing checks also apply when republishing an older release tag.
-The image source remains that release tag's commit. Ordinary branch pushes do
-not publish images.
+The same version and channel tags apply to `ohmywrt/sempre-proxy`. Ordinary
+branch pushes do not publish images. The Docker workflow has no independent
+tag trigger or manual publishing input.
 
-AMD64 and ARM64 images build on native GitHub-hosted runners. Each image must
-pass database migration, health, subscription-publishing, and core-free process
-checks before its digest is uploaded. Only after both architectures succeed
-does the workflow publish the version and channel manifests. BuildKit caches
-are separate for each architecture; the upload reuses the verified build.
+AMD64 and ARM64 images build on native GitHub-hosted runners. The server image
+must pass database migration, health, subscription-publishing, and core-free
+process checks. Builds export OCI archives with provenance; runtime checks load
+the image from that exact archive. After the release gate succeeds, the workflow
+uploads the archived images by digest without rebuilding, preserves their
+provenance, then publishes the version and channel manifests. BuildKit caches
+are separate for each image and architecture.
+
+## Checks, results, and retries
+
+- **CI** runs on pull requests, main pushes, and manual requests. Shared changes
+  run the complete platform matrix; site-only changes run site checks. Explicit
+  documentation-only changes skip product checks. Manual CI runs validate all
+  scopes. Website changes deploy main after the required checks pass.
+- **Release** reuses complete successful CI evidence only for the exact commit,
+  matching workflow definitions, and trusted main runs. It waits for an existing
+  run, runs complete checks if evidence is missing, and blocks on failed or
+  cancelled CI. Every release also runs a fresh dependency audit. Builds run in
+  parallel with this validation.
+- **Maintenance** runs the weekly Mihomo integration and dependency audit, with
+  a manual entry point for diagnosis.
+
+GitHub Release and Docker publish in parallel after the gate. Installers are
+marked available as soon as GitHub Release succeeds; Pages then refreshes the
+download manifests using current main website sources. The final summary lists
+each channel separately, including skipped, cancelled, and failed states. A
+partially published release is not reported as complete. Account-level GitHub
+notification preferences remain separate from these workflow summaries.
+
+Use GitHub Actions **Re-run failed jobs** on the original run to retry a failed
+channel after investigating its cause. Required validation failures must first
+be rerun successfully; they are never bypassed. Image archives are retained for
+seven days, so an expired archive requires rebuilding through the release gate.
+Rerunning a historical release can move `latest` or `beta` back to that version.
+Do not rerun successful publishing jobs just to retry a different channel.
 
 ## Running the image
 
