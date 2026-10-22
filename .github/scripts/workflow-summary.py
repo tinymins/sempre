@@ -12,8 +12,6 @@ with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
     print('| Stage / channel | Result |\n| --- | --- |', file=summary)
     for name, job in jobs.items():
         print(f'| {name} | {job["result"]} |', file=summary)
-    if os.environ['TITLE'] == 'Release' and jobs.get('publish', {}).get('result') == 'success':
-        print('\nGitHub installers are available; other channels have the states shown above.', file=summary)
     print(f'\n[Logs]({os.environ["GITHUB_SERVER_URL"]}/{os.environ["GITHUB_REPOSITORY"]}'
           f'/actions/runs/{os.environ["GITHUB_RUN_ID"]})', file=summary)
 if not valid:

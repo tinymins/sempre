@@ -18,8 +18,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release-notes:
+  verify:
     runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    outputs:
+      reuse: ${{ steps.ci.outputs.reuse }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate version tag
@@ -46,14 +49,6 @@ jobs:
             echo "Stable release notes must contain non-empty ## 简体中文 and ## English sections" >&2
             exit 1
           }
-
-  ci-evidence:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 65
-    outputs:
-      reuse: ${{ steps.ci.outputs.reuse }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - id: ci
         name: Resolve complete CI for this exact commit
         env:
@@ -61,8 +56,8 @@ jobs:
         run: python3 .github/scripts/resolve-ci.py
 
   checks:
-    needs: ci-evidence
-    if: needs.ci-evidence.outputs.reuse != 'true'
+    needs: verify
+    if: needs.verify.outputs.reuse != 'true'
     uses: ./.github/workflows/checks.yml
     with:
       audit: false
@@ -70,14 +65,7 @@ jobs:
   audit:
     uses: ./.github/workflows/audit.yml
 
-  docker-build:
-    needs: release-notes
-    uses: ./.github/workflows/docker.yml
-    with:
-      phase: build
-
   build:
-    needs: release-notes
     name: Build (${{ matrix.name }})
     strategy:
       fail-fast: false
@@ -109,9 +97,6 @@ jobs:
             binary: sempre-darwin-arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -119,24 +104,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
         with:
           targets: ${{ matrix.target }}
-      - uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      - name: Restore verified release inputs
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: .cache/sempre-artifacts/${{ matrix.name }}
-          key: release-inputs-v1-${{ matrix.name }}-${{ github.sha }}
-          restore-keys: |
-            release-inputs-v1-${{ matrix.name }}-
       - name: Build native release
         run: >-
           cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- package
           --version "${{ github.ref_name }}"
           --target "${{ matrix.name }}"
-          --artifact-cache ".cache/sempre-artifacts/${{ matrix.name }}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
@@ -169,16 +145,99 @@ jobs:
           name: sempre-release-${{ matrix.name }}
           path: dist/
 
+  docker:
+    name: Build and verify (${{ matrix.image }}, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [sempre, sempre-proxy]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - image: sempre
+            dockerfile: rust/Dockerfile
+          - image: sempre-proxy
+            dockerfile: rust/proxy.Dockerfile
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      IMAGE: docker.io/ohmywrt/${{ matrix.image }}
+      POSTGRES_PASSWORD: ci-password
+      SEMPRE_PUBLIC_URL: http://127.0.0.1:8787/
+      COMPOSE_PROJECT_NAME: sempre-docker-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install OCI image transport
+        timeout-minutes: 5
+        run: command -v skopeo || (sudo apt-get update && sudo apt-get install --yes skopeo)
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build the image for verification
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=oci,dest=${{ runner.temp }}/image.tar
+          provenance: mode=min
+          tags: ${{ matrix.image }}:verify
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+      - name: Load the exact OCI image for runtime verification
+        env:
+          ARCH: ${{ matrix.arch }}
+          LOCAL_IMAGE: ${{ matrix.image }}:verify
+        run: skopeo copy --override-os linux --override-arch "$ARCH" "oci-archive:$RUNNER_TEMP/image.tar" "docker-daemon:$LOCAL_IMAGE"
+      - name: Start PostgreSQL and initialize the Toolbox schema
+        if: matrix.image == 'sempre'
+        shell: bash
+        run: |
+          export COMPOSE_FILE="rust/compose.yml:$RUNNER_TEMP/compose-image.yml"
+          echo "COMPOSE_FILE=$COMPOSE_FILE" >> "$GITHUB_ENV"
+          printf 'services:\n  server:\n    image: sempre:verify\n' > "$RUNNER_TEMP/compose-image.yml"
+          docker compose up --detach --wait postgres
+          docker compose run --rm --no-deps server migrate
+      - name: Verify the container
+        if: matrix.image == 'sempre'
+        shell: bash
+        run: |
+          docker compose up --detach --wait --no-build server
+          SEMPRE_SERVER_URL=http://127.0.0.1:8787 sh rust/scripts/server_smoke.sh
+          docker top "$(docker compose ps -q server)" | tee "$RUNNER_TEMP/sempre-processes"
+          test "$(grep -c sempre-server "$RUNNER_TEMP/sempre-processes")" -eq 1
+          ! grep -E 'sing-box|mihomo|xray|v2ray|clash-rs|dae' "$RUNNER_TEMP/sempre-processes"
+      - name: Show service logs
+        if: failure() && matrix.image == 'sempre'
+        run: docker compose logs
+      - name: Stop the isolated stack
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/compose-image.yml" ]; then
+            docker compose down --volumes
+          fi
+      - name: Store the verified OCI image and provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: docker-image-${{ matrix.image }}_${{ matrix.arch }}
+          path: ${{ runner.temp }}/image.tar
+          compression-level: 0
+          retention-days: 7
+          overwrite: true
+
   gate:
     if: always()
-    needs: [release-notes, ci-evidence, checks, audit, build, docker-build]
+    needs: [verify, checks, audit, build, docker]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Require validation and every build before publishing
         env:
           RESULTS: ${{ toJSON(needs) }}
-          OPTIONAL: ${{ needs.ci-evidence.outputs.reuse == 'true' && 'checks' || '' }}
+          OPTIONAL: ${{ needs.verify.outputs.reuse == 'true' && 'checks' || '' }}
           TITLE: Release gate
         run: python3 .github/scripts/workflow-summary.py
 
@@ -225,24 +284,46 @@ jobs:
   docker-publish:
     if: ${{ !cancelled() && needs.gate.result == 'success' }}
     needs: gate
-    uses: ./.github/workflows/docker.yml
-    with:
-      phase: publish
-    secrets: inherit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Serialize channel writes across tags.
+    concurrency:
+      group: docker-channels
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: docker-image-*
+          path: ${{ runner.temp }}/images
+      - name: Install OCI image transport
+        timeout-minutes: 5
+        run: command -v skopeo || (sudo apt-get update && sudo apt-get install --yes skopeo)
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish verified archives by digest and update channel tags
+        shell: bash
+        run: |
+          channel=latest
+          [[ "$GITHUB_REF_NAME" == *-* ]] && channel=beta
+          for image in sempre sempre-proxy; do
+            repository="docker.io/ohmywrt/$image"
+            sources=()
+            for arch in amd64 arm64; do
+              archive="oci-archive:$RUNNER_TEMP/images/docker-image-${image}_${arch}/image.tar"
+              skopeo inspect --raw "$archive" > "$RUNNER_TEMP/manifest.json"
+              digest=$(skopeo manifest-digest "$RUNNER_TEMP/manifest.json")
+              skopeo copy --all --preserve-digests --authfile "$HOME/.docker/config.json" \
+                "$archive" "docker://$repository@$digest"
+              sources+=("$repository@$digest")
+            done
+            docker buildx imagetools create \
+              --tag "$repository:$GITHUB_REF_NAME" --tag "$repository:$channel" "${sources[@]}"
+          done
 
   pages:
     if: ${{ !cancelled() && needs.publish.result == 'success' }}
     needs: publish
     uses: ./.github/workflows/pages.yml
-
-  summary:
-    if: always()
-    needs: [gate, publish, docker-publish, pages]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Report every release channel
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-          TITLE: Release
-        run: python3 .github/scripts/workflow-summary.py
