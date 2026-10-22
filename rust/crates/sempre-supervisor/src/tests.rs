@@ -25,7 +25,13 @@ async fn terminates_the_managed_process_group() {
     };
     let mut process = ManagedProcess::spawn(&spec, &stdout, &stderr).expect("spawn");
     assert!(process.pid() > 0);
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // The shell installs its TERM trap before printing; wait for it under slow emulation.
+    for _ in 0..100 {
+        if fs::read_to_string(&stdout).is_ok_and(|output| output.contains("started")) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     let status = process
         .terminate(Duration::from_secs(2))
         .await
