@@ -109,6 +109,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 })?;
                 peer.insert("address".into(), serde_json::json!(forward.host));
                 peer.insert("port".into(), serde_json::json!(forward.port));
+                // Local forwards must not inherit the core's default outbound interface.
+                connector["endpoint"]["inet4_bind_address"] = serde_json::json!(forward.host);
             }
         }
         if !bound {
