@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::fs;
 
 #[cfg(unix)]
@@ -5,6 +6,7 @@ use sempre_core::CommandSpec;
 #[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use super::*;
 
 #[cfg(unix)]
