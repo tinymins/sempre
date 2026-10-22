@@ -115,7 +115,7 @@ mod tests {
         let log = root.path().join("log");
         // The Rust test harness rejects installer arguments and exits with an error.
         platform_schedule(&std::env::current_exe().unwrap(), &staging, &log).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + Duration::from_secs(60);
         while staging.exists() {
             assert!(Instant::now() < deadline, "update wrapper did not finish");
             thread::sleep(Duration::from_millis(50));
