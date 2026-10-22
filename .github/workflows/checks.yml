@@ -39,8 +39,10 @@ jobs:
             runner: windows-2025
           - name: windows-arm64
             runner: windows-11-arm
+          # Intel macOS runners are slow and scarce; tests run under Rosetta.
           - name: darwin-amd64
-            runner: macos-15-intel
+            runner: macos-15
+            target: x86_64-apple-darwin
           - name: darwin-arm64
             runner: macos-15
     runs-on: ${{ matrix.platform.runner }}
@@ -50,7 +52,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@a5f673d0ba8626c3977bb416a1612774bc82181b # 1.95.0
         with:
           components: clippy
+          targets: ${{ matrix.platform.target }}
       - uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Require Rosetta for x86_64 tests
+        if: matrix.check == 'test' && matrix.platform.target == 'x86_64-apple-darwin'
+        timeout-minutes: 5
+        run: |
+          arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
+          arch -x86_64 /usr/bin/true
       - name: Prepare Windows DNS capture SDK
         if: matrix.platform.name == 'windows-amd64'
         shell: pwsh
@@ -60,9 +69,9 @@ jobs:
           "WINDIVERT_PATH=$sdk" >> $env:GITHUB_ENV
           $sdk >> $env:GITHUB_PATH
       - if: matrix.check == 'test'
-        run: cargo test --locked --manifest-path=rust/Cargo.toml --workspace
+        run: cargo test --locked --manifest-path=rust/Cargo.toml --workspace ${{ matrix.platform.target && format('--target={0}', matrix.platform.target) || '' }}
       - if: matrix.check == 'clippy'
-        run: cargo clippy --locked --manifest-path=rust/Cargo.toml --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path=rust/Cargo.toml --workspace --all-targets ${{ matrix.platform.target && format('--target={0}', matrix.platform.target) || '' }} -- -D warnings
 
   frontend:
     if: inputs.frontend
