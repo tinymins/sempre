@@ -1,3 +1,4 @@
+pub(crate) mod lifecycle;
 mod plan;
 mod recovery;
 mod state;
@@ -7,7 +8,7 @@ use std::{fs, path::PathBuf, process::ExitStatus, time::Duration};
 
 use chrono::Utc;
 use sempre_core::{CommandSpec, ControlSpec};
-use sempre_state::{Deployment, DesiredState, Document};
+use sempre_state::{Deployment, DesiredState};
 use sempre_supervisor::{ManagedProcess, SupervisorError, append_log};
 use sempre_transparent::Plan as TransparentPlan;
 use tokio::sync::watch;
@@ -56,50 +57,52 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         mut shutdown: watch::Receiver<bool>,
         startup_grace: Duration,
     ) -> Result<(), ManagerError> {
-        recovery::recover_stale_process(self).await?;
-        if let Err(error) = self.transparent.recover_stale_system_dns().await {
-            self.log_supervisor(&format!("system DNS recovery failed: {error}"));
-        }
+        let initial = self.recover_lifecycle().await?;
+        let mut cleanup_needed = transparent_cleanup_required(&initial);
         loop {
             let document = self.store.read()?;
             if *shutdown.borrow() {
-                self.dns_frontend.stop().await;
-                self.stop_gateway().await;
-                if transparent_cleanup_required(&document) {
-                    self.transparent.cleanup().await?;
-                }
+                let cleanup = if cleanup_needed {
+                    self.cleanup_retained_frontend().await
+                } else {
+                    Ok(())
+                };
                 state::mark_intentional_exit(self, true)?;
-                return Ok(());
+                self.startup_tasks
+                    .complete_stop(cleanup.as_ref().err().map(ToString::to_string).as_deref());
+                return cleanup;
             }
             let service_stopped = document.desired_state == DesiredState::Stopped;
             if service_stopped || document.active.is_none() {
-                self.dns_frontend.stop().await;
-                self.stop_gateway().await;
-                if transparent_cleanup_required(&document) {
-                    self.transparent.cleanup().await?;
-                }
+                let cleanup = if cleanup_needed {
+                    self.cleanup_retained_frontend().await
+                } else {
+                    Ok(())
+                };
+                cleanup_needed = false;
                 state::mark_inactive(self, service_stopped)?;
+                self.startup_tasks
+                    .complete_stop(cleanup.as_ref().err().map(ToString::to_string).as_deref());
+                if let Err(error) = cleanup {
+                    self.log_supervisor(&format!("inactive cleanup failed: {error}"));
+                }
                 if wait_inactive(self, &mut shutdown).await {
                     return Ok(());
                 }
                 continue;
             }
-            let runtime_gate = self.runtime_rules_gate.lock().await;
-            wait::consume_reload(self).await;
-            if self.store.read()?.desired_state == DesiredState::Stopped {
-                continue;
-            }
             if !self.startup_tasks.begin_cycle() {
-                drop(runtime_gate);
                 if wait::wait_preparation(self, &mut shutdown).await {
                     return Ok(());
                 }
                 continue;
             }
-            let plan = match self.resolve_runtime_plan().await {
-                Ok(plan) => plan,
+            cleanup_needed = true;
+            let prepared = self.prepare_cycle(&mut shutdown).await;
+            let (runtime_gate, plan) = match prepared {
+                Ok(Some(prepared)) => prepared,
+                Ok(None) => continue,
                 Err(error) => {
-                    drop(runtime_gate);
                     let error =
                         with_cleanup_failure(&error, self.cleanup_after_core_failure().await);
                     self.log_supervisor(&format!("resolve deployment failed: {error}"));
@@ -127,7 +130,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 .run_runtime_plan(&plan, &mut shutdown, startup_grace, runtime_gate)
                 .await?
             {
-                CycleResult::Restart => {}
+                CycleResult::Restart => {
+                    cleanup_needed = false;
+                }
                 CycleResult::Shutdown => return Ok(()),
                 CycleResult::Failed => {
                     match wait_retry(self, &mut shutdown, RETRY_INTERVAL).await {
@@ -157,19 +162,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         self.log_supervisor(&format!("starting {}", deployment_label(&plan.deployment)));
         self.startup_tasks
             .runtime_log("starting", &deployment_label(&plan.deployment));
-        if let Err(error) = self.start_gateway().await {
-            self.handle_process_failure(plan, "gateway startup failed", &error)?;
-            return Ok(CycleResult::Failed);
+        if let Some(result) = self.start_runtime_gateway(plan, shutdown).await? {
+            return Ok(result);
         }
-        let tasks = self.startup_tasks.clone();
-        let task_id = tasks.snapshot().expect("startup cycle has a task").id;
         let mut process = match ManagedProcess::spawn_observed(
             &plan.spec,
             &self.store.layout().core_stdout_log,
             &self.store.layout().core_stderr_log,
-            Some(std::sync::Arc::new(move |stream, line| {
-                tasks.runtime_log_for(&task_id, stream, line);
-            })),
+            Some(self.startup_tasks.output_observer()),
         ) {
             Ok(process) => process,
             Err(error) => {
@@ -181,7 +181,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         };
         let setup = self.mark_runtime_started(plan, process.pid());
         if let Err(error) = setup {
-            let _ = process.terminate(STOP_GRACE).await;
+            process.terminate(STOP_GRACE).await?;
             if let Err(cleanup) = self.cleanup_after_core_failure().await {
                 self.log_supervisor(&format!("transparent proxy cleanup failed: {cleanup}"));
             }
@@ -190,10 +190,15 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         }
 
         match wait_startup(self, shutdown, &mut process, plan, startup_grace).await {
+            ProcessEvent::StartupFailed(error) => {
+                self.fail_network_startup(plan, &mut process, &error)
+                    .await?;
+                return Ok(CycleResult::Failed);
+            }
             ProcessEvent::Healthy => {
                 process.synchronize_output().await;
                 if let Err(error) = self.mark_runtime_healthy(plan) {
-                    let _ = process.terminate(STOP_GRACE).await;
+                    process.terminate(STOP_GRACE).await?;
                     if let Err(cleanup) = self.cleanup_after_core_failure().await {
                         self.log_supervisor(&format!(
                             "transparent proxy cleanup failed: {cleanup}"
@@ -236,7 +241,6 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 Ok(CycleResult::Shutdown)
             }
             ProcessEvent::Exited(result) => {
-                let _runtime_gate = self.runtime_rules_gate.lock().await;
                 self.remove_control();
                 let exit = exit_result(result);
                 let error = with_cleanup_failure(&exit, self.cleanup_after_core_failure().await);
@@ -244,7 +248,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 self.handle_process_failure(plan, "core exited", &error)?;
                 Ok(CycleResult::Failed)
             }
-            ProcessEvent::Healthy => unreachable!("running process has no startup timer"),
+            ProcessEvent::Healthy | ProcessEvent::StartupFailed(_) => {
+                unreachable!("running process has no startup timer")
+            }
         }
     }
 
@@ -253,31 +259,34 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         process: &mut ManagedProcess,
         service_stopped: bool,
     ) -> Result<(), ManagerError> {
-        let _runtime_gate = self.runtime_rules_gate.lock().await;
         let transition = state::mark_stopping(self);
         self.log_startup_stopping(process.pid());
-        let transparent = if service_stopped {
-            self.dns_frontend.stop().await;
-            self.stop_gateway().await;
-            self.transparent.cleanup().await
-        } else {
-            self.cleanup_after_core_failure().await
-        };
+        self.startup_tasks.log(
+            "stopping",
+            "Waiting for core termination: 10s graceful, 5s forced, 2s output drain",
+        );
         let terminated = process.terminate(STOP_GRACE).await;
         self.startup_tasks.stopped(&terminated);
+        if let Err(error) = &terminated {
+            self.startup_tasks.complete_stop(Some(&error.to_string()));
+            self.log_supervisor(&format!("core termination failed: {error}"));
+        }
+        terminated?;
         self.remove_control();
         transition?;
-        let state = state::mark_intentional_exit(self, service_stopped);
-        transparent?;
-        terminated?;
-        state
+        state::mark_intentional_exit(self, service_stopped)?;
+        let stopped = service_stopped || self.store.read()?.desired_state == DesiredState::Stopped;
+        let cleanup = self.cleanup_lifecycle(!stopped).await;
+        self.startup_tasks
+            .complete_stop(cleanup.as_ref().err().map(ToString::to_string).as_deref());
+        if let Err(error) = cleanup {
+            self.log_supervisor(&format!("core stopped; cleanup failed: {error}"));
+        }
+        Ok(())
     }
 
     async fn cleanup_retained_frontend(&self) -> Result<(), ManagerError> {
-        self.dns_frontend.stop().await;
-        self.stop_gateway().await;
-        self.transparent.cleanup().await?;
-        Ok(())
+        self.cleanup_lifecycle(false).await
     }
 
     fn mark_runtime_healthy(&self, plan: &RuntimePlan) -> Result<(), ManagerError> {
@@ -361,10 +370,7 @@ fn exit_result(result: Result<ExitStatus, SupervisorError>) -> String {
     }
 }
 
-fn with_cleanup_failure(
-    error: &impl ToString,
-    cleanup: Result<(), sempre_transparent::TransparentError>,
-) -> String {
+fn with_cleanup_failure(error: &impl ToString, cleanup: Result<(), ManagerError>) -> String {
     let error = error.to_string();
     match cleanup {
         Ok(()) => error,
@@ -376,7 +382,7 @@ fn deployment_label(deployment: &Deployment) -> String {
     format!("{}@{}", deployment.core, deployment.version)
 }
 
-fn transparent_cleanup_required(document: &Document) -> bool {
+fn transparent_cleanup_required(document: &sempre_state::Document) -> bool {
     document.active.is_some() || document.runtime.core.is_some()
 }
 

@@ -45,7 +45,7 @@ async fn startup_task_and_configuration_require_authentication() {
 async fn restart_http_response_stages_without_prevalidation_or_allowing_a_second_restart() {
     use axum::body::to_bytes;
     use chrono::Utc;
-    use sempre_state::{Installation, Selection};
+    use sempre_state::{DesiredState, Installation, Selection};
     use std::{fs, os::unix::fs::PermissionsExt, time::Duration};
 
     let root = tempfile::tempdir().unwrap();
@@ -91,6 +91,7 @@ async fn restart_http_response_stages_without_prevalidation_or_allowing_a_second
             .insert(DAEMON_TOKEN_HEADER, HeaderValue::from_str(&token).unwrap());
         request
     };
+    let preparation = state.manager.store().acquire_operation().unwrap();
     let response = tokio::time::timeout(
         Duration::from_millis(500),
         app.clone()
@@ -107,7 +108,6 @@ async fn restart_http_response_stages_without_prevalidation_or_allowing_a_second
     for path in [
         "/api/v1/runtime/restart",
         "/api/v1/runtime/start",
-        "/api/v1/runtime/stop",
         "/api/v1/runtime/reload",
     ] {
         let response = app
@@ -117,21 +117,34 @@ async fn restart_http_response_stages_without_prevalidation_or_allowing_a_second
             .unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
     }
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !state.manager.startup_task().unwrap().config_available {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
+    let response = tokio::time::timeout(
+        Duration::from_millis(500),
+        app.clone()
+            .oneshot(authenticated("POST", "/api/v1/runtime/stop")),
+    )
     .await
+    .unwrap()
     .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        state.manager.state().unwrap().desired_state,
+        DesiredState::Stopped
+    );
+    drop(preparation);
+    // Let the queued preparation resume after Stop has replaced its task.
+    tokio::time::sleep(Duration::from_millis(50)).await;
     let task = state.manager.startup_task().unwrap();
+    assert_eq!(task.action, "stop");
+    assert_eq!(
+        state.manager.state().unwrap().desired_state,
+        DesiredState::Stopped
+    );
     assert!(!binary.with_file_name("sing-box.validation-called").exists());
     assert!(
         task.logs
             .iter()
             .all(|entry| !entry.message.contains("validation-output"))
     );
-    assert!(state.manager.startup_task_config(&task.id).is_some());
 }
 
 #[tokio::test]

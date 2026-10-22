@@ -4,10 +4,11 @@ use sempre_supervisor::{ManagedProcess, SupervisorError};
 use tokio::{sync::watch, time::sleep};
 
 use super::RuntimePlan;
-use crate::{Manager, ValidationRunner, VersionRunner};
+use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
 
 pub(super) enum ProcessEvent {
     Healthy,
+    StartupFailed(ManagerError),
     Reload,
     Shutdown,
     Exited(Result<ExitStatus, SupervisorError>),
@@ -28,7 +29,10 @@ pub(super) async fn wait_startup<R: VersionRunner + ValidationRunner>(
     grace: Duration,
 ) -> ProcessEvent {
     tokio::select! {
-        () = activate_network(manager, plan, grace) => ProcessEvent::Healthy,
+        result = activate_network(manager, plan, grace) => match result {
+            Ok(()) => ProcessEvent::Healthy,
+            Err(error) => ProcessEvent::StartupFailed(error),
+        },
         result = process.wait() => ProcessEvent::Exited(result),
         () = manager.wait_runtime_reload() => ProcessEvent::Reload,
         () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,
@@ -39,34 +43,83 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
     manager: &Manager<R>,
     plan: &RuntimePlan,
     grace: Duration,
-) {
-    manager.activate_network_automation(grace).await;
+) -> Result<(), ManagerError> {
+    manager
+        .network_phase(
+            "network_automation",
+            "Selecting network automation mode",
+            async {
+                manager.activate_network_automation(grace).await;
+                Ok::<_, ManagerError>(())
+            },
+        )
+        .await?;
     if plan.dns_frontend.is_none() && !plan.transparent.active() {
-        sleep(grace).await;
-    } else if let Err(error) = manager.transparent.apply(&plan.transparent).await {
-        manager.log_supervisor(&format!("transparent proxy activation failed: {error}"));
+        manager
+            .lifecycle_phase(
+                "health_check",
+                "Observing core startup",
+                grace + Duration::from_secs(1),
+                async {
+                    sleep(grace).await;
+                    Ok::<_, ManagerError>(())
+                },
+            )
+            .await?;
+    } else {
+        manager
+            .network_phase(
+                "transparent_network",
+                "Activating transparent network",
+                manager.transparent.apply(&plan.transparent),
+            )
+            .await?;
     }
     if plan.dns_frontend.is_none() {
-        if let Err(error) = manager.transparent.cleanup_system_dns().await {
-            manager.log_supervisor(&format!("system DNS cleanup failed: {error}"));
-        }
-        manager.dns_frontend.stop().await;
+        manager
+            .network_phase(
+                "system_dns",
+                "Restoring system DNS",
+                manager.transparent.cleanup_system_dns(),
+            )
+            .await?;
+        manager
+            .network_phase("dns_frontend", "Stopping previous DNS frontend", async {
+                manager.dns_frontend.stop().await;
+                Ok::<_, ManagerError>(())
+            })
+            .await?;
     }
-    if let Err(error) = manager
-        .dns_frontend
-        .activate_core(plan.dns_frontend.as_ref())
-        .await
-    {
-        manager.log_supervisor(&format!("DNS frontend activation failed: {error}"));
-    }
+    manager
+        .network_phase(
+            "dns_frontend",
+            "Activating DNS frontend",
+            manager
+                .dns_frontend
+                .activate_core(plan.dns_frontend.as_ref()),
+        )
+        .await?;
     if let Some(intent) = &plan.transparent.cn_routes {
-        if let Err(error) = manager.transparent.flush_cn_dns().await {
-            manager.log_supervisor(&format!("CN DNS flush failed: {error}"));
-        }
-        if let Err(error) = manager.transparent.apply_cn_routes(intent).await {
-            manager.log_supervisor(&format!("CN routes activation failed: {error}"));
-        }
+        manager
+            .network_phase(
+                "system_dns",
+                "Flushing CN DNS cache",
+                manager.transparent.flush_cn_dns(),
+            )
+            .await?;
+        manager
+            .lifecycle_phase(
+                "cn_routes",
+                &format!(
+                    "Installing managed CN routes ({} prefixes)",
+                    intent.prefixes.len()
+                ),
+                Duration::from_mins(2),
+                manager.transparent.apply_cn_routes(intent),
+            )
+            .await?;
     }
+    Ok(())
 }
 
 pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(
@@ -127,7 +180,7 @@ pub(super) async fn wait_retry<R: VersionRunner>(
     }
 }
 
-async fn shutdown_requested(shutdown: &mut watch::Receiver<bool>) {
+pub(super) async fn shutdown_requested(shutdown: &mut watch::Receiver<bool>) {
     if !*shutdown.borrow() {
         let _ = shutdown.changed().await;
     }

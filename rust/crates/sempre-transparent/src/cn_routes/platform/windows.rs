@@ -192,7 +192,6 @@ pub(super) async fn preflight(
     Ok(())
 }
 
-#[allow(clippy::unused_async)] // Bounded batches complete synchronously under the controller gate.
 #[allow(unsafe_code)] // Calls use initialized official Windows binding rows.
 pub(super) async fn change(
     _: &dyn command::Runner,
@@ -200,6 +199,9 @@ pub(super) async fn change(
     add: bool,
 ) -> Result<(), TransparentError> {
     for route in routes {
+        // Yield between native operations so a cancelled lifecycle cannot keep
+        // installing the rest of a route batch. A single OS call is synchronous.
+        tokio::task::yield_now().await;
         let network = route
             .prefix
             .parse::<ipnet::IpNet>()

@@ -27,18 +27,21 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
     enabled: Boolean(session),
     refetchInterval: (query) => query.state.data?.pending || ['starting', 'stopping', 'restarting'].includes(query.state.data?.runtime_state || '') ? 1000 : 3000,
   })
-  const restarting = submitting || task?.state === 'running'
-  const restartDisabled = restarting || !runtimeStatus.data?.actions?.restart.allowed || ['starting', 'stopping', 'restarting'].includes(runtimeStatus.data?.runtime_state || '')
+  const runtimeState = runtimeStatus.data?.runtime_state
+  const runtimeBusy = ['starting', 'stopping', 'restarting'].includes(runtimeState || '')
+  const restarting = submitting || task?.state === 'running' || runtimeBusy
+  const restartDisabled = restarting || !runtimeStatus.data?.actions?.restart.allowed
   const needsRestart = Boolean(runtimeStatus.data?.pending)
   const pendingCount = pendingChangeCount(runtimeStatus.data?.pending_changes ?? [])
   const showPendingCount = needsRestart && pendingCount > 0 && !restarting && !showLabel && !panel
-  const starting = task?.action === 'start' && !submitting
-  const label = restarting ? (locale === 'zh-CN' ? (starting ? '正在启动核心 · 查看日志' : '正在重启核心 · 查看日志') : (starting ? 'Starting core · view log' : 'Restarting core · view log')) : t(panel ? 'restartCore' : 'restartNow')
+  const action = submitting ? 'restart' : task?.state === 'running' ? task.action : runtimeState === 'starting' ? 'start' : runtimeState === 'stopping' ? 'stop' : 'restart'
+  const operationLabel = locale === 'zh-CN' ? { start: '正在启动核心 · 查看日志', stop: '正在停止核心 · 查看日志', restart: '正在重启核心 · 查看日志' } : { start: 'Starting core · view log', stop: 'Stopping core · view log', restart: 'Restarting core · view log' }
+  const label = restarting ? operationLabel[action] : t(panel ? 'restartCore' : 'restartNow')
   const pendingFakeIp = runtimeStatus.data?.pending_changes?.find(change => change.type === 'fake_ip')
   const title = pendingFakeIp ? formatPendingChange(pendingFakeIp, t, locale) : showPendingCount
     ? locale === 'zh-CN' ? `有 ${pendingCount} 项改动待应用，点击重启核心` : `${pendingCount} changes pending. Click to restart the core.`
     : label
-  const visibleTask = mutation.error && task && task.started_at < submittedAt ? null : task
+  const visibleTask = (mutation.error && task && task.started_at < submittedAt) || (runtimeBusy && task?.state !== 'running' && (!task?.finished_at || task.finished_at < (runtimeStatus.data?.last_transition || ''))) ? null : task
 
   return <>
     <span className="relative inline-flex items-center gap-1">
@@ -48,7 +51,7 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
         {showLabel ? label : null}
       </Button>
       {needsRestart && !restarting && !showPendingCount ? <span data-restart-required aria-hidden="true" className="pointer-events-none absolute left-6 top-1.5 size-2 rounded-full bg-red-500 ring-2 ring-[var(--background)]" /> : null}
-      {task ? <Button variant="text" className="!size-8 !p-0" title={locale === 'zh-CN' ? '查看启动日志' : 'View startup log'} aria-label={locale === 'zh-CN' ? '查看启动日志' : 'View startup log'} onClick={() => { mutation.reset(); setTaskOpen(true) }}><ScrollText size={16} /></Button> : null}
+      {task || runtimeBusy ? <Button variant="text" className="!size-8 !p-0" title={locale === 'zh-CN' ? '查看核心操作日志' : 'View core operation log'} aria-label={locale === 'zh-CN' ? '查看核心操作日志' : 'View core operation log'} onClick={() => { mutation.reset(); setTaskOpen(true) }}><ScrollText size={16} /></Button> : null}
     </span>
     <ConfirmDialog open={confirmOpen} title={t('coreRestartConfirmTitle')}
       detail={<RestartChangeSummary detail={t('coreRestartConfirmDetail')} changes={runtimeStatus.data?.pending_changes ?? []} />}
@@ -60,6 +63,6 @@ export function RuntimeRestartButton({ showLabel = false, panel = false }: { sho
         setTaskOpen(true)
         mutation.mutate()
       }} />
-    {taskOpen ? <RuntimeRestartModal open task={visibleTask} submittedAt={submittedAt} submitting={submitting} error={mutation.error?.message || query.error?.message} onClose={() => setTaskOpen(false)} /> : null}
+    {taskOpen ? <RuntimeRestartModal open task={visibleTask} submittedAt={runtimeBusy && !submitting ? runtimeStatus.data?.last_transition || submittedAt : submittedAt} submitting={submitting} runtimeState={runtimeState} error={mutation.error?.message || query.error?.message} onClose={() => setTaskOpen(false)} /> : null}
   </>
 }

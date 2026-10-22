@@ -7,19 +7,22 @@ import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { useSession } from '../lib/session'
 import { startupDuration, startupStageLabels, type StartupLogEntry, type StartupTask } from '../lib/startupTask'
+import type { ManagedRuntimeStatus } from '../lib/types'
 import { formatPendingChange } from './RestartChangeSummary'
 
-export function RuntimeRestartModal({ open, task, submittedAt, submitting, error, onClose }: {
+export function RuntimeRestartModal({ open, task, submittedAt, submitting, runtimeState, error, onClose }: {
   open: boolean
   task?: StartupTask | null
   submittedAt: string
   submitting: boolean
+  runtimeState?: ManagedRuntimeStatus['runtime_state']
   error?: string
   onClose: () => void
 }) {
   const { locale, t } = useI18n()
   const zh = locale === 'zh-CN'
-  const running = submitting || task?.state === 'running'
+  const waitingForTask = !task && ['starting', 'stopping', 'restarting'].includes(runtimeState || '')
+  const running = submitting || task?.state === 'running' || waitingForTask
   const [now, setNow] = useState(Date.now)
   const [configOpen, setConfigOpen] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
@@ -28,11 +31,12 @@ export function RuntimeRestartModal({ open, task, submittedAt, submitting, error
     if (node) node.scrollTop = node.scrollHeight
   }, [])
   const current = submitting ? null : task
-  const action = current?.action ?? 'restart'
-  const restart = action === 'restart'
-  const title = running ? (zh ? (restart ? '正在重启核心' : '正在启动核心') : (restart ? 'Restarting core' : 'Starting core'))
-    : current?.state === 'succeeded' ? (zh ? (restart ? '核心重启成功' : '核心启动成功') : (restart ? 'Core restart succeeded' : 'Core startup succeeded'))
-      : current ? (zh ? (restart ? '核心重启失败' : '核心启动失败') : (restart ? 'Core restart failed' : 'Core startup failed')) : (zh ? '无法确认启动状态' : 'Startup status unavailable')
+  const action = current?.action ?? (submitting ? 'restart' : runtimeState === 'starting' ? 'start' : runtimeState === 'stopping' ? 'stop' : 'restart')
+  const labels = startupStageLabels(action)
+  const activeTitle = zh ? { start: '正在启动核心', restart: '正在重启核心', stop: '正在停止核心' } : { start: 'Starting core', restart: 'Restarting core', stop: 'Stopping core' }
+  const title = running ? activeTitle[action] : current ? labels[current.state === 'succeeded' ? 'succeeded' : 'failed'][zh ? 0 : 1] : (zh ? '等待任务记录' : 'Waiting for task record')
+  const currentStage = current?.logs.slice().reverse().find(entry => labels[entry.stage])
+  const stageText = currentStage ? [labels[currentStage.stage]?.[zh ? 0 : 1], currentStage.message].filter(Boolean).join(' ') : null
   const elapsed = startupDuration(current?.started_at || submittedAt, current?.finished_at || null, now)
   const lastSequence = current?.logs.at(-1)?.sequence
 
@@ -47,19 +51,19 @@ export function RuntimeRestartModal({ open, task, submittedAt, submitting, error
 
   return <>
     <Modal open={open} centered width="min(1000px, calc(100vw - 32px))" maskClosable={false} onCancel={onClose}
-      title={<span className="flex items-center gap-2.5">{running ? <LoaderCircle aria-label="loading" size={20} className="animate-spin text-cyan-500" /> : current?.state === 'succeeded' ? <CheckCircle2 size={20} className="text-emerald-500" /> : <CircleAlert size={20} className="text-red-500" />}<span>{title}</span><span className="font-mono text-sm tabular-nums text-[var(--muted)]">({elapsed})</span></span>}
-      footer={<div className="flex w-full items-center justify-between gap-4"><span className="text-xs text-[var(--muted)]">{running ? (zh ? '任务在后台执行，关闭窗口不会取消操作。' : 'Runs in the background. Closing this window does not cancel the operation.') : (zh ? '任务已结束，日志保留至下一次启动、重启或服务退出。' : 'Logs remain until the next startup, restart or service shutdown.')}</span><Button onClick={onClose}>{t('close')}</Button></div>}>
+      title={<span className="flex items-center gap-2.5">{running ? <LoaderCircle aria-label="loading" size={20} className="animate-spin text-cyan-500" /> : current?.state === 'succeeded' ? <CheckCircle2 size={20} className="text-emerald-500" /> : <CircleAlert size={20} className={current || error ? 'text-red-500' : 'text-[var(--muted)]'} />}<span>{title}</span><span className="font-mono text-sm tabular-nums text-[var(--muted)]">({elapsed})</span></span>}
+      footer={<div className="flex w-full items-center justify-between gap-4"><span className="text-xs text-[var(--muted)]">{running ? (zh ? '任务在后台执行，关闭窗口不会取消操作。' : 'Runs in the background. Closing this window does not cancel the operation.') : current ? (zh ? '任务已结束，日志保留至下一次核心操作或服务退出。' : 'Logs remain until the next core operation or service shutdown.') : (zh ? '尚未收到任务记录。' : 'No task record received yet.')}</span><Button onClick={onClose}>{t('close')}</Button></div>}>
       <div className="space-y-3">
         <div role="status" className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
           <span>{zh ? '开始时间：' : 'Started: '}{new Date(current?.started_at || submittedAt).toLocaleString(locale)}</span>
-          <span>{running ? (zh ? '执行中 · 实时日志' : 'Running · live output') : title}</span>
+          <span>{running ? stageText || (zh ? '等待任务记录 · 自动刷新' : 'Waiting for task record · refreshing automatically') : title}</span>
         </div>
         {error ? <div role="alert"><Alert type="error" showIcon message={error} /></div> : null}
-        <div ref={attachLog} role="log" aria-label={zh ? '核心启动日志' : 'Core startup log'} aria-live="polite" tabIndex={0} onKeyDown={selectAllContents}
+        <div ref={attachLog} role="log" aria-label={zh ? '核心操作日志' : 'Core operation log'} aria-live="polite" tabIndex={0} onKeyDown={selectAllContents}
           className="h-[min(56vh,560px)] min-h-48 overflow-auto rounded-md border border-slate-700 bg-slate-950 p-4 font-mono text-xs leading-6 text-slate-200 [color-scheme:dark]">
           {current?.omitted_logs ? <p className="text-amber-300">{zh ? `已省略前 ${current.omitted_logs} 条日志` : `${current.omitted_logs} earlier entries omitted`}</p> : null}
           {current?.logs.map((entry) => <LogLine key={entry.sequence} action={action} entry={entry} configAvailable={current.config_available} onConfig={() => setConfigOpen(true)} />)}
-          {!current ? <p><span className="text-slate-500">[{new Date(submittedAt).toLocaleTimeString(locale, { hour12: false })}] </span>{submitting ? (zh ? '正在提交重启任务…' : 'Submitting restart task…') : (zh ? '未能确认任务状态，请检查连接；可稍后重新打开任务日志。' : 'Could not confirm task status. Check the connection and reopen the task log.')}</p> : null}
+          {!current ? <p><span className="text-slate-500">[{new Date(submittedAt).toLocaleTimeString(locale, { hour12: false })}] </span>{submitting ? (zh ? '正在提交重启任务…' : 'Submitting restart task…') : waitingForTask ? (zh ? '核心操作进行中，等待任务日志…' : 'Core operation is in progress. Waiting for task log…') : (zh ? '尚未收到任务记录，正在自动刷新。' : 'No task record received yet. Refreshing automatically.')}</p> : null}
         </div>
       </div>
     </Modal>
@@ -73,7 +77,7 @@ function LogLine({ action, entry, configAvailable, onConfig }: { action: Startup
   const label = entry.change ? formatPendingChange(entry.change, t, locale) : startupStageLabels(action)[entry.stage]?.[zh ? 0 : 1]
   const raw = ['stdout', 'stderr', 'validation', 'supervisor'].includes(entry.stage)
   const text = [label || (raw ? `[${entry.stage}]` : entry.stage), entry.message].filter(Boolean).join(' ')
-  return <div className={`whitespace-pre-wrap break-words ${['error', 'failed'].includes(entry.stage) ? 'text-red-300' : entry.stage === 'succeeded' ? 'text-emerald-300' : raw ? 'text-slate-400' : ''}`}>
+  return <div className={`whitespace-pre-wrap break-words ${['error', 'failed', 'timeout'].includes(entry.stage) ? 'text-red-300' : entry.stage === 'succeeded' ? 'text-emerald-300' : raw ? 'text-slate-400' : ''}`}>
     {text.split('\n').map((line, index) => <div key={index}><span className="select-none text-slate-500">[{new Date(entry.timestamp).toLocaleTimeString(locale, { hour12: false })}] </span>{line}
       {entry.stage === 'compiled' && configAvailable && index === 0 ? <Button variant="link" size="small" className="ml-2 !text-cyan-300" onClick={onConfig}>{zh ? '[查看完整配置]' : '[View full configuration]'}</Button> : null}
     </div>)}

@@ -17,11 +17,13 @@ use tokio::{
     process::{Child, Command},
     sync::{mpsc, oneshot},
     task::JoinHandle,
-    time::timeout,
+    time::{Instant, timeout, timeout_at},
 };
 
 const LOG_LIMIT: u64 = 10 << 20;
 const LOG_BACKUPS: usize = 3;
+const FORCE_TIMEOUT: Duration = Duration::from_secs(5);
+const OUTPUT_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub type OutputObserver = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
@@ -37,17 +39,26 @@ pub enum SupervisorError {
     Signal(#[source] io::Error),
     #[error("write managed core output: {0}")]
     Output(#[source] io::Error),
+    #[error("managed core did not exit within {0:?} after force termination")]
+    TerminationTimeout(Duration),
 }
 
 pub struct ManagedProcess {
     child: Child,
     pid: u32,
     output: Vec<OutputTask>,
+    observer: Option<OutputObserver>,
 }
 
 struct OutputTask {
     handle: JoinHandle<io::Result<()>>,
     synchronizer: mpsc::UnboundedSender<oneshot::Sender<()>>,
+}
+
+impl Drop for OutputTask {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
 }
 
 impl ManagedProcess {
@@ -88,9 +99,19 @@ impl ManagedProcess {
             ));
         }
         if let Some(stderr) = child.stderr.take() {
-            output.push(output_task(stderr, stderr_path.into(), observer, "stderr"));
+            output.push(output_task(
+                stderr,
+                stderr_path.into(),
+                observer.clone(),
+                "stderr",
+            ));
         }
-        Ok(Self { child, pid, output })
+        Ok(Self {
+            child,
+            pid,
+            output,
+            observer,
+        })
     }
 
     pub fn spawn_foreground(spec: &CommandSpec) -> Result<Self, SupervisorError> {
@@ -112,6 +133,7 @@ impl ManagedProcess {
             child,
             pid,
             output: Vec::new(),
+            observer: None,
         })
     }
 
@@ -120,13 +142,17 @@ impl ManagedProcess {
     }
 
     pub async fn synchronize_output(&self) {
+        let deadline = Instant::now() + OUTPUT_TIMEOUT;
         for task in &self.output {
             if task.handle.is_finished() {
                 continue;
             }
             let (ready, synchronized) = oneshot::channel();
-            if task.synchronizer.send(ready).is_ok() {
-                let _ = synchronized.await;
+            if task.synchronizer.send(ready).is_ok()
+                && timeout_at(deadline, synchronized).await.is_err()
+            {
+                self.observe("output synchronization timed out after 2s; continuing startup");
+                break;
             }
         }
     }
@@ -138,51 +164,81 @@ impl ManagedProcess {
     }
 
     pub async fn terminate(&mut self, grace: Duration) -> Result<ExitStatus, SupervisorError> {
-        if self
-            .child
-            .try_wait()
-            .map_err(SupervisorError::Wait)?
-            .is_none()
-            && let Err(error) = platform::terminate_tree(self.pid, false).await
-            && self
-                .child
-                .try_wait()
-                .map_err(SupervisorError::Wait)?
-                .is_none()
-        {
-            self.force_terminate().await.map_err(|fallback| {
-                SupervisorError::Signal(io::Error::other(format!(
-                    "graceful termination failed: {error}; force termination failed: {fallback}"
-                )))
-            })?;
+        if let Some(status) = self.child.try_wait().map_err(SupervisorError::Wait)? {
+            self.finish_output().await;
+            return Ok(status);
         }
-        let status = if let Ok(result) = timeout(grace, self.child.wait()).await {
-            result.map_err(SupervisorError::Wait)?
-        } else {
+        let graceful = timeout(grace, async {
+            platform::terminate_tree(self.pid, false)
+                .await
+                .map_err(SupervisorError::Signal)?;
+            self.child.wait().await.map_err(SupervisorError::Wait)
+        })
+        .await;
+        match graceful {
+            Ok(Ok(status)) => {
+                self.finish_output().await;
+                return Ok(status);
+            }
+            Ok(Err(error)) => self.observe(&format!(
+                "graceful termination failed: {error}; forcing termination (5s limit)"
+            )),
+            Err(_) => self.observe(&format!(
+                "graceful termination timed out after {grace:?}; forcing termination (5s limit)"
+            )),
+        }
+        let status = timeout(FORCE_TIMEOUT, async {
             self.force_terminate().await?;
-            self.child.wait().await.map_err(SupervisorError::Wait)?
-        };
+            self.child.wait().await.map_err(SupervisorError::Wait)
+        })
+        .await
+        .map_err(|_| {
+            self.observe("force termination timed out after 5s; process exit is unconfirmed");
+            SupervisorError::TerminationTimeout(FORCE_TIMEOUT)
+        })??;
         self.finish_output().await;
         Ok(status)
     }
 
     async fn force_terminate(&mut self) -> Result<(), SupervisorError> {
-        if platform::terminate_tree(self.pid, true).await.is_err()
+        if self
+            .child
+            .try_wait()
+            .map_err(SupervisorError::Wait)?
+            .is_some()
+        {
+            return Ok(());
+        }
+        if let Err(error) = platform::terminate_tree(self.pid, true).await
             && self
                 .child
                 .try_wait()
                 .map_err(SupervisorError::Wait)?
                 .is_none()
         {
+            self.observe(&format!(
+                "process tree termination failed: {error}; killing managed process directly"
+            ));
             self.child.start_kill().map_err(SupervisorError::Signal)?;
         }
         Ok(())
     }
 
     async fn finish_output(&mut self) {
-        for task in self.output.drain(..) {
+        let deadline = Instant::now() + OUTPUT_TIMEOUT;
+        let mut truncated = false;
+        for mut task in self.output.drain(..) {
             // Diagnostic output is ancillary and must not change the process result.
-            let _ = task.handle.await;
+            truncated |= timeout_at(deadline, &mut task.handle).await.is_err();
+        }
+        if truncated {
+            self.observe("output drain timed out after 2s; remaining core output was truncated");
+        }
+    }
+
+    fn observe(&self, message: &str) {
+        if let Some(observer) = &self.observer {
+            observer("supervisor", message);
         }
     }
 }

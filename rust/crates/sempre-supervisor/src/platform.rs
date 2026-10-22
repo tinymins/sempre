@@ -70,12 +70,18 @@ pub fn terminate_tree(pid: u32, force: bool) -> impl Future<Output = io::Result<
 
 #[cfg(windows)]
 pub async fn terminate_tree(pid: u32, force: bool) -> io::Result<()> {
+    use std::time::Duration;
+
     let mut command = Command::new("taskkill.exe");
-    command.args(["/PID", &pid.to_string(), "/T"]);
+    command
+        .args(["/PID", &pid.to_string(), "/T"])
+        .kill_on_drop(true);
     if force {
         command.arg("/F");
     }
-    let output = command.output().await?;
+    let output = tokio::time::timeout(Duration::from_secs(2), command.output())
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "taskkill timed out after 2s"))??;
     if output.status.success() {
         Ok(())
     } else {

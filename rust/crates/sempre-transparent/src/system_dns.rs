@@ -1,6 +1,12 @@
-use std::{fs, io, path::PathBuf, process::Command};
+use std::{
+    fs, io,
+    path::PathBuf,
+    process::Stdio,
+    time::{Duration, Instant},
+};
 
 use serde_json::{Value, json};
+use tokio::process::Command;
 
 use crate::TransparentError;
 
@@ -120,10 +126,29 @@ impl SystemDns {
 
     fn chattr(&self, flag: &str) {
         if self.resolv_conf == std::path::Path::new("/etc/resolv.conf") {
-            let _ = Command::new("chattr")
+            let Ok(mut child) = Command::new("chattr")
                 .arg(flag)
                 .arg(&self.resolv_conf)
-                .output();
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .kill_on_drop(true)
+                .spawn()
+            else {
+                return;
+            };
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) | Err(_) => return,
+                    Ok(None) if Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    Ok(None) => {
+                        let _ = child.start_kill();
+                        return;
+                    }
+                }
+            }
         }
     }
 

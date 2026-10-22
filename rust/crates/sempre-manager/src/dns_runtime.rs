@@ -298,16 +298,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 }
 
 impl<R: VersionRunner> Manager<R> {
-    pub(crate) async fn cleanup_after_core_failure(
-        &self,
-    ) -> Result<(), sempre_transparent::TransparentError> {
-        self.stop_gateway().await;
-        if self.dns_frontend.status().running {
-            self.transparent.cleanup_runtime_network().await
-        } else {
-            self.dns_frontend.stop().await;
-            self.transparent.cleanup().await
-        }
+    pub(crate) async fn cleanup_after_core_failure(&self) -> Result<(), ManagerError> {
+        self.cleanup_lifecycle(true).await
     }
 }
 

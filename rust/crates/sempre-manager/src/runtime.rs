@@ -125,6 +125,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             target.as_ref().err(),
             configuration_pending,
         );
+        if self.startup_tasks.preparing() {
+            actions.stop.allowed = true;
+            actions.stop.reason.clear();
+        }
         for (name, action) in [
             (START, &mut actions.start),
             (STOP, &mut actions.stop),
@@ -238,7 +242,6 @@ fn ensure_runtime_deployment<R: VersionRunner + ValidationRunner>(
 }
 
 fn reset_runtime_intent(document: &mut Document) {
-    document.runtime.pid = None;
     document.runtime.last_error = None;
     document.runtime.last_failure = None;
     document.runtime.last_transition = Some(Utc::now());

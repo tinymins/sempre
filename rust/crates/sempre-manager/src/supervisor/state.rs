@@ -69,7 +69,9 @@ pub fn mark_healthy<R: VersionRunner>(
     plan: &RuntimePlan,
 ) -> Result<(), ManagerError> {
     manager.store.update(|document| {
-        if document.active.as_ref() != Some(&plan.deployment) {
+        if document.desired_state != DesiredState::Running
+            || document.active.as_ref() != Some(&plan.deployment)
+        {
             return Ok(());
         }
         if document.pending {

@@ -40,24 +40,16 @@ impl<B: Backend> Controller<B> {
         runner: Arc<dyn command::Runner>,
         intent: &CnRouteIntent,
     ) -> Result<(), TransparentError> {
-        let controller = Arc::clone(self);
-        let intent = intent.clone();
-        // Dropping a caller must not cancel a native batch while cleanup runs.
-        tokio::spawn(async move {
-            let _gate = controller.gate.lock().await;
-            let (uplinks, tun) = controller
-                .backend
-                .discover(runner.as_ref(), &intent)
-                .await?;
-            let previous = controller.read()?;
-            let desired = model::plan(&intent, &uplinks, &tun)?;
-            if previous.routes == desired {
-                return Ok(());
-            }
-            controller.replace(runner.as_ref(), desired).await
-        })
-        .await
-        .map_err(|e| invalid(e.to_string()))?
+        // Keep ownership in the caller: cancellation stops the batch and releases
+        // the gate; the write-ahead journal retains every possibly installed route.
+        let _gate = self.gate.lock().await;
+        let (uplinks, tun) = self.backend.discover(runner.as_ref(), intent).await?;
+        let previous = self.read()?;
+        let desired = model::plan(intent, &uplinks, &tun)?;
+        if previous.routes == desired {
+            return Ok(());
+        }
+        self.replace(runner.as_ref(), desired).await
     }
 
     async fn replace(

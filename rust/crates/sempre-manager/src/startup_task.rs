@@ -37,13 +37,35 @@ pub struct StartupTask {
     ready: bool,
 }
 
-#[derive(Default)]
 pub(crate) struct StartupTasks {
     current: Mutex<Option<StartupTask>>,
     preparation_changed: tokio::sync::Notify,
+    cancellation: tokio::sync::watch::Sender<u64>,
+}
+
+impl Default for StartupTasks {
+    fn default() -> Self {
+        Self {
+            current: Mutex::default(),
+            preparation_changed: tokio::sync::Notify::new(),
+            cancellation: tokio::sync::watch::channel(0).0,
+        }
+    }
 }
 
 impl StartupTasks {
+    pub fn output_observer(self: &Arc<Self>) -> sempre_supervisor::OutputObserver {
+        let tasks = Arc::clone(self);
+        let task_id = tasks.snapshot().expect("startup cycle has a task").id;
+        Arc::new(move |stream, line| {
+            if stream == "supervisor" {
+                tasks.log(stream, line);
+            } else {
+                tasks.runtime_log_for(&task_id, stream, line);
+            }
+        })
+    }
+
     pub fn snapshot(&self) -> Option<StartupTask> {
         self.current
             .lock()
@@ -72,15 +94,75 @@ impl StartupTasks {
     }
 
     pub fn blocks(&self, action: &str) -> bool {
-        self.current.lock().unwrap().as_ref().is_some_and(|task| {
-            task.state == "running" && (action != "stop" || task.action == "restart")
-        })
+        self.current
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|task| task.state == "running" && action != "stop")
+    }
+
+    pub fn cancellation(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.cancellation.subscribe()
+    }
+
+    pub fn cancel_preparation(&self) {
+        self.cancellation.send_modify(|generation| *generation += 1);
+        self.preparation_changed.notify_waiters();
+    }
+
+    pub fn begin_stop(&self) {
+        let mut task = StartupTask::new("stop", Vec::new());
+        task.armed = true;
+        task.ready = true;
+        *self.current.lock().unwrap() = Some(task);
+        self.cancel_preparation();
+    }
+
+    pub fn complete_stop(&self, error: Option<&str>) {
+        self.update(false, |task| {
+            if task.action == "stop" {
+                task.finish(
+                    if error.is_some() {
+                        "failed"
+                    } else {
+                        "succeeded"
+                    },
+                    error.unwrap_or(""),
+                );
+            }
+        });
+    }
+
+    pub fn preparing(&self) -> bool {
+        self.current
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|task| task.state == "running" && task.action != "stop")
+    }
+
+    pub(crate) fn with_preparation<T>(
+        &self,
+        id: &str,
+        operation: impl FnOnce() -> Result<T, ManagerError>,
+    ) -> Result<T, ManagerError> {
+        let current = self.current.lock().unwrap();
+        if !current
+            .as_ref()
+            .is_some_and(|task| task.id == id && task.state == "running" && task.action != "stop")
+        {
+            return Err(ManagerError::RuntimeAction {
+                code: "RUNTIME_STARTUP_CANCELLED",
+                message: "Core startup cancelled by stop request".into(),
+            });
+        }
+        operation()
     }
 
     pub fn begin_cycle(&self) -> bool {
         let mut current = self.current.lock().unwrap();
         if let Some(task) = current.as_mut().filter(|task| task.state == "running") {
-            if !task.ready {
+            if !task.ready || task.action == "stop" {
                 return false;
             }
             task.armed = true;
@@ -88,6 +170,7 @@ impl StartupTasks {
         }
         let mut task = StartupTask::new("start", Vec::new());
         task.armed = true;
+        task.ready = true;
         *current = Some(task);
         true
     }
@@ -110,7 +193,9 @@ impl StartupTasks {
 
     pub fn interrupt_cycle(&self) {
         self.update(true, |task| {
-            task.finish("failed", "Core startup interrupted");
+            if task.action != "stop" {
+                task.finish("failed", "Core startup interrupted");
+            }
         });
     }
 
@@ -132,12 +217,27 @@ impl StartupTasks {
 
     pub fn prepared(&self, config: CurrentConfig) {
         self.update(false, |task| {
+            if task.action == "stop" {
+                return;
+            }
             if !task.config_available {
                 task.push("compiled", "");
             }
             task.config_available = true;
             task.config = Some(config);
             task.ready = true;
+        });
+        self.preparation_changed.notify_one();
+    }
+
+    pub fn prepared_for(&self, id: &str, config: CurrentConfig) {
+        self.update(false, |task| {
+            if task.id == id {
+                task.config_available = true;
+                task.config = Some(config);
+                task.ready = true;
+                task.push("compiled", "");
+            }
         });
         self.preparation_changed.notify_one();
     }
@@ -153,20 +253,33 @@ impl StartupTasks {
 
     pub fn failure(&self, stage: &str, error: &str) {
         self.update(true, |task| {
-            task.push("error", &format!("{stage}: {error}"));
-            task.finish("failed", "");
+            if task.action != "stop" {
+                task.push("error", &format!("{stage}: {error}"));
+                task.finish("failed", "");
+            }
         });
     }
 
     pub fn healthy(&self) {
         self.update(true, |task| {
-            task.push("healthy", "");
-            task.finish("succeeded", "");
+            if task.action != "stop" {
+                task.push("healthy", "");
+                task.finish("succeeded", "");
+            }
         });
     }
 
     pub fn fail(&self, message: &str) {
         self.update(false, |task| task.finish("failed", message));
+        self.preparation_changed.notify_one();
+    }
+
+    pub fn fail_for(&self, id: &str, message: &str) {
+        self.update(false, |task| {
+            if task.id == id {
+                task.finish("failed", message);
+            }
+        });
         self.preparation_changed.notify_one();
     }
 
@@ -176,7 +289,7 @@ impl StartupTasks {
 
     pub fn stop_log(&self, stage: &str, message: &str) {
         self.update(false, |task| {
-            if task.ready && task.action == "restart" {
+            if task.ready && matches!(task.action, "restart" | "stop") {
                 task.push(stage, message);
             }
         });
@@ -299,9 +412,10 @@ impl<R: VersionRunner + ValidationRunner + 'static> Manager<R> {
         }
         let task = self.startup_tasks.begin(action, status.pending_changes)?;
         let manager = self.clone();
+        let task_id = task.id.clone();
         tokio::spawn(async move {
-            if let Err(error) = manager.runtime_action_inner(action, true).await {
-                manager.startup_tasks.fail(&error.to_string());
+            if let Err(error) = manager.runtime_action_inner(action, Some(&task_id)).await {
+                manager.startup_tasks.fail_for(&task_id, &error.to_string());
             }
         });
         Ok(task)
