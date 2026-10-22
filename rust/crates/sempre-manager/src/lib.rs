@@ -70,7 +70,9 @@ pub use install::InstallResult;
 pub use inventory::{CoreInventory, InstalledCore};
 pub use lifecycle::CoreChange;
 pub use network_automation::NetworkAutomationStatus;
-pub use network_settings::{CnRoutingMode, KnownNetwork, NetworkMode, NetworkSettings};
+pub use network_settings::{
+    CnRoutingMode, IntranetRoutingMode, KnownNetwork, NetworkMode, NetworkSettings,
+};
 pub use pending_changes::RuntimePendingChange;
 pub use private_access_status::{PrivateAccessConnectorStatus, PrivateAccessStatus};
 pub use process::{ProcessRunner, ValidationRunner, VersionRunner};

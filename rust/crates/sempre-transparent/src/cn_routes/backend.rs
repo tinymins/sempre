@@ -30,6 +30,7 @@ pub(crate) trait Backend: Default + Send + Sync + 'static {
         &'a self,
         runner: &'a dyn command::Runner,
         add: bool,
+        capture: bool,
     ) -> impl Future<Output = Result<(), TransparentError>> + Send + 'a;
 }
 
@@ -63,7 +64,8 @@ impl Backend for Native {
         &self,
         runner: &dyn command::Runner,
         add: bool,
+        capture: bool,
     ) -> Result<(), TransparentError> {
-        platform::policy(runner, add).await
+        platform::policy(runner, add, capture).await
     }
 }

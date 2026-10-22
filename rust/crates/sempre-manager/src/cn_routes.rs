@@ -64,6 +64,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 transparent,
                 interfaces,
                 self.network_settings.read().cn_routing_mode == crate::CnRoutingMode::DirectRoute,
+                {
+                    let settings = self.network_settings.read();
+                    settings.intranet_routing_enabled
+                        && settings.intranet_routing_mode == crate::IntranetRoutingMode::Proxy
+                },
             )
             .await?;
         }
@@ -183,6 +188,7 @@ pub(crate) async fn configure(
     transparent: &mut sempre_transparent::Plan,
     outbound_interfaces: [Option<String>; 2],
     direct: bool,
+    intranet_proxy: bool,
 ) -> Result<(), ManagerError> {
     let prefixes = read_prefixes(binary, source).await?;
     let mut document: Value = serde_json::from_slice(
@@ -206,6 +212,15 @@ pub(crate) async fn configure(
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect::<Vec<_>>();
+    let intranet_exclusions = intranet_proxy.then(|| {
+        tun.get("route_exclude_address")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect()
+    });
     for prefix in fakeip_prefixes {
         if !capture_prefixes.contains(&prefix) {
             capture_prefixes.push(prefix);
@@ -261,6 +276,7 @@ pub(crate) async fn configure(
         prefixes,
         tun_addresses,
         capture_prefixes,
+        intranet_exclusions,
         outbound_interfaces,
     });
     Ok(())

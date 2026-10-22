@@ -6,6 +6,11 @@ mod defaults;
 mod domain_policy;
 mod editor;
 mod icons;
+mod intranet;
+pub use intranet::{
+    INTRANET_CAPTURE_PREFIXES, apply_intranet_routing, intranet_proxy_enabled, is_private_route,
+    private_route_outbounds,
+};
 mod inspection;
 mod model;
 mod openwrt;

@@ -24,17 +24,34 @@ pub(crate) fn prepare_tun(
     profile: &Profile,
     inventory: &Inventory,
     config: &mut Value,
+    upstreams: &[String],
 ) -> Result<(), TransparentError> {
     let transparent = &profile.transparent_proxy;
     let fake_ip_prefixes = fake_ip_prefixes(&plan.core, config);
+    let intranet_proxy = sempre_converter::intranet_proxy_enabled(profile);
     let mut exclusions = transparent.route_exclusions.clone();
     if transparent.auto_exclude_local_routes {
-        exclusions.extend(inventory.local_prefixes.clone());
+        exclusions.extend(if intranet_proxy {
+            prefix::filter_overlaps(
+                inventory.local_prefixes.clone(),
+                &sempre_converter::INTRANET_CAPTURE_PREFIXES.map(String::from),
+            )
+        } else {
+            inventory.local_prefixes.clone()
+        });
     }
     if transparent.auto_exclude_vpn_routes {
         exclusions.extend(inventory.vpn_prefixes.clone());
     }
     exclusions = prefix::filter_overlaps(exclusions, &fake_ip_prefixes);
+    let capture = if intranet_proxy {
+        let mut capture = crate::intranet::resolve(profile, config, upstreams)?;
+        capture.exclusions.extend(exclusions.clone());
+        exclusions.clone_from(&capture.exclusions);
+        Some(capture)
+    } else {
+        None
+    };
     plan.fake_ip_prefixes = fake_ip_prefixes;
     plan.route_exclusions.clone_from(&exclusions);
     plan.tun_interface
@@ -45,6 +62,13 @@ pub(crate) fn prepare_tun(
         "clash-rs" => prepare_clash_rs_tun(plan, transparent, inventory, config)?,
         "xray" => prepare_xray_tun(plan, transparent, inventory, config, &exclusions)?,
         _ => return Err(unsupported(&plan.core, "tun-router")),
+    }
+    if let Some(capture) = capture {
+        if plan.core == "sing-box" {
+            crate::intranet::apply(config, &capture, !sempre_converter::cn_pre_routing(profile));
+        } else if plan.core == "mihomo" {
+            crate::intranet::apply_mihomo(config, &capture);
+        }
     }
     plan.lan_interfaces
         .clone_from(&inventory.recommended_lan_interfaces);
@@ -159,6 +183,7 @@ pub(crate) fn prepare_tproxy(
     profile: &Profile,
     inventory: &Inventory,
     config: &mut Value,
+    upstreams: &[String],
 ) -> Result<(), TransparentError> {
     let transparent = &profile.transparent_proxy;
     let interfaces = resolve_lan_interfaces(&transparent.lan_interfaces, inventory);
@@ -180,6 +205,16 @@ pub(crate) fn prepare_tproxy(
     let mut excluded = RESERVED.into_iter().map(String::from).collect::<Vec<_>>();
     excluded.extend(["fe80::/10", "ff00::/8"].map(String::from));
     excluded.extend(inventory.local_prefixes.clone());
+    if sempre_converter::intranet_proxy_enabled(profile) {
+        excluded = prefix::filter_overlaps(
+            excluded,
+            &sempre_converter::INTRANET_CAPTURE_PREFIXES.map(String::from),
+        );
+        excluded.extend(crate::intranet::resolve(profile, config, upstreams)?.exclusions);
+        if transparent.auto_exclude_vpn_routes {
+            excluded.extend(inventory.vpn_prefixes.clone());
+        }
+    }
     excluded.extend(outbound_server_prefixes(config));
     plan.tproxy_port = transparent.tproxy.listen_port;
     plan.dns_port = plan

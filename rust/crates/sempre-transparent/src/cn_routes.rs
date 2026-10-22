@@ -70,7 +70,9 @@ impl<B: Backend> Controller<B> {
             self.backend.preflight(runner, &additions).await?;
             self.change(runner, &additions, false, true).await?;
             self.change(runner, &additions, true, true).await?;
-            self.backend.policy(runner, true).await?;
+            self.backend
+                .policy(runner, true, desired.iter().any(|r| r.fallback && r.scoped))
+                .await?;
             self.change(runner, &removals, true, false).await?;
             self.change(runner, &removals, false, false).await?;
             self.write(&Journal {
@@ -121,7 +123,7 @@ impl<B: Backend> Controller<B> {
     async fn cleanup_locked(&self, runner: &dyn command::Runner) -> Result<(), TransparentError> {
         let journal = self.read()?;
         if journal.policy {
-            self.backend.policy(runner, false).await?;
+            self.backend.policy(runner, false, false).await?;
         }
         self.change(runner, &journal.routes, true, false).await?;
         self.change(runner, &journal.routes, false, false).await?;

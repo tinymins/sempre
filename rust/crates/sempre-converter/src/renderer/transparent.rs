@@ -11,6 +11,15 @@ pub(super) fn sing_box_inbounds(
     target: &Target,
     private_capture_cidrs: &[String],
 ) -> Vec<Value> {
+    let mut capture_cidrs = private_capture_cidrs.to_vec();
+    if crate::intranet_proxy_enabled(profile) {
+        for prefix in crate::INTRANET_CAPTURE_PREFIXES {
+            if !capture_cidrs.iter().any(|existing| existing == prefix) {
+                capture_cidrs.push(prefix.into());
+            }
+        }
+    }
+    let private_capture_cidrs = capture_cidrs.as_slice();
     if target.is_desktop() {
         let mut inbound = json!({
             "type": "tun", "tag": "tun-in", "address": ["172.19.0.1/30"],

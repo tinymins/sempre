@@ -3,6 +3,7 @@ mod command;
 mod desktop_plan;
 mod document;
 mod host;
+mod intranet;
 mod macos_dns;
 mod nft;
 mod policy;
@@ -112,6 +113,16 @@ pub fn prepare_with_inventory(
     runtime_config: &Path,
     inventory: &Inventory,
 ) -> Result<Plan, TransparentError> {
+    prepare_with_upstreams(core, profile, runtime_config, inventory, &[])
+}
+
+pub(crate) fn prepare_with_upstreams(
+    core: &str,
+    profile: &Profile,
+    runtime_config: &Path,
+    inventory: &Inventory,
+    upstreams: &[String],
+) -> Result<Plan, TransparentError> {
     let mode = effective_mode(core, &profile.transparent_proxy.mode)?;
     let system_dns = system_dns_intent(profile);
 
@@ -131,8 +142,10 @@ pub fn prepare_with_inventory(
         ..Plan::default()
     };
     match mode {
-        Mode::Tun => document::prepare_tun(&mut plan, profile, inventory, &mut config)?,
-        Mode::TProxy => document::prepare_tproxy(&mut plan, profile, inventory, &mut config)?,
+        Mode::Tun => document::prepare_tun(&mut plan, profile, inventory, &mut config, upstreams)?,
+        Mode::TProxy => {
+            document::prepare_tproxy(&mut plan, profile, inventory, &mut config, upstreams)?;
+        }
         Mode::Disabled => {}
     }
     let encoded = encode(core, &config)?;

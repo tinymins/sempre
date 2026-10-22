@@ -11,6 +11,7 @@ pub struct Intent {
     pub prefixes: Vec<String>,
     pub tun_addresses: Vec<String>,
     pub capture_prefixes: Vec<String>,
+    pub intranet_exclusions: Option<Vec<String>>,
     pub outbound_interfaces: [Option<String>; 2],
 }
 
@@ -26,6 +27,7 @@ pub(crate) struct Route {
     pub prefix: String,
     pub endpoint: Endpoint,
     pub fallback: bool,
+    // Interface scope on macOS; the dedicated capture-table scope on Linux.
     pub scoped: bool,
 }
 
@@ -60,6 +62,15 @@ pub(crate) fn plan(
     tun: &Endpoint,
 ) -> Result<Vec<Route>, TransparentError> {
     let prefixes = normalize(&intent.prefixes)?;
+    let exclusions = capture_exclusions(intent, uplinks);
+    let direct_prefixes = if intent.direct && exclusions.is_some() {
+        prefixes
+            .iter()
+            .filter_map(|prefix| prefix.parse::<IpNet>().ok())
+            .collect()
+    } else {
+        Vec::new()
+    };
     let mut routes = Vec::new();
     for uplink in uplinks {
         let gateway = uplink
@@ -97,12 +108,16 @@ pub(crate) fn plan(
         } else {
             ["::/1", "8000::/1"]
         } {
-            routes.push(Route {
-                prefix: prefix.into(),
-                endpoint: tun.clone(),
-                fallback: true,
-                scoped: false,
-            });
+            routes.extend(
+                fallback_prefixes(prefix, exclusions.as_deref(), &direct_prefixes)
+                    .into_iter()
+                    .map(|prefix| Route {
+                        prefix,
+                        endpoint: tun.clone(),
+                        fallback: true,
+                        scoped: false,
+                    }),
+            );
         }
     }
     for prefix in &intent.capture_prefixes {
@@ -117,16 +132,67 @@ pub(crate) fn plan(
             .filter_map(|s| s.parse::<IpNet>().ok())
             .any(|address| address.addr().is_ipv6() == capture.addr().is_ipv6())
         {
-            routes.push(Route {
-                prefix: capture.trunc().to_string(),
-                endpoint: tun.clone(),
-                fallback: true,
-                scoped: false,
-            });
+            let prefixes =
+                crate::intranet::subtract(vec![capture], exclusions.as_deref().unwrap_or_default());
+            routes.extend(prefixes.into_iter().map(|prefix| {
+                Route {
+                    prefix,
+                    endpoint: tun.clone(),
+                    fallback: true,
+                    scoped: cfg!(target_os = "linux")
+                        && intent.intranet_exclusions.is_some()
+                        && sempre_converter::INTRANET_CAPTURE_PREFIXES
+                            .iter()
+                            .any(|prefix| {
+                                prefix
+                                    .parse::<IpNet>()
+                                    .is_ok_and(|range| range.contains(&capture))
+                            }),
+                }
+            }));
         }
     }
 
     Ok(routes)
+}
+
+fn capture_exclusions(intent: &Intent, uplinks: &[Endpoint]) -> Option<Vec<String>> {
+    intent.intranet_exclusions.as_ref().map(|configured| {
+        let mut exclusions = configured.clone();
+        for address in uplinks
+            .iter()
+            .map(|uplink| uplink.gateway.as_str())
+            .chain(intent.tun_addresses.iter().map(String::as_str))
+        {
+            if let Some(address) = address
+                .split(['%', '/'])
+                .next()
+                .and_then(|ip| ip.parse::<IpAddr>().ok())
+            {
+                exclusions.push(IpNet::from(address).to_string());
+            }
+        }
+        exclusions
+    })
+}
+
+fn fallback_prefixes(prefix: &str, exclusions: Option<&[String]>, direct: &[IpNet]) -> Vec<String> {
+    let Some(exclusions) = exclusions else {
+        return vec![prefix.into()];
+    };
+    crate::intranet::subtract(
+        vec![prefix.parse().expect("valid fallback prefix")],
+        exclusions,
+    )
+    .into_iter()
+    // Holes around protected public hosts can create prefixes narrower than
+    // CN routes. Never let those fallback fragments shadow direct CN routes.
+    .filter(|prefix| {
+        !prefix
+            .parse::<IpNet>()
+            .is_ok_and(|network| direct.iter().any(|cn| cn.contains(&network)))
+    })
+    .collect()
 }
 
 pub(crate) fn difference(left: &[Route], right: &[Route]) -> Vec<Route> {

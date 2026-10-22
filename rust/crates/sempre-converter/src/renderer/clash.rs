@@ -2,7 +2,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{CompileError, FieldDiff, Profile, Proxy, ProxyGroup, Target};
 
-use super::address_groups::{self, CHINA, PRIVATE};
+use super::address_groups::{self, CHINA};
 
 pub(super) fn render(
     profile: &Profile,
@@ -10,7 +10,7 @@ pub(super) fn render(
     target: &Target,
 ) -> Result<(String, Vec<FieldDiff>, Vec<String>), CompileError> {
     let names: Vec<String> = proxies.iter().map(|proxy| proxy.name.clone()).collect();
-    let groups = groups(&profile.groups, &names);
+    let groups = groups(profile, &names);
     let final_group = groups
         .iter()
         .find(|value| value["name"] == "⚓️ 其他流量")
@@ -60,7 +60,7 @@ pub(super) fn render(
         };
         rules.push(format!("RULE-SET,{},{outbound}", provider.tag));
     }
-    append_address_rules(&mut rules, &mut providers);
+    append_address_rules(profile, &mut rules, &mut providers);
     rules.push(format!("MATCH,{final_group}"));
     let mut rendered_proxies = proxies.iter().map(Proxy::as_value).collect::<Vec<_>>();
     if matches!(target.core.as_str(), "mihomo" | "clash-rs")
@@ -100,7 +100,11 @@ pub(super) fn render(
     Ok((content, diffs, warnings))
 }
 
-fn append_address_rules(rules: &mut Vec<String>, providers: &mut Map<String, Value>) {
+fn append_address_rules(
+    profile: &Profile,
+    rules: &mut Vec<String>,
+    providers: &mut Map<String, Value>,
+) {
     let mut china_domains = "sempre-geosite-cn".to_owned();
     while providers.contains_key(&china_domains) {
         china_domains.push('_');
@@ -110,9 +114,13 @@ fn append_address_rules(rules: &mut Vec<String>, providers: &mut Map<String, Val
         "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.yaml",
         "path": format!("./rules/{china_domains}.yaml"), "interval": 86400
     }));
+    if let Some(outbound) = crate::intranet::outbound(profile) {
+        rules.extend([
+            format!("DOMAIN-SUFFIX,local,{outbound}"),
+            format!("GEOIP,LAN,{outbound},no-resolve"),
+        ]);
+    }
     rules.extend([
-        format!("DOMAIN-SUFFIX,local,{PRIVATE}"),
-        format!("GEOIP,LAN,{PRIVATE},no-resolve"),
         format!("RULE-SET,{china_domains},{CHINA}"),
         format!("GEOIP,CN,{CHINA},no-resolve"),
     ]);
@@ -139,8 +147,8 @@ fn apply_meta_options(config: &mut Value) {
     );
 }
 
-fn groups(configured: &[ProxyGroup], names: &[String]) -> Vec<Value> {
-    let mut configured = if configured.is_empty() {
+fn groups(profile: &Profile, names: &[String]) -> Vec<Value> {
+    let mut configured = if profile.groups.is_empty() {
         vec![ProxyGroup {
             name: "proxy".into(),
             group_type: "select".into(),
@@ -148,9 +156,21 @@ fn groups(configured: &[ProxyGroup], names: &[String]) -> Vec<Value> {
             ..ProxyGroup::default()
         }]
     } else {
-        configured.to_vec()
+        profile.groups.clone()
     };
     address_groups::append_missing(&mut configured);
+    if profile
+        .extra
+        .get("sempre_intranet_routing_mode")
+        .and_then(Value::as_str)
+        == Some("proxy")
+        && let Some(default) = names.first()
+        && let Some(group) = configured
+            .iter_mut()
+            .find(|group| group.name == address_groups::PRIVATE)
+    {
+        group.default.clone_from(default);
+    }
     configured
         .iter()
         .map(|group| {

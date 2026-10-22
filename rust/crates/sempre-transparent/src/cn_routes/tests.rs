@@ -80,7 +80,12 @@ impl Backend for Memory {
         }
         Ok(())
     }
-    async fn policy(&self, _: &dyn command::Runner, add: bool) -> Result<(), TransparentError> {
+    async fn policy(
+        &self,
+        _: &dyn command::Runner,
+        add: bool,
+        _: bool,
+    ) -> Result<(), TransparentError> {
         self.events
             .lock()
             .expect("events")
@@ -110,6 +115,7 @@ fn intent() -> Intent {
         prefixes: vec!["223.5.5.0/24".into(), "114.114.114.0/24".into()],
         tun_addresses: vec!["172.19.0.1/30".into()],
         capture_prefixes: Vec::new(),
+        intranet_exclusions: None,
         outbound_interfaces: [Some("en0".into()), None],
     }
 }

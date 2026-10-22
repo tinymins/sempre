@@ -54,6 +54,7 @@ async fn cn_routes_kernel_priority_update_recovery_and_cleanup() {
         ],
         tun_addresses: vec!["172.19.0.1/30".into(), "fdfe:dcba:9876::1/126".into()],
         capture_prefixes: vec!["10.88.0.0/16".into()],
+        intranet_exclusions: None,
         outbound_interfaces: [Some("cn-uplink".into()), Some("cn-uplink".into())],
     };
     if let Ok(path) = std::env::var("SEMPRE_CN_SNAPSHOT") {

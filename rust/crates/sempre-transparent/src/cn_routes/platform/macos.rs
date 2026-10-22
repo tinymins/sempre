@@ -62,7 +62,11 @@ fn field<'a>(output: &'a str, key: &str) -> Option<&'a str> {
 }
 
 #[allow(clippy::unused_async)] // Policy rules are required only on Linux.
-pub(super) async fn policy(_: &dyn command::Runner, _: bool) -> Result<(), TransparentError> {
+pub(super) async fn policy(
+    _: &dyn command::Runner,
+    _: bool,
+    _: bool,
+) -> Result<(), TransparentError> {
     Ok(())
 }
 

@@ -39,12 +39,25 @@ pub enum CnRoutingMode {
     Proxy,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IntranetRoutingMode {
+    #[default]
+    Direct,
+    Proxy,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::struct_excessive_bools)] // Independent persisted network controls.
 pub struct NetworkSettings {
     pub schema: u32,
     pub revision: u64,
     pub mode: NetworkMode,
     pub gateway_capture_host: bool,
+    #[serde(default = "default_true")]
+    pub intranet_routing_enabled: bool,
+    #[serde(default)]
+    pub intranet_routing_mode: IntranetRoutingMode,
     #[serde(default)]
     pub cn_direct_routes: bool,
     #[serde(default)]
@@ -62,6 +75,8 @@ impl Default for NetworkSettings {
             revision: 1,
             mode: NetworkMode::Local,
             gateway_capture_host: false,
+            intranet_routing_enabled: true,
+            intranet_routing_mode: IntranetRoutingMode::Direct,
             cn_direct_routes: false,
             cn_routing_mode: CnRoutingMode::DirectRoute,
             automatic_switching: false,
@@ -193,7 +208,19 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
             "sempre_cn_routing_mode".into(),
             json!(settings.cn_routing_mode),
         );
-        if settings.cn_direct_routes && settings.mode == NetworkMode::Local {
+        profile.extra.insert(
+            "sempre_intranet_routing_enabled".into(),
+            json!(settings.intranet_routing_enabled),
+        );
+        profile.extra.insert(
+            "sempre_intranet_routing_mode".into(),
+            json!(settings.intranet_routing_mode),
+        );
+        if settings.mode == NetworkMode::Local
+            && (settings.cn_direct_routes
+                || (settings.intranet_routing_enabled
+                    && settings.intranet_routing_mode == IntranetRoutingMode::Proxy))
+        {
             profile.transparent_proxy.mode = "tun-router".into();
         }
         profile.network_policy = json!({
@@ -227,12 +254,27 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
         Ok(profile)
     }
 
+    pub(crate) fn apply_intranet_remote(
+        profile: &Profile,
+        target: &Target,
+        remote: &mut sempre_subscription::RemoteResult,
+    ) -> Result<(), ManagerError> {
+        use sha2::{Digest, Sha256};
+        remote.content =
+            sempre_converter::apply_intranet_routing(profile, target, &remote.content)?;
+        remote.artifact_hash = format!("{:x}", Sha256::digest(remote.content.as_bytes()));
+        Ok(())
+    }
+
     pub(crate) fn apply_dns_frontend_settings(
         &self,
         profile: &Profile,
         target: &Target,
         enabled: bool,
     ) -> Result<Profile, ManagerError> {
+        self.network_settings
+            .read()
+            .validate_intranet_core(&target.core)?;
         let mut profile = sempre_converter::apply_dns_frontend_settings(profile, target, enabled)?;
         if !enabled || target.core != "sing-box" || target.platform != "default" {
             return Ok(profile);
@@ -274,9 +316,35 @@ fn shared_dns_mut(dns: &mut Value) -> &mut serde_json::Map<String, Value> {
 }
 
 impl NetworkSettings {
+    pub(crate) fn validate_intranet(
+        &self,
+        document: &sempre_state::Document,
+    ) -> Result<(), ManagerError> {
+        self.validate_intranet_core(
+            document
+                .selected
+                .as_ref()
+                .map_or("", |core| core.core.as_str()),
+        )
+    }
+
+    pub(crate) fn validate_intranet_core(&self, core: &str) -> Result<(), ManagerError> {
+        if self.intranet_routing_enabled
+            && self.intranet_routing_mode == IntranetRoutingMode::Proxy
+            && !(matches!(core, "sing-box" | "") || (core == "mihomo" && cfg!(target_os = "linux")))
+        {
+            return Err(ManagerError::InvalidOperation(
+                "intranet proxy capture requires sing-box, or mihomo on Linux".into(),
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn same_routing(&self, previous: &Self) -> bool {
         self.mode == previous.mode
             && self.gateway_capture_host == previous.gateway_capture_host
+            && self.intranet_routing_enabled == previous.intranet_routing_enabled
+            && self.intranet_routing_mode == previous.intranet_routing_mode
             && self.cn_direct_routes == previous.cn_direct_routes
             && self.cn_routing_mode == previous.cn_routing_mode
             && self.automatic_switching == previous.automatic_switching

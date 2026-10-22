@@ -5,6 +5,7 @@ use super::{Endpoint, Route, invalid};
 use crate::{TransparentError, command};
 
 const TABLE: &str = "20241";
+const CAPTURE_TABLE: &str = "20244";
 const PROTOCOL: u64 = 253;
 
 async fn json(runner: &dyn command::Runner, args: &[&str]) -> Result<Value, TransparentError> {
@@ -61,25 +62,33 @@ pub(super) async fn uplinks(
 
 pub(super) async fn preflight(
     runner: &dyn command::Runner,
-    _: &[Route],
+    desired: &[Route],
 ) -> Result<(), TransparentError> {
+    let capture = desired.iter().any(|route| route.scoped);
     for family in ["-4", "-6"] {
-        let output = runner
-            .run("ip", &["-j", family, "route", "show", "table", TABLE], None)
-            .await?;
-        if output.success {
-            let routes: Vec<Value> =
-                serde_json::from_str(&output.stdout).map_err(|e| invalid(e.to_string()))?;
-            if routes.iter().any(|r| !owned(r)) {
-                return Err(invalid("CN routing table is owned by another service"));
+        for table in [Some(TABLE), capture.then_some(CAPTURE_TABLE)]
+            .into_iter()
+            .flatten()
+        {
+            let output = runner
+                .run("ip", &["-j", family, "route", "show", "table", table], None)
+                .await?;
+            if output.success {
+                let routes: Vec<Value> =
+                    serde_json::from_str(&output.stdout).map_err(|e| invalid(e.to_string()))?;
+                if routes.iter().any(|r| !owned(r)) {
+                    return Err(invalid("CN routing table is owned by another service"));
+                }
+            } else if !output.stderr.contains("FIB table does not exist") {
+                command::require_success("ip", output)?;
             }
-        } else if !output.stderr.contains("FIB table does not exist") {
-            command::require_success("ip", output)?;
         }
         let rules = json(runner, &["-j", family, "rule", "show"]).await?;
         for rule in rules.as_array().into_iter().flatten() {
             let priority = rule["priority"].as_u64().unwrap_or(0);
-            if (20241..=20243).contains(&priority) && !owned(rule) {
+            if ((20241..=20243).contains(&priority) || (capture && priority == 20239))
+                && !owned(rule)
+            {
                 return Err(invalid(
                     "CN routing policy priority is owned by another service",
                 ));
@@ -110,9 +119,10 @@ pub(super) async fn change(
                 format!("via {} ", route.endpoint.gateway)
             };
             let operation = if add { "replace" } else { "del" };
+            let table = if route.scoped { CAPTURE_TABLE } else { TABLE };
             let _ = writeln!(
                 batch,
-                "route {operation} {} {gateway}dev {} table {TABLE} proto 253",
+                "route {operation} {} {gateway}dev {} table {table} proto 253",
                 route.prefix, route.endpoint.interface
             );
         }
@@ -143,41 +153,59 @@ pub(super) async fn change(
 pub(super) async fn policy(
     runner: &dyn command::Runner,
     add: bool,
+    capture: bool,
 ) -> Result<(), TransparentError> {
     for family in ["-4", "-6"] {
         let rules = json(runner, &["-j", family, "rule", "show"]).await?;
         let mut desired = [
             (
+                "20239",
+                capture,
+                vec![
+                    "not",
+                    "fwmark",
+                    "0x53500002/0xffffffff",
+                    "lookup",
+                    CAPTURE_TABLE,
+                ],
+            ),
+            (
                 "20241",
+                true,
                 vec!["fwmark", "0x53500002/0xffffffff", "lookup", "main"],
             ),
             (
                 "20242",
+                true,
                 vec!["lookup", "main", "suppress_prefixlength", "0"],
             ),
-            ("20243", vec!["lookup", TABLE]),
+            ("20243", true, vec!["lookup", TABLE]),
         ];
         if !add {
             desired.reverse();
         }
-        for (priority, tail) in desired {
+        for (priority, enabled, tail) in desired {
+            let install = add && enabled;
             let existing = rules.as_array().into_iter().flatten().find(|r| {
                 r["priority"].as_u64().map(|p| p.to_string()).as_deref() == Some(priority)
             });
             if let Some(rule) = existing {
                 if !owned(rule) {
+                    if priority == "20239" && !install {
+                        continue;
+                    }
                     return Err(invalid("refusing to modify another service's policy rule"));
                 }
-                if add {
+                if install {
                     continue;
                 }
-            } else if !add {
+            } else if !install {
                 continue;
             }
             let mut args = vec![
                 family,
                 "rule",
-                if add { "add" } else { "del" },
+                if install { "add" } else { "del" },
                 "pref",
                 priority,
             ];

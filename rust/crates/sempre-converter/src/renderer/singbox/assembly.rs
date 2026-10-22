@@ -48,7 +48,7 @@ pub(super) fn render(
         diffs.push(diff);
     }
     outbounds.extend(private.outbounds.iter().cloned());
-    outbounds.extend(selector_outbounds(&profile.groups, &names, target));
+    outbounds.extend(selector_outbounds(profile, &names, target));
 
     let mut dns = super::super::dns::sing_box(profile, proxies, target)?;
     let direct_modes = network_direct_modes(&profile.network_policy);
@@ -143,8 +143,8 @@ fn network_direct_modes(policy: &Value) -> Vec<String> {
         .collect()
 }
 
-fn selector_outbounds(groups: &[ProxyGroup], names: &[String], target: &Target) -> Vec<Value> {
-    let mut configured = if groups.is_empty() {
+fn selector_outbounds(profile: &Profile, names: &[String], target: &Target) -> Vec<Value> {
+    let mut configured = if profile.groups.is_empty() {
         vec![ProxyGroup {
             name: "proxy".into(),
             group_type: "select".into(),
@@ -152,7 +152,7 @@ fn selector_outbounds(groups: &[ProxyGroup], names: &[String], target: &Target) 
             ..ProxyGroup::default()
         }]
     } else {
-        groups.to_vec()
+        profile.groups.clone()
     };
     super::super::address_groups::append_missing(&mut configured);
     let mut outbounds = Vec::new();
@@ -200,6 +200,19 @@ fn selector_outbounds(groups: &[ProxyGroup], names: &[String], target: &Target) 
         }
         outbounds.push(outbound);
     }
+    if profile
+        .extra
+        .get("sempre_intranet_routing_mode")
+        .and_then(Value::as_str)
+        == Some("proxy")
+        && let Some(default) = names.first()
+        && let Some(group) = outbounds
+            .iter_mut()
+            .find(|group| group["tag"] == super::super::address_groups::PRIVATE)
+    {
+        group["default"] = json!(default);
+    }
+
     outbounds
 }
 

@@ -159,6 +159,7 @@ impl DnsSettings {
             }));
             route_rules.push(json!({ "rule_set": [provider_tag], "outbound": outbound }));
         }
+        let private_outbounds = sempre_converter::private_route_outbounds(&document);
         let route = document
             .get_mut("route")
             .and_then(Value::as_object_mut)
@@ -187,12 +188,7 @@ impl DnsSettings {
         let insert_at = rules
             .iter()
             .enumerate()
-            .filter(|(_, rule)| {
-                matches!(
-                    rule.get("action").and_then(Value::as_str),
-                    Some("sniff" | "hijack-dns")
-                ) || rule.get("protocol").and_then(Value::as_str) == Some("dns")
-            })
+            .filter(|(_, rule)| precedes_domain_routing(rule, &private_outbounds))
             .map(|(index, _)| index + 1)
             .max()
             .unwrap_or(0);
@@ -206,6 +202,14 @@ impl DnsSettings {
         content.push('\n');
         Ok(content)
     }
+}
+
+fn precedes_domain_routing(rule: &Value, private_outbounds: &[String]) -> bool {
+    matches!(
+        rule.get("action").and_then(Value::as_str),
+        Some("sniff" | "hijack-dns")
+    ) || rule.get("protocol").and_then(Value::as_str) == Some("dns")
+        || sempre_converter::is_private_route(rule, private_outbounds)
 }
 
 fn proxy_group_name(rule_set: &DnsRoutingRuleSet) -> String {

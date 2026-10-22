@@ -89,8 +89,9 @@ pub(super) async fn change(
 pub(super) async fn policy(
     runner: &dyn command::Runner,
     add: bool,
+    capture: bool,
 ) -> Result<(), TransparentError> {
-    native::policy(runner, add).await
+    native::policy(runner, add, capture).await
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -112,7 +113,7 @@ mod native {
     ) -> Result<(), TransparentError> {
         Err(invalid("unsupported CN routing platform"))
     }
-    pub async fn policy(_: &dyn command::Runner, _: bool) -> Result<(), TransparentError> {
+    pub async fn policy(_: &dyn command::Runner, _: bool, _: bool) -> Result<(), TransparentError> {
         Ok(())
     }
 }

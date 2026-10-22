@@ -48,7 +48,9 @@ impl Controller {
         runtime_config: &std::path::Path,
     ) -> Result<Plan, TransparentError> {
         if cfg!(target_os = "macos") {
-            if crate::system_dns_intent(profile).is_none() {
+            if crate::system_dns_intent(profile).is_none()
+                && !sempre_converter::intranet_proxy_enabled(profile)
+            {
                 return Ok(Plan::default());
             }
             let upstreams = self
@@ -65,7 +67,9 @@ impl Controller {
             );
         }
         if cfg!(target_os = "windows") {
-            if crate::system_dns_intent(profile).is_none() {
+            if crate::system_dns_intent(profile).is_none()
+                && !sempre_converter::intranet_proxy_enabled(profile)
+            {
                 return Ok(Plan::default());
             }
             let upstreams = self
@@ -85,7 +89,13 @@ impl Controller {
             return Ok(Plan::default());
         }
         let inventory = sempre_network::inventory()?;
-        let mut plan = crate::prepare_with_inventory(core, profile, runtime_config, &inventory)?;
+        let upstreams = if sempre_converter::intranet_proxy_enabled(profile) {
+            self.system_dns.discover_upstreams()?
+        } else {
+            Vec::new()
+        };
+        let mut plan =
+            crate::prepare_with_upstreams(core, profile, runtime_config, &inventory, &upstreams)?;
         if let Some(system_dns) = plan
             .system_dns
             .as_mut()

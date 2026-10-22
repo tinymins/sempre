@@ -3,6 +3,8 @@ export interface NetworkSettings {
   revision: number
   mode: 'local' | 'gateway'
   gateway_capture_host: boolean
+  intranet_routing_enabled?: boolean
+  intranet_routing_mode?: 'direct' | 'proxy'
   cn_direct_routes?: boolean
   cn_routing_mode?: 'direct-route' | 'proxy'
   automatic_switching: boolean

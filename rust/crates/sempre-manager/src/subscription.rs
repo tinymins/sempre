@@ -12,7 +12,6 @@ use sempre_state::{Document, PendingConfigField};
 use sempre_subscription::{Catalog, SubscriptionError};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner};
@@ -50,6 +49,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<(CoreChange, crate::NetworkSettings), ManagerError> {
         let _operation = self.store.acquire_operation()?;
         let document = self.store.read()?;
+        candidate.validate_intranet(&document)?;
         let previous = self.network_settings.read();
         let saved = self.network_settings.replace(candidate)?;
         if saved.same_routing(&previous) {
@@ -298,9 +298,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             let dns_settings = self.dns_settings.read();
             if dns_settings.enabled && target.core == "sing-box" {
                 remote.content = dns_settings.apply_compiled_sing_box_overlay(&remote.content)?;
-                remote.artifact_hash = format!("{:x}", Sha256::digest(remote.content.as_bytes()));
             }
             let network_profile = self.apply_network_settings(&remote.profile)?;
+            Self::apply_intranet_remote(&network_profile, &target, &mut remote)?;
             let runtime_profile =
                 self.apply_dns_frontend_settings(&network_profile, &target, dns_settings.enabled)?;
             let dns_frontend_policy = dns_frontend_policy(&runtime_profile, &target)?;

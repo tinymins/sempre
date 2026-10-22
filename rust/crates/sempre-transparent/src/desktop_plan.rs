@@ -43,10 +43,12 @@ fn prepare_with_windows_ipv6(
     original_upstreams: Vec<String>,
     windows_ipv6_available: bool,
 ) -> Result<Plan, TransparentError> {
-    let Some(system_dns) = managed_frontend_plan(platform, core, profile, original_upstreams)
-    else {
+    let intranet_proxy = core == "sing-box" && sempre_converter::intranet_proxy_enabled(profile);
+    let upstreams = original_upstreams.clone();
+    let system_dns = managed_frontend_plan(platform, core, profile, original_upstreams);
+    if system_dns.is_none() && !intranet_proxy {
         return Ok(Plan::default());
-    };
+    }
     let data = fs::read(runtime_config).map_err(|source| TransparentError::Io {
         context: "read desktop DNS frontend runtime configuration".into(),
         source,
@@ -57,7 +59,7 @@ fn prepare_with_windows_ipv6(
     }
     let plan = Plan {
         core: core.into(),
-        system_dns: Some(system_dns),
+        system_dns,
         ..Plan::default()
     };
     let capture_prefixes = config["inbounds"]
@@ -65,10 +67,12 @@ fn prepare_with_windows_ipv6(
         .and_then(|a| a.iter().find(|r| r["type"] == "tun"))
         .and_then(|r| r.get("route_address"))
         .cloned();
-    match platform {
-        Platform::Macos => insert_original_dns_bypass(&mut config, &plan)?,
-        Platform::Windows => configure_windows_dns_redirect(&mut config, &plan, core_version)?,
-        Platform::WindowsDivert => configure_windows_routes(&mut config, &plan)?,
+    if plan.system_dns.is_some() {
+        match platform {
+            Platform::Macos => insert_original_dns_bypass(&mut config, &plan)?,
+            Platform::Windows => configure_windows_dns_redirect(&mut config, &plan, core_version)?,
+            Platform::WindowsDivert => configure_windows_routes(&mut config, &plan)?,
+        }
     }
     if sempre_converter::cn_pre_routing(profile)
         && let Some(capture) = capture_prefixes
@@ -77,6 +81,14 @@ fn prepare_with_windows_ipv6(
             .and_then(|a| a.iter_mut().find(|r| r["type"] == "tun"))
     {
         tun["route_address"] = capture;
+    }
+    if intranet_proxy {
+        let capture = crate::intranet::resolve(profile, &config, &upstreams)?;
+        crate::intranet::apply(
+            &mut config,
+            &capture,
+            !sempre_converter::cn_pre_routing(profile),
+        );
     }
     let mut data =
         serde_json::to_vec_pretty(&config).map_err(|error| TransparentError::Encode {

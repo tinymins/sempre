@@ -82,6 +82,8 @@ fn runtime_key(
     }
     let value = json!({
         "transparent_proxy": profile.transparent_proxy,
+        "intranet_routing_enabled": network_settings.intranet_routing_enabled,
+        "intranet_routing_mode": network_settings.intranet_routing_mode,
         "cn_direct_routes": network_settings.cn_direct_routes,
         "cn_routing_mode": network_settings.cn_routing_mode,
         "local_proxy": profile.local_proxy,
