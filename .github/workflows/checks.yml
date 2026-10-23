@@ -156,9 +156,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Build the multi-user server
         run: docker compose -p sempre-server-ci -f rust/compose.yml build server
+      - name: Pull PostgreSQL image
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          delay=10
+          for attempt in 1 2 3 4; do
+            echo "Pulling PostgreSQL image (attempt $attempt/4)"
+            if docker compose -p sempre-server-ci -f rust/compose.yml pull postgres; then
+              break
+            else
+              status=$?
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "PostgreSQL image pull failed after 4 attempts" >&2
+              exit "$status"
+            fi
+            echo "PostgreSQL image pull failed; retrying in $delay seconds" >&2
+            sleep "$delay"
+            delay=$((delay * 2))
+          done
       - name: Start PostgreSQL and initialize the Toolbox schema
         run: |
-          docker compose -p sempre-server-ci -f rust/compose.yml up --detach --wait postgres
+          docker compose -p sempre-server-ci -f rust/compose.yml up --detach --wait --pull never postgres
           docker compose -p sempre-server-ci -f rust/compose.yml run --rm --no-deps server migrate
       - name: Start the multi-user server
         run: docker compose -p sempre-server-ci -f rust/compose.yml up --detach --wait server

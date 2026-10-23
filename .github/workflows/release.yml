@@ -192,14 +192,38 @@ jobs:
           ARCH: ${{ matrix.arch }}
           LOCAL_IMAGE: ${{ matrix.image }}:verify
         run: skopeo copy --override-os linux --override-arch "$ARCH" "oci-archive:$RUNNER_TEMP/image.tar" "docker-daemon:$LOCAL_IMAGE"
+      - name: Prepare the runtime verification stack
+        if: matrix.image == 'sempre'
+        shell: bash
+        run: |
+          echo "COMPOSE_FILE=rust/compose.yml:$RUNNER_TEMP/compose-image.yml" >> "$GITHUB_ENV"
+          printf 'services:\n  server:\n    image: sempre:verify\n' > "$RUNNER_TEMP/compose-image.yml"
+      - name: Pull PostgreSQL image
+        if: matrix.image == 'sempre'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          delay=10
+          for attempt in 1 2 3 4; do
+            echo "Pulling PostgreSQL image (attempt $attempt/4)"
+            if docker compose pull postgres; then
+              break
+            else
+              status=$?
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "PostgreSQL image pull failed after 4 attempts" >&2
+              exit "$status"
+            fi
+            echo "PostgreSQL image pull failed; retrying in $delay seconds" >&2
+            sleep "$delay"
+            delay=$((delay * 2))
+          done
       - name: Start PostgreSQL and initialize the Toolbox schema
         if: matrix.image == 'sempre'
         shell: bash
         run: |
-          export COMPOSE_FILE="rust/compose.yml:$RUNNER_TEMP/compose-image.yml"
-          echo "COMPOSE_FILE=$COMPOSE_FILE" >> "$GITHUB_ENV"
-          printf 'services:\n  server:\n    image: sempre:verify\n' > "$RUNNER_TEMP/compose-image.yml"
-          docker compose up --detach --wait postgres
+          docker compose up --detach --wait --pull never postgres
           docker compose run --rm --no-deps server migrate
       - name: Verify the container
         if: matrix.image == 'sempre'
