@@ -26,9 +26,13 @@ export function RuntimeRestartModal({ open, task, submittedAt, submitting, runti
   const [now, setNow] = useState(Date.now)
   const [configOpen, setConfigOpen] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
+  const followLogRef = useRef(true)
   const attachLog = useCallback((node: HTMLDivElement | null) => {
     logRef.current = node
-    if (node) node.scrollTop = node.scrollHeight
+    if (node) {
+      followLogRef.current = true
+      node.scrollTop = node.scrollHeight
+    }
   }, [])
   const current = submitting ? null : task
   const action = current?.action ?? (submitting ? 'restart' : runtimeState === 'starting' ? 'start' : runtimeState === 'stopping' ? 'stop' : 'restart')
@@ -46,7 +50,7 @@ export function RuntimeRestartModal({ open, task, submittedAt, submitting, runti
     return () => window.clearInterval(timer)
   }, [open, running])
   useEffect(() => {
-    if (open && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+    if (open && followLogRef.current && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [open, lastSequence])
 
   return <>
@@ -60,6 +64,10 @@ export function RuntimeRestartModal({ open, task, submittedAt, submitting, runti
         </div>
         {error ? <div role="alert"><Alert type="error" showIcon message={error} /></div> : null}
         <div ref={attachLog} role="log" aria-label={zh ? '核心操作日志' : 'Core operation log'} aria-live="polite" tabIndex={0} onKeyDown={selectAllContents}
+          onScroll={(event) => {
+            const { scrollTop, scrollHeight, clientHeight } = event.currentTarget
+            followLogRef.current = scrollHeight - clientHeight - scrollTop <= 1
+          }}
           className="h-[min(56vh,560px)] min-h-48 overflow-auto rounded-md border border-slate-700 bg-slate-950 p-4 font-mono text-xs leading-6 text-slate-200 [color-scheme:dark]">
           {current?.omitted_logs ? <p className="text-amber-300">{zh ? `已省略前 ${current.omitted_logs} 条日志` : `${current.omitted_logs} earlier entries omitted`}</p> : null}
           {current?.logs.map((entry) => <LogLine key={entry.sequence} action={action} entry={entry} configAvailable={current.config_available} onConfig={() => setConfigOpen(true)} />)}
