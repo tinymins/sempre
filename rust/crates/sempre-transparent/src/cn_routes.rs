@@ -2,9 +2,17 @@ mod backend;
 mod model;
 mod platform;
 
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashSet,
+    fs,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 
 use crate::{TransparentError, command};
 pub use model::Intent as CnRouteIntent;
@@ -12,7 +20,14 @@ pub fn normalize_cn_prefixes(prefixes: &[String]) -> Result<Vec<String>, Transpa
     model::normalize(prefixes)
 }
 use backend::{Backend, Native};
-use model::{Journal, Route, difference, invalid};
+use model::{Journal, Route, invalid};
+
+/// Native route changes completed by the current reconciliation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CnRouteProgress {
+    pub done: usize,
+    pub total: usize,
+}
 
 pub(crate) async fn outbound_interfaces(
     runner: &dyn command::Runner,
@@ -24,6 +39,10 @@ pub(crate) struct Controller<B = Native> {
     backend: B,
     path: Option<PathBuf>,
     gate: Mutex<()>,
+    // The journal records ownership; it describes the OS table only after this
+    // process has reconciled against it.
+    verified: AtomicBool,
+    progress: watch::Sender<CnRouteProgress>,
 }
 
 impl<B: Backend> Controller<B> {
@@ -32,7 +51,13 @@ impl<B: Backend> Controller<B> {
             backend: B::default(),
             path,
             gate: Mutex::new(()),
+            verified: AtomicBool::new(false),
+            progress: watch::Sender::new(CnRouteProgress::default()),
         }
+    }
+
+    pub(crate) fn progress(&self) -> watch::Receiver<CnRouteProgress> {
+        self.progress.subscribe()
     }
 
     pub(crate) async fn apply(
@@ -44,46 +69,14 @@ impl<B: Backend> Controller<B> {
         // the gate; the write-ahead journal retains every possibly installed route.
         let _gate = self.gate.lock().await;
         let (uplinks, tun) = self.backend.discover(runner.as_ref(), intent).await?;
-        let previous = self.read()?;
         let desired = model::plan(intent, &uplinks, &tun)?;
-        if previous.routes == desired {
+        if self.verified.load(Ordering::SeqCst) && self.read()?.routes == desired {
             return Ok(());
         }
-        self.replace(runner.as_ref(), desired).await
-    }
-
-    async fn replace(
-        &self,
-        runner: &dyn command::Runner,
-        desired: Vec<Route>,
-    ) -> Result<(), TransparentError> {
-        let previous = self.read()?;
-        let additions = difference(&desired, &previous.routes);
-        let removals = difference(&previous.routes, &desired);
-        // Write ahead: an interrupted batch can always be recovered. Backends only
-        // delete routes bearing our ownership marker and the complete identity.
-        let mut pending = previous;
-        pending.routes.extend(additions.clone());
-        pending.policy = true;
-        self.write(&pending)?;
-        let operation = async {
-            self.backend.preflight(runner, &additions).await?;
-            self.change(runner, &additions, false, true).await?;
-            self.change(runner, &additions, true, true).await?;
-            self.backend
-                .policy(runner, true, desired.iter().any(|r| r.fallback && r.scoped))
-                .await?;
-            self.change(runner, &removals, true, false).await?;
-            self.change(runner, &removals, false, false).await?;
-            self.write(&Journal {
-                routes: desired,
-                policy: true,
-            })
-        }
-        .await;
-        if let Err(error) = operation {
+        let capture = desired.iter().any(|r| r.fallback && r.scoped);
+        if let Err(error) = self.reconcile(runner.as_ref(), desired, Some(capture)).await {
             // Disconnect TUN first, including on partial installation failure.
-            if let Err(cleanup) = self.cleanup_locked(runner).await {
+            if let Err(cleanup) = self.reconcile(runner.as_ref(), Vec::new(), None).await {
                 return Err(invalid(format!(
                     "{error}; CN route cleanup failed: {cleanup}"
                 )));
@@ -93,12 +86,70 @@ impl<B: Backend> Controller<B> {
         Ok(())
     }
 
+    pub(crate) async fn cleanup(
+        &self,
+        runner: &dyn command::Runner,
+    ) -> Result<(), TransparentError> {
+        let _gate = self.gate.lock().await;
+        self.reconcile(runner, Vec::new(), None).await
+    }
+
+    /// Converges owned routes on `target`; `policy` is the capture mode for a
+    /// non-empty target. Every completed batch is checkpointed, so an interrupted
+    /// run resumes with only the remaining work.
+    async fn reconcile(
+        &self,
+        runner: &dyn command::Runner,
+        target: Vec<Route>,
+        policy: Option<bool>,
+    ) -> Result<(), TransparentError> {
+        self.verified.store(false, Ordering::SeqCst);
+        let mut journal = self.read()?;
+        let mut candidates = journal.routes.clone();
+        candidates.extend(model::difference(&target, &journal.routes));
+        let installed = if candidates.is_empty() {
+            Vec::new()
+        } else {
+            self.backend.observe(runner, &candidates).await?
+        };
+        let additions = model::difference(&target, &installed);
+        let removals = model::difference(&installed, &target);
+        let mut progress = Progress::new(&self.progress, additions.len() + removals.len());
+        journal.routes = installed;
+        journal.routes.extend(additions.iter().cloned());
+        if let Some(capture) = policy {
+            // Write ahead: an interrupted batch can always be recovered. Backends only
+            // delete routes bearing our ownership marker and the complete identity.
+            journal.policy = true;
+            self.write(&journal)?;
+            self.backend.preflight(runner, &additions).await?;
+            for fallback in [false, true] {
+                self.change(runner, &mut journal, &additions, fallback, true, &mut progress)
+                    .await?;
+            }
+            self.backend.policy(runner, true, capture).await?;
+        } else if journal.policy {
+            self.backend.policy(runner, false, false).await?;
+            journal.policy = false;
+        }
+        for fallback in [true, false] {
+            self.change(runner, &mut journal, &removals, fallback, false, &mut progress)
+                .await?;
+        }
+        journal.routes = target;
+        self.store(&journal)?;
+        self.verified.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
     async fn change(
         &self,
         runner: &dyn command::Runner,
+        journal: &mut Journal,
         routes: &[Route],
         fallback: bool,
         add: bool,
+        progress: &mut Progress<'_>,
     ) -> Result<(), TransparentError> {
         let routes = routes
             .iter()
@@ -107,26 +158,21 @@ impl<B: Backend> Controller<B> {
             .collect::<Vec<_>>();
         for chunk in routes.chunks(self.backend.batch_size()) {
             self.backend.change(runner, chunk, add).await?;
+            if !add {
+                let removed = chunk.iter().collect::<HashSet<_>>();
+                journal.routes.retain(|route| !removed.contains(route));
+                self.store(journal)?;
+            }
+            progress.advance(chunk.len());
             tokio::task::yield_now().await;
         }
         Ok(())
     }
 
-    pub(crate) async fn cleanup(
-        &self,
-        runner: &dyn command::Runner,
-    ) -> Result<(), TransparentError> {
-        let _gate = self.gate.lock().await;
-        self.cleanup_locked(runner).await
-    }
-
-    async fn cleanup_locked(&self, runner: &dyn command::Runner) -> Result<(), TransparentError> {
-        let journal = self.read()?;
-        if journal.policy {
-            self.backend.policy(runner, false, false).await?;
+    fn store(&self, journal: &Journal) -> Result<(), TransparentError> {
+        if !journal.routes.is_empty() || journal.policy {
+            return self.write(journal);
         }
-        self.change(runner, &journal.routes, true, false).await?;
-        self.change(runner, &journal.routes, false, false).await?;
         if let Some(path) = &self.path {
             match fs::remove_file(path) {
                 Ok(()) => {}
@@ -160,5 +206,25 @@ impl<B: Backend> Controller<B> {
     }
 }
 
+struct Progress<'a> {
+    sender: &'a watch::Sender<CnRouteProgress>,
+    state: CnRouteProgress,
+}
+
+impl<'a> Progress<'a> {
+    fn new(sender: &'a watch::Sender<CnRouteProgress>, total: usize) -> Self {
+        let state = CnRouteProgress { done: 0, total };
+        sender.send_replace(state);
+        Self { sender, state }
+    }
+
+    fn advance(&mut self, count: usize) {
+        self.state.done += count;
+        self.sender.send_replace(self.state);
+    }
+}
+
+#[cfg(test)]
+mod reconcile_tests;
 #[cfg(test)]
 mod tests;

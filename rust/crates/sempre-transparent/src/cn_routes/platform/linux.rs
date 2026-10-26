@@ -102,6 +102,60 @@ fn owned(value: &Value) -> bool {
     value["protocol"].as_u64() == Some(PROTOCOL) || value["protocol"].as_str() == Some("253")
 }
 
+pub(super) async fn observe(
+    runner: &dyn command::Runner,
+    candidates: &[Route],
+) -> Result<Vec<Route>, TransparentError> {
+    let mut installed = std::collections::HashSet::new();
+    for family in ["-4", "-6"] {
+        for (table, scoped) in [(TABLE, false), (CAPTURE_TABLE, true)] {
+            if !candidates
+                .iter()
+                .any(|r| r.scoped == scoped && r.prefix.contains(':') == (family == "-6"))
+            {
+                continue;
+            }
+            let output = runner
+                .run("ip", &["-j", family, "route", "show", "table", table], None)
+                .await?;
+            if !output.success && output.stderr.contains("FIB table does not exist") {
+                continue;
+            }
+            let output = command::require_success("ip", output)?;
+            let rows: Vec<Value> =
+                serde_json::from_str(&output.stdout).map_err(|e| invalid(e.to_string()))?;
+            for row in rows.iter().filter(|row| owned(row)) {
+                let (Some(dst), Some(dev)) = (row["dst"].as_str(), row["dev"].as_str()) else {
+                    continue;
+                };
+                let prefix = match dst {
+                    "default" if family == "-6" => "::/0".to_owned(),
+                    "default" => "0.0.0.0/0".to_owned(),
+                    dst => dst
+                        .parse::<ipnet::IpNet>()
+                        .or_else(|_| dst.parse::<std::net::IpAddr>().map(ipnet::IpNet::from))
+                        .map_err(|_| invalid(format!("invalid route destination {dst}")))?
+                        .to_string(),
+                };
+                let gateway = row["gateway"].as_str().unwrap_or_default().to_owned();
+                installed.insert((prefix, dev.to_owned(), gateway, scoped));
+            }
+        }
+    }
+    Ok(candidates
+        .iter()
+        .filter(|r| {
+            installed.contains(&(
+                r.prefix.clone(),
+                r.endpoint.interface.clone(),
+                r.endpoint.gateway.clone(),
+                r.scoped,
+            ))
+        })
+        .cloned()
+        .collect())
+}
+
 pub(super) async fn change(
     runner: &dyn command::Runner,
     routes: &[Route],

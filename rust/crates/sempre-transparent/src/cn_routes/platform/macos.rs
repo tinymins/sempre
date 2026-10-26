@@ -70,6 +70,28 @@ pub(super) async fn policy(
     Ok(())
 }
 
+pub(super) async fn observe(
+    _: &dyn command::Runner,
+    candidates: &[Route],
+) -> Result<Vec<Route>, TransparentError> {
+    let candidates = candidates.to_vec();
+    tokio::task::spawn_blocking(move || {
+        let mut connection = Connection::open()?;
+        let mut installed = Vec::new();
+        for route in candidates {
+            // Only an owned route with the complete identity would be deleted.
+            if let Some(current) = connection.get(&route)?
+                && current.operation(&route, false)?.is_some()
+            {
+                installed.push(route);
+            }
+        }
+        Ok(installed)
+    })
+    .await
+    .map_err(|e| invalid(e.to_string()))?
+}
+
 pub(super) async fn preflight(
     _: &dyn command::Runner,
     routes: &[Route],

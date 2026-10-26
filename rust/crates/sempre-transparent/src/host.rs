@@ -161,6 +161,10 @@ impl Controller {
         self.cleanup_owned().await
     }
 
+    pub fn cn_route_progress(&self) -> tokio::sync::watch::Receiver<crate::CnRouteProgress> {
+        self.cn_routes.progress()
+    }
+
     pub async fn cleanup_runtime_network(&self) -> Result<(), TransparentError> {
         self.cn_routes.cleanup(self.runner.as_ref()).await?;
         if !cfg!(target_os = "linux") || !self.is_root().await? {

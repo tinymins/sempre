@@ -14,11 +14,13 @@ use super::{
 use crate::{TransparentError, command};
 
 #[derive(Default)]
-struct Memory {
-    routes: Mutex<HashSet<Route>>,
-    events: Mutex<Vec<String>>,
+pub(super) struct Memory {
+    pub(super) routes: Mutex<HashSet<Route>>,
+    pub(super) events: Mutex<Vec<String>>,
     fail: AtomicBool,
-    fail_cleanup: AtomicBool,
+    pub(super) fail_cleanup: AtomicBool,
+    // Removal batches allowed before cleanup fails.
+    pub(super) removal_batches: Mutex<Option<usize>>,
     paused: AtomicBool,
     entered: tokio::sync::Notify,
     resume: tokio::sync::Notify,
@@ -43,6 +45,18 @@ impl Backend for Memory {
             tun,
         ))
     }
+    async fn observe(
+        &self,
+        _: &dyn command::Runner,
+        candidates: &[Route],
+    ) -> Result<Vec<Route>, TransparentError> {
+        let installed = self.routes.lock().expect("routes");
+        Ok(candidates
+            .iter()
+            .filter(|route| installed.contains(route))
+            .cloned()
+            .collect())
+    }
     async fn preflight(
         &self,
         _: &dyn command::Runner,
@@ -62,6 +76,14 @@ impl Backend for Memory {
         }
         if !add && self.fail_cleanup.load(Ordering::SeqCst) {
             return Err(invalid("injected cleanup failure"));
+        }
+        if !add
+            && let Some(left) = self.removal_batches.lock().expect("budget").as_mut()
+        {
+            if *left == 0 {
+                return Err(invalid("injected interrupted cleanup"));
+            }
+            *left -= 1;
         }
         for route in routes {
             self.events
@@ -94,7 +116,7 @@ impl Backend for Memory {
     }
 }
 
-fn endpoints() -> (Endpoint, Endpoint) {
+pub(super) fn endpoints() -> (Endpoint, Endpoint) {
     (
         Endpoint {
             interface: "en0".into(),
@@ -109,7 +131,7 @@ fn endpoints() -> (Endpoint, Endpoint) {
     )
 }
 
-fn intent() -> Intent {
+pub(super) fn intent() -> Intent {
     Intent {
         direct: true,
         prefixes: vec!["223.5.5.0/24".into(), "114.114.114.0/24".into()],
@@ -197,7 +219,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     let (mut uplink, tun) = endpoints();
     let original = plan(&intent(), std::slice::from_ref(&uplink), &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, original.clone())
+        .reconcile(&command::SystemRunner, original.clone(), Some(false))
         .await
         .expect("install");
     let events = controller.backend.events.lock().expect("events").clone();
@@ -216,7 +238,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     next.prefixes.push("120.0.0.0/8".into());
     let updated = plan(&next, std::slice::from_ref(&uplink), &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, updated)
+        .reconcile(&command::SystemRunner, updated, Some(false))
         .await
         .expect("delta");
     assert_eq!(
@@ -233,7 +255,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     uplink.gateway = "192.168.2.1".into();
     let changed = plan(&next, &[uplink], &tun).expect("new network");
     controller
-        .replace(&command::SystemRunner, changed.clone())
+        .reconcile(&command::SystemRunner, changed.clone(), Some(false))
         .await
         .expect("switch");
     assert_eq!(
@@ -244,7 +266,7 @@ async fn installation_updates_and_cleanup_preserve_order() {
     let proxy = plan(&next, &[endpoints().0], &tun).expect("proxy plan");
     assert!(proxy.iter().all(|route| route.fallback || route.scoped));
     controller
-        .replace(&command::SystemRunner, proxy.clone())
+        .reconcile(&command::SystemRunner, proxy.clone(), Some(false))
         .await
         .expect("proxy switch");
     assert_eq!(
@@ -266,13 +288,13 @@ async fn installation_updates_and_cleanup_preserve_order() {
 async fn partial_batch_failure_and_stale_journal_are_recoverable() {
     let directory = tempfile::tempdir().expect("directory");
     let path = directory.path().join("routes.json");
-    let controller = Controller::<Memory>::new(Some(path.clone()));
+    let controller = std::sync::Arc::new(Controller::<Memory>::new(Some(path.clone())));
     let (uplink, tun) = endpoints();
     let routes = plan(&intent(), &[uplink], &tun).expect("plan");
     controller.backend.fail.store(true, Ordering::SeqCst);
     assert!(
         controller
-            .replace(&command::SystemRunner, routes.clone())
+            .apply(std::sync::Arc::new(command::SystemRunner), &intent())
             .await
             .is_err()
     );
@@ -305,7 +327,7 @@ async fn failed_cleanup_keeps_journal_for_next_recovery() {
     let (uplink, tun) = endpoints();
     let desired = plan(&intent(), &[uplink], &tun).expect("plan");
     controller
-        .replace(&command::SystemRunner, desired)
+        .reconcile(&command::SystemRunner, desired, Some(false))
         .await
         .expect("install");
     controller

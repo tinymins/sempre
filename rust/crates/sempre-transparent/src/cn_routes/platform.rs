@@ -71,6 +71,13 @@ async fn discover_tun(
     native::endpoint(runner, &names[0]).await
 }
 
+pub(super) async fn observe(
+    runner: &dyn command::Runner,
+    candidates: &[Route],
+) -> Result<Vec<Route>, TransparentError> {
+    native::observe(runner, candidates).await
+}
+
 pub(super) async fn preflight(
     runner: &dyn command::Runner,
     routes: &[Route],
@@ -102,6 +109,12 @@ mod native {
     }
     pub async fn uplinks(_: &dyn command::Runner) -> Result<Vec<Endpoint>, TransparentError> {
         Err(invalid("CN routing is unsupported on this platform"))
+    }
+    pub async fn observe(
+        _: &dyn command::Runner,
+        _: &[Route],
+    ) -> Result<Vec<Route>, TransparentError> {
+        Err(invalid("unsupported CN routing platform"))
     }
     pub async fn preflight(_: &dyn command::Runner, _: &[Route]) -> Result<(), TransparentError> {
         Err(invalid("unsupported CN routing platform"))

@@ -15,6 +15,12 @@ pub(crate) trait Backend: Default + Send + Sync + 'static {
         runner: &'a dyn command::Runner,
         intent: &'a Intent,
     ) -> impl Future<Output = Result<(Vec<Endpoint>, Endpoint), TransparentError>> + Send + 'a;
+    /// Returns the candidates currently installed with this service's ownership marker.
+    fn observe<'a>(
+        &'a self,
+        runner: &'a dyn command::Runner,
+        candidates: &'a [Route],
+    ) -> impl Future<Output = Result<Vec<Route>, TransparentError>> + Send + 'a;
     fn preflight<'a>(
         &'a self,
         runner: &'a dyn command::Runner,
@@ -44,6 +50,13 @@ impl Backend for Native {
         intent: &Intent,
     ) -> Result<(Vec<Endpoint>, Endpoint), TransparentError> {
         platform::discover(runner, &intent.tun_addresses).await
+    }
+    async fn observe(
+        &self,
+        runner: &dyn command::Runner,
+        candidates: &[Route],
+    ) -> Result<Vec<Route>, TransparentError> {
+        platform::observe(runner, candidates).await
     }
     async fn preflight(
         &self,

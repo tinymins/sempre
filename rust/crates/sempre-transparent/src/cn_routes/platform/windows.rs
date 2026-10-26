@@ -192,79 +192,124 @@ pub(super) async fn preflight(
     Ok(())
 }
 
-#[allow(unsafe_code)] // Calls use initialized official Windows binding rows.
+fn next_hop(route: &Route, network: &ipnet::IpNet) -> Result<IpAddr, TransparentError> {
+    if route.endpoint.gateway.is_empty() {
+        return Ok(if network.addr().is_ipv4() {
+            IpAddr::from([0, 0, 0, 0])
+        } else {
+            IpAddr::from([0_u16; 8])
+        });
+    }
+    decode(&address::parse_gateway(&route.endpoint.gateway)?)
+}
+
+#[allow(clippy::unused_async)] // Shared asynchronous platform contract.
+pub(super) async fn observe(
+    _: &dyn command::Runner,
+    candidates: &[Route],
+) -> Result<Vec<Route>, TransparentError> {
+    // One table snapshot replaces a native lookup per candidate.
+    let mut installed = std::collections::HashSet::new();
+    for row in routes()? {
+        if row.Metric == METRIC && row.Protocol == MIB_IPPROTO_NETMGMT {
+            installed.insert((
+                row.InterfaceIndex,
+                prefix(&row.DestinationPrefix)?,
+                decode(&row.NextHop)?,
+            ));
+        }
+    }
+    let mut observed = Vec::new();
+    for route in candidates {
+        let network = route
+            .prefix
+            .parse::<ipnet::IpNet>()
+            .map_err(|e| invalid(e.to_string()))?;
+        let key = (
+            route.endpoint.index,
+            format!("{}/{}", network.addr(), network.prefix_len()),
+            next_hop(route, &network)?,
+        );
+        if installed.contains(&key) {
+            observed.push(route.clone());
+        }
+    }
+    Ok(observed)
+}
+
 pub(super) async fn change(
     _: &dyn command::Runner,
     routes: &[Route],
     add: bool,
 ) -> Result<(), TransparentError> {
     for route in routes {
-        // Yield between native operations so a cancelled lifecycle cannot keep
-        // installing the rest of a route batch. A single OS call is synchronous.
-        tokio::task::yield_now().await;
-        let network = route
-            .prefix
-            .parse::<ipnet::IpNet>()
-            .map_err(|e| invalid(e.to_string()))?;
-        let mut key = MIB_IPFORWARD_ROW2::default();
-        // SAFETY: initializes the valid row before its identifying fields are assigned.
-        unsafe {
-            InitializeIpForwardEntry(&raw mut key);
+        // Each native call is synchronous; run it off the async workers so a
+        // cancelled lifecycle stops after at most one in-flight route.
+        let route = route.clone();
+        tokio::task::spawn_blocking(move || change_route(&route, add))
+            .await
+            .map_err(|e| invalid(e.to_string()))??;
+    }
+    Ok(())
+}
+
+#[allow(unsafe_code)] // Calls use initialized official Windows binding rows.
+fn change_route(route: &Route, add: bool) -> Result<(), TransparentError> {
+    let network = route
+        .prefix
+        .parse::<ipnet::IpNet>()
+        .map_err(|e| invalid(e.to_string()))?;
+    let mut key = MIB_IPFORWARD_ROW2::default();
+    // SAFETY: initializes the valid row before its identifying fields are assigned.
+    unsafe {
+        InitializeIpForwardEntry(&raw mut key);
+    }
+    key.InterfaceIndex = route.endpoint.index;
+    key.DestinationPrefix.Prefix = encode(network.addr(), 0);
+    key.DestinationPrefix.PrefixLength = network.prefix_len();
+    key.NextHop = if route.endpoint.gateway.is_empty() {
+        encode(next_hop(route, &network)?, 0)
+    } else {
+        address::parse_gateway(&route.endpoint.gateway)?
+    };
+    let context = format!("{} on interface {}", route.prefix, route.endpoint.index);
+    let mut existing = key;
+    // SAFETY: key contains initialized destination, next hop and interface index.
+    let found = unsafe { GetIpForwardEntry2(&raw mut existing) };
+    if found == NO_ERROR {
+        if existing.Metric != METRIC || existing.Protocol != MIB_IPPROTO_NETMGMT {
+            return Err(invalid(format!("Route ownership changed: {context}")));
         }
-        key.InterfaceIndex = route.endpoint.index;
-        key.DestinationPrefix.Prefix = encode(network.addr(), 0);
-        key.DestinationPrefix.PrefixLength = network.prefix_len();
-        key.NextHop = if route.endpoint.gateway.is_empty() {
-            encode(
-                if network.addr().is_ipv4() {
-                    IpAddr::from([0, 0, 0, 0])
-                } else {
-                    IpAddr::from([0_u16; 8])
-                },
-                0,
-            )
-        } else {
-            address::parse_gateway(&route.endpoint.gateway)?
-        };
-        let context = format!("{} on interface {}", route.prefix, route.endpoint.index);
-        let mut existing = key;
-        // SAFETY: key contains initialized destination, next hop and interface index.
-        let found = unsafe { GetIpForwardEntry2(&raw mut existing) };
-        if found == NO_ERROR {
-            if existing.Metric != METRIC || existing.Protocol != MIB_IPPROTO_NETMGMT {
-                return Err(invalid(format!("Route ownership changed: {context}")));
-            }
-            if !add {
-                // SAFETY: existing is an API-returned row whose ownership was checked.
-                let deleted = unsafe { DeleteIpForwardEntry2(&raw const existing) };
-                if deleted != ERROR_NOT_FOUND {
-                    status("DeleteIpForwardEntry2", deleted, &context)?;
-                }
-            }
-        } else {
-            if found != ERROR_NOT_FOUND {
-                status("GetIpForwardEntry2", found, &context)?;
-            }
-            if add {
-                // InitializeIpForwardEntry leaves an invalid site prefix and enables
-                // special-purpose flags; these are ordinary managed forwarding routes.
-                key.SitePrefixLength = 0;
-                key.Loopback = false;
-                key.AutoconfigureAddress = false;
-                key.Publish = false;
-                key.Immortal = false;
-                key.Metric = METRIC;
-                key.Protocol = MIB_IPPROTO_NETMGMT;
-                key.ValidLifetime = u32::MAX;
-                key.PreferredLifetime = u32::MAX;
-                // SAFETY: key is initialized and populated with the requested owned route.
-                status(
-                    "CreateIpForwardEntry2",
-                    unsafe { CreateIpForwardEntry2(&raw const key) },
-                    &context,
-                )?;
+        if !add {
+            // SAFETY: existing is an API-returned row whose ownership was checked.
+            let deleted = unsafe { DeleteIpForwardEntry2(&raw const existing) };
+            if deleted != ERROR_NOT_FOUND {
+                status("DeleteIpForwardEntry2", deleted, &context)?;
             }
         }
+        return Ok(());
+    }
+    if found != ERROR_NOT_FOUND {
+        status("GetIpForwardEntry2", found, &context)?;
+    }
+    if add {
+        // InitializeIpForwardEntry leaves an invalid site prefix and enables
+        // special-purpose flags; these are ordinary managed forwarding routes.
+        key.SitePrefixLength = 0;
+        key.Loopback = false;
+        key.AutoconfigureAddress = false;
+        key.Publish = false;
+        key.Immortal = false;
+        key.Metric = METRIC;
+        key.Protocol = MIB_IPPROTO_NETMGMT;
+        key.ValidLifetime = u32::MAX;
+        key.PreferredLifetime = u32::MAX;
+        // SAFETY: key is initialized and populated with the requested owned route.
+        status(
+            "CreateIpForwardEntry2",
+            unsafe { CreateIpForwardEntry2(&raw const key) },
+            &context,
+        )?;
     }
     Ok(())
 }
