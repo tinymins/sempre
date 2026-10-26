@@ -13,6 +13,7 @@ mod doctor_cli;
 mod elevate;
 mod fakeip_api;
 mod gateway_api;
+mod leak_detection_api;
 mod listener;
 mod local_api;
 mod network_api;

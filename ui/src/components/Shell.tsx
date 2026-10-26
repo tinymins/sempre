@@ -51,7 +51,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   const [mobileOpen, setMobileOpen] = useState(false)
   const [passwordWarningDismissed, setPasswordWarningDismissed] = useState(false)
   const [desktopCollapsed, setDesktopCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true')
-  const analysisPaths = ['/runtime-status', '/network-test', '/network-diagnostics', '/node-test', '/route-table', '/connections', '/traffic', '/rules', '/logs']
+  const analysisPaths = ['/runtime-status', '/network-test', '/network-diagnostics', '/leak-detection', '/node-test', '/route-table', '/connections', '/traffic', '/rules', '/logs']
   const analysisActive = analysisPaths.includes(location.pathname)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const analysisVisible = analysisActive || analysisOpen
@@ -89,6 +89,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
     { key: 'analysis', label: t('navigationAnalysis'), icon: ChartNoAxesCombined, collapsible: true, items: [
       { path: '/runtime-status', label: t('navigationCoreStatus'), icon: Cpu },
       { path: '/network-diagnostics', label: t('networkDiagnostics'), icon: ScanSearch },
+      { path: '/leak-detection', label: t('leakDetection'), icon: ScanSearch },
       { path: '/network-test', label: t('networkTest'), icon: Globe2 },
       { path: '/node-test', label: t('nodeTest'), icon: Gauge },
       { path: '/route-table', label: t('routeTable'), icon: Router },
