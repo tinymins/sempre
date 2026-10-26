@@ -307,6 +307,6 @@ async fn interfaces() -> Result<Vec<(String, String)>, String> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-async fn interfaces() -> Result<Vec<(String, String)>, String> {
-    Err("Scoped passive packet capture is unavailable on this platform; no global packet-capture session was started or modified.".into())
+fn interfaces() -> std::future::Ready<Result<Vec<(String, String)>, String>> {
+    std::future::ready(Err("Scoped passive packet capture is unavailable on this platform; no global packet-capture session was started or modified.".into()))
 }

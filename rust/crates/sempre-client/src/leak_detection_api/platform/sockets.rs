@@ -1,4 +1,6 @@
-use super::{ProcessInfo, SocketInfo, command, endpoint};
+use super::{ProcessInfo, SocketInfo};
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+use super::{command, endpoint};
 
 #[cfg(target_os = "macos")]
 pub(super) async fn collect(processes: &[ProcessInfo]) -> Result<Vec<SocketInfo>, String> {
@@ -131,6 +133,10 @@ pub(super) async fn collect(processes: &[ProcessInfo]) -> Result<Vec<SocketInfo>
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-pub(super) async fn collect(_processes: &[ProcessInfo]) -> Result<Vec<SocketInfo>, String> {
-    Err("Process socket collection is unsupported on this platform.".into())
+pub(super) fn collect(
+    _processes: &[ProcessInfo],
+) -> std::future::Ready<Result<Vec<SocketInfo>, String>> {
+    std::future::ready(Err(
+        "Process socket collection is unsupported on this platform.".into(),
+    ))
 }
