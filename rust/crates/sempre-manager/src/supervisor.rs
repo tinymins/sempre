@@ -74,11 +74,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
             let service_stopped = document.desired_state == DesiredState::Stopped;
             if service_stopped || document.active.is_none() {
-                let cleanup = if cleanup_needed {
-                    self.cleanup_retained_frontend().await
-                } else {
-                    Ok(())
-                };
+                let cleanup = self.cleanup_inactive(cleanup_needed).await;
                 cleanup_needed = false;
                 state::mark_inactive(self, service_stopped)?;
                 self.startup_tasks
@@ -287,6 +283,23 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 
     async fn cleanup_retained_frontend(&self) -> Result<(), ManagerError> {
         self.cleanup_lifecycle(false).await
+    }
+
+    async fn cleanup_inactive(&self, runtime: bool) -> Result<(), ManagerError> {
+        let cleanup = if runtime {
+            self.cleanup_retained_frontend().await
+        } else {
+            Ok(())
+        };
+        // CN routes outlive core restarts; only an inactive runtime removes them.
+        let routes = self
+            .route_phase(
+                "Removing managed CN routes",
+                lifecycle::ROUTE_STALL_TIMEOUT,
+                self.transparent.cleanup_cn_routes(),
+            )
+            .await;
+        cleanup.and(routes)
     }
 
     fn mark_runtime_healthy(&self, plan: &RuntimePlan) -> Result<(), ManagerError> {

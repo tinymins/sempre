@@ -8,6 +8,8 @@ pub(crate) const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const PREPARE_TIMEOUT: Duration = Duration::from_mins(1);
 pub(super) const NETWORK_TIMEOUT: Duration = Duration::from_secs(15);
 const CLEANUP_TIMEOUT: Duration = Duration::from_secs(10);
+// Route work scales with the prefix count, so only a stalled batch times out.
+pub(super) const ROUTE_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl<R: VersionRunner> Manager<R> {
     pub(crate) async fn lifecycle_phase<T, E: Into<ManagerError>>(
@@ -36,6 +38,51 @@ impl<R: VersionRunner> Manager<R> {
             Ok(_) => self
                 .startup_tasks
                 .log(stage, &format!("{description}: completed")),
+            Err(error) => self
+                .startup_tasks
+                .log("error", &format!("{description}: {error}")),
+        }
+        result
+    }
+
+    pub(super) async fn route_phase<E: Into<ManagerError>>(
+        &self,
+        description: &str,
+        stall: Duration,
+        operation: impl Future<Output = Result<(), E>>,
+    ) -> Result<(), ManagerError> {
+        let limit = stall.as_secs_f32();
+        self.startup_tasks.log(
+            "cn_routes",
+            &format!("{description}; timeout {limit}s without progress"),
+        );
+        let mut progress = self.transparent.cn_route_progress();
+        progress.mark_unchanged();
+        let mut operation = std::pin::pin!(operation);
+        let result = loop {
+            tokio::select! {
+                result = &mut operation => break result.map_err(Into::into),
+                Ok(()) = progress.changed() => {
+                    let state = *progress.borrow_and_update();
+                    self.startup_tasks.log(
+                        "cn_routes",
+                        &format!("{description}: {} / {}", state.done, state.total),
+                    );
+                }
+                () = sleep(stall) => {
+                    let message = format!("{description} made no progress for {limit}s");
+                    self.startup_tasks.log("timeout", &message);
+                    break Err(ManagerError::RuntimeAction {
+                        code: "RUNTIME_STAGE_TIMEOUT",
+                        message,
+                    });
+                }
+            }
+        };
+        match &result {
+            Ok(()) => self
+                .startup_tasks
+                .log("cn_routes", &format!("{description}: completed")),
             Err(error) => self
                 .startup_tasks
                 .log("error", &format!("{description}: {error}")),
@@ -117,7 +164,7 @@ impl<R: VersionRunner> Manager<R> {
                     if retain_dns && self.dns_frontend.status().running {
                         self.transparent.cleanup_runtime_network().await
                     } else {
-                        self.transparent.cleanup().await
+                        self.transparent.restore_host_network().await
                     }
                 },
             )
@@ -162,9 +209,10 @@ impl<R: VersionRunner + crate::ValidationRunner> Manager<R> {
             super::recovery::recover_stale_process(self),
         )
         .await?;
+        // CN routes survive restarts; the next cycle reconciles them.
         self.network_phase(
             "recovery",
-            "Recovering managed network and DNS state",
+            "Recovering managed system DNS state",
             self.transparent.recover_stale_system_dns(),
         )
         .await?;

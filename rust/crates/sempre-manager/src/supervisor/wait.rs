@@ -108,14 +108,21 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
             )
             .await?;
         manager
-            .lifecycle_phase(
-                "cn_routes",
+            .route_phase(
                 &format!(
-                    "Installing managed CN routes ({} prefixes)",
+                    "Reconciling managed CN routes ({} prefixes)",
                     intent.prefixes.len()
                 ),
-                Duration::from_mins(2),
+                super::lifecycle::ROUTE_STALL_TIMEOUT,
                 manager.transparent.apply_cn_routes(intent),
+            )
+            .await?;
+    } else {
+        manager
+            .route_phase(
+                "Removing managed CN routes",
+                super::lifecycle::ROUTE_STALL_TIMEOUT,
+                manager.transparent.cleanup_cn_routes(),
             )
             .await?;
     }

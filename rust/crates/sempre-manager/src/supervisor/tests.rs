@@ -289,3 +289,34 @@ async fn stalled_rule_download_keeps_basic_core_running_and_does_not_block_stop(
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn route_phase_times_out_only_after_a_stall() {
+    let (_root, manager) = fixture("#!/bin/sh\nexit 0\n");
+    manager
+        .route_phase(
+            "Removing managed CN routes",
+            Duration::from_millis(50),
+            async {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                manager.transparent.cleanup_cn_routes().await
+            },
+        )
+        .await
+        .expect("idle cleanup");
+    let error = manager
+        .route_phase(
+            "Reconciling managed CN routes",
+            Duration::from_millis(50),
+            std::future::pending::<Result<(), ManagerError>>(),
+        )
+        .await
+        .expect_err("stalled route work");
+    assert!(matches!(
+        error,
+        ManagerError::RuntimeAction {
+            code: "RUNTIME_STAGE_TIMEOUT",
+            ..
+        }
+    ));
+}

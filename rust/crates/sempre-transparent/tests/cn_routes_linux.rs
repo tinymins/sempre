@@ -98,13 +98,25 @@ async fn cn_routes_kernel_priority_update_recovery_and_cleanup() {
         .await
         .expect("gateway change");
     assert!(ip(&["route", "get", "223.5.5.5"]).contains("via 192.0.2.3"));
-    // A fresh controller recovers the previous process's write-ahead journal.
-    let started = std::time::Instant::now();
-    Controller::new(&layout)
+    // Service recovery keeps CN routes; the next cycle reconciles them.
+    let restarted = Controller::new(&layout);
+    restarted
         .recover_stale_system_dns()
         .await
         .expect("recover");
-    eprintln!("recovered and cleaned routes in {:?}", started.elapsed());
+    assert!(ip(&["route", "get", "223.5.5.5"]).contains("via 192.0.2.3"));
+    restarted
+        .apply_cn_routes(&intent)
+        .await
+        .expect("reconcile after restart");
+    assert!(ip(&["route", "get", "223.5.5.5"]).contains("via 192.0.2.3"));
+    // A fresh controller removes the previous process's routes from its journal.
+    let started = std::time::Instant::now();
+    Controller::new(&layout)
+        .cleanup_cn_routes()
+        .await
+        .expect("cleanup");
+    eprintln!("cleaned routes in {:?}", started.elapsed());
     assert!(ip(&["route", "get", "1.1.1.1"]).contains("dev cn-uplink"));
     assert!(!ip(&["rule", "show"]).contains("20243:"));
     assert!(!layout.home.join("cn-routes.json").exists());

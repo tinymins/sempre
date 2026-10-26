@@ -141,8 +141,23 @@ impl Controller {
         Ok(())
     }
 
+    /// Removes every managed host change, including CN routes.
     pub async fn cleanup(&self) -> Result<(), TransparentError> {
-        self.cn_routes.cleanup(self.runner.as_ref()).await?;
+        self.cleanup_cn_routes().await?;
+        self.restore_host_network().await
+    }
+
+    pub async fn cleanup_cn_routes(&self) -> Result<(), TransparentError> {
+        self.cn_routes.cleanup(self.runner.as_ref()).await
+    }
+
+    pub fn cn_route_progress(&self) -> tokio::sync::watch::Receiver<crate::CnRouteProgress> {
+        self.cn_routes.progress()
+    }
+
+    /// Restores system DNS and transparent capture. CN routes follow the
+    /// routing intent instead of the runtime lifecycle and are retained.
+    pub async fn restore_host_network(&self) -> Result<(), TransparentError> {
         if cfg!(target_os = "macos") {
             if self.is_root().await? {
                 return self.macos_dns.restore(self.runner.as_ref()).await;
@@ -161,12 +176,7 @@ impl Controller {
         self.cleanup_owned().await
     }
 
-    pub fn cn_route_progress(&self) -> tokio::sync::watch::Receiver<crate::CnRouteProgress> {
-        self.cn_routes.progress()
-    }
-
     pub async fn cleanup_runtime_network(&self) -> Result<(), TransparentError> {
-        self.cn_routes.cleanup(self.runner.as_ref()).await?;
         if !cfg!(target_os = "linux") || !self.is_root().await? {
             return Ok(());
         }
@@ -180,7 +190,6 @@ impl Controller {
     }
 
     pub async fn recover_stale_system_dns(&self) -> Result<(), TransparentError> {
-        self.cn_routes.cleanup(self.runner.as_ref()).await?;
         if cfg!(target_os = "macos") && self.is_root().await? {
             self.macos_dns.restore(self.runner.as_ref()).await?;
         }
