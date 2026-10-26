@@ -57,24 +57,33 @@ pub(super) struct Report {
     pub gaps: Vec<String>,
     pub summary: Summary,
     pub completed: bool,
+    pub ready: bool,
+    pub probes: super::probes::types::ProbeState,
+    pub probe_summary: Summary,
     pub capture: super::platform::CaptureSnapshot,
 }
 
 impl Report {
     pub fn summarize(&mut self) {
         self.summary = Summary::default();
+        self.probe_summary = Summary::default();
         for connection in &self.connections {
+            let summary = if connection.app == "probe" {
+                &mut self.probe_summary
+            } else {
+                &mut self.summary
+            };
             if connection.physical_egress {
-                self.summary.physical_egress += 1;
+                summary.physical_egress += 1;
             }
             match connection.verdict {
-                "proxy-route" => self.summary.proxy_route += 1,
-                "direct-route" => self.summary.direct_route += 1,
-                _ => self.summary.unattributed += 1,
+                "proxy-route" => summary.proxy_route += 1,
+                "direct-route" => summary.direct_route += 1,
+                _ => summary.unattributed += 1,
             }
             match connection.ip_version {
-                "ipv4" => self.summary.ipv4 += 1,
-                "ipv6" => self.summary.ipv6 += 1,
+                "ipv4" => summary.ipv4 += 1,
+                "ipv6" => summary.ipv6 += 1,
                 _ => (),
             }
         }

@@ -135,6 +135,11 @@ pub(crate) enum Command {
     Open,
     /// Print build version information.
     Version,
+    #[command(hide = true)]
+    LeakProbe {
+        #[arg(value_parser = ["dns", "ipv4", "ipv6"])]
+        kind: String,
+    },
     #[cfg(windows)]
     #[command(hide = true)]
     ServiceHost,
@@ -164,7 +169,7 @@ impl Arguments {
             Command::Runtime { .. } => system,
             Command::Update => system,
             Command::Status | Command::Logs { .. } | Command::Doctor | Command::Open => system,
-            Command::Version => false,
+            Command::Version | Command::LeakProbe { .. } => false,
             #[cfg(windows)]
             Command::ServiceHost => false,
         }

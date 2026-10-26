@@ -3,6 +3,8 @@ mod correlate;
 mod model;
 mod observe;
 mod platform;
+mod probes;
+pub(crate) use probes::helper_main as probe_helper_main;
 
 use std::{sync::Arc, time::Duration};
 
@@ -28,6 +30,14 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/network/leak-detection/preflight", get(preflight))
         .route("/api/v1/network/leak-detection/observe", post(observe))
+        .route(
+            "/api/v1/network/leak-detection/observe/{id}/probes",
+            post(probes::control::start),
+        )
+        .route(
+            "/api/v1/network/leak-detection/observe/{id}/probes/stop",
+            post(probes::control::stop),
+        )
 }
 
 async fn preflight(State(state): State<Arc<AppState>>) -> Response {
@@ -89,11 +99,20 @@ async fn observe(State(state): State<Arc<AppState>>, Json(mut input): Json<Input
         return error(StatusCode::CONFLICT, "已有检测正在进行，请先停止或等待完成");
     };
     let (sender, receiver) = mpsc::channel::<(&'static str, Value)>(4);
+    let id = uuid::Uuid::new_v4().to_string();
+    let (commands, receiver_commands) = mpsc::channel(2);
+    let guard = probes::control::register(
+        &id,
+        input.topology == "local",
+        input.duration_seconds,
+        commands,
+    );
     tokio::spawn(async move {
         let _permit = permit;
+        let _guard = guard;
         tokio::select! {
             () = sender.closed() => {},
-            _ = tokio::time::timeout(Duration::from_secs(input.duration_seconds + 10), observe::run(&state, input, &sender)) => {},
+            _ = tokio::time::timeout(Duration::from_secs(input.duration_seconds + 10), observe::run(&state, input, &sender, id, receiver_commands)) => {},
         }
     });
     let stream = futures_util::stream::unfold(receiver, |mut receiver| async move {

@@ -49,14 +49,19 @@ pub(super) struct DnsObservation {
 }
 
 pub(super) async fn collect(target: &str) -> PlatformSnapshot {
+    collect_with_probes(target, &[]).await
+}
+
+pub(super) async fn collect_with_probes(target: &str, probes: &[ProcessInfo]) -> PlatformSnapshot {
     let target = target.to_owned();
+    let probes = probes.to_vec();
     let mut gaps = vec![
         "Socket snapshots can miss short-lived connections and processes hidden by OS permissions. Independent MCP processes are not automatically attributed.".into(),
         "Shared OS DNS resolvers cannot be attributed to an application from socket ownership. DoH on port 443 cannot be identified by ports alone.".into(),
         "Claude Desktop is excluded. Custom Claude Code executable locations or inaccessible executable paths may not be recognized.".into(),
     ];
     let processes = if let Ok((processes, truncated)) =
-        tokio::task::spawn_blocking(move || processes(&target)).await
+        tokio::task::spawn_blocking(move || processes(&target, &probes)).await
     {
         if truncated {
             gaps.push("Process inventory reached its 256-process limit.".into());
@@ -96,7 +101,7 @@ pub(super) async fn collect(target: &str) -> PlatformSnapshot {
     }
 }
 
-fn processes(target: &str) -> (Vec<ProcessInfo>, bool) {
+fn processes(target: &str, probes: &[ProcessInfo]) -> (Vec<ProcessInfo>, bool) {
     let mut system = System::new();
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -126,6 +131,14 @@ fn processes(target: &str) -> (Vec<ProcessInfo>, bool) {
         }
         if previous == selected.len() {
             break;
+        }
+    }
+    for probe in probes {
+        if system
+            .process(sysinfo::Pid::from_u32(probe.pid))
+            .is_some_and(|process| process.start_time() == probe.started_at)
+        {
+            selected.insert(probe.pid, "probe".into());
         }
     }
     let truncated = selected.len() > 256;
@@ -244,4 +257,22 @@ fn endpoint(value: &str) -> Option<(String, u16)> {
     let ip: IpAddr = ip.parse().ok()?;
     let port = port.parse().ok()?;
     (!ip.is_unspecified() && port != 0).then(|| (ip.to_string(), port))
+}
+
+pub(super) fn probe_process(pid: u32) -> Option<ProcessInfo> {
+    let mut system = System::new();
+    let native_pid = sysinfo::Pid::from_u32(pid);
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[native_pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    let process = system.process(native_pid)?;
+    Some(ProcessInfo {
+        pid,
+        parent_pid: Some(std::process::id()),
+        started_at: process.start_time(),
+        name: "sempre leak-probe".into(),
+        app: "probe".into(),
+    })
 }

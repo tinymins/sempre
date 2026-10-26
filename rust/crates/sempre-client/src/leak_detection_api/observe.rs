@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use super::{
     capture_evidence, correlate,
     model::{Input, Report, Summary},
-    platform,
+    platform, probes,
 };
 use crate::api::AppState;
 
@@ -14,13 +14,18 @@ pub(super) async fn run(
     state: &AppState,
     input: Input,
     sender: &mpsc::Sender<(&'static str, Value)>,
+    id: String,
+    mut commands: mpsc::Receiver<probes::control::Command>,
 ) {
     let started = Instant::now();
-    let mut report = initial_report(&input);
+    let mut report = initial_report(&input, id);
+    if sender.send(("snapshot", json!(report))).await.is_err() {
+        return;
+    }
     if sender
         .send((
             "status",
-            json!({"message":"开始只读采样；请在所选应用中触发一次实际请求"}),
+            json!({"message":"正在准备采集器；就绪后可发起主动探针，也可观察真实应用流量"}),
         ))
         .await
         .is_err()
@@ -46,18 +51,38 @@ pub(super) async fn run(
         report.gap("当前没有可读取的内核控制接口；仅采集进程套接字，无法判断是否进入 Sempre");
         vec![]
     };
+    let mut probes = probes::Session::new(
+        input.clone(),
+        client.clone(),
+        proxies.clone(),
+        ranges.clone(),
+    );
     while started.elapsed() < Duration::from_secs(input.duration_seconds) {
         let remaining =
             Duration::from_secs(input.duration_seconds).saturating_sub(started.elapsed());
-        let Ok((platform, core)) = tokio::time::timeout(
+        let processes = probes.processes.clone();
+        let collection = tokio::time::timeout(
             remaining.min(Duration::from_secs(8)),
-            sample(&input, client.as_ref()),
-        )
-        .await
+            sample(&input, client.as_ref(), &processes),
+        );
+        let Ok((platform, core)) =
+            drive(collection, &mut probes, &mut report, &mut commands, sender).await
         else {
             report.gap("进程或连接采样超时；本轮覆盖不完整");
             break;
         };
+        report.ready = true;
+        probes::control::ready(&report.id);
+        if report.topology == "local" && report.probes.status == "idle" {
+            report.probes.available = started.elapsed().as_secs() + 20 <= input.duration_seconds;
+            report.probes.reason = if report.probes.available {
+                "可发起独立探针；结果与真实应用分开"
+            } else {
+                "剩余观测时间不足 20 秒；请延长检测时间后重试"
+            }
+            .into();
+        }
+        probes.sampled(&platform.processes, &mut report);
         if client.is_some() && core.is_none() {
             report.gap("内核连接采样失败或超时；该时段无法关联路由证据");
         }
@@ -73,28 +98,26 @@ pub(super) async fn run(
         }
         let remaining =
             Duration::from_secs(input.duration_seconds).saturating_sub(started.elapsed());
-        tokio::time::sleep(remaining.min(Duration::from_secs(1))).await;
+        drive(
+            tokio::time::sleep(remaining.min(Duration::from_secs(1))),
+            &mut probes,
+            &mut report,
+            &mut commands,
+            sender,
+        )
+        .await;
     }
     capture_evidence::merge(&mut report, capture.snapshot(), &ranges, &[]);
     drop(capture);
-    report.summarize();
-    if report.connections.is_empty() {
-        report.gap("未采集到可归属的应用连接；请确认进程、客户端地址与权限，并触发实际请求后重试");
-    }
-    if report.summary.ipv4 == 0 {
-        report.gap("未覆盖可识别的 IPv4 应用连接");
-    }
-    if report.summary.ipv6 == 0 {
-        report.gap("未覆盖可识别的 IPv6 应用连接；不能据此认定 IPv6 已禁用或无泄漏");
-    }
-    report.elapsed_seconds = started.elapsed().as_secs();
-    report.completed = true;
+    probes.stop(&mut report);
+    report.ready = false;
+    finish(&mut report, started);
     let _ = sender.send(("result", json!(report))).await;
 }
 
-fn initial_report(input: &Input) -> Report {
+fn initial_report(input: &Input, id: String) -> Report {
     let mut report = Report {
-        id: uuid::Uuid::new_v4().to_string(),
+        id,
         started_at: chrono::Utc::now().to_rfc3339(),
         elapsed_seconds: 0,
         target: input.target.clone(),
@@ -106,6 +129,9 @@ fn initial_report(input: &Input) -> Report {
         gaps: vec![],
         summary: Summary::default(),
         completed: false,
+        ready: false,
+        probes: probes::types::ProbeState::new(input.topology == "local"),
+        probe_summary: Summary::default(),
         capture: platform::CaptureSnapshot {
             status: "pending".into(),
             detail: "等待接口采集".into(),
@@ -153,7 +179,7 @@ fn merge_platform(report: &mut Report, platform: &platform::PlatformSnapshot, in
     }
 }
 
-fn merge_records(report: &mut Report, records: Vec<super::model::Connection>) {
+pub(super) fn merge_records(report: &mut Report, records: Vec<super::model::Connection>) {
     for record in records {
         let index = report
             .connections
@@ -190,16 +216,20 @@ fn merge_records(report: &mut Report, records: Vec<super::model::Connection>) {
 async fn sample(
     input: &Input,
     client: Option<&sempre_core_control::Client>,
+    processes: &[platform::ProcessInfo],
 ) -> (
     platform::PlatformSnapshot,
     Option<sempre_core_control::ConnectionSnapshot>,
 ) {
     let (platform, core) = tokio::join!(
-        platform::collect(if input.topology == "gateway" {
-            "none"
-        } else {
-            &input.target
-        }),
+        platform::collect_with_probes(
+            if input.topology == "gateway" {
+                "none"
+            } else {
+                &input.target
+            },
+            processes
+        ),
         async {
             if let Some(client) = client {
                 tokio::time::timeout(Duration::from_secs(3), client.connections())
@@ -212,4 +242,47 @@ async fn sample(
         }
     );
     (platform, core)
+}
+
+async fn drive<F: std::future::Future>(
+    future: F,
+    probes: &mut probes::Session,
+    report: &mut Report,
+    commands: &mut mpsc::Receiver<probes::control::Command>,
+    sender: &mpsc::Sender<(&'static str, Value)>,
+) -> F::Output {
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            result = &mut future => return result,
+            Some(command) = commands.recv() => {
+                probes.command(command, report);
+                let _ = sender.send(("probe", json!(report.probes))).await;
+            },
+            Some(event) = probes.receiver.recv() => {
+                probes.apply(event, report);
+                report.summarize();
+                let _ = sender.send(("probe", json!(report.probes))).await;
+            },
+        }
+    }
+}
+
+fn finish(report: &mut Report, started: Instant) {
+    report.summarize();
+    if !report
+        .connections
+        .iter()
+        .any(|connection| connection.app != "probe")
+    {
+        report.gap("未采集到可归属的应用连接；请确认进程、客户端地址与权限，并触发实际请求后重试");
+    }
+    if report.summary.ipv4 == 0 {
+        report.gap("未覆盖可识别的 IPv4 应用连接");
+    }
+    if report.summary.ipv6 == 0 {
+        report.gap("未覆盖可识别的 IPv6 应用连接；不能据此认定 IPv6 已禁用或无泄漏");
+    }
+    report.elapsed_seconds = started.elapsed().as_secs();
+    report.completed = true;
 }

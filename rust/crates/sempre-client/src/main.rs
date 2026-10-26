@@ -131,6 +131,10 @@ fn main() {
         .init();
     let raw_arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     let arguments = Arguments::parse();
+    if let Command::LeakProbe { kind } = &arguments.command {
+        leak_detection_api::probe_helper_main(kind);
+        return;
+    }
     let explicitly_elevated = arguments.elevated;
     let mode = match portable_cli::resolve_mode(&arguments) {
         Ok(mode) => mode,
@@ -194,6 +198,9 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
             .await
         }
         Command::Uninstall { purge, yes } => uninstall_cli::run(purge, yes).await,
+        Command::LeakProbe { .. } => {
+            unreachable!("probe helper is dispatched before mode resolution")
+        }
         Command::Version => {
             println!("Sempre {VERSION}");
             Ok(())
