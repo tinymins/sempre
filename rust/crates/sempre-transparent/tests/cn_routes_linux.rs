@@ -100,10 +100,7 @@ async fn cn_routes_kernel_priority_update_recovery_and_cleanup() {
     assert!(ip(&["route", "get", "223.5.5.5"]).contains("via 192.0.2.3"));
     // Service recovery keeps CN routes; the next cycle reconciles them.
     let restarted = Controller::new(&layout);
-    restarted
-        .recover_stale_system_dns()
-        .await
-        .expect("recover");
+    restarted.recover_stale_system_dns().await.expect("recover");
     assert!(ip(&["route", "get", "223.5.5.5"]).contains("via 192.0.2.3"));
     restarted
         .apply_cn_routes(&intent)

@@ -74,7 +74,10 @@ impl<B: Backend> Controller<B> {
             return Ok(());
         }
         let capture = desired.iter().any(|r| r.fallback && r.scoped);
-        if let Err(error) = self.reconcile(runner.as_ref(), desired, Some(capture)).await {
+        if let Err(error) = self
+            .reconcile(runner.as_ref(), desired, Some(capture))
+            .await
+        {
             // Disconnect TUN first, including on partial installation failure.
             if let Err(cleanup) = self.reconcile(runner.as_ref(), Vec::new(), None).await {
                 return Err(invalid(format!(
@@ -124,8 +127,15 @@ impl<B: Backend> Controller<B> {
             self.write(&journal)?;
             self.backend.preflight(runner, &additions).await?;
             for fallback in [false, true] {
-                self.change(runner, &mut journal, &additions, fallback, true, &mut progress)
-                    .await?;
+                self.change(
+                    runner,
+                    &mut journal,
+                    &additions,
+                    fallback,
+                    true,
+                    &mut progress,
+                )
+                .await?;
             }
             self.backend.policy(runner, true, capture).await?;
         } else if journal.policy {
@@ -133,8 +143,15 @@ impl<B: Backend> Controller<B> {
             journal.policy = false;
         }
         for fallback in [true, false] {
-            self.change(runner, &mut journal, &removals, fallback, false, &mut progress)
-                .await?;
+            self.change(
+                runner,
+                &mut journal,
+                &removals,
+                fallback,
+                false,
+                &mut progress,
+            )
+            .await?;
         }
         journal.routes = target;
         self.store(&journal)?;

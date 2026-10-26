@@ -77,9 +77,7 @@ impl Backend for Memory {
         if !add && self.fail_cleanup.load(Ordering::SeqCst) {
             return Err(invalid("injected cleanup failure"));
         }
-        if !add
-            && let Some(left) = self.removal_batches.lock().expect("budget").as_mut()
-        {
+        if !add && let Some(left) = self.removal_batches.lock().expect("budget").as_mut() {
             if *left == 0 {
                 return Err(invalid("injected interrupted cleanup"));
             }
