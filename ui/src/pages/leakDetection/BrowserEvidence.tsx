@@ -4,14 +4,14 @@ import type { AddressProbe, BrowserReport } from './types'
 
 export function BrowserEvidence({ report, zh }: { report: BrowserReport | null; zh: boolean }) {
   if (!report) return <p className="py-5 text-sm text-[var(--muted)]">{zh ? '尚未检测浏览器。浏览器与 Sempre 服务可能位于不同设备。' : 'Browser not checked. The browser and Sempre service may be on different devices.'}</p>
-  return <section className="space-y-4">
+  return <section className="min-w-0 space-y-4">
     <p className="break-all text-xs text-[var(--muted)]">{zh ? '采集位置' : 'Collected at'}: {report.origin} · {new Date(report.startedAt).toLocaleString()}</p>
-    {!report.completed && <Alert type="warning" message={zh ? '浏览器检测已中止，结果不完整' : 'Browser checks stopped; results are incomplete'} />}
-    <div className="grid gap-3 md:grid-cols-2">
+    {!report.running && !report.completed && <Alert type="warning" message={zh ? '浏览器检测已中止，结果不完整' : 'Browser checks stopped; results are incomplete'} />}
+    <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-2">
       <AddressCard label="HTTPS / IPv4" result={report.ipv4} expected={report.expectedIpv4} zh={zh} />
       <AddressCard label="HTTPS / IPv6" result={report.ipv6} expected={report.expectedIpv6} zh={zh} />
     </div>
-    <Card title="WebRTC / STUN">
+    <Card className="min-w-0" title="WebRTC / STUN">
       <p className="text-sm text-[var(--muted)]">{report.webrtc.detail}</p>
       <p className="mt-2 text-xs text-[var(--muted)]">{zh ? '局域网、保留地址和 mDNS 不作为公网 IP 泄漏。公网候选地址与预期出口不同仅提示路径差异，仍需结合实际路由核实。' : 'LAN, reserved and mDNS addresses are not public IP leaks. A public candidate differing from expected egress flags a path difference that still needs route evidence.'}</p>
       <div className="mt-3 space-y-2">{report.webrtc.candidates.length ? report.webrtc.candidates.map((candidate) => {
@@ -25,7 +25,7 @@ export function BrowserEvidence({ report, zh }: { report: BrowserReport | null; 
           <div className="flex flex-wrap items-center gap-2"><code className="break-all">{candidate.address}</code><Tag color={difference ? 'warning' : 'default'}>{scope}</Tag><span>{candidate.type} · {candidate.protocol}</span></div>
           {difference && <p className="mt-2 text-amber-600 dark:text-amber-400">{expected ? (zh ? '与填写的预期出口不同，请核实。' : 'Differs from the supplied expected egress; review required.') : (zh ? '与同地址族的 HTTPS 出口不同，请核实。' : 'Differs from HTTPS egress in the same address family; review required.')}</p>}
         </div>
-      }) : <p className="text-sm text-[var(--muted)]">{zh ? '未取得候选地址，结果未知。' : 'No candidate addresses; result unknown.'}</p>}</div>
+      }) : <p className="text-sm text-[var(--muted)]">{report.webrtc.status === 'running' ? (zh ? '正在收集候选地址…' : 'Gathering candidate addresses…') : (zh ? '未取得候选地址，结果未知。' : 'No candidate addresses; result unknown.')}</p>}</div>
     </Card>
     <Alert type="info" message={zh ? '浏览器覆盖边界' : 'Browser coverage boundaries'} description={zh ? '本页检测 HTTPS 出口和 WebRTC 候选地址。浏览器 DNS / DoH 实际解析路径、HTTP/3、其他扩展或其他进程连接未由这些探针证明；WebSocket 未检测。浏览器结果不能替代 Codex / Claude Code 的连接证据。' : 'These probes observe HTTPS egress and WebRTC candidates. They do not prove the browser DNS / DoH path, HTTP/3, extension or other process traffic. WebSocket is not tested. Browser results cannot replace Codex / Claude Code connection evidence.'} />
   </section>
@@ -33,8 +33,8 @@ export function BrowserEvidence({ report, zh }: { report: BrowserReport | null; 
 
 function AddressCard({ label, result, expected, zh }: { label: string; result: AddressProbe; expected: string; zh: boolean }) {
   const mismatch = result.ip && expected && normalizeIp(result.ip) !== normalizeIp(expected)
-  return <Card title={label}>
-    <div className="flex flex-wrap items-center gap-2"><code className="break-all text-base">{result.ip ?? (zh ? '未知' : 'Unknown')}</code><Tag color={mismatch ? 'warning' : 'default'}>{mismatch ? (zh ? '出口不同' : 'Different egress') : result.status === 'observed' ? (zh ? '已观测' : 'Observed') : (zh ? '未覆盖' : 'Uncovered')}</Tag></div>
+  return <Card className="min-w-0" title={label}>
+    <div className="flex flex-wrap items-center gap-2"><code className="break-all text-base">{result.ip ?? (result.status === 'running' ? (zh ? '检测中…' : 'Checking…') : (zh ? '未知' : 'Unknown'))}</code><Tag color={mismatch ? 'warning' : result.status === 'running' ? 'processing' : 'default'}>{mismatch ? (zh ? '出口不同' : 'Different egress') : result.status === 'running' ? (zh ? '执行中' : 'Running') : result.status === 'observed' ? (zh ? '已观测' : 'Observed') : (zh ? '未覆盖' : 'Uncovered')}</Tag></div>
     {expected && <p className="mt-2 break-all text-xs">{zh ? '预期出口' : 'Expected egress'}: {expected}</p>}
     <p className="mt-2 break-words text-xs text-[var(--muted)]">{result.detail}</p>
     <p className="mt-2 break-all text-[11px] text-[var(--muted)]">{result.endpoint}</p>

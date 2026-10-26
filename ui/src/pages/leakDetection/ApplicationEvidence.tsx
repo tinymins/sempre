@@ -2,18 +2,20 @@ import { Alert, Card, Tag } from '@acme/components'
 import type { LeakConnection, LeakReport } from './types'
 
 export function ApplicationEvidence({ report, zh }: { report: LeakReport | null; zh: boolean }) {
-  if (!report) return <p className="py-5 text-sm text-[var(--muted)]">{zh ? '开始检测后，在目标应用中执行一次实际请求。页面不会代替应用发送请求。' : 'Start observation, then make a real request in the target application. This page does not send requests on its behalf.'}</p>
-  return <section className="space-y-3">
+  if (!report) return <p className="py-5 text-sm text-[var(--muted)]">{zh ? '这是可选的真实应用被动观测。主动探针无需启动 Codex / Claude Code，其结果单独显示在上方。' : 'Optional passive observation of real applications. Active probes above do not require Codex / Claude Code to be running.'}</p>
+  const connections = report.connections.filter((connection) => connection.app !== 'probe')
+  const processes = report.processes.filter((process) => process.app !== 'probe')
+  return <section className="min-w-0 space-y-3">
     {!report.completed && <Tag color="warning">{zh ? '阶段记录 · 非完整结果' : 'Partial observation · incomplete result'}</Tag>}
     <Alert type="info" message={zh ? '连接证据的含义' : 'What connection evidence means'} description={zh ? '核心代理路由表示连接命中代理选路，不等于已证明物理出口。DIRECT 表示核心选择直连，需按目标与策略核实；未归属连接不能直接判定绕过。未捕获的短连接、独立 MCP 和系统共享 DNS 仍可能未覆盖。' : 'A proxy route proves a core routing decision, not the physical egress. DIRECT means the core selected direct routing and needs policy review. Unattributed connections do not prove bypass. Short-lived connections, independent MCP processes and shared system DNS may remain uncovered.'} />
-    {report.processes.length > 0 && <div className="flex flex-wrap gap-2">{report.processes.map((process) => <Tag key={`${process.pid}-${process.startedAt}`}>{process.name} · PID {process.pid} · {process.app}</Tag>)}</div>}
-    {report.connections.length ? report.connections.map((connection) => <ConnectionCard key={connection.id} connection={connection} zh={zh} />) : <p className="py-5 text-sm text-[var(--muted)]">{zh ? '没有观测到目标连接，无法判断是否泄漏。' : 'No target connections observed; leak status cannot be determined.'}</p>}
+    {processes.length > 0 && <div className="flex flex-wrap gap-2">{processes.map((process) => <Tag key={`${process.pid}-${process.startedAt}`}>{process.name} · PID {process.pid} · {process.app}</Tag>)}</div>}
+    {connections.length ? connections.map((connection) => <ConnectionCard key={connection.id} connection={connection} zh={zh} />) : <p className="py-5 text-sm text-[var(--muted)]">{zh ? '没有观测到目标连接，无法判断是否泄漏。' : 'No target connections observed; leak status cannot be determined.'}</p>}
   </section>
 }
 
-function ConnectionCard({ connection, zh }: { connection: LeakConnection; zh: boolean }) {
+export function ConnectionCard({ connection, zh }: { connection: LeakConnection; zh: boolean }) {
   const label = { 'proxy-route': zh ? '核心代理路由' : 'Core proxy route', 'direct-route': zh ? '核心直连路由' : 'Core direct route', unattributed: zh ? '归属未确认' : 'Unattributed' }[connection.verdict]
-  return <Card bodyStyle={{ padding: '1rem' }}>
+  return <Card className="min-w-0" bodyStyle={{ padding: '1rem' }}>
     <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="break-all text-sm font-medium">{connection.host || connection.destination}</p><p className="mt-1 text-xs text-[var(--muted)]">{connection.app} {connection.pid != null ? `· PID ${connection.pid}` : ''} · {connection.protocol} · {connection.ipVersion}</p></div><Tag color={connection.verdict === 'direct-route' ? 'warning' : 'default'}>{label}</Tag></div>
     {connection.physicalEgress && <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">{zh ? '观测到物理连接，需核对是否为显式代理端点；不能据此断言服务商收到真实 IP。' : 'Physical connection observed; check whether this is an explicit proxy endpoint. This does not prove the provider received a real IP.'}</p>}
     <p className="mt-3 break-all font-mono text-xs">{connection.source} → {connection.destination}</p>

@@ -179,7 +179,7 @@ export async function streamRequest(
   session: Session,
   path: string,
   body: unknown,
-  onEvent: (event: string, data: unknown) => void,
+  onEvent: (event: string, data: unknown) => void | boolean,
   signal?: AbortSignal,
 ) {
   const response = await fetch(`${session.baseURL}/api/v1${path}`, {
@@ -192,22 +192,30 @@ export async function streamRequest(
   if (!response.body) throw new Error('Streaming response has no body')
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) return
-    buffer += value
-    let boundary = buffer.indexOf('\n\n')
-    while (boundary >= 0) {
-      const block = buffer.slice(0, boundary)
-      buffer = buffer.slice(boundary + 2)
-      let event = 'message'
-      const data: string[] = []
-      for (const line of block.split('\n')) {
-        if (line.startsWith('event:')) event = line.slice(6).trim()
-        if (line.startsWith('data:')) data.push(line.slice(5).trim())
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) return
+      buffer += value
+      let boundary = /\r?\n\r?\n/.exec(buffer)
+      while (boundary) {
+        const block = buffer.slice(0, boundary.index)
+        buffer = buffer.slice(boundary.index + boundary[0].length)
+        let event = 'message'
+        const data: string[] = []
+        for (const line of block.split(/\r?\n/)) {
+          if (line.startsWith('event:')) event = line.slice(6).trim()
+          if (line.startsWith('data:')) data.push(line.slice(5).trim())
+        }
+        // A caller can end observation on its terminal event without waiting for EOF.
+        if (data.length && onEvent(event, JSON.parse(data.join('\n'))) === false) {
+          void reader.cancel().catch(() => undefined)
+          return
+        }
+        boundary = /\r?\n\r?\n/.exec(buffer)
       }
-      if (data.length) onEvent(event, JSON.parse(data.join('\n')))
-      boundary = buffer.indexOf('\n\n')
     }
+  } finally {
+    reader.releaseLock()
   }
 }

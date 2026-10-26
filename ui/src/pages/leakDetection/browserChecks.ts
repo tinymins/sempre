@@ -103,8 +103,28 @@ async function webRtcProbe(signal: AbortSignal, zh: boolean): Promise<BrowserRep
   })
 }
 
-export async function runBrowserChecks(signal: AbortSignal, zh: boolean, expectedIpv4: string, expectedIpv6: string): Promise<BrowserReport> {
-  const startedAt = new Date().toISOString()
-  const [ipv4, ipv6, webrtc] = await Promise.all([addressProbe('ipv4', signal, zh), addressProbe('ipv6', signal, zh), webRtcProbe(signal, zh)])
-  return { startedAt, origin: window.location.origin, expectedIpv4, expectedIpv6, ipv4, ipv6, webrtc, completed: !signal.aborted }
+export async function runBrowserChecks(
+  signal: AbortSignal,
+  zh: boolean,
+  expectedIpv4: string,
+  expectedIpv6: string,
+  onUpdate: (report: BrowserReport) => void,
+): Promise<BrowserReport> {
+  const pending = zh ? '正在检测…' : 'Checking…'
+  let report: BrowserReport = {
+    startedAt: new Date().toISOString(), origin: window.location.origin, expectedIpv4, expectedIpv6,
+    ipv4: { status: 'running', endpoint: BROWSER_ENDPOINTS.ipv4, detail: pending },
+    ipv6: { status: 'running', endpoint: BROWSER_ENDPOINTS.ipv6, detail: pending },
+    webrtc: { status: 'running', candidates: [], detail: pending },
+    running: true, completed: false,
+  }
+  onUpdate(report)
+  const update = (partial: Partial<BrowserReport>) => { report = { ...report, ...partial }; onUpdate(report) }
+  await Promise.all([
+    addressProbe('ipv4', signal, zh).then((ipv4) => update({ ipv4 })),
+    addressProbe('ipv6', signal, zh).then((ipv6) => update({ ipv6 })),
+    webRtcProbe(signal, zh).then((webrtc) => update({ webrtc })),
+  ])
+  update({ running: false, completed: !signal.aborted })
+  return report
 }

@@ -29,6 +29,32 @@ export interface LeakConnection {
   evidence: string[]
 }
 
+export interface LeakProbeResult {
+  id: 'dns' | 'ipv4' | 'ipv6'
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'timeout' | 'stopped'
+  detail: string
+  pid: number | null
+  addresses: string[]
+  publicIp: string | null
+  elapsedMs: number
+}
+
+export interface LeakProbes {
+  available: boolean
+  reason: string
+  status: 'idle' | 'running' | 'completed' | 'stopped' | 'unavailable'
+  results: LeakProbeResult[]
+}
+
+export interface LeakSummary {
+  physicalEgress: number
+  proxyRoute: number
+  directRoute: number
+  unattributed: number
+  ipv4: number
+  ipv6: number
+}
+
 export interface LeakReport {
   id: string
   startedAt: string
@@ -41,12 +67,15 @@ export interface LeakReport {
   dns: { scope: string; protocol: string; server: string; evidence: string }[]
   gaps: string[]
   capture: { status: string; detail: string; packets: { interface: string; interfaceKind: string; direction: string; protocol: string; sourceIp: string; sourcePort: number; destinationIp: string; destinationPort: number }[] }
-  summary: { physicalEgress: number; proxyRoute: number; directRoute: number; unattributed: number; ipv4: number; ipv6: number }
+  ready: boolean
+  probes: LeakProbes
+  probeSummary: LeakSummary
+  summary: LeakSummary
   completed: boolean
 }
 
 export interface AddressProbe {
-  status: 'observed' | 'unknown'
+  status: 'running' | 'observed' | 'unknown'
   endpoint: string
   ip?: string
   detail: string
@@ -60,12 +89,13 @@ export interface IceAddress {
 }
 
 export interface BrowserReport {
+  running: boolean
   startedAt: string
   origin: string
   expectedIpv4: string
   expectedIpv6: string
   ipv4: AddressProbe
   ipv6: AddressProbe
-  webrtc: { status: 'observed' | 'unknown'; candidates: IceAddress[]; detail: string }
+  webrtc: { status: 'running' | 'observed' | 'unknown'; candidates: IceAddress[]; detail: string }
   completed: boolean
 }
