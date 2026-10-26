@@ -8,40 +8,7 @@ use sempre_transparent::{CnRouteIntent, Controller};
 #[ignore = "requires NET_ADMIN inside an isolated Linux network namespace"]
 async fn cn_routes_kernel_priority_update_recovery_and_cleanup() {
     assert_eq!(std::env::var("SEMPRE_CN_NETNS_TEST").as_deref(), Ok("1"));
-    ip(&["link", "add", "cn-uplink", "type", "dummy"]);
-    ip(&["address", "add", "192.0.2.1/24", "dev", "cn-uplink"]);
-    ip(&["link", "set", "cn-uplink", "up"]);
-    ip(&[
-        "route",
-        "replace",
-        "default",
-        "via",
-        "192.0.2.2",
-        "dev",
-        "cn-uplink",
-    ]);
-    ip(&["link", "add", "cn-tun", "type", "dummy"]);
-    ip(&["address", "add", "172.19.0.1/30", "dev", "cn-tun"]);
-    ip(&["link", "set", "cn-tun", "up"]);
-    ip(&["-6", "address", "add", "fd00:2::1/64", "dev", "cn-uplink"]);
-    ip(&[
-        "-6",
-        "address",
-        "add",
-        "fdfe:dcba:9876::1/126",
-        "dev",
-        "cn-tun",
-    ]);
-    ip(&[
-        "-6",
-        "route",
-        "add",
-        "default",
-        "via",
-        "fd00:2::2",
-        "dev",
-        "cn-uplink",
-    ]);
+    initialize_network();
     let directory = tempfile::tempdir().expect("directory");
     let layout = sempre_state::Layout::system_at(directory.path());
     let controller = Controller::new(&layout);
@@ -117,6 +84,43 @@ async fn cn_routes_kernel_priority_update_recovery_and_cleanup() {
     assert!(ip(&["route", "get", "1.1.1.1"]).contains("dev cn-uplink"));
     assert!(!ip(&["rule", "show"]).contains("20243:"));
     assert!(!layout.home.join("cn-routes.json").exists());
+}
+
+fn initialize_network() {
+    ip(&["link", "add", "cn-uplink", "type", "dummy"]);
+    ip(&["address", "add", "192.0.2.1/24", "dev", "cn-uplink"]);
+    ip(&["link", "set", "cn-uplink", "up"]);
+    ip(&[
+        "route",
+        "replace",
+        "default",
+        "via",
+        "192.0.2.2",
+        "dev",
+        "cn-uplink",
+    ]);
+    ip(&["link", "add", "cn-tun", "type", "dummy"]);
+    ip(&["address", "add", "172.19.0.1/30", "dev", "cn-tun"]);
+    ip(&["link", "set", "cn-tun", "up"]);
+    ip(&["-6", "address", "add", "fd00:2::1/64", "dev", "cn-uplink"]);
+    ip(&[
+        "-6",
+        "address",
+        "add",
+        "fdfe:dcba:9876::1/126",
+        "dev",
+        "cn-tun",
+    ]);
+    ip(&[
+        "-6",
+        "route",
+        "add",
+        "default",
+        "via",
+        "fd00:2::2",
+        "dev",
+        "cn-uplink",
+    ]);
 }
 
 fn ip(arguments: &[&str]) -> String {
