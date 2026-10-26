@@ -1,4 +1,5 @@
 pub(crate) mod lifecycle;
+mod machine;
 mod plan;
 mod recovery;
 mod state;
@@ -15,7 +16,7 @@ use tokio::sync::watch;
 
 use crate::dns_runtime::DnsFrontendPlan;
 use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
-use wait::{ProcessEvent, RetryEvent, wait_inactive, wait_retry, wait_running, wait_startup};
+use wait::{ProcessEvent, wait_running, wait_startup};
 
 const STARTUP_GRACE: Duration = Duration::from_secs(10);
 const STOP_GRACE: Duration = Duration::from_secs(10);
@@ -54,98 +55,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 
     async fn run_supervisor_with_grace(
         &self,
-        mut shutdown: watch::Receiver<bool>,
+        shutdown: watch::Receiver<bool>,
         startup_grace: Duration,
     ) -> Result<(), ManagerError> {
-        let initial = self.recover_lifecycle().await?;
-        let mut cleanup_needed = transparent_cleanup_required(&initial);
-        loop {
-            let document = self.store.read()?;
-            if *shutdown.borrow() {
-                let cleanup = if cleanup_needed {
-                    self.cleanup_retained_frontend().await
-                } else {
-                    Ok(())
-                };
-                state::mark_intentional_exit(self, true)?;
-                self.startup_tasks
-                    .complete_stop(cleanup.as_ref().err().map(ToString::to_string).as_deref());
-                return cleanup;
-            }
-            let service_stopped = document.desired_state == DesiredState::Stopped;
-            if service_stopped || document.active.is_none() {
-                let cleanup = self.cleanup_inactive(cleanup_needed).await;
-                cleanup_needed = false;
-                state::mark_inactive(self, service_stopped)?;
-                self.startup_tasks
-                    .complete_stop(cleanup.as_ref().err().map(ToString::to_string).as_deref());
-                if let Err(error) = cleanup {
-                    self.log_supervisor(&format!("inactive cleanup failed: {error}"));
-                }
-                if wait_inactive(self, &mut shutdown).await {
-                    return Ok(());
-                }
-                continue;
-            }
-            if !self.startup_tasks.begin_cycle() {
-                if wait::wait_preparation(self, &mut shutdown).await {
-                    return Ok(());
-                }
-                continue;
-            }
-            cleanup_needed = true;
-            let prepared = self.prepare_cycle(&mut shutdown).await;
-            let (runtime_gate, plan) = match prepared {
-                Ok(Some(prepared)) => prepared,
-                Ok(None) => continue,
-                Err(error) => {
-                    let error =
-                        with_cleanup_failure(&error, self.cleanup_after_core_failure().await);
-                    self.log_supervisor(&format!("resolve deployment failed: {error}"));
-                    state::record_failure(self, "resolve failed", &error, false)?;
-                    match wait_retry(self, &mut shutdown, RETRY_INTERVAL).await {
-                        RetryEvent::Timer => {}
-                        RetryEvent::NetworkChanged => {
-                            self.log_supervisor("network changed; retrying core immediately");
-                        }
-                        RetryEvent::Reload => self.cleanup_after_core_failure().await?,
-                        RetryEvent::Shutdown => {
-                            self.cleanup_retained_frontend().await?;
-                            state::mark_intentional_exit(self, true)?;
-                            return Ok(());
-                        }
-                    }
-                    continue;
-                }
-            };
-            if !state::mark_starting(self, &plan)? {
-                self.startup_tasks.interrupt_cycle();
-                continue;
-            }
-            match self
-                .run_runtime_plan(&plan, &mut shutdown, startup_grace, runtime_gate)
-                .await?
-            {
-                CycleResult::Restart => {
-                    cleanup_needed = false;
-                }
-                CycleResult::Shutdown => return Ok(()),
-                CycleResult::Failed => {
-                    match wait_retry(self, &mut shutdown, RETRY_INTERVAL).await {
-                        RetryEvent::Timer => {}
-                        RetryEvent::NetworkChanged => {
-                            self.log_supervisor("network changed; retrying core immediately");
-                        }
-                        RetryEvent::Reload => self.cleanup_retained_frontend().await?,
-                        RetryEvent::Shutdown => {
-                            self.cleanup_retained_frontend().await?;
-                            state::mark_intentional_exit(self, true)?;
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-        }
+        self.run_supervisor_machine(shutdown, startup_grace).await
     }
 
     async fn run_runtime_plan(

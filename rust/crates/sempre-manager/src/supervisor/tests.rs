@@ -320,3 +320,32 @@ async fn route_phase_times_out_only_after_a_stall() {
         }
     ));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn runtime_failure_is_retried_without_exiting_the_supervisor() {
+    let (_root, manager) = fixture("#!/bin/sh\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n");
+    // A directory at the control path makes publishing the core endpoint fail.
+    fs::create_dir_all(manager.store.layout().core_control.join("blocked"))
+        .expect("blocking directory");
+    let (shutdown, receiver) = watch::channel(false);
+    let running = Arc::clone(&manager);
+    let task = tokio::spawn(async move {
+        running
+            .run_supervisor_with_grace(receiver, Duration::from_millis(50))
+            .await
+    });
+    wait_until(Duration::from_secs(4), || {
+        manager
+            .state()
+            .is_ok_and(|document| document.runtime.last_failure.is_some())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!task.is_finished(), "runtime failure ended the supervisor");
+    let document = manager.state().expect("state");
+    assert_eq!(document.runtime.state, sempre_state::RuntimeState::Failed);
+    assert!(document.runtime.pid.is_none());
+    shutdown.send(true).expect("shutdown");
+    task.await.expect("task").expect("supervisor");
+}
