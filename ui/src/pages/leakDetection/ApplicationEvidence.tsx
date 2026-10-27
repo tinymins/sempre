@@ -2,7 +2,7 @@ import { Alert, Card, Tag } from '@acme/components'
 import type { LeakConnection, LeakReport } from './types'
 
 export function ApplicationEvidence({ report, zh }: { report: LeakReport | null; zh: boolean }) {
-  if (!report) return <p className="py-5 text-sm text-[var(--muted)]">{zh ? '这是可选的真实应用被动观测。主动探针无需启动 Codex / Claude Code，其结果单独显示在上方。' : 'Optional passive observation of real applications. Active probes above do not require Codex / Claude Code to be running.'}</p>
+  if (!report) return <p className="py-5 text-sm text-[var(--muted)]">{zh ? '开始观测后，这里显示目标应用的真实连接。' : 'Real application connections appear here after observation starts.'}</p>
   const connections = report.connections.filter((connection) => connection.app !== 'probe')
   const processes = report.processes.filter((process) => process.app !== 'probe')
   return <section className="min-w-0 space-y-3">
