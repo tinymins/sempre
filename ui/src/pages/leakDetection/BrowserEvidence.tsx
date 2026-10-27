@@ -15,9 +15,7 @@ export function BrowserEvidence({ report, zh }: { report: BrowserReport | null; 
       <div className="mt-3 space-y-2">{report.webrtc.candidates.map((candidate) => <div key={`${candidate.address}-${candidate.type}-${candidate.protocol}`} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] p-3 text-xs">
         <code className="break-all">{candidate.address}</code><Tag>{scope[candidate.scope]}</Tag><span>{candidate.type} · {candidate.protocol}</span>
       </div>)}</div>
-      <p className="mt-3 text-xs text-[var(--muted)]">{zh ? '局域网、保留地址和 mDNS 不作为公网 IP 泄漏。' : 'LAN, reserved and mDNS addresses are not public IP leaks.'}</p>
     </Card>
-    <p className="text-xs text-[var(--muted)]">{zh ? '浏览器 DNS / DoH 路径、HTTP/3、WebSocket 及扩展流量不在这些探针覆盖范围内。' : 'Browser DNS / DoH paths, HTTP/3, WebSocket and extension traffic are not covered by these probes.'}</p>
   </section>
 }
 

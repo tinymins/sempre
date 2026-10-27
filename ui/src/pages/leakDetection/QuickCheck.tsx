@@ -3,6 +3,7 @@ import { Play, Square } from 'lucide-react'
 import { Alert, Button, Checkbox, Collapse, Input, Select } from '@acme/components'
 import { ActiveProbes } from './ActiveProbes'
 import { BrowserEvidence } from './BrowserEvidence'
+import { LeakNotes } from './LeakNotes'
 import { LeakProgress } from './LeakProgress'
 import { LeakVerdict } from './LeakVerdict'
 import { normalizeIp } from './browserChecks'
@@ -30,7 +31,7 @@ export function QuickCheck({ check, zh }: { check: ReturnType<typeof useLeakDete
         : <Button className="w-full sm:w-auto" variant="primary" icon={<Play size={14} />} disabled={!expectedValid || nothingToRun} onClick={start}>{zh ? '开始检测' : 'Start check'}</Button>}
     </div>
     {localUnavailable && <Alert type="warning" message={zh ? '无法连接 Sempre 采集器，本次只检测浏览器' : 'Sempre collector unavailable; only this browser will be checked'} description={check.preflightError} />}
-    {topology === 'gateway' && <p className="text-xs text-[var(--muted)]">{zh ? '请在受测客户端设备上打开本页。Sempre 所在设备的出口不能代表客户端，因此不运行本机探针。' : 'Open this page on the client device. The Sempre device egress cannot represent the client, so local probes do not run.'}</p>}
+    {topology === 'gateway' && <p className="text-xs text-[var(--muted)]">{zh ? '请在受测客户端设备上打开本页。' : 'Open this page on the client device.'}</p>}
     <Collapse size="small" items={[{ key: 'advanced', label: zh ? '高级选项' : 'Advanced options', children: <div className="min-w-0 space-y-3">
       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="min-w-0"><label className="mb-2 block text-xs" htmlFor="leak-expected-v4">{zh ? '预期代理出口 IPv4' : 'Expected proxy IPv4'}</label><Input id="leak-expected-v4" className="w-full min-w-0" value={expectedIpv4} disabled={check.running} onChange={(event) => setExpectedIpv4(event.target.value)} placeholder={zh ? '可选' : 'Optional'} /></div>
@@ -39,7 +40,6 @@ export function QuickCheck({ check, zh }: { check: ReturnType<typeof useLeakDete
       {!expectedValid && <p className="text-xs text-amber-600">{zh ? '预期出口必须为对应类型的有效 IP 地址。' : 'Expected egress must be a valid IP address of the indicated family.'}</p>}
       <p className="text-xs text-[var(--muted)]">{zh ? '不填写时，浏览器出口与本机探针出口互相比对。' : 'When empty, browser egress is compared with local probe egress.'}</p>
       <Checkbox className="items-start text-sm" checked={includeBrowser} disabled={check.running} onChange={(event) => setIncludeBrowser(event.target.checked)}>{zh ? '同时检测当前浏览器 IPv4 / IPv6 / WebRTC' : 'Also check this browser’s IPv4 / IPv6 / WebRTC'}</Checkbox>
-      <p className="break-words text-xs text-[var(--muted)]">{zh ? '探针会访问 api.ipify.org、api6.ipify.org 与 stun.l.google.com:19302，服务方可看到来源地址；不发送 Sempre 凭据，也不修改 TUN、DNS 或代理配置。' : 'Probes contact api.ipify.org, api6.ipify.org and stun.l.google.com:19302, which can see the source address. Sempre credentials are not sent and TUN, DNS or proxy settings are not changed.'}</p>
     </div> }]} />
     <LeakProgress run={run} phase={run ? check.phase : 'idle'} remainingSeconds={check.remainingSeconds} error={run ? check.error : ''} zh={zh} />
     {run && <LeakVerdict verdict={quickVerdict({ ...run, report: check.report, browser: check.browser }, zh)} running={check.running} zh={zh} />}
@@ -47,5 +47,6 @@ export function QuickCheck({ check, zh }: { check: ReturnType<typeof useLeakDete
       ...(run.localProbes ? [{ key: 'local', label: zh ? '本机探针证据' : 'Local probe evidence', children: <ActiveProbes report={check.report} zh={zh} /> }] : []),
       ...(run.includeBrowser ? [{ key: 'browser', label: zh ? '浏览器探针证据' : 'Browser probe evidence', children: <BrowserEvidence report={check.browser} zh={zh} /> }] : []),
     ]} />}
+    <LeakNotes mode="quick" zh={zh} />
   </div>
 }

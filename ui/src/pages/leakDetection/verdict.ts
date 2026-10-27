@@ -16,7 +16,10 @@ export interface QuickVerdictInput {
 
 const same = (left: string, right: string) => normalizeIp(left) === normalizeIp(right)
 
-function summarize(rows: VerdictRow[], started: boolean): Verdict {
+const order: Record<VerdictState, number> = { review: 0, unknown: 1, ok: 2, skipped: 3 }
+
+function summarize(unsorted: VerdictRow[], started: boolean): Verdict {
+  const rows = [...unsorted].sort((left, right) => order[left.state] - order[right.state])
   const active = rows.filter((row) => row.state !== 'skipped')
   const reviewCount = active.filter((row) => row.state === 'review').length
   const overall = !started ? 'pending' : reviewCount > 0 ? 'review' : active.some((row) => row.state === 'unknown') ? 'incomplete' : 'ok'

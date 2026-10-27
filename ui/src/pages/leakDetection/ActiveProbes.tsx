@@ -7,8 +7,6 @@ export function ActiveProbes({ report, zh }: { report: LeakReport | null; zh: bo
   const connections = report?.connections.filter((connection) => connection.app === 'probe') ?? []
   const labels = { pending: zh ? '待执行' : 'Pending', running: zh ? '执行中' : 'Running', passed: zh ? '已返回' : 'Responded', failed: zh ? '失败' : 'Failed', timeout: zh ? '超时' : 'Timed out', stopped: zh ? '已中止' : 'Stopped' }
   return <section className="min-w-0 space-y-3" aria-label={zh ? '本机探针证据' : 'Local probe evidence'}>
-    <p className="text-xs text-[var(--muted)]">{zh ? 'Sempre 启动独立临时进程检查 DNS 与 HTTPS IPv4 / IPv6；这些证据只代表探针，不代表 Codex / Claude Code。' : 'Sempre starts independent temporary processes for DNS and HTTPS IPv4 / IPv6. This evidence represents the probes, not Codex / Claude Code.'}</p>
-    {probes?.reason && <p className="text-xs text-[var(--muted)]">{probes.reason}</p>}
     <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-3">
       {probes?.results.map((result) => <Card key={result.id} className="min-w-0" bodyStyle={{ padding: '1rem' }}>
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">{result.id === 'dns' ? 'DNS' : `HTTPS / ${result.id === 'ipv4' ? 'IPv4' : 'IPv6'}`}</h3><Tag color={result.status === 'running' ? 'processing' : result.status === 'failed' || result.status === 'timeout' ? 'warning' : 'default'}>{labels[result.status]}</Tag></div>

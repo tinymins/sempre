@@ -29,6 +29,12 @@ describe('quickVerdict', () => {
     expect(verdict.overall).toBe('review')
   })
 
+  it('lists rows needing review first', () => {
+    const value = report([probe('dns', 1, null, ['1.1.1.1']), probe('ipv4', 2, '203.0.113.9'), probe('ipv6', 3, null)], [connection(1, 'proxy-route'), connection(2, 'proxy-route')])
+    const verdict = quickVerdict({ ...input, report: value, browser: null, includeBrowser: false, expectedIpv4: '198.51.100.1' }, false)
+    expect(verdict.rows.map((row) => row.state)).toEqual(['review', 'unknown', 'ok', 'skipped'])
+  })
+
   it('flags direct routes even when egress matches', () => {
     const value = report([probe('ipv4', 2, '203.0.113.9')], [connection(2, 'direct-route')])
     expect(state(quickVerdict({ ...input, report: value, browser: null, expectedIpv4: '203.0.113.9' }, false), 'local-ipv4')).toBe('review')
