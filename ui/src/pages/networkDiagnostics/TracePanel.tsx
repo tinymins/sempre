@@ -11,13 +11,14 @@ export function TracePanel({ run, zh }: { run: NetworkTraceRun | null; zh: boole
   const pending = run?.steps.slice().reverse().find((step) => step.status === 'running')
   const last = run?.steps.at(-1)
   const progress = pending ? traceTitle(pending, zh) : (zh ? '等待本次请求证据' : 'Waiting for request evidence')
-  return <section className="pt-6" aria-label={zh ? '本次实测链路' : 'Measured request trace'}>
+  return <section aria-label={zh ? '本次实测链路' : 'Measured request trace'}>
     <div className="flex items-start justify-between gap-2.5">
       <div><h2 className="text-base font-medium">{zh ? '实测链路' : 'Measured path'} <span className="text-xs font-normal text-[var(--muted)]">· {zh ? '本次运行' : 'current run'}</span></h2><p className="mt-1 text-xs text-[var(--muted)]" role="status" aria-live="polite">{run ? (zh ? `已收到 ${run.steps.length} 组证据 · ${run.running ? progress : '点击节点查看依据'}` : `${run.steps.length} evidence groups · ${run.running ? progress : 'Expand nodes to inspect evidence'}`) : (zh ? '等待开始 · 点击节点可展开判断依据' : 'Ready · expand nodes to inspect decisions')}</p></div>
       <span className={`shrink-0 rounded px-2 py-1 text-[11px] ${run?.running ? 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400' : 'bg-[var(--surface-hover)] text-[var(--muted)]'}`}>{run?.running ? (zh ? '测试进行中' : 'Testing') : run ? (zh ? '测试已结束' : 'Finished') : (zh ? '未开始' : 'Not started')}</span>
     </div>
+    {run ? <p className="mt-2 break-all text-xs text-[var(--muted)]">{zh ? '实测目标：' : 'Measured target: '}{run.target}</p> : null}
     {!run ? <div className="flex min-h-[148px] flex-col items-center justify-center gap-2 text-center text-sm text-[var(--muted)]"><GitBranch size={25} className="mb-1" /><span>{zh ? '链路会随着证据逐步展开' : 'The path unfolds as evidence arrives'}</span><small className="text-xs">{zh ? '前置处理记录 + 内核连接记录' : 'Frontend decisions + core connection records'}</small></div> : null}
-    <ol className="mt-[22px] list-none empty:mt-0" aria-label={zh ? '按证据到达顺序显示的链路' : 'Path in order of received evidence'}>{run?.steps.map((step) => <TraceStepCard key={step.id} step={step} zh={zh} active={run.running} onExpand={pause} />)}</ol>
+    <ol className="mt-[22px] list-none empty:mt-0" aria-label={zh ? '按证据到达顺序显示的链路' : 'Path in order of received evidence'}>{run?.steps.map((step) => <TraceStepCard key={step.id} step={step} zh={zh} target={run.target} active={run.running} onExpand={pause} />)}</ol>
     <div ref={latestRef} className="scroll-mt-20 scroll-mb-5">
       {run?.running ? <div role="status" className="mb-2 ml-1 mt-0.5 flex items-center gap-2.5 text-xs text-[var(--muted)]"><span className="size-3 shrink-0 rounded-full bg-zinc-500 dark:bg-zinc-400 motion-safe:animate-[trace-breathe_1.4s_ease-in-out_infinite]" /><span>{progress}</span></div> : null}
       {run?.error ? <Alert className="mt-3" type="warning" showIcon message={run.error} /> : null}

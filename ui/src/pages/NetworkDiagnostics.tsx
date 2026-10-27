@@ -102,22 +102,28 @@ export function NetworkDiagnostics() {
           {trace.run?.running ? <Button key="stop-trace" htmlType="button" className="!h-9 !rounded-[9px] !bg-emerald-700 !px-4 dark:!bg-emerald-300 dark:!text-emerald-950" variant="primary" icon={<Square size={14} />} onClick={(event) => { event.preventDefault(); trace.stop() }}>{zh ? '停止测试' : 'Stop test'}</Button> : <Button key="start-trace" className="!h-9 !rounded-[9px] !bg-emerald-700 !px-4 dark:!bg-emerald-300 dark:!text-emerald-950" htmlType="submit" variant="primary" disabled={!draft.trim() || running} icon={trace.run ? <RefreshCw size={14} /> : <Play size={14} />}>{zh ? (trace.run ? '重新测试' : '开始测试') : (trace.run ? 'Test again' : 'Run test')}</Button>}
         </form>
         <RulePreview target={draft} session={session} zh={zh} expanded={previewExpanded} onToggle={() => setPreviewExpanded((value) => !value)} />
-        <TracePanel key={trace.run?.generation ?? 0} run={trace.run} zh={zh} />
+        <section className="mt-6 space-y-5 border-t border-[var(--border)] pt-5" aria-label={zh ? '诊断结果' : 'Diagnostic results'}>
+          <div><h2 className="text-lg font-medium">{zh ? '诊断结果' : 'Diagnostic results'}</h2><p className="mt-1 text-xs text-[var(--muted)]">{zh ? '实测请求与补充检查在此汇总，各自保留目标、结果与证据来源。' : 'Measured requests and supplementary checks retain their own targets, results and evidence sources.'}</p></div>
+          <TracePanel key={trace.run?.generation ?? 0} run={trace.run} zh={zh} />
+          <section className="space-y-3 border-t border-[var(--border)] pt-4" aria-label={zh ? '补充检查' : 'Supplementary checks'}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Button variant="unstyled" className="min-w-0 !justify-start gap-2 py-2 text-left text-sm" aria-expanded={auxiliaryExpanded} onClick={() => setAuxiliaryExpanded(!auxiliaryExpanded)}><ChevronDown size={15} className={`shrink-0 ${auxiliaryExpanded ? 'rotate-180' : ''}`} /><span>{zh ? '补充检查' : 'Supplementary checks'}</span><Tag color="default">{zh ? '系统检查 · 独立探测' : 'System checks · independent probes'}</Tag></Button>
+              <Button disabled={!draft.trim() || running || trace.run?.running} onClick={() => { setAuxiliaryExpanded(true); startDiagnostics(draft.trim()) }}>{zh ? (running ? '检查中…' : '运行分层检查') : (running ? 'Checking…' : 'Run layered checks')}</Button>
+            </div>
+            <p className="text-xs text-[var(--muted)]">{zh ? '检查运行状态、系统 DNS、路由 / TUN，并独立探测 TCP、TLS、HTTP；结果不属于上方同一次实测连接。' : 'Checks runtime, system DNS and route / TUN, with independent TCP, TLS and HTTP probes; these results are not from the measured connection above.'}</p>
+            <p className="break-all text-xs text-[var(--muted)]">{zh ? '下一次检查目标：' : 'Next check target: '}{draft.trim() || '—'}</p>
+            {auxiliaryTarget ? <p className="break-all text-xs text-[var(--muted)]">{zh ? '补充检查结果目标：' : 'Supplementary result target: '}{auxiliaryTarget}</p> : null}
+            {!auxiliaryExpanded && report ? <div className="flex flex-wrap items-center gap-2 text-xs"><span>{zh ? '补充检查结果' : 'Supplementary result'}</span><StatusTag status={report.status} zh={zh} /><span className="text-[var(--muted)]">{zh ? `${report.findings.length} 项发现 · 展开查看各层证据与建议` : `${report.findings.length} findings · expand for layer evidence and recommendations`}</span></div> : null}
+            {error ? <Alert type="error" showIcon message={zh ? '诊断运行失败' : 'Diagnostics failed'} description={error} /> : null}
+            {auxiliaryExpanded ? <>
+              {auxiliaryTarget ? <DiagnosticTimeline steps={steps} zh={zh} /> : null}
+              {report ? <><DiagnosticSummary report={report} zh={zh} /><Findings findings={report.findings} zh={zh} /></> : null}
+            </> : null}
+          </section>
+        </section>
       </div>
       <footer className="flex flex-wrap justify-between gap-2 border-t border-[var(--border)] px-4 py-3 text-[11px] text-[var(--muted)] sm:px-[26px]"><span>{zh ? '实测仅使用本次运行证据' : 'Measured records come from this run only'}</span><span>{zh ? '未观测的链路保持未知' : 'Unobserved paths remain unknown'}</span></footer>
     </div>
-    <section className="space-y-3">
-      <Button variant="unstyled" className="w-full !justify-start gap-2 py-2 text-sm text-[var(--muted)]" aria-expanded={auxiliaryExpanded} onClick={() => setAuxiliaryExpanded(!auxiliaryExpanded)}><ChevronDown size={15} className={auxiliaryExpanded ? 'rotate-180' : ''} />{zh ? '辅助分层检查' : 'Additional layered checks'}</Button>
-      {auxiliaryExpanded ? <>
-    <div className="space-y-2 border-t border-[var(--border)] pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">{zh ? '辅助分层检查' : 'Additional layered checks'}</h2><Button disabled={!draft.trim() || running || trace.run?.running} onClick={() => startDiagnostics(draft.trim())}>{zh ? (running ? '检查中…' : '运行分层检查') : (running ? 'Checking…' : 'Run layered checks')}</Button></div><p className="text-xs text-[var(--muted)]">{zh ? '以下 DNS、TCP、TLS、HTTP 检查使用独立请求，不属于上方同一次实测连接。' : 'These DNS, TCP, TLS and HTTP checks use independent requests and are not the measured connection above.'}</p>{auxiliaryTarget ? <p className="break-all text-xs text-[var(--muted)]">{auxiliaryTarget}</p> : null}</div>
-    {error ? <Alert type="error" showIcon message={zh ? '诊断运行失败' : 'Diagnostics failed'} description={error} /> : null}
-    {auxiliaryTarget ? <DiagnosticTimeline steps={steps} zh={zh} /> : null}
-    {report ? <>
-      <DiagnosticSummary report={report} zh={zh} />
-      <Findings findings={report.findings} zh={zh} />
-    </> : null}
-      </> : null}
-    </section>
   </div>
 }
 

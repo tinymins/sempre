@@ -4,10 +4,12 @@ import { Button } from '@acme/components'
 import type { NetworkTraceStep } from '../../lib/networkDiagnosticsTypes'
 import { TraceElapsed } from './TraceElapsed'
 import { decisionRows, traceTitle } from './tracePresentation'
+import { traceSummary } from './traceSummary'
 
-export function TraceStepCard({ step, zh, preview = false, active = false, onExpand }: {
+export function TraceStepCard({ step, zh, target, preview = false, active = false, onExpand }: {
   step: NetworkTraceStep
   zh: boolean
+  target?: string
   preview?: boolean
   active?: boolean
   onExpand?: () => void
@@ -23,6 +25,7 @@ export function TraceStepCard({ step, zh, preview = false, active = false, onExp
     : { session: 'Diagnostic request', frontend: 'Sempre · DNS', core: 'Core · same snapshot', socket: 'Transport', http: 'Request result', config: 'Configuration prediction' }
   const rows = decisionRows(step.evidence, zh)
   const title = preview ? (zh ? '前置规则判断' : 'Frontend rule evaluation') : traceTitle(step, zh)
+  const summary = preview ? [] : traceSummary(step, target, zh)
   return <li className="relative pb-[15px] pl-7 sm:pl-[34px] motion-safe:animate-[trace-arrive_220ms_ease-out_both] before:absolute before:top-[21px] before:-bottom-1 before:left-2.5 before:w-px before:bg-[var(--border)] last:before:hidden">
     <span className={`absolute left-0 top-2 z-1 grid size-[21px] place-items-center rounded-full ${color}`} aria-hidden="true">
       {preview || unfinished ? <Circle size={11} /> : step.status === 'running' ? <span className="size-2 rounded-full bg-current motion-safe:animate-[trace-breathe_1.4s_ease-in-out_infinite]" /> : step.status === 'passed' ? <Check size={13} /> : step.status === 'failed' ? <X size={13} /> : <AlertTriangle size={12} />}
@@ -32,6 +35,7 @@ export function TraceStepCard({ step, zh, preview = false, active = false, onExp
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><span className="text-sm font-medium">{title}</span><span className="text-[11px] text-[var(--muted)]">{sources[step.source]}{unfinished ? (zh ? ' · 未完成' : ' · unfinished') : ''}</span></span>
           <span className="mt-1 block break-words text-xs text-[var(--muted)]">{step.detail}</span>
+          {summary.length ? <span className="mt-2 grid gap-1.5 text-xs">{summary.map(([label, value]) => <span key={label} className="grid min-w-0 gap-x-3 gap-y-0.5 sm:grid-cols-[minmax(7rem,auto)_1fr]"><span className="text-[var(--muted)]">{label}</span><span className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">{value}</span></span>)}</span> : null}
           {!preview ? <span className="mt-1 block sm:hidden"><TraceElapsed step={step} active={active} zh={zh} /></span> : null}
         </span>
         {!preview ? <span className="hidden sm:block"><TraceElapsed step={step} active={active} zh={zh} /></span> : null}
