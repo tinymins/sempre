@@ -184,8 +184,8 @@ export function Select({
       setActiveIndex(null);
     }
   };
-
   const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (disabled) return;
     if (event.key === "Backspace" && isMultiple && search.length === 0) {
       const lastValue = selectedValues[selectedValues.length - 1];
       if (lastValue !== undefined) {
@@ -195,7 +195,6 @@ export function Select({
       }
       return;
     }
-
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       event.stopPropagation();
@@ -210,15 +209,16 @@ export function Select({
       setActiveIndex(nextIndex);
       return;
     }
-
     if (event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
       const candidate =
         (activeIndex !== null ? filtered[activeIndex] : undefined) ??
+        (mode === "tags" ? childOptions.find((option) => String(option.value) === search.trim()) : undefined) ??
         (filtered.length === 1 ? filtered[0] : undefined);
-      if (candidate && !candidate.disabled) {
-        handleSelect(candidate.value);
+      if (candidate && !candidate.disabled && (mode !== "tags" || !selectedValues.includes(candidate.value))) handleSelect(candidate.value);
+      else if (!candidate && mode === "tags" && search.trim() && !selectedValues.includes(search.trim())) {
+        handleSelect(search.trim());
       }
     }
   };

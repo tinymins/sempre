@@ -1,22 +1,44 @@
-use std::sync::{Arc, RwLock};
+mod sockets;
 
-use axum::{Router, body::Body, extract::Request, middleware, response::Response};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, RwLock},
+};
+
+use axum::{
+    Router, body::Body, extract::Request, middleware, response::Response, serve::ListenerExt,
+};
 use chrono::Utc;
 use futures_util::StreamExt;
-use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, validate_listen};
+use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, primary_listen};
 use sempre_state::Layout;
+#[cfg(test)]
+use tokio::net::TcpListener;
 use tokio::{
-    net::TcpListener,
+    net::TcpStream,
     sync::{mpsc, oneshot, watch},
     task::JoinHandle,
 };
 
 use crate::{ClientError, VERSION};
+use sockets::Sockets;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Endpoint {
     pub(crate) bind: String,
+    pub(crate) bind_addresses: Vec<String>,
     pub(crate) local_url: String,
+}
+
+impl Endpoint {
+    pub(crate) fn from_addresses(addresses: Vec<String>) -> Result<Self, ClientError> {
+        let bind = primary_listen(&addresses)?.to_owned();
+        Ok(Self {
+            local_url: local_url(&bind)?,
+            bind,
+            bind_addresses: addresses,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -24,20 +46,22 @@ pub(crate) struct EndpointStore(Arc<RwLock<Endpoint>>);
 
 impl EndpointStore {
     pub(crate) fn new(bind: String, local_url: String) -> Self {
-        Self(Arc::new(RwLock::new(Endpoint { bind, local_url })))
+        Self(Arc::new(RwLock::new(Endpoint {
+            bind_addresses: vec![bind.clone()],
+            bind,
+            local_url,
+        })))
     }
-
     pub(crate) fn get(&self) -> Endpoint {
         self.0.read().expect("endpoint state lock").clone()
     }
-
-    fn set(&self, endpoint: Endpoint) {
+    pub(crate) fn set(&self, endpoint: Endpoint) {
         *self.0.write().expect("endpoint state lock") = endpoint;
     }
 }
 
 pub(crate) struct RebindRequest {
-    listen: String,
+    listen: Vec<String>,
     response: oneshot::Sender<Result<Endpoint, String>>,
 }
 
@@ -45,11 +69,11 @@ pub(crate) struct RebindRequest {
 pub(crate) struct RebindHandle(mpsc::Sender<RebindRequest>);
 
 impl RebindHandle {
-    pub(crate) async fn request(&self, listen: &str) -> Result<Endpoint, String> {
+    pub(crate) async fn request(&self, listen: &[String]) -> Result<Endpoint, String> {
         let (response, result) = oneshot::channel();
         self.0
             .send(RebindRequest {
-                listen: listen.into(),
+                listen: listen.to_vec(),
                 response,
             })
             .await
@@ -65,90 +89,109 @@ pub(crate) fn channel() -> (RebindHandle, mpsc::Receiver<RebindRequest>) {
     (RebindHandle(sender), receiver)
 }
 
+pub(crate) struct ManagedListener {
+    sockets: Sockets,
+    endpoint: EndpointStore,
+    web: WebConfigStore,
+    daemon_endpoint: DaemonEndpoint,
+    layout: Layout,
+    requests: mpsc::Receiver<RebindRequest>,
+    fatal: Option<oneshot::Sender<String>>,
+}
+
+pub(crate) async fn bind(values: &[String]) -> Result<Sockets, ClientError> {
+    Sockets::bind(values).await
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
-    listener: TcpListener,
+    sockets: Sockets,
     app: Router,
     endpoint: EndpointStore,
     web: WebConfigStore,
     daemon_endpoint: DaemonEndpoint,
     layout: Layout,
-    mut requests: mpsc::Receiver<RebindRequest>,
+    requests: mpsc::Receiver<RebindRequest>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), ClientError> {
-    let (mut stop, stop_request) = oneshot::channel();
-    let mut server = serve(listener, app.clone(), stop_request);
-    loop {
-        tokio::select! {
-            result = &mut server => return server_result(result),
-            request = requests.recv() => {
-                let Some(request) = request else {
-                    continue;
-                };
-                match prepare_rebind(
-                    &request.listen,
-                    &endpoint,
-                    &web,
-                    &daemon_endpoint,
-                    &layout,
-                ).await {
-                    Ok(prepared) => {
-                        let (next_stop, stop_request) = oneshot::channel();
-                        let next = serve(prepared.listener, app.clone(), stop_request);
-                        let previous = std::mem::replace(&mut server, next);
-                        let previous_stop = std::mem::replace(&mut stop, next_stop);
-                        let _ = previous_stop.send(());
-                        tokio::spawn(async move { let _ = previous.await; });
-                        let _ = request.response.send(Ok(prepared.endpoint));
-                    }
-                    Err(error) => {
-                        let _ = request.response.send(Err(error.to_string()));
-                    }
-                }
-            }
-            changed = shutdown.changed() => {
-                if changed.is_err() || *shutdown.borrow() {
-                    let _ = stop.send(());
-                    return server_result(server.await);
-                }
-            }
+    let (failed, mut failure) = oneshot::channel();
+    let listener = ManagedListener {
+        sockets,
+        endpoint,
+        web,
+        daemon_endpoint,
+        layout,
+        requests,
+        fatal: Some(failed),
+    };
+    let (stop, stop_request) = oneshot::channel();
+    let mut server = serve(listener, app, stop_request);
+    tokio::select! {
+        result = &mut server => server_result(result),
+        error = &mut failure => {
+            let _ = stop.send(());
+            let _ = server.await;
+            Err(ClientError::Runtime(error.unwrap_or_else(|_| "web listener stopped".into())))
+        }
+        () = async { while !*shutdown.borrow() && shutdown.changed().await.is_ok() {} } => {
+            let _ = stop.send(());
+            server_result(server.await)
         }
     }
 }
 
-struct Prepared {
-    listener: TcpListener,
-    endpoint: Endpoint,
+impl axum::serve::Listener for ManagedListener {
+    type Io = TcpStream;
+    type Addr = SocketAddr;
+    async fn accept(&mut self) -> (TcpStream, SocketAddr) {
+        loop {
+            tokio::select! {
+                accepted = self.sockets.accept() => match accepted {
+                    Ok(connection) => return connection,
+                    Err(error) => {
+                        tracing::warn!(%error, "accept web connection failed");
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    }
+                },
+                Some(request) = self.requests.recv() => {
+                    let previous = self.endpoint.get();
+                    let result = self.sockets.change(&request.listen, |addresses| {
+                        let next = Endpoint::from_addresses(addresses.to_vec())?;
+                        let saved = write_endpoints(&next, &self.daemon_endpoint, &self.layout)
+                            .and_then(|()| self.web.set_listens(&request.listen).map(|_| ()).map_err(ClientError::from));
+                        if let Err(error) = saved {
+                            if let Err(restore) = write_endpoints(&previous, &self.daemon_endpoint, &self.layout) {
+                                return Err(ClientError::Runtime(format!("{error}; restoring web discovery files failed: {restore}")));
+                            }
+                            return Err(error);
+                        }
+                        self.endpoint.set(next.clone());
+                        Ok(next)
+                    }).await;
+                    match result {
+                        Ok(endpoint) => { let _ = request.response.send(Ok(endpoint)); }
+                        Err(error) => {
+                            let _ = request.response.send(Err(error.message.clone()));
+                            if error.fatal {
+                                if let Some(failed) = self.fatal.take() { let _ = failed.send(error.message); }
+                                return std::future::pending().await;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.endpoint
+            .get()
+            .bind
+            .parse()
+            .map_err(std::io::Error::other)
+    }
 }
 
-async fn prepare_rebind(
-    listen: &str,
-    endpoint_store: &EndpointStore,
-    web: &WebConfigStore,
-    daemon_template: &DaemonEndpoint,
-    layout: &Layout,
-) -> Result<Prepared, ClientError> {
-    validate_listen(listen)?;
-    let listener = TcpListener::bind(listen)
-        .await
-        .map_err(|source| ClientError::Bind {
-            address: listen.into(),
-            source,
-        })?;
-    let next = Endpoint {
-        bind: listen.into(),
-        local_url: local_url(listen)?,
-    };
-    web.set_listen(listen)?;
-    write_endpoints(&next, daemon_template, layout)?;
-    endpoint_store.set(next.clone());
-    Ok(Prepared {
-        listener,
-        endpoint: next,
-    })
-}
-
-fn write_endpoints(
+pub(crate) fn write_endpoints(
     endpoint: &Endpoint,
     daemon_template: &DaemonEndpoint,
     layout: &Layout,
@@ -163,11 +206,14 @@ fn write_endpoints(
     Ok(())
 }
 
-fn serve(
-    listener: TcpListener,
+fn serve<L>(
+    listener: L,
     app: Router,
     stop: oneshot::Receiver<()>,
-) -> JoinHandle<Result<(), ClientError>> {
+) -> JoinHandle<Result<(), ClientError>>
+where
+    L: axum::serve::Listener<Addr = std::net::SocketAddr>,
+{
     tokio::spawn(async move {
         let (closing, closed) = watch::channel(false);
         let app = app.layer(middleware::from_fn(
@@ -192,7 +238,7 @@ fn serve(
             },
         ));
         axum::serve(
-            listener,
+            listener.tap_io(|_| {}),
             app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
         .with_graceful_shutdown(async move {

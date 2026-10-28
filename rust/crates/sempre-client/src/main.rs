@@ -98,8 +98,6 @@ pub(crate) enum ClientError {
     Cancelled,
     #[error("bind local API at {address}: {source}")]
     Bind { address: String, source: io::Error },
-    #[error("read local API address: {0}")]
-    LocalAddress(#[source] io::Error),
     #[error("serve local API: {0}")]
     Serve(#[source] io::Error),
     #[error("{component} task failed: {source}")]

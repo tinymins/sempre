@@ -1,6 +1,7 @@
 mod default_interface;
 mod diagnostics;
 mod dns_probe;
+mod interface_addresses;
 mod inventory;
 mod probe;
 mod public_ip;
@@ -14,6 +15,7 @@ pub use diagnostics::{
     NetworkDiagnosticReport, run_network_diagnostics, run_network_diagnostics_with_progress,
 };
 pub use dns_probe::DnsAnswer;
+pub use interface_addresses::{InterfaceAddress, interface_addresses};
 pub use inventory::{Interface, Inventory, inventory};
 pub use probe::{NetworkTestReport, NetworkTestResult, run_network_test};
 pub use public_ip::{

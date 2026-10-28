@@ -109,7 +109,8 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
         "private_access": private_access,
         "network_automation": network_automation,
         "web": {
-            "listen": web.listen,
+            "listen": endpoint.bind,
+            "listen_addresses": endpoint.bind_addresses,
             "local_url": endpoint.local_url,
             "password_set": web.password_protected(),
             "password_warning": !web.password_protected(),

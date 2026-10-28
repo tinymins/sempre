@@ -2579,6 +2579,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "socket2",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.20",

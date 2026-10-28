@@ -23,7 +23,8 @@ pub const DEFAULT_LISTEN: &str = "127.0.0.1:33211";
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebConfig {
     pub schema: u32,
-    pub listen: String,
+    #[serde(deserialize_with = "deserialize_listen")]
+    pub listen: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     password: Option<PasswordRecord>,
 }
@@ -49,7 +50,7 @@ impl Default for WebConfig {
     fn default() -> Self {
         Self {
             schema: SCHEMA,
-            listen: DEFAULT_LISTEN.into(),
+            listen: vec![DEFAULT_LISTEN.into()],
             password: None,
         }
     }
@@ -73,7 +74,7 @@ impl WebConfig {
                 self.schema
             )));
         }
-        validate_listen(&self.listen)?;
+        validate_listens(&self.listen)?;
         if let Some(record) = &self.password {
             record.decode()?;
         }
@@ -110,8 +111,12 @@ impl WebConfigStore {
     }
 
     pub fn set_listen(&self, listen: &str) -> Result<WebConfig, ControlError> {
-        validate_listen(listen)?;
-        self.update(|config| config.listen = listen.into())
+        self.set_listens(&[listen.into()])
+    }
+
+    pub fn set_listens(&self, listen: &[String]) -> Result<WebConfig, ControlError> {
+        validate_listens(listen)?;
+        self.update(|config| listen.clone_into(&mut config.listen))
     }
 
     pub fn set_password(&self, password: &str) -> Result<WebConfig, ControlError> {
@@ -231,10 +236,13 @@ fn parse_listen(value: &str) -> Result<Url, ControlError> {
             "listen address cannot be empty or contain surrounding whitespace",
         ));
     }
+    let port = value
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse::<u16>().ok());
     let url = Url::parse(&format!("http://{value}"))
         .map_err(|_| ControlError::invalid("listen address must be host:port"))?;
     if url.host().is_none()
-        || url.port().is_none_or(|port| port == 0)
+        || port.is_none_or(|port| port == 0)
         || !url.username().is_empty()
         || url.password().is_some()
         || url.path() != "/"
@@ -244,6 +252,80 @@ fn parse_listen(value: &str) -> Result<Url, ControlError> {
         return Err(ControlError::invalid("listen address must be host:port"));
     }
     Ok(url)
+}
+
+fn deserialize_listen<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StoredListen {
+        Single(String),
+        Multiple(Vec<String>),
+    }
+    Ok(match StoredListen::deserialize(deserializer)? {
+        StoredListen::Single(value) => vec![value],
+        StoredListen::Multiple(values) => values,
+    })
+}
+
+pub fn validate_listens(values: &[String]) -> Result<(), ControlError> {
+    if values.is_empty() {
+        return Err(ControlError::invalid(
+            "at least one listen address is required",
+        ));
+    }
+    let urls = values
+        .iter()
+        .map(|value| parse_listen(value))
+        .collect::<Result<Vec<_>, _>>()?;
+    let port = urls[0].port_or_known_default();
+    let mut hosts = std::collections::HashSet::new();
+    for url in &urls {
+        if url.port_or_known_default() != port {
+            return Err(ControlError::invalid(
+                "all listen addresses must use the same port",
+            ));
+        }
+        if !hosts.insert(url.host_str()) {
+            return Err(ControlError::invalid("duplicate listen address"));
+        }
+        if values.len() > 1 && matches!(url.host(), Some(Host::Domain(_))) {
+            return Err(ControlError::invalid(
+                "multiple listen addresses must be IP addresses",
+            ));
+        }
+    }
+    for ipv6 in [false, true] {
+        let family = urls
+            .iter()
+            .filter_map(|url| match url.host() {
+                Some(Host::Ipv4(ip)) if !ipv6 => Some(ip.is_unspecified()),
+                Some(Host::Ipv6(ip)) if ipv6 => Some(ip.is_unspecified()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if family.len() > 1 && family.contains(&true) {
+            return Err(ControlError::invalid(
+                "a wildcard cannot be combined with specific addresses of the same IP family",
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn primary_listen(values: &[String]) -> Result<&str, ControlError> {
+    validate_listens(values)?;
+    Ok(values
+        .iter()
+        .find(|value| {
+            parse_listen(value).is_ok_and(|url| match url.host() {
+                Some(Host::Ipv4(ip)) => ip.is_loopback() || ip.is_unspecified(),
+                Some(Host::Ipv6(ip)) => ip.is_loopback() || ip.is_unspecified(),
+                _ => false,
+            })
+        })
+        .unwrap_or(&values[0]))
 }
 
 #[cfg(test)]

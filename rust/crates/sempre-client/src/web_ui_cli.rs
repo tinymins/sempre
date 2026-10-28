@@ -1,6 +1,6 @@
 use std::io::{self, Read as _};
 
-use sempre_control::{WebConfigStore, local_url};
+use sempre_control::{WebConfigStore, local_url, primary_listen};
 use sempre_state::{Layout, Mode, Store};
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +14,7 @@ use crate::{
 #[derive(Deserialize, Serialize)]
 struct WebStatus {
     listen: String,
+    listen_addresses: Vec<String>,
     local_url: String,
     password_set: bool,
 }
@@ -77,7 +78,7 @@ pub(crate) async fn run_web(
     if json {
         println!("{}", serde_json::to_string_pretty(&status)?);
     } else {
-        println!("Listen: {}", status.listen);
+        println!("Listen: {}", status.listen_addresses.join(", "));
         println!("Local URL: {}", status.local_url);
         println!("Password set: {}", status.password_set);
     }
@@ -137,8 +138,9 @@ fn offline_status(store: &WebConfigStore) -> Result<WebStatus, ClientError> {
     let config = store.read()?;
     let password_set = config.password_protected();
     Ok(WebStatus {
-        local_url: local_url(&config.listen)?,
-        listen: config.listen,
+        local_url: local_url(primary_listen(&config.listen)?)?,
+        listen: primary_listen(&config.listen)?.into(),
+        listen_addresses: config.listen,
         password_set,
     })
 }

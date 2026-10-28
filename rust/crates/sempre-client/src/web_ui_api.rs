@@ -93,6 +93,7 @@ impl UiUpdateTasks {
 #[derive(Deserialize)]
 struct WebPatch {
     listen: Option<String>,
+    listen_addresses: Option<Vec<String>>,
     password: Option<String>,
 }
 
@@ -101,6 +102,8 @@ async fn web_get(State(state): State<Arc<AppState>>) -> Response {
     match state.web.read() {
         Ok(config) => Json(json!({
             "listen": endpoint.bind,
+            "listen_addresses": endpoint.bind_addresses,
+            "interfaces": sempre_network::interface_addresses(),
             "local_url": endpoint.local_url,
             "password_set": config.password_protected(),
             "password_warning": !config.password_protected(),
@@ -111,12 +114,37 @@ async fn web_get(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn web_patch(State(state): State<Arc<AppState>>, Json(input): Json<WebPatch>) -> Response {
-    if input.listen.is_none() && input.password.is_none() {
+    if input.listen.is_none() && input.listen_addresses.is_none() && input.password.is_none() {
         return invalid("web configuration patch is empty");
     }
+    if input.listen.is_some() && input.listen_addresses.is_some() {
+        return invalid("specify either listen or listen_addresses");
+    }
+    if input
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > 1024)
+    {
+        return invalid("password is too long");
+    }
+    if let Some(addresses) = &input.listen_addresses
+        && addresses
+            .iter()
+            .any(|value| value.parse::<std::net::SocketAddr>().is_err())
+    {
+        return invalid("listen_addresses must contain IP addresses with ports");
+    }
+    let listen = input
+        .listen_addresses
+        .or_else(|| input.listen.map(|value| vec![value]));
     let mut endpoint = state.endpoint.get();
-    if let Some(listen) = input.listen.as_deref()
-        && listen != endpoint.bind
+    if let Some(listen) = listen.as_deref()
+        && let Err(error) = sempre_control::validate_listens(listen)
+    {
+        return invalid(error.to_string());
+    }
+    if let Some(listen) = listen.as_deref()
+        && listen != endpoint.bind_addresses
     {
         let Some(rebind) = &state.rebind else {
             return error(
@@ -132,9 +160,6 @@ async fn web_patch(State(state): State<Arc<AppState>>, Json(input): Json<WebPatc
     }
     let reauthenticate = input.password.is_some();
     if let Some(password) = input.password {
-        if password.len() > 1024 {
-            return invalid("password is too long");
-        }
         let web = state.web.clone();
         let update = tokio::task::spawn_blocking(move || web.set_password(&password)).await;
         if let Err(error) = update
@@ -151,6 +176,7 @@ async fn web_patch(State(state): State<Arc<AppState>>, Json(input): Json<WebPatc
     };
     Json(json!({
         "listen": endpoint.bind,
+        "listen_addresses": endpoint.bind_addresses,
         "local_url": endpoint.local_url,
         "password_set": config.password_protected(),
         "reauthenticate": reauthenticate,

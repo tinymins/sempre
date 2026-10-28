@@ -4,11 +4,10 @@ use std::{
     sync::Arc,
 };
 
-use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, validate_listen};
+use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore};
 use sempre_manager::Manager;
 use sempre_state::{Layout, Mode, Store};
 use tokio::{
-    net::TcpListener,
     sync::watch,
     task::{JoinError, JoinHandle},
 };
@@ -41,17 +40,11 @@ pub(crate) async fn run_with_layout(
     let traffic = Arc::new(crate::traffic_history::TrafficStore::open(
         layout.traffic_history.clone(),
     )?);
-    let listen = listen_override.unwrap_or(&config.listen);
-    validate_listen(listen)?;
-    let listener = TcpListener::bind(listen)
-        .await
-        .map_err(|source| ClientError::Bind {
-            address: listen.into(),
-            source,
-        })?;
-    let address = listener.local_addr().map_err(ClientError::LocalAddress)?;
-    let bind = address.to_string();
-    let local_url = local_url(&bind)?;
+    let listen = listen_override.map_or(config.listen, |value| vec![value.into()]);
+    let listeners = listener::bind(&listen).await?;
+    let endpoint = listener::Endpoint::from_addresses(listeners.addresses())?;
+    let bind = endpoint.bind.clone();
+    let local_url = endpoint.local_url.clone();
     let daemon_endpoint = DaemonEndpoint::new(&local_url)?;
     let public_endpoint = PublicEndpoint::new(VERSION, &bind, &local_url)?;
     let _discovery = DiscoveryGuard::new(layout.daemon_control.clone(), layout.endpoint.clone());
@@ -68,6 +61,7 @@ pub(crate) async fn run_with_layout(
         local_url.clone(),
     );
     app_state.attach_rebind(rebind);
+    app_state.endpoint.set(endpoint);
     let endpoint_state = app_state.endpoint.clone();
     let state = Arc::new(app_state);
     let app = api::router(Arc::clone(&state));
@@ -85,7 +79,7 @@ pub(crate) async fn run_with_layout(
     let server_shutdown = shutdown_sender.subscribe();
     let server_layout = layout.clone();
     let server = tokio::spawn(listener::run(
-        listener,
+        listeners,
         app,
         endpoint_state,
         web,
