@@ -12,6 +12,7 @@ import { Badge, Button, Card, ConfirmDialog, Field, Input, PageTitle, Spinner } 
 import { AutoConfigureCard } from '../features/auto-config/AutoConfigureCard'
 import { CorePanel } from '../features/core/CorePanel'
 import { ServiceActionsPanel, ServicePanel } from '../features/service/ServicePanel'
+import { ServerNamePanel } from '../features/service/ServerNamePanel'
 
 type Tab = 'core' | 'maintenance' | 'console'
 
@@ -79,6 +80,7 @@ function ConsolePanel() {
   })
   return <div className="space-y-5">
     <Section title="Web" icon={<ServerCog size={18} />}><div className="grid gap-5"><Field label={t('listenAddress')} hint="127.0.0.1:33211 / 0.0.0.0:33211"><div className="flex gap-2"><Input value={listen} onChange={(event) => setListen(event.target.value)} /><Button variant="primary" onClick={() => webMutation.mutate({ listen })}>{t('apply')}</Button></div></Field><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div></div></Section>
+    <ServerNamePanel />
     <ServiceRolePanel />
     <ServiceActionsPanel />
   </div>

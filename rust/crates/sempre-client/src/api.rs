@@ -31,6 +31,7 @@ pub(crate) struct AppState {
     pub(crate) rebind: Option<RebindHandle>,
     pub(crate) service_updates: Arc<crate::service_update_task::ServiceUpdateTasks>,
     pub(crate) ui_updates: Arc<crate::web_ui_api::UiUpdateTasks>,
+    ui_settings_lock: std::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -56,6 +57,7 @@ impl AppState {
             rebind: None,
             service_updates,
             ui_updates: Arc::new(crate::web_ui_api::UiUpdateTasks::default()),
+            ui_settings_lock: std::sync::Mutex::new(()),
         }
     }
 
@@ -113,6 +115,7 @@ struct Health {
     runtime: sempre_state::RuntimeState,
     password_required: bool,
     ui: Option<UiHealth>,
+    friendly_name: String,
 }
 
 #[derive(Serialize)]
@@ -142,8 +145,10 @@ async fn health(State(state): State<Arc<AppState>>) -> Response {
             );
         }
     };
+    let friendly_name = ui_settings::friendly_name(&state).unwrap_or_default();
     let endpoint = state.endpoint.get();
     Json(Health {
+        friendly_name,
         status: "ok",
         version: VERSION,
         api_major: API_MAJOR,

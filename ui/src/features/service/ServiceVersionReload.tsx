@@ -4,6 +4,7 @@ import { readServiceUpdateMarker, serviceUpdateTaskKey } from '../../lib/useServ
 import type { ServiceUpdateTask } from '../../lib/types'
 import { useSession } from '../../lib/session'
 import { writeServiceUpdateMarker } from '../../lib/serviceUpdateState'
+import { serverIdentityKey, useServerTitle } from '../../lib/serverIdentity'
 
 interface UiIdentity { id: string; version: string }
 
@@ -13,6 +14,7 @@ export function ServiceVersionReload() {
   const client = useQueryClient()
   const { session } = useSession()
   const baseURL = readServiceUpdateMarker()?.baseURL || session?.baseURL || window.location.origin
+  useServerTitle(baseURL)
   useServiceVersionChange((version, ui) => {
     if (!completeServiceUpdateOnVersionChange(client, version, ui)) window.location.reload()
   }, baseURL)
@@ -20,6 +22,7 @@ export function ServiceVersionReload() {
 }
 
 export function useServiceVersionChange(onChange: (version: string, ui?: UiIdentity | null) => void, baseURL = window.location.origin) {
+  const client = useQueryClient()
   const onChangeRef = useRef(onChange)
   useEffect(() => {
     onChangeRef.current = onChange
@@ -37,7 +40,9 @@ export function useServiceVersionChange(onChange: (version: string, ui?: UiIdent
           signal: controller.signal,
         })
         if (response.ok) {
-          const health = await response.json() as { version?: string; ui?: UiIdentity | null }
+          const health = await response.json() as { version?: string; ui?: UiIdentity | null; friendly_name?: string }
+          if (controller.signal.aborted) return
+          client.setQueryData(serverIdentityKey(baseURL), health.friendly_name ?? '')
           const version = health.version?.trim() || ''
           const identity = `${version}|${health.ui?.id || ''}|${health.ui?.version || ''}`
           const marker = readServiceUpdateMarker()
@@ -59,7 +64,7 @@ export function useServiceVersionChange(onChange: (version: string, ui?: UiIdent
       controller.abort()
       if (timer) clearTimeout(timer)
     }
-  }, [baseURL])
+  }, [baseURL, client])
 }
 
 function normalizeVersion(version: string) {
