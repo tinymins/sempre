@@ -29,6 +29,14 @@ pub struct CnRouteProgress {
     pub total: usize,
 }
 
+/// Outcome of one CN route application.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CnRouteReport {
+    pub expected: usize,
+    pub added: usize,
+    pub removed: usize,
+}
+
 pub(crate) async fn outbound_interfaces(
     runner: &dyn command::Runner,
 ) -> Result<[Option<String>; 2], TransparentError> {
@@ -64,29 +72,54 @@ impl<B: Backend> Controller<B> {
         self: &Arc<Self>,
         runner: Arc<dyn command::Runner>,
         intent: &CnRouteIntent,
-    ) -> Result<(), TransparentError> {
+    ) -> Result<CnRouteReport, TransparentError> {
         // Keep ownership in the caller: cancellation stops the batch and releases
         // the gate; the write-ahead journal retains every possibly installed route.
         let _gate = self.gate.lock().await;
         let (uplinks, tun) = self.backend.discover(runner.as_ref(), intent).await?;
         let desired = model::plan(intent, &uplinks, &tun)?;
-        if self.verified.load(Ordering::SeqCst) && self.read()?.routes == desired {
-            return Ok(());
+        let expected = desired.len();
+        if self.verified.load(Ordering::SeqCst)
+            && self.read()?.routes == desired
+            && (!self.backend.audits_live()
+                || model::difference(
+                    &desired,
+                    &self.backend.observe(runner.as_ref(), &desired).await?,
+                )
+                .is_empty())
+        {
+            return Ok(CnRouteReport {
+                expected,
+                ..CnRouteReport::default()
+            });
         }
         let capture = desired.iter().any(|r| r.fallback && r.scoped);
-        if let Err(error) = self
+        match self
             .reconcile(runner.as_ref(), desired, Some(capture))
             .await
         {
-            // Disconnect TUN first, including on partial installation failure.
-            if let Err(cleanup) = self.reconcile(runner.as_ref(), Vec::new(), None).await {
-                return Err(invalid(format!(
-                    "{error}; CN route cleanup failed: {cleanup}"
-                )));
+            Ok((added, removed)) => Ok(CnRouteReport {
+                expected,
+                added,
+                removed,
+            }),
+            Err(error) => {
+                // Disconnect TUN first, including on partial installation failure.
+                if let Err(cleanup) = self.reconcile(runner.as_ref(), Vec::new(), None).await {
+                    return Err(invalid(format!(
+                        "{error}; CN route cleanup failed: {cleanup}"
+                    )));
+                }
+                Err(error)
             }
-            return Err(error);
         }
-        Ok(())
+    }
+
+    /// Distrusts the last reconciliation, e.g. after the TUN was recreated with
+    /// the same identity; the journal and installed routes are retained.
+    pub(crate) async fn invalidate(&self) {
+        let _gate = self.gate.lock().await;
+        self.verified.store(false, Ordering::SeqCst);
     }
 
     pub(crate) async fn cleanup(
@@ -94,18 +127,18 @@ impl<B: Backend> Controller<B> {
         runner: &dyn command::Runner,
     ) -> Result<(), TransparentError> {
         let _gate = self.gate.lock().await;
-        self.reconcile(runner, Vec::new(), None).await
+        self.reconcile(runner, Vec::new(), None).await.map(drop)
     }
 
     /// Converges owned routes on `target`; `policy` is the capture mode for a
     /// non-empty target. Every completed batch is checkpointed, so an interrupted
-    /// run resumes with only the remaining work.
+    /// run resumes with only the remaining work. Returns the added and removed counts.
     async fn reconcile(
         &self,
         runner: &dyn command::Runner,
         target: Vec<Route>,
         policy: Option<bool>,
-    ) -> Result<(), TransparentError> {
+    ) -> Result<(usize, usize), TransparentError> {
         self.verified.store(false, Ordering::SeqCst);
         let mut journal = self.read()?;
         let mut candidates = journal.routes.clone();
@@ -156,7 +189,7 @@ impl<B: Backend> Controller<B> {
         journal.routes = target;
         self.store(&journal)?;
         self.verified.store(true, Ordering::SeqCst);
-        Ok(())
+        Ok((additions.len(), removals.len()))
     }
 
     async fn change(

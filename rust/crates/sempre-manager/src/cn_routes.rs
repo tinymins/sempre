@@ -170,7 +170,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     intent.prefixes = read_prefixes(&binary, source).await?;
                     hash = current;
                 }
-                self.transparent.apply_cn_routes(&intent).await?;
+                let started = std::time::Instant::now();
+                let report = self.transparent.apply_cn_routes(&intent).await?;
+                if report.added + report.removed > 0 {
+                    self.log_supervisor(&format!(
+                        "CN route drift repaired: {} restored, {} removed of {} expected ({} ms)",
+                        report.added,
+                        report.removed,
+                        report.expected,
+                        started.elapsed().as_millis()
+                    ));
+                }
                 Ok::<_, ManagerError>(())
             }
             .await;

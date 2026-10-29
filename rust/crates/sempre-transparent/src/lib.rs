@@ -18,7 +18,7 @@ use sempre_network::Inventory;
 use serde_json::Value;
 use thiserror::Error;
 
-pub use cn_routes::{CnRouteIntent, CnRouteProgress, normalize_cn_prefixes};
+pub use cn_routes::{CnRouteIntent, CnRouteProgress, CnRouteReport, normalize_cn_prefixes};
 pub use host::Controller;
 
 pub const ROUTE_MARK: u32 = 0x5350_0001;

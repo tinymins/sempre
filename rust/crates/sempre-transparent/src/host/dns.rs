@@ -37,10 +37,15 @@ impl Controller {
     pub async fn apply_cn_routes(
         &self,
         intent: &crate::CnRouteIntent,
-    ) -> Result<(), TransparentError> {
+    ) -> Result<crate::CnRouteReport, TransparentError> {
         self.cn_routes
             .apply(std::sync::Arc::clone(&self.runner), intent)
             .await
+    }
+
+    /// Forces the next CN route application to reconcile against the OS table.
+    pub async fn invalidate_cn_routes(&self) {
+        self.cn_routes.invalidate().await;
     }
 
     pub async fn prepare_managed_dns_frontend(

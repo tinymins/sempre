@@ -107,6 +107,8 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
                 manager.transparent.flush_cn_dns(),
             )
             .await?;
+        let started = std::time::Instant::now();
+        let mut report = sempre_transparent::CnRouteReport::default();
         manager
             .route_phase(
                 &format!(
@@ -114,9 +116,22 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
                     intent.prefixes.len()
                 ),
                 super::lifecycle::ROUTE_STALL_TIMEOUT,
-                manager.transparent.apply_cn_routes(intent),
+                async {
+                    // A new core may recreate the TUN with the same identity after
+                    // the OS dropped its routes; never trust the previous core's check.
+                    manager.transparent.invalidate_cn_routes().await;
+                    report = manager.transparent.apply_cn_routes(intent).await?;
+                    Ok::<_, sempre_transparent::TransparentError>(())
+                },
             )
             .await?;
+        manager.log_supervisor(&format!(
+            "CN routes verified for new core: {} expected, {} restored, {} removed ({} ms)",
+            report.expected,
+            report.added,
+            report.removed,
+            started.elapsed().as_millis()
+        ));
     } else {
         manager
             .route_phase(
