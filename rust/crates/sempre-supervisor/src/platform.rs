@@ -5,6 +5,9 @@ use std::future::Future;
 
 use tokio::process::Command;
 
+#[cfg(windows)]
+mod windows_output;
+
 #[cfg(unix)]
 pub fn configure(command: &mut Command) {
     use std::os::unix::process::CommandExt as _;
@@ -86,7 +89,7 @@ pub async fn terminate_tree(pid: u32, force: bool) -> io::Result<()> {
         Ok(())
     } else {
         Err(io::Error::other(
-            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            windows_output::decode(&output.stderr)?.trim().to_owned(),
         ))
     }
 }
