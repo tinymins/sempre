@@ -96,17 +96,34 @@ fn subscribe() -> Result<OwnedFd, Errno> {
 fn relevant(message: &[u8]) -> bool {
     // Every route socket also receives RTM_GET replies, including those of the
     // route audit itself; reacting to them would loop.
-    message.get(3).is_some_and(|kind| {
-        [
-            nix::libc::RTM_ADD,
-            nix::libc::RTM_DELETE,
-            nix::libc::RTM_CHANGE,
-            nix::libc::RTM_NEWADDR,
-            nix::libc::RTM_DELADDR,
-            nix::libc::RTM_IFINFO,
-        ]
-        .contains(&i32::from(*kind))
-    })
+    let Some(kind) = message.get(3).map(|kind| i32::from(*kind)) else {
+        return false;
+    };
+    if [
+        nix::libc::RTM_NEWADDR,
+        nix::libc::RTM_DELADDR,
+        nix::libc::RTM_IFINFO,
+    ]
+    .contains(&kind)
+    {
+        return true;
+    }
+    if ![
+        nix::libc::RTM_ADD,
+        nix::libc::RTM_DELETE,
+        nix::libc::RTM_CHANGE,
+    ]
+    .contains(&kind)
+    {
+        return false;
+    }
+    // ARP entries and cloned per-destination routes follow ordinary traffic.
+    let offset = std::mem::offset_of!(nix::libc::rt_msghdr, rtm_flags);
+    message
+        .get(offset..offset + 4)
+        .and_then(|flags| flags.try_into().ok())
+        .map(i32::from_ne_bytes)
+        .is_some_and(|flags| flags & (nix::libc::RTF_LLINFO | nix::libc::RTF_WASCLONED) == 0)
 }
 
 fn failure(context: &str, error: Errno) -> TransparentError {
