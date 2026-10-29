@@ -211,7 +211,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 }
 
-async fn route_changed(
+pub(crate) async fn route_changed(
     events: &mut Option<sempre_transparent::RouteEvents>,
 ) -> Result<(), sempre_transparent::TransparentError> {
     match events {

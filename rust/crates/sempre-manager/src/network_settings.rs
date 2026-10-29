@@ -88,6 +88,7 @@ impl Default for NetworkSettings {
 pub(crate) struct NetworkSettingsStore {
     path: PathBuf,
     settings: Mutex<NetworkSettings>,
+    changed: tokio::sync::Notify,
 }
 
 impl NetworkSettingsStore {
@@ -104,6 +105,7 @@ impl NetworkSettingsStore {
         Ok(Self {
             path,
             settings: Mutex::new(settings),
+            changed: tokio::sync::Notify::new(),
         })
     }
 
@@ -125,7 +127,13 @@ impl NetworkSettingsStore {
         candidate.revision = current.revision.saturating_add(1);
         write(&self.path, &candidate)?;
         *current = candidate.clone();
+        self.changed.notify_one();
         Ok(candidate)
+    }
+
+    /// Resolves after the next saved change; a change saved meanwhile counts.
+    pub(crate) async fn changed(&self) {
+        self.changed.notified().await;
     }
 }
 

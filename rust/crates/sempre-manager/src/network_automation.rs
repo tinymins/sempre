@@ -9,7 +9,13 @@ use tokio::time::{Instant, sleep};
 use crate::{KnownNetwork, Manager, ManagerError, ValidationRunner, VersionRunner};
 
 const NORMAL_MODE: &str = "Rule";
-const POLL_INTERVAL: Duration = Duration::from_secs(3);
+// Probes after a network event: the first follows the 2s interface cache, the
+// rest wait for the gateway MAC to resolve. Nothing polls in between events.
+const SETTLE_DELAYS: [Duration; 3] = [
+    Duration::from_secs(2),
+    Duration::from_secs(3),
+    Duration::from_secs(4),
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct NetworkIdentity {
@@ -87,24 +93,66 @@ impl<R: VersionRunner> Manager<R> {
     where
         R: ValidationRunner,
     {
-        let mut last_enabled = None;
-        loop {
-            let enabled = self.network_settings.read().automatic_switching;
-            if (enabled || last_enabled != Some(false))
-                && let Err(error) = self.sync_network_mode().await
-            {
-                self.log_supervisor(&format!("network automation probe failed: {error}"));
+        let mut events = match sempre_transparent::RouteEvents::open() {
+            Ok(events) => Some(events),
+            Err(error) => {
+                self.log_supervisor(&format!(
+                    "network automation events unavailable; following settings only: {error}"
+                ));
+                None
             }
-            last_enabled = Some(enabled);
-            sleep(POLL_INTERVAL).await;
+        };
+        loop {
+            let settings_changed = tokio::select! {
+                result = crate::cn_routes::route_changed(&mut events) => result.map(|()| false),
+                () = self.network_settings.changed() => Ok(true),
+            };
+            match settings_changed {
+                Err(error) => {
+                    self.log_supervisor(&format!(
+                        "network automation events failed; following settings only: {error}"
+                    ));
+                    events = None;
+                }
+                Ok(_) if self.network_settings.read().automatic_switching => {
+                    self.settle_network_mode().await;
+                }
+                // Disabling restores the normal mode once; idle events probe nothing.
+                Ok(true) => {
+                    if let Err(error) = self.sync_network_mode().await {
+                        self.log_supervisor(&format!("network automation probe failed: {error}"));
+                    }
+                }
+                Ok(false) => {}
+            }
         }
     }
 
-    async fn sync_network_mode(&self) -> Result<(), String> {
+    async fn settle_network_mode(&self)
+    where
+        R: ValidationRunner,
+    {
+        let mut result = self.sync_network_mode().await;
+        for (index, delay) in SETTLE_DELAYS.into_iter().enumerate() {
+            if index > 0 && result == Ok(true) {
+                break;
+            }
+            sleep(delay).await;
+            result = self.sync_network_mode().await;
+        }
+        if let Err(error) = result {
+            self.log_supervisor(&format!("network automation probe failed: {error}"));
+        }
+    }
+
+    /// Returns whether the gateway was identified, so the mode is final.
+    async fn sync_network_mode(&self) -> Result<bool, String> {
         let settings = self.network_settings.read();
+        let mut resolved = true;
         let desired = if settings.automatic_switching {
             let observed =
                 sempre_network::default_interface().map_err(|error| error.to_string())?;
+            resolved = observed.gateway.is_empty() || !observed.gateway_mac.is_empty();
             match_network(&settings.known_networks, &observed.gateway_mac).map_or_else(
                 || NORMAL_MODE.into(),
                 |network| sempre_converter::network_mode(&network.id),
@@ -133,28 +181,32 @@ impl<R: VersionRunner> Manager<R> {
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
         if current.eq_ignore_ascii_case(&desired) {
-            return Ok(());
+            return Ok(resolved);
         }
         client
             .patch_config(json!({ "mode": desired }))
             .await
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        Ok(resolved)
     }
 }
 
 pub(crate) async fn wait_for_network_change() {
-    wait_for_network_change_with(POLL_INTERVAL, observe_network).await;
-}
-
-async fn wait_for_network_change_with(
-    interval: Duration,
-    mut observe: impl FnMut() -> Option<NetworkIdentity>,
-) {
-    let initial = observe();
+    let Ok(mut events) = sempre_transparent::RouteEvents::open() else {
+        // The retry timer still fires.
+        return std::future::pending().await;
+    };
+    let initial = observe_network();
     loop {
-        sleep(interval).await;
-        if network_changed(initial.as_ref(), observe().as_ref()) {
-            return;
+        if events.changed().await.is_err() {
+            return std::future::pending().await;
+        }
+        // Confirm once past the interface cache before waiting for more events.
+        for delay in [Duration::ZERO, SETTLE_DELAYS[0]] {
+            sleep(delay).await;
+            if network_changed(initial.as_ref(), observe_network().as_ref()) {
+                return;
+            }
         }
     }
 }
