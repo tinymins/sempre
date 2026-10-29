@@ -18,7 +18,7 @@ serde_yaml.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 nix = { workspace = true, features = ["socket", "net"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]

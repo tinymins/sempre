@@ -116,6 +116,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     .accept_rule_set(&resource.url, &resource.format, snapshot)?;
             }
         }
+        if candidates.contains_key("geoip-cn") {
+            // Narrow the union above to the accepted snapshot.
+            self.cn_rules_changed.notify_one();
+        }
         Ok(true)
     }
 }

@@ -10,11 +10,6 @@ pub(crate) trait Backend: Default + Send + Sync + 'static {
     fn batch_size(&self) -> usize {
         128
     }
-    /// Whether `observe` is a cheap table snapshot, so a verified fast path may
-    /// still audit the live routes.
-    fn audits_live(&self) -> bool {
-        false
-    }
     fn discover<'a>(
         &'a self,
         runner: &'a dyn command::Runner,
@@ -49,10 +44,6 @@ pub(crate) trait Backend: Default + Send + Sync + 'static {
 pub(crate) struct Native;
 
 impl Backend for Native {
-    fn audits_live(&self) -> bool {
-        // Windows observes with one GetIpForwardTable2 snapshot.
-        cfg!(target_os = "windows")
-    }
     async fn discover(
         &self,
         runner: &dyn command::Runner,

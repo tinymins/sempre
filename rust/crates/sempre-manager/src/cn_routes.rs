@@ -157,10 +157,30 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             plan.deployment.repository.as_deref(),
             &plan.deployment.version,
         );
+        let mut events = match sempre_transparent::RouteEvents::open() {
+            Ok(events) => Some(events),
+            Err(error) => {
+                self.log_supervisor(&format!(
+                    "CN route events unavailable; following rule updates only: {error}"
+                ));
+                None
+            }
+        };
         let mut intent = initial.clone();
         let mut hash = String::new();
         loop {
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            // Event driven: an idle host never wakes this loop.
+            let changed = tokio::select! {
+                result = route_changed(&mut events) => result,
+                () = self.cn_rules_changed.notified() => Ok(()),
+            };
+            if let Err(error) = changed {
+                self.log_supervisor(&format!(
+                    "CN route events failed; following rule updates only: {error}"
+                ));
+                events = None;
+                continue;
+            }
             let result = async {
                 let _gate = self.runtime_rules_gate.lock().await;
                 let content = fs::read(&source.path)
@@ -188,6 +208,15 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 self.log_supervisor(&format!("CN routing operation failed: {error}"));
             }
         }
+    }
+}
+
+async fn route_changed(
+    events: &mut Option<sempre_transparent::RouteEvents>,
+) -> Result<(), sempre_transparent::TransparentError> {
+    match events {
+        Some(events) => events.changed().await,
+        None => std::future::pending().await,
     }
 }
 

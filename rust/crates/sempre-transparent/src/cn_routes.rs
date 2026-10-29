@@ -81,12 +81,12 @@ impl<B: Backend> Controller<B> {
         let expected = desired.len();
         if self.verified.load(Ordering::SeqCst)
             && self.read()?.routes == desired
-            && (!self.backend.audits_live()
-                || model::difference(
-                    &desired,
-                    &self.backend.observe(runner.as_ref(), &desired).await?,
-                )
-                .is_empty())
+            // Applications follow OS route events, so audit the live table too.
+            && model::difference(
+                &desired,
+                &self.backend.observe(runner.as_ref(), &desired).await?,
+            )
+            .is_empty()
         {
             return Ok(CnRouteReport {
                 expected,

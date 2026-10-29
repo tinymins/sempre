@@ -8,6 +8,7 @@ mod macos_dns;
 mod nft;
 mod policy;
 mod prefix;
+mod route_events;
 mod system_dns;
 mod windows_dns;
 
@@ -20,6 +21,7 @@ use thiserror::Error;
 
 pub use cn_routes::{CnRouteIntent, CnRouteProgress, CnRouteReport, normalize_cn_prefixes};
 pub use host::Controller;
+pub use route_events::RouteEvents;
 
 pub const ROUTE_MARK: u32 = 0x5350_0001;
 pub const BYPASS_MARK: u32 = 0x5350_0002;
