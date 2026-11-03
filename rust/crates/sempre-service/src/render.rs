@@ -32,6 +32,43 @@ WantedBy=multi-user.target\n",
     ))
 }
 
+/// Renders the procd script. A restart replaces the daemon without running
+/// `stop_service`, so traffic stays captured while the daemon comes back; only an
+/// explicit stop asks the daemon to withdraw its rules.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn procd(executable: &Path, working_directory: &Path) -> Result<String, ServiceError> {
+    let executable = shell_quote(path(executable)?);
+    let working_directory = shell_quote(path(working_directory)?);
+    Ok(format!(
+        "#!/bin/sh /etc/rc.common\n\
+START=95\n\
+STOP=10\n\
+USE_PROCD=1\n\n\
+start_service() {{\n\
+\tmkdir -p {working_directory}\n\
+\tprocd_open_instance\n\
+\tprocd_set_param command {executable} --system daemon\n\
+\tprocd_set_param respawn 3600 5 0\n\
+\tprocd_set_param term_timeout 20\n\
+\tprocd_set_param stderr 1\n\
+\tprocd_close_instance\n\
+}}\n\n\
+stop_service() {{\n\
+\t{executable} --system release-capture\n\
+}}\n\n\
+restart() {{\n\
+\tprocd_lock\n\
+\tprocd_kill \"$(basename \"${{basescript:-$initscript}}\")\"\n\
+\tstart\n\
+}}\n",
+    ))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn launchd(executable: &Path, working_directory: &Path) -> Result<String, ServiceError> {
     let executable = xml_escape(path(executable)?);

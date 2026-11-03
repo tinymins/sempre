@@ -5,6 +5,7 @@ fn target(os: &str, arch: &str) -> Target {
         os: os.into(),
         arch: arch.into(),
         amd64_level: 0,
+        openwrt: false,
     }
 }
 

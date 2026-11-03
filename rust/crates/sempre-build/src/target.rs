@@ -84,6 +84,7 @@ impl BuildTarget {
             os: self.os.clone(),
             arch: self.arch.clone(),
             amd64_level: u8::from(self.arch == "amd64"),
+            openwrt: false,
         }
     }
 

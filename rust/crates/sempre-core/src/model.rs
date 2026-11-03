@@ -10,6 +10,7 @@ pub struct Target {
     pub os: String,
     pub arch: String,
     pub amd64_level: u8,
+    pub openwrt: bool,
 }
 
 impl Target {
@@ -27,6 +28,7 @@ impl Target {
             }
             .into(),
             amd64_level: current_amd64_level(),
+            openwrt: false,
         }
     }
 

@@ -10,8 +10,8 @@ mod store;
 pub use atomic::write_atomic;
 pub use json_shape::{JsonShapeError, validate_json_shape};
 pub use layout::{
-    Layout, LayoutError, Mode, PORTABLE_MARKER, portable_marker_enabled, portable_marker_path,
-    set_portable_marker,
+    Layout, LayoutError, Mode, PORTABLE_MARKER, openwrt_host, portable_marker_enabled,
+    portable_marker_path, set_portable_marker,
 };
 pub use model::{
     ConfigBuild, CoreState, Deployment, DesiredState, Document, Installation, Runtime,

@@ -15,14 +15,23 @@ pub enum Mode {
 }
 
 pub const PORTABLE_MARKER: &str = ".sempre-portable";
+const OPENWRT_RELEASE: &str = "/etc/openwrt_release";
+
+/// Whether this host runs `OpenWrt`; the one place that decides the question.
+pub fn openwrt_host() -> bool {
+    cfg!(target_os = "linux") && Path::new(OPENWRT_RELEASE).exists()
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Layout {
     pub mode: Mode,
+    pub openwrt: bool,
     pub root: PathBuf,
     pub home: PathBuf,
     pub logs: PathBuf,
     pub runtime: PathBuf,
+    pub core_data: PathBuf,
+    pub capture_release: PathBuf,
     pub state: PathBuf,
     pub web_config: PathBuf,
     pub traffic_history: PathBuf,
@@ -196,6 +205,33 @@ impl Layout {
         layout
     }
 
+    /// Keeps configuration on flash and everything that churns in RAM.
+    ///
+    /// `/var` is tmpfs on `OpenWrt`, so state cannot use the generic Linux paths. The core
+    /// data directory stays on flash because its cache holds node selection, `FakeIP`
+    /// mappings, and the remote rule sets needed to start before the WAN is up.
+    pub fn openwrt_at(prefix: &Path) -> Self {
+        let binary_root = prefix.join("usr/libexec/sempre");
+        let home = prefix.join("etc/sempre");
+        let volatile = prefix.join("tmp/sempre");
+        let runtime = volatile.join("run");
+        let mut layout = Self::new(
+            Mode::System,
+            &binary_root,
+            &home,
+            &volatile.join("logs"),
+            &runtime,
+            &binary_root.join("sempre"),
+        );
+        layout.openwrt = true;
+        layout.core_data = home.join("core-data");
+        layout.endpoint = runtime.join("endpoint.json");
+        layout.traffic_history = runtime.join("traffic-history.json");
+        layout.dns_query_history = runtime.join("dns-query-history.json");
+        layout.command_executable = prefix.join("usr/bin/sempre");
+        layout
+    }
+
     pub fn ensure(&self) -> Result<(), LayoutError> {
         for directory in self.directories() {
             fs::create_dir_all(directory).map_err(|source| LayoutError::CreateDirectory {
@@ -205,6 +241,20 @@ impl Layout {
             secure_private_directory(directory)?;
         }
         Ok(())
+    }
+
+    /// Records that the daemon must withdraw transparent capture when it next exits.
+    pub fn request_capture_release(&self) -> Result<(), LayoutError> {
+        self.ensure()?;
+        fs::write(&self.capture_release, b"").map_err(|source| LayoutError::CreateDirectory {
+            path: self.capture_release.clone(),
+            source,
+        })
+    }
+
+    /// Consumes a pending release request, reporting whether one was made.
+    pub fn take_capture_release(&self) -> bool {
+        fs::remove_file(&self.capture_release).is_ok()
     }
 
     pub fn ensure_instance_lock_directory(&self) -> Result<(), LayoutError> {
@@ -247,6 +297,9 @@ impl Layout {
     fn system() -> Result<Self, LayoutError> {
         #[cfg(target_os = "linux")]
         {
+            if openwrt_host() {
+                return Ok(Self::openwrt_at(Path::new("/")));
+            }
             let mut layout = Self::new(
                 Mode::System,
                 Path::new("/usr/local/libexec/sempre"),
@@ -310,10 +363,13 @@ impl Layout {
         let tunnels = home.join("tunnels.json");
         Self {
             mode,
+            openwrt: false,
             root: root.to_path_buf(),
             home: home.to_path_buf(),
             logs: logs.to_path_buf(),
             runtime: runtime.to_path_buf(),
+            core_data: runtime.to_path_buf(),
+            capture_release: runtime.join("capture-release"),
             state: home.join("state.json"),
             web_config: home.join("web.json"),
             traffic_history: home.join("traffic-history.json"),
@@ -351,11 +407,12 @@ impl Layout {
         }
     }
 
-    fn directories(&self) -> [&Path; 14] {
+    fn directories(&self) -> [&Path; 15] {
         [
             &self.home,
             &self.logs,
             &self.runtime,
+            &self.core_data,
             &self.cores,
             &self.configs,
             &self.subscriptions,
@@ -409,5 +466,38 @@ mod tests {
         let expected =
             Path::new("sing-box/sources/tinymins/sing-box/1.2.3").join(executable_name("sing-box"));
         assert!(custom.ends_with(expected));
+    }
+
+    #[test]
+    fn openwrt_keeps_configuration_on_flash_and_churn_in_ram() {
+        let layout = Layout::openwrt_at(Path::new("/"));
+        assert!(layout.openwrt);
+        for persistent in [
+            &layout.state,
+            &layout.subscription_catalog,
+            &layout.configs,
+            &layout.core_data,
+            &layout.ui,
+        ] {
+            assert!(persistent.starts_with("/etc/sempre"), "{persistent:?}");
+        }
+        for volatile in [
+            &layout.runtime,
+            &layout.logs,
+            &layout.manager_log,
+            &layout.endpoint,
+            &layout.traffic_history,
+            &layout.dns_query_history,
+            &layout.instance_lock,
+        ] {
+            assert!(volatile.starts_with("/tmp/sempre"), "{volatile:?}");
+        }
+    }
+
+    #[test]
+    fn other_hosts_keep_core_data_in_the_runtime_directory() {
+        let layout = Layout::at(Path::new("sandbox"));
+        assert!(!layout.openwrt);
+        assert_eq!(layout.core_data, layout.runtime);
     }
 }

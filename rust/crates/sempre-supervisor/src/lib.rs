@@ -7,7 +7,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
@@ -22,6 +22,19 @@ use tokio::{
 
 const LOG_LIMIT: u64 = 10 << 20;
 const LOG_BACKUPS: usize = 3;
+static LOG_POLICY: OnceLock<(u64, usize)> = OnceLock::new();
+
+/// Lowers log retention for hosts whose logs live in RAM; the first call wins.
+pub fn limit_logs(limit: u64, backups: usize) {
+    let _ = LOG_POLICY.set((limit, backups));
+}
+
+fn log_policy() -> (u64, usize) {
+    LOG_POLICY
+        .get()
+        .copied()
+        .unwrap_or((LOG_LIMIT, LOG_BACKUPS))
+}
 const FORCE_TIMEOUT: Duration = Duration::from_secs(5);
 const OUTPUT_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -250,11 +263,12 @@ fn output_task(
     stream: &'static str,
 ) -> OutputTask {
     let (synchronizer, synchronization) = mpsc::unbounded_channel();
+    let (limit, backups) = log_policy();
     let handle = tokio::spawn(log::copy_rolling(
         reader,
         path,
-        LOG_LIMIT,
-        LOG_BACKUPS,
+        limit,
+        backups,
         observer,
         stream,
         Some(synchronization),
@@ -266,8 +280,8 @@ fn output_task(
 }
 
 pub fn append_log(path: &Path, message: &str) -> Result<(), SupervisorError> {
-    log::append_rolling(path, message.as_bytes(), LOG_LIMIT, LOG_BACKUPS)
-        .map_err(SupervisorError::Output)
+    let (limit, backups) = log_policy();
+    log::append_rolling(path, message.as_bytes(), limit, backups).map_err(SupervisorError::Output)
 }
 
 #[cfg(test)]

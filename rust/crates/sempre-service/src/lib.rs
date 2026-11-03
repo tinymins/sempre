@@ -210,6 +210,36 @@ mod tests {
     use super::{Action, render};
 
     #[test]
+    fn procd_script_keeps_capture_across_restart_and_releases_on_stop() {
+        let script = render::procd(
+            std::path::Path::new("/usr/libexec/sempre/sempre"),
+            std::path::Path::new("/etc/sempre"),
+        )
+        .expect("script");
+        assert!(script.starts_with("#!/bin/sh /etc/rc.common\n"));
+        assert!(
+            script.contains("procd_set_param command '/usr/libexec/sempre/sempre' --system daemon")
+        );
+        assert!(
+            script.contains(
+                "stop_service() {\n\t'/usr/libexec/sempre/sempre' --system release-capture"
+            )
+        );
+        let restart = script.split("restart() {").nth(1).expect("restart");
+        assert!(restart.contains("procd_kill") && !restart.contains("stop_service"));
+    }
+
+    #[test]
+    fn procd_script_quotes_paths_for_the_shell() {
+        let script = render::procd(
+            std::path::Path::new("/opt/it's/sempre"),
+            std::path::Path::new("/etc/sempre"),
+        )
+        .expect("script");
+        assert!(script.contains(r"'/opt/it'\''s/sempre'"));
+    }
+
+    #[test]
     fn action_parser_rejects_expansive_service_operations() {
         assert_eq!(Action::parse("restart").expect("restart"), Action::Restart);
         assert_eq!(Action::parse("stop").expect("stop"), Action::Stop);

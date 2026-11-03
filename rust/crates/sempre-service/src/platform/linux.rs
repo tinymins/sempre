@@ -2,10 +2,16 @@ use std::{fs, path::Path};
 
 use crate::{NAME, ServiceError, State, checked, command, render, require_administrator};
 
+#[path = "openwrt.rs"]
+mod openwrt;
+
 const UNIT_PATH: &str = "/etc/systemd/system/sempre.service";
 const UNIT: &str = "sempre.service";
 
 pub async fn status() -> Result<State, ServiceError> {
+    if sempre_state::openwrt_host() {
+        return openwrt::status().await;
+    }
     let load = command("systemctl", &["show", "-p", "LoadState", "--value", UNIT]).await?;
     if !load.success || matches!(load.text.as_str(), "" | "not-found") {
         return Ok(State::NotInstalled);
@@ -21,6 +27,9 @@ pub async fn status() -> Result<State, ServiceError> {
 }
 
 pub async fn install(executable: &Path, working_directory: &Path) -> Result<(), ServiceError> {
+    if sempre_state::openwrt_host() {
+        return openwrt::install(executable, working_directory).await;
+    }
     require_administrator()?;
     let unit = render::systemd(executable, working_directory)?;
     let previous = fs::read(UNIT_PATH).ok();
@@ -40,6 +49,9 @@ pub async fn install(executable: &Path, working_directory: &Path) -> Result<(), 
 }
 
 pub async fn uninstall() -> Result<(), ServiceError> {
+    if sempre_state::openwrt_host() {
+        return openwrt::uninstall().await;
+    }
     require_administrator()?;
     let _ = stop().await;
     let _ = checked("systemctl", &["disable", UNIT]).await;
@@ -58,11 +70,17 @@ pub async fn uninstall() -> Result<(), ServiceError> {
 }
 
 pub async fn start() -> Result<(), ServiceError> {
+    if sempre_state::openwrt_host() {
+        return openwrt::start().await;
+    }
     require_administrator()?;
     checked("systemctl", &["start", UNIT]).await
 }
 
 pub async fn stop() -> Result<(), ServiceError> {
+    if sempre_state::openwrt_host() {
+        return openwrt::stop().await;
+    }
     require_administrator()?;
     if matches!(status().await?, State::NotInstalled | State::Stopped) {
         Ok(())
@@ -72,6 +90,9 @@ pub async fn stop() -> Result<(), ServiceError> {
 }
 
 pub async fn restart() -> Result<(), ServiceError> {
+    if sempre_state::openwrt_host() {
+        return openwrt::restart().await;
+    }
     require_administrator()?;
     checked("systemctl", &["restart", UNIT]).await
 }

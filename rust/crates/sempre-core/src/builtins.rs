@@ -446,6 +446,7 @@ fn sing_box_target(version: Option<&str>, target: &Target) -> CompilerTarget {
     let platform = match target.os.as_str() {
         "windows" => "windows",
         "darwin" => "macos",
+        _ if target.openwrt => "openwrt",
         _ => "default",
     };
     let mut format = if version == "11" {
