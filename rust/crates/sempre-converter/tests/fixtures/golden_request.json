@@ -1,0 +1,61 @@
+{
+  "profile": {
+    "id": "golden",
+    "name": "golden",
+    "sources": [
+      { "id": "clash-source", "remark": "机场A", "url": "https://sub.example.test/clash", "enabled": true },
+      { "id": "uri-source", "remark": "机场B", "url": "https://sub.example.test/uri", "enabled": true }
+    ],
+    "custom_node_ids": ["custom-1"],
+    "manual_servers": [
+      { "name": "🇯🇵 manual socks", "type": "socks5", "server": "edge.example.test", "port": 1080 },
+      { "name": "manual anytls", "type": "anytls", "server": "any.example.test", "port": 443, "password": "fixture-password", "sni": "any.example.test", "client-fingerprint": "chrome" }
+    ],
+    "groups": [
+      { "name": "🔰 国外流量", "type": "select", "proxies": ["DIRECT", "🇯🇵 manual socks", "manual anytls"] },
+      { "name": "🚀 直接连接", "type": "select", "proxies": ["DIRECT"], "readonly": true },
+      { "name": "⚓️ 其他流量", "type": "select", "proxies": ["🔰 国外流量", "DIRECT"], "readonly": true },
+      { "name": "🛑 广告拦截", "type": "select", "proxies": ["REJECT", "DIRECT"] }
+    ],
+    "rules": [
+      { "domain_suffix": "direct.example.test", "outbound": "direct" },
+      { "ip_cidr": "203.0.113.0/24", "outbound": "🔰 国外流量" },
+      { "type": "logical", "mode": "or", "outbound": "direct", "rules": [
+        { "domain_suffix": "a.example.test" },
+        { "domain_keyword": "keyword" }
+      ] }
+    ],
+    "rule_providers": [
+      { "tag": "sites", "url": "https://rules.example.test/sites.yaml", "outbound": "🔰 国外流量" },
+      { "tag": "ads", "url": "https://rules.example.test/ads.yaml", "outbound": "🛑 广告拦截" }
+    ],
+    "filters": ["过期", "expire"],
+    "dns": { "shared": {
+      "localDns": "192.0.2.53", "localDnsPort": 53,
+      "gfwBlackRuleSetUrl": "https://rules.example.test/gfwblack.json"
+    } },
+    "private_access": {
+      "enabled": true,
+      "connectors": [{
+        "type": "wireguard", "tag": "private-wg",
+        "endpoint": {
+          "privateKey": "fixture-private", "address": ["192.0.2.2/32"],
+          "peers": [{ "address": "vpn.example.test", "port": 51820, "publicKey": "fixture-public", "allowedIps": ["0.0.0.0/0"], "persistentKeepaliveInterval": 25 }]
+        },
+        "routes": { "ipCidrs": ["198.51.100.0/24"] },
+        "dns": [{ "tag": "private-dns", "server": "192.0.2.53", "domainSuffixes": ["corp.example.test"] }]
+      }]
+    },
+    "transparent_proxy": { "mode": "tproxy", "tproxy": { "dns_listen_port": 1053, "listen_port": 7893 } },
+    "management_api": { "external_controller": "0.0.0.0:9999", "secret": "fixture-secret", "external_ui": "/etc/sb/ui" }
+  },
+  "snapshots": [
+    { "source_id": "clash-source", "content_hash": "", "content": "proxies:\n  - { name: '🇭🇰 HK trojan 01', type: trojan, server: hk.example.test, port: 443, password: fixture, sni: hk.example.test, udp: true }\n  - { name: '🇺🇸 US vless reality', type: vless, server: us.example.test, port: 443, uuid: 00000000-0000-4000-8000-000000000001, network: tcp, tls: true, udp: true, flow: xtls-rprx-vision, servername: www.example.test, client-fingerprint: chrome, reality-opts: { public-key: fixture-public-key, short-id: abcd } }\n  - { name: '🇸🇬 SG ss', type: ss, server: sg.example.test, port: 8388, cipher: aes-256-gcm, password: fixture, udp: true }\n  - { name: '🇹🇼 TW vmess ws', type: vmess, server: tw.example.test, port: 443, uuid: 00000000-0000-4000-8000-000000000002, alterId: 0, cipher: auto, tls: true, network: ws, ws-opts: { path: /ws, headers: { Host: tw.example.test } } }\n  - { name: '🇰🇷 KR hysteria2', type: hysteria2, server: kr.example.test, port: 443, password: fixture, sni: kr.example.test }\n  - { name: '🇩🇪 DE tuic', type: tuic, server: de.example.test, port: 443, uuid: 00000000-0000-4000-8000-000000000003, password: fixture, sni: de.example.test, alpn: [h3] }\n  - { name: '过期时间 2099', type: ss, server: expired.example.test, port: 1, cipher: aes-256-gcm, password: x }\n" },
+    { "source_id": "uri-source", "content_hash": "", "content": "trojan://fixture@uri-a.example.test:443?sni=uri-a.example.test#URI%20trojan\nss://YWVzLTI1Ni1nY206Zml4dHVyZQ@uri-b.example.test:8388#URI%20ss\nvless://00000000-0000-4000-8000-000000000004@uri-c.example.test:443?security=tls&type=ws&path=%2Fv&host=uri-c.example.test&sni=uri-c.example.test#URI%20vless\n" },
+    { "source_id": "rule-provider:sites", "content_hash": "", "content": "payload:\n  - DOMAIN-SUFFIX,example.com\n  - DOMAIN,exact.example.com\n  - IP-CIDR,192.0.2.0/24\n" },
+    { "source_id": "rule-provider:ads", "content_hash": "", "content": "payload:\n  - DOMAIN-KEYWORD,adserver\n" }
+  ],
+  "custom_nodes": [
+    { "id": "custom-1", "name": "custom vless", "proxy": { "name": "custom vless", "type": "vless", "server": "custom.example.test", "port": 443, "uuid": "00000000-0000-4000-8000-000000000005", "tls": true, "servername": "custom.example.test" } }
+  ]
+}

@@ -12,6 +12,8 @@ mod proxy_node_binding;
 mod proxy_runtime;
 mod relay_egress;
 mod resource_export;
+#[cfg(test)]
+mod resource_export_golden;
 mod resource_relay;
 mod source_cache;
 mod subscription_compile;
