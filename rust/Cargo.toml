@@ -72,6 +72,11 @@ uuid = { version = "1", features = ["serde", "v4"] }
 zip = { version = "9.0.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 windows-service = "0.8.1"
 
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unused_must_use = "deny"
