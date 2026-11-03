@@ -75,11 +75,27 @@ pub fn compile_with_overlay(
     request: &CompileRequest,
     overlay: &CompileOverlay,
 ) -> Result<CompileResult, CompileError> {
-    let target = normalized_target(&request.target)?;
-    let mut profile = prepare_profile(&request.profile, &target)?;
+    compile_parts(
+        &request.profile,
+        &request.snapshots,
+        &request.custom_nodes,
+        &request.target,
+        overlay,
+    )
+}
+
+/// Compiles borrowed inputs so callers that adjust the profile need not copy snapshots.
+pub fn compile_parts(
+    input_profile: &Profile,
+    input_snapshots: &[SourceSnapshot],
+    input_custom_nodes: &[CustomNode],
+    input_target: &Target,
+    overlay: &CompileOverlay,
+) -> Result<CompileResult, CompileError> {
+    let target = normalized_target(input_target)?;
+    let mut profile = prepare_profile(input_profile, &target)?;
     apply_compile_overlay(&mut profile, overlay);
-    let snapshots: HashMap<&str, &SourceSnapshot> = request
-        .snapshots
+    let snapshots: HashMap<&str, &SourceSnapshot> = input_snapshots
         .iter()
         .map(|snapshot| (snapshot.source_id.as_str(), snapshot))
         .collect();
@@ -91,8 +107,7 @@ pub fn compile_with_overlay(
             .map_err(|_| CompileError::InvalidCustomNode("manual server".into()))?;
         nodes.push((proxy, "manual-server".into()));
     }
-    let custom_nodes = request
-        .custom_nodes
+    let custom_nodes = input_custom_nodes
         .iter()
         .map(|node| (node.id.as_str(), node))
         .collect::<HashMap<_, _>>();
@@ -148,7 +163,7 @@ pub fn compile_with_overlay(
         .collect();
 
     let (content, field_diffs, warnings) =
-        renderer::render(&profile, &proxies, &target, &request.snapshots)?;
+        renderer::render(&profile, &proxies, &target, input_snapshots)?;
     diagnostics.extend(warnings.into_iter().map(|message| Diagnostic {
         level: "warning".into(),
         source_id: None,

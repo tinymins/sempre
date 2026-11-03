@@ -16,6 +16,7 @@ async fn raw_sources_use_no_network_or_database_and_preserve_order() {
             proxy: None,
             trusted_proxy_ips: vec![],
         },
+        compile_cache: crate::resource_export::CompileCache::default(),
     };
     let fields: SubscriptionFields = serde_json::from_value(json!({"subscribeItems":[
         {"type":"raw","id":"first","content":"proxies:\n  - {name: first, type: socks5, server: 127.0.0.1, port: 1080}","prefix":"A"},

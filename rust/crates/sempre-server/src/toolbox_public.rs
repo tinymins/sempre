@@ -21,7 +21,7 @@ use crate::{
     AppState,
     error::ApiError,
     export_target::{available as available_targets, from_path as suffix_target},
-    resource_export::compile,
+    resource_export::compile_cached,
     source_cache::CacheMode,
     subscription_compile::{PrepareOptions, PreparedInput, prepare_local, prepare_with_local},
     subscriptions::{SubscriptionFields, row_fields},
@@ -357,7 +357,9 @@ async fn generate(
     let mut input = serde_json::to_vec(&request).map_err(ApiError::internal)?;
     input.extend_from_slice(subscription.updated_at.to_rfc3339().as_bytes());
     let input_hash = format!("{:x}", Sha256::digest(&input));
-    let result = compile(&request, &state.config.public_url)?;
+    let target = request.target.clone();
+    let request = Arc::new(request);
+    let result = compile_cached(state, subscription.id, &request, &input_hash).await?;
     if result.node_count == 0 && crate::subscription_sources::all_sources_failed(&stages) {
         return Err(ApiError::unavailable(
             "all enabled subscription sources failed and no usable nodes remain",
@@ -377,8 +379,8 @@ async fn generate(
     Ok(Generated {
         subscription,
         revision_hash,
-        target: request.target,
-        content: result.content,
+        target,
+        content: result.content.clone(),
         hash,
         input_hash,
         node_count: i32::try_from(result.node_count).map_err(ApiError::internal)?,

@@ -1,24 +1,107 @@
 //! Apply server resource URLs after rendering, including generated and custom rules.
-use sempre_converter::{CompileRequest, CompileResult, EditorConfig, Profile, prepare_profile};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use sempre_converter::{
+    CompileOverlay, CompileRequest, CompileResult, EditorConfig, Profile, compile_parts,
+    prepare_profile,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
+use uuid::Uuid;
 
-use crate::error::ApiError;
+use crate::{AppState, error::ApiError};
 
 pub(crate) const REVISION: &str = "resource-relay-export-v2";
+const CACHE_CAPACITY: usize = 512;
+
+type CompileEntries = HashMap<(Uuid, String), (String, Arc<CompileResult>)>;
+
+/// Remembers the latest compile per subscription target for this server process.
+///
+/// Process lifetime keeps an upgraded compiler from serving outputs of an older build.
+#[derive(Clone, Default)]
+pub(crate) struct CompileCache {
+    entries: Arc<Mutex<CompileEntries>>,
+}
+
+impl CompileCache {
+    pub(crate) fn get(
+        &self,
+        subscription: Uuid,
+        target: &str,
+        input_hash: &str,
+    ) -> Option<Arc<CompileResult>> {
+        let entries = self.entries.lock().expect("compile cache");
+        entries
+            .get(&(subscription, target.to_owned()))
+            .filter(|(hash, _)| hash == input_hash)
+            .map(|(_, result)| result.clone())
+    }
+
+    pub(crate) fn insert(
+        &self,
+        subscription: Uuid,
+        target: &str,
+        input_hash: String,
+        result: Arc<CompileResult>,
+    ) {
+        let mut entries = self.entries.lock().expect("compile cache");
+        if entries.len() >= CACHE_CAPACITY {
+            entries.clear();
+        }
+        entries.insert((subscription, target.to_owned()), (input_hash, result));
+    }
+}
+
+/// Reuses the previous output when the compile input is unchanged.
+pub(crate) async fn compile_cached(
+    state: &AppState,
+    subscription: Uuid,
+    request: &Arc<CompileRequest>,
+    input_hash: &str,
+) -> Result<Arc<CompileResult>, ApiError> {
+    let target = request.target.format.as_str();
+    if let Some(result) = state.compile_cache.get(subscription, target, input_hash) {
+        return Ok(result);
+    }
+    let result =
+        Arc::new(compile_blocking(request.clone(), state.config.public_url.clone()).await?);
+    state
+        .compile_cache
+        .insert(subscription, target, input_hash.to_owned(), result.clone());
+    Ok(result)
+}
+
+/// Runs the CPU-bound compile away from the async workers.
+pub(crate) async fn compile_blocking(
+    request: Arc<CompileRequest>,
+    base: Url,
+) -> Result<CompileResult, ApiError> {
+    tokio::task::spawn_blocking(move || compile(&request, &base))
+        .await
+        .map_err(ApiError::internal)?
+}
 
 pub(crate) fn compile(request: &CompileRequest, base: &Url) -> Result<CompileResult, ApiError> {
-    let mut request = request.clone();
-    request.profile = prepare_profile(&request.profile, &request.target)
+    let mut profile = prepare_profile(&request.profile, &request.target)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
-    request.profile.editor = EditorConfig::default();
+    profile.editor = EditorConfig::default();
     if request.target.is_openwrt() {
-        request.profile.dns["shared"]["gfwBlackRuleSetUrl"] =
+        profile.dns["shared"]["gfwBlackRuleSetUrl"] =
             "https://cdn.jsdelivr.net/gh/ohmywrt/clash-rule@master/gfwip.yaml".into();
     }
-    let mut result = sempre_converter::compile(&request)
-        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    let mut result = compile_parts(
+        &profile,
+        &request.snapshots,
+        &request.custom_nodes,
+        &request.target,
+        &CompileOverlay::default(),
+    )
+    .map_err(|error| ApiError::bad_request(error.to_string()))?;
     let clash = matches!(result.format.as_str(), "clash" | "clash-meta" | "clash-rs");
     if !clash && request.target.core != "sing-box" {
         return Ok(result);
@@ -45,7 +128,7 @@ pub(crate) fn compile(request: &CompileRequest, base: &Url) -> Result<CompileRes
             }
         }
     } else {
-        wrap_sing_box_rules(&mut config, &request.profile, &result.version, base)?;
+        wrap_sing_box_rules(&mut config, &profile, &result.version, base)?;
     }
     result.content = if clash {
         serde_yaml::to_string(&config).map_err(ApiError::internal)?
@@ -167,4 +250,46 @@ fn is_relay_url(base: &Url, source: &str) -> bool {
         && base
             .join("api/proxy/")
             .is_ok_and(|prefix| source.path().starts_with(prefix.path()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn result() -> Arc<CompileResult> {
+        Arc::new(CompileResult {
+            protocol: 1,
+            format: "sing-box-v13".into(),
+            version: "13".into(),
+            platform: "default".into(),
+            content: "{}".into(),
+            artifact_hash: String::new(),
+            node_count: 0,
+            field_diffs: vec![],
+            node_origins: HashMap::new(),
+            diagnostics: vec![],
+            runtime_validated: false,
+        })
+    }
+
+    #[test]
+    fn cache_only_answers_for_the_same_input() {
+        let cache = CompileCache::default();
+        let id = Uuid::new_v4();
+        cache.insert(id, "sing-box-v13", "first".into(), result());
+        assert!(cache.get(id, "sing-box-v13", "first").is_some());
+        assert!(cache.get(id, "sing-box-v13", "second").is_none());
+        assert!(cache.get(id, "sing-box-v14", "first").is_none());
+        assert!(cache.get(Uuid::new_v4(), "sing-box-v13", "first").is_none());
+    }
+
+    #[test]
+    fn cache_replaces_the_previous_input_for_a_target() {
+        let cache = CompileCache::default();
+        let id = Uuid::new_v4();
+        cache.insert(id, "sing-box-v13", "first".into(), result());
+        cache.insert(id, "sing-box-v13", "second".into(), result());
+        assert!(cache.get(id, "sing-box-v13", "first").is_none());
+        assert!(cache.get(id, "sing-box-v13", "second").is_some());
+    }
 }

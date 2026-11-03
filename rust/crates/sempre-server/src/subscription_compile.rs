@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -22,7 +22,7 @@ use crate::{
     debug_stream::{self, StageLog},
     diagnostic_projection,
     error::ApiError,
-    resource_export::compile,
+    resource_export::compile_blocking,
     source_cache::CacheMode,
     subscription_rules::load_rule_snapshots,
     subscription_sources::{all_sources_failed, load_sources},
@@ -142,7 +142,9 @@ async fn run_debug(
         };
     stages.push(json!({"type":"prepare","status":"ok"}));
     stages.push(json!({"type":"compile","status":"running"}));
-    let mut result = match compile(&request, &state.config.public_url) {
+    let request = Arc::new(request);
+    let compiled = compile_blocking(request.clone(), state.config.public_url.clone()).await;
+    let mut result = match compiled {
         Ok(result) => result,
         Err(error) => return debug_failure(stages.clone(), "compile", error.message()),
     };
@@ -353,19 +355,26 @@ async fn load_custom_nodes(
     viewer: Uuid,
     node_scope: Option<Uuid>,
 ) -> Result<Vec<CustomNode>, ApiError> {
+    let rows = if let Some(subscribe_id) = node_scope {
+        sqlx::query("SELECT n.id, n.content FROM proxy_custom_nodes n JOIN proxy_subscribe_custom_nodes a ON a.custom_node_id=n.id AND a.subscribe_id=$3 JOIN proxy_subscribes s ON s.id=a.subscribe_id WHERE n.id=ANY($1) AND (s.user_id=$2 OR s.authorized_user_ids @> jsonb_build_array($2::text))")
+            .bind(selected).bind(viewer).bind(subscribe_id).fetch_all(&state.pool).await?
+    } else {
+        sqlx::query("SELECT id, content FROM proxy_custom_nodes WHERE id=ANY($1) AND (user_id=$2 OR authorized_user_ids @> jsonb_build_array($2::text))")
+            .bind(selected).bind(viewer).fetch_all(&state.pool).await?
+    };
+    let mut contents = HashMap::with_capacity(rows.len());
+    for row in rows {
+        let id: Uuid = row.try_get("id").map_err(ApiError::internal)?;
+        let content: String = row.try_get("content").map_err(ApiError::internal)?;
+        contents.insert(id, content);
+    }
     let mut output = Vec::with_capacity(selected.len());
     for id in selected {
-        let row = if let Some(subscribe_id) = node_scope {
-            sqlx::query("SELECT n.content FROM proxy_custom_nodes n JOIN proxy_subscribe_custom_nodes a ON a.custom_node_id=n.id AND a.subscribe_id=$3 JOIN proxy_subscribes s ON s.id=a.subscribe_id WHERE n.id=$1 AND (s.user_id=$2 OR s.authorized_user_ids @> jsonb_build_array($2::text))")
-                .bind(id).bind(viewer).bind(subscribe_id).fetch_optional(&state.pool).await?
-        } else {
-            sqlx::query("SELECT content FROM proxy_custom_nodes WHERE id=$1 AND (user_id=$2 OR authorized_user_ids @> jsonb_build_array($2::text))")
-                .bind(id).bind(viewer).fetch_optional(&state.pool).await?
-        }
+        let content = contents
+            .get(id)
             .ok_or_else(|| ApiError::forbidden("custom node is not available"))?;
-        let content: String = row.try_get("content").map_err(ApiError::internal)?;
-        let proxy = parse_jsonc_value(&content)
-            .map_err(|error| ApiError::bad_request(error.to_string()))?;
+        let proxy =
+            parse_jsonc_value(content).map_err(|error| ApiError::bad_request(error.to_string()))?;
         output.push(CustomNode {
             id: id.to_string(),
             name: proxy

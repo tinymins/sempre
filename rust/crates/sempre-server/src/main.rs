@@ -57,6 +57,17 @@ use crate::error::ApiError;
 pub(crate) struct AppState {
     pool: PgPool,
     config: Config,
+    compile_cache: resource_export::CompileCache,
+}
+
+impl AppState {
+    fn new(pool: PgPool, config: Config) -> Self {
+        Self {
+            pool,
+            config,
+            compile_cache: resource_export::CompileCache::default(),
+        }
+    }
 }
 
 #[tokio::main]
@@ -108,7 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     relay_egress::ensure_schema(&pool).await?;
     let address = config.bind_address;
     let web_root = config.web_root.clone();
-    let state = Arc::new(AppState { pool, config });
+    let state = Arc::new(AppState::new(pool, config));
     tokio::spawn(maintenance::run(state.clone()));
     tokio::spawn(proxy_runtime::run(state.clone()));
     let protected = subscriptions::router()
