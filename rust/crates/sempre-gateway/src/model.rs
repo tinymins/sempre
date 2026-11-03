@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, sync::LazyLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -208,17 +208,21 @@ pub fn validation_messages(config: &Config) -> Vec<String> {
     errors
 }
 
+static INTERFACE_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.:-]*$").expect("static interface pattern"));
+static SSH_NAME_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.:@-]*$").expect("static SSH name pattern"));
+
 fn validate_host_fields(config: &Config, errors: &mut Vec<String>) {
-    let interface = Regex::new(r"^[A-Za-z0-9_.:-]*$").expect("static interface pattern");
-    if !interface.is_match(&config.lan.interface) || !interface.is_match(&config.lan.wan_interface)
+    if !INTERFACE_PATTERN.is_match(&config.lan.interface)
+        || !INTERFACE_PATTERN.is_match(&config.lan.wan_interface)
     {
         errors.push("LAN and WAN interfaces contain unsupported characters".into());
     }
-    let ssh_name = Regex::new(r"^[A-Za-z0-9_.:@-]*$").expect("static SSH name pattern");
     if config.pve.host.starts_with('-')
         || config.pve.user.starts_with('-')
-        || !ssh_name.is_match(&config.pve.host)
-        || !ssh_name.is_match(&config.pve.user)
+        || !SSH_NAME_PATTERN.is_match(&config.pve.host)
+        || !SSH_NAME_PATTERN.is_match(&config.pve.user)
     {
         errors.push("PVE host and user contain unsupported characters".into());
     }

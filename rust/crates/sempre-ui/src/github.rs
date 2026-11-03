@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::LazyLock, time::Duration};
 
 use futures_util::StreamExt as _;
 use regex::Regex;
@@ -6,6 +6,14 @@ use reqwest::StatusCode;
 use sempre_artifact::{GithubClient, ReleaseAsset, Sha256Digest};
 
 use crate::{PreparedInstallation, Store, UiError};
+
+static REPOSITORY_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9_.-]{1,100}$")
+        .expect("valid repository pattern")
+});
+static VERSION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$").expect("valid version pattern")
+});
 
 const ARCHIVE_NAME: &str = "sempre-ui.zip";
 const CHECKSUM_NAME: &str = "SHA256SUMS";
@@ -60,10 +68,7 @@ impl Reference {
             return Err(invalid("invalid UI GitHub reference"));
         }
         let (repository, version) = value.split_once('@').unwrap_or((value, "stable"));
-        let repository_pattern =
-            Regex::new(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9_.-]{1,100}$")
-                .expect("valid repository pattern");
-        if !repository_pattern.is_match(repository)
+        if !REPOSITORY_PATTERN.is_match(repository)
             || repository
                 .split_once('/')
                 .is_some_and(|(_, name)| matches!(name, "." | ".."))
@@ -73,9 +78,7 @@ impl Reference {
             )));
         }
         let version = version.strip_prefix('v').unwrap_or(version);
-        let version_pattern = Regex::new(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
-            .expect("valid version pattern");
-        if version != "stable" && !version_pattern.is_match(version) {
+        if version != "stable" && !VERSION_PATTERN.is_match(version) {
             return Err(invalid(format!(
                 "invalid UI version or channel {version:?}"
             )));

@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, net::IpAddr, str::FromStr as _};
+use std::{collections::BTreeSet, net::IpAddr, str::FromStr as _, sync::LazyLock};
 
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::TunnelError;
+
+static ID_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]{0,62}$").expect("static ID pattern"));
 
 pub const SCHEMA_VERSION: u32 = 1;
 
@@ -131,14 +134,13 @@ impl Config {
                 self.schema
             )));
         }
-        let id_pattern = Regex::new(r"^[a-z0-9][a-z0-9-]{0,62}$").expect("static ID pattern");
         let mut instance_ids = BTreeSet::new();
         let mut forward_ids = BTreeSet::new();
         let mut listen_ports = BTreeSet::new();
         for instance in &self.instances {
-            validate_instance(instance, &id_pattern, &mut instance_ids)?;
+            validate_instance(instance, &ID_PATTERN, &mut instance_ids)?;
             for forward in &instance.forwards {
-                validate_forward(forward, &id_pattern, &mut forward_ids, &mut listen_ports)?;
+                validate_forward(forward, &ID_PATTERN, &mut forward_ids, &mut listen_ports)?;
             }
         }
         Ok(())
