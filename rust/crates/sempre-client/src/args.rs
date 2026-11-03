@@ -24,6 +24,9 @@ pub(crate) struct Arguments {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
+    /// Ask the daemon to withdraw transparent capture when it next exits.
+    #[command(hide = true)]
+    ReleaseCapture,
     /// Install this extracted release as the native system service.
     Install {
         /// Replace a different existing system deployment without prompting.
@@ -169,6 +172,7 @@ impl Arguments {
             Command::Runtime { .. } => system,
             Command::Update => system,
             Command::Status | Command::Logs { .. } | Command::Doctor | Command::Open => system,
+            Command::ReleaseCapture => system,
             Command::Version | Command::LeakProbe { .. } => false,
             #[cfg(windows)]
             Command::ServiceHost => false,

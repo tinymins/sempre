@@ -35,6 +35,9 @@ pub(crate) async fn run_with_layout(
     let store = Store::new(layout.clone());
     let _instance = store.acquire_instance()?;
     let manager = Arc::new(Manager::new(store)?);
+    if let Err(error) = manager.adopt_firmware_core().await {
+        tracing::warn!(%error, "firmware core is unavailable");
+    }
     let web = WebConfigStore::new(&layout.web_config);
     let config = web.initialize()?;
     let traffic = Arc::new(crate::traffic_history::TrafficStore::open(

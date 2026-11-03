@@ -49,6 +49,7 @@ impl<R: VersionRunner> Manager<R> {
         let _operation = self.store.acquire_operation()?;
         let mut reference = CoreRef::parse(value)?;
         let adapter = self.registry.get(&reference.core)?;
+        self.reject_firmware_managed_core(&reference.core)?;
         if reference
             .repository
             .as_deref()

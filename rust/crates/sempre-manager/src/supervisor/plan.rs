@@ -48,10 +48,15 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 "active core binary or configuration is unavailable".into(),
             ));
         }
-        let data = self.store.layout().runtime.join(&deployment.core);
+        let data = self.store.layout().core_data.join(&deployment.core);
         fs::create_dir_all(&data)
-            .map_err(|error| ManagerError::io("create core runtime directory", error))?;
-        let control_directory = data.join("control");
+            .map_err(|error| ManagerError::io("create core data directory", error))?;
+        let control_directory = self
+            .store
+            .layout()
+            .runtime
+            .join(&deployment.core)
+            .join("control");
         if control_directory.exists() {
             fs::remove_dir_all(&control_directory)
                 .map_err(|error| ManagerError::io("reset core control directory", error))?;

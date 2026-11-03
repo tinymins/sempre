@@ -203,6 +203,7 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
             println!("Sempre {VERSION}");
             Ok(())
         }
+        Command::ReleaseCapture => release_capture(mode),
         #[cfg(windows)]
         Command::ServiceHost => unreachable!("service host is dispatched before the async runtime"),
         Command::Daemon {
@@ -235,6 +236,10 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
         Command::Doctor => doctor_cli::run(mode, json).await,
         Command::Open => diagnostics_cli::open(mode),
     }
+}
+
+fn release_capture(mode: Mode) -> Result<(), ClientError> {
+    Ok(Layout::for_mode(mode)?.request_capture_release()?)
 }
 
 async fn run_service(mode: Mode, command: ServiceCommand) -> Result<(), ClientError> {

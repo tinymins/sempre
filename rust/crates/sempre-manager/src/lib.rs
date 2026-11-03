@@ -42,6 +42,7 @@ mod subscription;
 mod subscription_mutation;
 mod subscription_tools;
 mod supervisor;
+mod system_core;
 mod tunnel;
 mod update;
 
@@ -160,12 +161,19 @@ impl<R: VersionRunner> Manager<R> {
             (store.layout().mode == sempre_state::Mode::System)
                 .then(|| store.layout().resources.clone()),
         );
+        let store_openwrt = store.layout().openwrt;
+        if store_openwrt {
+            sempre_supervisor::limit_logs(1 << 20, 1);
+        }
         Ok(Self {
             store,
             registry: built_in_registry(),
             releases: GithubClient::new(USER_AGENT)?,
             downloader: Downloader::new(USER_AGENT)?,
-            target: Target::current(),
+            target: Target {
+                openwrt: store_openwrt,
+                ..Target::current()
+            },
             runner,
             subscriptions,
             fetcher,
