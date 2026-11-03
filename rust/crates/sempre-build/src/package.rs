@@ -30,6 +30,9 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     validate(input)?;
     fs::create_dir_all(&input.output)
         .map_err(|error| BuildError::io("create release output", &input.output, error))?;
+    if input.target.musl {
+        return package_standalone(input);
+    }
     let staging = tempfile::tempdir().map_err(|error| {
         BuildError::io("create release staging directory", &input.output, error)
     })?;
@@ -68,10 +71,7 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     )
     .await?;
 
-    let binary = input.output.join(input.target.binary_name());
-    fs::copy(&input.executable, &binary)
-        .map_err(|error| BuildError::io("copy release binary", &binary, error))?;
-    make_executable(&binary)?;
+    let binary = copy_binary(input)?;
     let release_target = ReleaseTarget::new(&input.target.os, &input.target.arch)?;
     let bundles = sempre_bundle::package_release(
         &source,
@@ -83,11 +83,7 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     .into_iter()
     .map(|export| export.archive)
     .collect::<Vec<_>>();
-    let ui_archive = input.output.join("sempre-ui.zip");
-    if input.ui_archive != ui_archive {
-        fs::copy(&input.ui_archive, &ui_archive)
-            .map_err(|error| BuildError::io("copy UI release archive", &ui_archive, error))?;
-    }
+    let ui_archive = copy_ui_archive(input)?;
     let mut names = vec![file_name(&binary)?, file_name(&ui_archive)?];
     names.extend(
         bundles
@@ -102,6 +98,39 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
         ui_archive,
         checksums: input.output.join("SHA256SUMS"),
     })
+}
+
+/// Firmware images supply their own proxy core, so musl releases carry no bundle.
+fn package_standalone(input: &BuildInput) -> Result<BuildOutput, BuildError> {
+    let binary = copy_binary(input)?;
+    let ui_archive = copy_ui_archive(input)?;
+    checksum::write(
+        &input.output,
+        &[file_name(&binary)?, file_name(&ui_archive)?],
+    )?;
+    Ok(BuildOutput {
+        binary,
+        bundles: Vec::new(),
+        ui_archive,
+        checksums: input.output.join("SHA256SUMS"),
+    })
+}
+
+fn copy_binary(input: &BuildInput) -> Result<PathBuf, BuildError> {
+    let binary = input.output.join(input.target.binary_name());
+    fs::copy(&input.executable, &binary)
+        .map_err(|error| BuildError::io("copy release binary", &binary, error))?;
+    make_executable(&binary)?;
+    Ok(binary)
+}
+
+fn copy_ui_archive(input: &BuildInput) -> Result<PathBuf, BuildError> {
+    let ui_archive = input.output.join("sempre-ui.zip");
+    if input.ui_archive != ui_archive {
+        fs::copy(&input.ui_archive, &ui_archive)
+            .map_err(|error| BuildError::io("copy UI release archive", &ui_archive, error))?;
+    }
+    Ok(ui_archive)
 }
 
 fn validate(input: &BuildInput) -> Result<(), BuildError> {

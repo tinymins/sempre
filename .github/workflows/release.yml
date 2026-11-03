@@ -79,6 +79,14 @@ jobs:
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             binary: sempre-linux-arm64
+          - name: linux-musl-amd64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            binary: sempre-linux-musl-amd64
+          - name: linux-musl-arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            binary: sempre-linux-musl-arm64
           - name: windows-amd64
             runner: windows-2025
             target: x86_64-pc-windows-msvc
@@ -108,6 +116,13 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - name: Install musl toolchain
+        if: startsWith(matrix.name, 'linux-musl-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          triple='${{ matrix.target }}'
+          echo "CC_${triple//-/_}=musl-gcc" >> "$GITHUB_ENV"
       - name: Build native release
         run: >-
           cargo run --manifest-path=rust/Cargo.toml -p sempre-build -- package
