@@ -19,7 +19,7 @@ pub(super) async fn wait_for_health(
     expected_version: &str,
     timeout: Duration,
 ) -> Result<(), ManagerError> {
-    let client = reqwest::Client::builder()
+    let client = sempre_http::client_builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .build()

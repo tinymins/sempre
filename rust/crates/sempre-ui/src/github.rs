@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt as _;
 use regex::Regex;
-use reqwest::{Client, StatusCode};
+use reqwest::StatusCode;
 use sempre_artifact::{GithubClient, ReleaseAsset, Sha256Digest};
 
 use crate::{PreparedInstallation, Store, UiError};
@@ -98,7 +98,7 @@ fn asset<'a>(assets: &'a [ReleaseAsset], name: &str) -> Option<&'a ReleaseAsset>
 }
 
 async fn checksum(asset: &ReleaseAsset, name: &str) -> Result<String, UiError> {
-    let client = Client::builder()
+    let client = sempre_http::client_builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 10 {

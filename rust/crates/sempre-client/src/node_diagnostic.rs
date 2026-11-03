@@ -142,7 +142,7 @@ impl DiagnosticCore {
         let proxy = Proxy::all(format!("http://127.0.0.1:{port}"))
             .map_err(|error| format!("configure diagnostic proxy: {error}"))?
             .basic_auth(username, &password);
-        let client = Client::builder()
+        let client = sempre_http::client_builder()
             .proxy(proxy)
             .redirect(Policy::limited(5))
             .timeout(REQUEST_TIMEOUT)

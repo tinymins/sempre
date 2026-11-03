@@ -48,7 +48,7 @@ fn request(
         .url
         .join(&format!("instances/{id}"))
         .map_err(ApiError::internal)?;
-    let client = reqwest::Client::builder()
+    let client = sempre_http::client_builder()
         .no_proxy()
         .timeout(Duration::from_secs(40))
         .build()

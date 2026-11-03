@@ -11,6 +11,7 @@ name = "sempre-server"
 path = "src/main.rs"
 
 [dependencies]
+sempre-http = { path = "../sempre-http" }
 argon2.workspace = true
 base64.workspace = true
 chacha20poly1305 = "0.10"

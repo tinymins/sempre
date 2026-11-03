@@ -27,7 +27,7 @@ pub(crate) struct LocalApi {
 impl LocalApi {
     pub(crate) fn discover(path: &Path) -> Result<Self, Error> {
         let endpoint = DaemonEndpoint::read(path)?;
-        let client = Client::builder()
+        let client = sempre_http::client_builder()
             .timeout(Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::none())
             .build()

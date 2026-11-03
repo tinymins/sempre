@@ -225,7 +225,7 @@ pub(crate) fn validate_url(url: &Url) -> Result<(), ApiError> {
 
 fn safe_client(url: &Url, proxy: Option<&str>) -> Result<Client, ApiError> {
     validate_url(url)?;
-    let mut builder = Client::builder()
+    let mut builder = sempre_http::client_builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))

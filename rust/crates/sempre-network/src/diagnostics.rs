@@ -182,7 +182,7 @@ where
     }
 
     log.start("http");
-    let client = reqwest::Client::builder()
+    let client = sempre_http::client_builder()
         .no_proxy()
         .timeout(HTTP_TIMEOUT)
         .user_agent(concat!("Sempre diagnostics/", env!("CARGO_PKG_VERSION")))

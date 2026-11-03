@@ -109,7 +109,7 @@ impl Client {
                 "core, loopback base URL, or secret is invalid".into(),
             ));
         }
-        let http = HttpClient::builder()
+        let http = sempre_http::client_builder()
             .no_proxy()
             .timeout(Duration::from_secs(30))
             .build()

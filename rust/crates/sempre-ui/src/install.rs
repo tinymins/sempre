@@ -7,7 +7,7 @@ use std::{
 
 use chrono::Utc;
 use futures_util::StreamExt as _;
-use reqwest::{Client, StatusCode, header};
+use reqwest::{StatusCode, header};
 use sha2::{Digest as _, Sha256};
 use tempfile::{Builder, NamedTempFile};
 use tokio::io::AsyncWriteExt as _;
@@ -134,7 +134,7 @@ impl Store {
         let temporary = NamedTempFile::new_in(&self.root).map_err(UiError::Write)?;
         let target = temporary.reopen().map_err(UiError::Write)?;
         let mut target = tokio::fs::File::from_std(target);
-        let client = Client::builder()
+        let client = sempre_http::client_builder()
             .timeout(Duration::from_mins(10))
             .redirect(https_redirect_policy())
             .user_agent(concat!("Sempre/", env!("CARGO_PKG_VERSION")))

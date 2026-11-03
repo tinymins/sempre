@@ -135,7 +135,7 @@ const PROBES: [Probe; 8] = [
 ];
 
 pub async fn run_network_test() -> Result<NetworkTestReport, NetworkError> {
-    let client = Client::builder()
+    let client = sempre_http::client_builder()
         .no_proxy()
         .timeout(TIMEOUT)
         .user_agent(concat!("Sempre/", env!("CARGO_PKG_VERSION")))

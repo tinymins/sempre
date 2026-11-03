@@ -282,7 +282,11 @@ mod tests {
         );
         let (stop, stopped) = oneshot::channel();
         let server = serve(listener, app, stopped);
-        let mut response = reqwest::get(format!("http://{address}/events"))
+        let mut response = sempre_http::client_builder()
+            .build()
+            .unwrap()
+            .get(format!("http://{address}/events"))
+            .send()
             .await
             .unwrap();
         assert!(response.chunk().await.unwrap().is_some());

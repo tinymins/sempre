@@ -7,6 +7,7 @@ license.workspace = true
 description = "Sempre client application use cases and transactional core management"
 
 [dependencies]
+sempre-http = { path = "../sempre-http" }
 chrono.workspace = true
 humantime.workspace = true
 ipnet.workspace = true

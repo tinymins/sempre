@@ -19,6 +19,7 @@ name = "sempre"
 path = "src/main.rs"
 
 [dependencies]
+sempre-http = { path = "../sempre-http" }
 axum.workspace = true
 chrono.workspace = true
 clap.workspace = true

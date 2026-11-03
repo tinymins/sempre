@@ -63,7 +63,7 @@ pub struct RemoteClient {
 
 impl RemoteClient {
     pub fn new() -> Result<Self, SubscriptionError> {
-        let http = Client::builder()
+        let http = sempre_http::client_builder()
             .timeout(Duration::from_secs(30))
             .redirect(Policy::none())
             .build()

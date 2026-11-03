@@ -49,7 +49,7 @@ pub(crate) async fn run(mode: Mode) -> Result<(), ClientError> {
 }
 
 async fn announce_when_ready(layout: &Layout) -> Result<(), String> {
-    let client = Client::builder()
+    let client = sempre_http::client_builder()
         .timeout(Duration::from_secs(2))
         .redirect(reqwest::redirect::Policy::none())
         .build()

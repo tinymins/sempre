@@ -6,7 +6,7 @@ use std::{
 use reqwest::{ClientBuilder, Method};
 
 pub(crate) fn client_builder(user_agent: &str, timeout: Duration) -> ClientBuilder {
-    let mut builder = reqwest::Client::builder()
+    let mut builder = sempre_http::client_builder()
         .timeout(timeout)
         .redirect(crate::https_redirect_policy())
         .user_agent(user_agent);

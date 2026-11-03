@@ -321,7 +321,7 @@ impl Fetcher {
 }
 
 fn client(proxy: Option<Proxy>) -> Result<Client, SubscriptionError> {
-    let mut builder = Client::builder()
+    let mut builder = sempre_http::client_builder()
         .timeout(Duration::from_secs(15))
         .redirect(Policy::custom(|attempt| {
             let target = attempt.url();

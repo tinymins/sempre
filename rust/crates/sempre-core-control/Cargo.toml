@@ -7,6 +7,7 @@ license.workspace = true
 description = "Isolated client for Clash-compatible managed-core control APIs"
 
 [dependencies]
+sempre-http = { path = "../sempre-http" }
 futures-util.workspace = true
 reqwest.workspace = true
 serde.workspace = true

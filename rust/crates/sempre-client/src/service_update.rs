@@ -214,7 +214,7 @@ fn describe_error(error: &dyn Error) -> String {
 }
 
 fn manifest_client_builder() -> ClientBuilder {
-    Client::builder()
+    sempre_http::client_builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 {

@@ -7,6 +7,7 @@ license.workspace = true
 description = "Verified release resolution, download, and safe archive extraction"
 
 [dependencies]
+sempre-http = { path = "../sempre-http" }
 flate2.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true

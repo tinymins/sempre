@@ -111,7 +111,7 @@ async fn fetch_with_options_observed(
                 ));
             }
             let route = policy.resolve(state, &url).await?;
-            let mut client = reqwest::Client::builder()
+            let mut client = sempre_http::client_builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(10))
                 .timeout(options.timeout);

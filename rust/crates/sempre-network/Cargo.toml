@@ -7,6 +7,7 @@ license.workspace = true
 description = "Cross-platform network inventory and connectivity diagnostics for Sempre"
 
 [dependencies]
+sempre-http = { path = "../sempre-http" }
 chrono.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true

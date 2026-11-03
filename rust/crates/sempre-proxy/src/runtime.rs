@@ -237,7 +237,7 @@ impl Runtime {
         let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{}", status.port))
             .map_err(|_| "proxy client failed")?
             .basic_auth(&status.username, &status.password);
-        let client = reqwest::Client::builder()
+        let client = sempre_http::client_builder()
             .proxy(proxy)
             .timeout(Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
