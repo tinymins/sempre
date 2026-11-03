@@ -17,6 +17,8 @@ mod openwrt;
 mod parser;
 mod renderer;
 pub const DIRECT_OUTBOUND_NAME: &str = "🚀 直接连接";
+/// Largest subscription source accepted anywhere in the product.
+pub const MAX_SOURCE_SIZE: usize = 32 << 20;
 mod rule_set;
 mod target;
 

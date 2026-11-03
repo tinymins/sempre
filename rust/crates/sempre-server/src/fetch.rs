@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::error::ApiError;
 
-pub(crate) const MAX_SOURCE_SIZE: usize = 32 << 20;
+pub(crate) use sempre_converter::MAX_SOURCE_SIZE;
 const MAX_REDIRECTS: usize = 5;
 
 pub(crate) struct FetchedText {

@@ -7,7 +7,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 pub const CATALOG_SCHEMA: u32 = 1;
-pub const MAX_SOURCE_SIZE: usize = 32 << 20;
+pub use sempre_converter::MAX_SOURCE_SIZE;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Catalog {
