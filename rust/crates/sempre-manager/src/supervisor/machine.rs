@@ -4,7 +4,8 @@ use sempre_state::DesiredState;
 use tokio::sync::{MutexGuard, watch};
 
 use super::{
-    CycleResult, RETRY_INTERVAL, RuntimePlan, state, transparent_cleanup_required,
+    CycleResult, OPENWRT_RETRY_INTERVAL, RETRY_INTERVAL, RuntimePlan, state,
+    transparent_cleanup_required,
     wait::{RetryEvent, wait_inactive, wait_preparation, wait_retry},
     with_cleanup_failure,
 };
@@ -213,7 +214,12 @@ impl<'a, R: VersionRunner + ValidationRunner> Machine<'a, R> {
 
     async fn backoff(&mut self, resume: Resume, reload: ReloadCleanup) -> Phase<'a> {
         let manager = self.manager;
-        match wait_retry(manager, &mut self.shutdown, RETRY_INTERVAL).await {
+        let interval = if manager.store.layout().openwrt {
+            OPENWRT_RETRY_INTERVAL
+        } else {
+            RETRY_INTERVAL
+        };
+        match wait_retry(manager, &mut self.shutdown, interval).await {
             RetryEvent::Timer => {}
             RetryEvent::NetworkChanged => {
                 manager.log_supervisor(match resume {

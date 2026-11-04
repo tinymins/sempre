@@ -22,6 +22,8 @@ use wait::{ProcessEvent, wait_running, wait_startup};
 const STARTUP_GRACE: Duration = Duration::from_secs(10);
 const STOP_GRACE: Duration = Duration::from_secs(10);
 const RETRY_INTERVAL: Duration = Duration::from_secs(30);
+// Capture rules outlive the core on `OpenWrt`, so LAN traffic waits for this restart.
+const OPENWRT_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 pub(crate) struct RuntimePlan {
     pub(crate) deployment: Deployment,
