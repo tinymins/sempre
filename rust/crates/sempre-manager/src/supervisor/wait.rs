@@ -7,7 +7,7 @@ use super::RuntimePlan;
 use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
 
 const STABLE_WINDOW: Duration = if cfg!(test) {
-    Duration::from_millis(200)
+    Duration::from_secs(1)
 } else {
     Duration::from_secs(30)
 };

@@ -53,7 +53,10 @@ async fn adopts_the_firmware_binary_as_the_stable_core() {
         .store
         .layout()
         .core_binary(FIRMWARE_CORE, None, "1.13.21");
-    assert_eq!(fs::read_link(link).expect("link"), binary);
+    // Hosts without symbolic links get a copy, which is still the adopted core.
+    #[cfg(unix)]
+    assert_eq!(fs::read_link(&link).expect("link"), binary);
+    assert!(link.is_file());
 }
 
 #[tokio::test]
