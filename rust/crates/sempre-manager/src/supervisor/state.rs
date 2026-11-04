@@ -69,15 +69,17 @@ pub fn mark_healthy<R: VersionRunner>(
     plan: &RuntimePlan,
 ) -> Result<(), ManagerError> {
     manager.store.update(|document| {
-        if document.desired_state != DesiredState::Running
-            || document.active.as_ref() != Some(&plan.deployment)
-        {
+        if document.desired_state != DesiredState::Running {
             return Ok(());
         }
         document.runtime.state = RuntimeState::Running;
         document.runtime.last_transition = Some(Utc::now());
-        // A rolled-back runtime still owes the user a restart and the failure reason.
-        if document.rejected_deployment.is_some() {
+        // A deployment staged during startup is still waiting for its restart, which the
+        // runtime only accepts once it has left the starting state. A rolled-back runtime
+        // likewise still owes the user a restart and the failure reason.
+        if document.active.as_ref() != Some(&plan.deployment)
+            || document.rejected_deployment.is_some()
+        {
             return Ok(());
         }
         if document.pending {

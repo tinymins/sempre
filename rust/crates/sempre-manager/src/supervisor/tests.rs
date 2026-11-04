@@ -375,6 +375,39 @@ async fn stable_core_becomes_the_rollback_target() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn a_deployment_staged_during_startup_does_not_leave_the_runtime_starting() {
+    let (_root, manager) = fixture("#!/bin/sh\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n");
+    let (shutdown, receiver) = watch::channel(false);
+    let running = Arc::clone(&manager);
+    let task = tokio::spawn(async move {
+        running
+            .run_supervisor_with_grace(receiver, Duration::from_secs(1))
+            .await
+    });
+    wait_for_state(&manager, sempre_state::RuntimeState::Starting).await;
+    let staged = "c".repeat(64);
+    fs::write(manager.store.layout().config("sing-box", &staged), b"{}").expect("configuration");
+    manager
+        .store
+        .update(|document| {
+            document
+                .active
+                .as_mut()
+                .expect("active")
+                .config_hash
+                .clone_from(&staged);
+            document.pending = true;
+            Ok(())
+        })
+        .expect("stage deployment");
+    wait_for_state(&manager, sempre_state::RuntimeState::Running).await;
+    assert!(manager.state().expect("state").pending);
+    shutdown.send(true).expect("shutdown");
+    task.await.expect("task").expect("supervisor");
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn failed_deployment_rolls_back_and_stays_pending() {
     let (_root, manager) = fixture(
         "#!/bin/sh\nfor a; do [ -f \"$a\" ] && grep -q bad \"$a\" && exit 7; done\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n",
