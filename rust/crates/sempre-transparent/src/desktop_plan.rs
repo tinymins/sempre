@@ -7,6 +7,7 @@ use crate::{Plan, TransparentError};
 
 const DESKTOP_FRONTEND_PORT: u16 = 20_554;
 const WINDOWS_DNS_TARGET_PREFIX: &str = "192.0.2.1/32";
+const CORE_DNS_INBOUND: &str = "sempre-dns-core-in";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Platform {
@@ -243,6 +244,7 @@ fn configure_windows_dns_redirect(
         .expect("desktop DNS plan has system DNS");
     let original_dns = upstream_prefixes(system_dns)?;
     let fake_ip_prefixes = crate::document::fake_ip_prefixes(&plan.core, config);
+    let direct = direct_outbound_tag(config)?;
     let inbounds = config
         .get_mut("inbounds")
         .and_then(Value::as_array_mut)
@@ -295,7 +297,7 @@ fn configure_windows_dns_redirect(
         0,
         json!({
             "inbound": "tun-in", "network": ["tcp", "udp"], "port": [53],
-            "action": "route", "outbound": "direct",
+            "action": "route", "outbound": direct,
             "override_address": "127.0.0.1", "override_port": system_dns.listen_port,
             "udp_connect": true
         }),
@@ -342,17 +344,54 @@ fn insert_original_dns_bypass(config: &mut Value, plan: &Plan) -> Result<(), Tra
         .as_ref()
         .expect("desktop DNS plan has system DNS");
     let prefixes = upstream_prefixes(system_dns)?;
+    // sing-box ignores an empty ip_cidr, which would turn this into a rule for all DNS traffic.
+    if prefixes.is_empty() {
+        return Ok(());
+    }
+    let direct = direct_outbound_tag(config)?;
     let rules = config
         .pointer_mut("/route/rules")
         .and_then(Value::as_array_mut)
         .ok_or_else(|| {
             TransparentError::Invalid("runtime configuration has no route rules".into())
         })?;
+    // The core DNS inbound overrides its destination to a public resolver address, which may
+    // also be an original upstream, so its hijack rules must match first.
+    let position = rules
+        .iter()
+        .rposition(|rule| rule["inbound"] == CORE_DNS_INBOUND)
+        .map_or(0, |index| index + 1);
     rules.insert(
-        0,
-        json!({ "ip_cidr": prefixes, "port": [53], "action": "route", "outbound": "direct" }),
+        position,
+        json!({ "ip_cidr": prefixes, "port": [53], "action": "route", "outbound": direct }),
     );
     Ok(())
+}
+
+/// Compiled configurations rename the direct outbound, so its tag must be read from the document.
+fn direct_outbound_tag(config: &mut Value) -> Result<String, TransparentError> {
+    if let Some(tag) = config["outbounds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|outbound| outbound["type"] == "direct")
+        .and_then(|outbound| outbound["tag"].as_str())
+    {
+        return Ok(tag.to_owned());
+    }
+    config
+        .as_object_mut()
+        .and_then(|config| {
+            config
+                .entry("outbounds")
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+        })
+        .ok_or_else(|| {
+            TransparentError::Invalid("runtime configuration has invalid outbounds".into())
+        })?
+        .push(json!({ "type": "direct", "tag": "direct" }));
+    Ok("direct".into())
 }
 
 #[cfg(test)]

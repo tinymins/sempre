@@ -42,11 +42,96 @@ fn writes_original_dns_bypass_before_global_hijack() {
     let output: Value =
         serde_json::from_slice(&fs::read(config).expect("read config")).expect("decode config");
     assert_eq!(
-        output["route"]["rules"][0],
+        output["route"]["rules"][2],
         json!({
             "ip_cidr": ["223.6.6.6/32", "2400:3200::1/128"],
             "port": [53], "action": "route", "outbound": "direct"
         })
+    );
+    assert_eq!(output["route"]["rules"][3]["protocol"], json!("dns"));
+}
+
+fn compiled_macos_config() -> Value {
+    json!({
+        "inbounds": [{
+            "type": "direct", "tag": "sempre-dns-core-in", "listen": "127.0.0.1",
+            "listen_port": sempre_converter::DEFAULT_CORE_DNS_PORT,
+            "override_address": "1.1.1.1", "override_port": 53
+        }],
+        "outbounds": [{ "type": "direct", "tag": "🚀 直接连接" }],
+        "route": { "rules": [
+            { "inbound": "sempre-dns-core-in", "action": "sniff" },
+            { "inbound": "sempre-dns-core-in", "protocol": "dns", "action": "hijack-dns" },
+            { "protocol": "dns", "action": "hijack-dns" }
+        ] }
+    })
+}
+
+fn prepare_macos(config: &Value, upstreams: Vec<String>) -> Value {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let path = root.path().join("config.json");
+    fs::write(&path, serde_json::to_vec(config).expect("encode config")).expect("write config");
+    let profile: Profile = serde_json::from_value(json!({
+        "dns": { "shared": { "systemDnsTakeoverEnabled": true } }
+    }))
+    .expect("profile");
+    prepare(
+        Platform::Macos,
+        "sing-box",
+        "1.14.3",
+        &profile,
+        &path,
+        upstreams,
+    )
+    .expect("plan");
+    serde_json::from_slice(&fs::read(path).expect("read config")).expect("decode config")
+}
+
+#[test]
+fn empty_original_dns_inserts_no_bypass() {
+    let config = compiled_macos_config();
+    let output = prepare_macos(&config, Vec::new());
+    assert_eq!(output["route"]["rules"], config["route"]["rules"]);
+}
+
+#[test]
+fn bypass_uses_compiled_direct_outbound_after_core_dns_hijack() {
+    let output = prepare_macos(&compiled_macos_config(), vec!["1.1.1.1".into()]);
+    let rules = output["route"]["rules"].as_array().expect("rules");
+    assert_eq!(rules[1]["action"], json!("hijack-dns"));
+    assert_eq!(
+        rules[2],
+        json!({
+            "ip_cidr": ["1.1.1.1/32"], "port": [53],
+            "action": "route", "outbound": "🚀 直接连接"
+        })
+    );
+    assert_eq!(output["outbounds"].as_array().expect("outbounds").len(), 1);
+}
+
+#[test]
+fn windows_redirect_uses_compiled_direct_outbound() {
+    let mut config = json!({
+        "inbounds": [{ "type": "tun", "tag": "tun-in" }],
+        "outbounds": [{ "type": "direct", "tag": "🚀 直接连接" }],
+        "route": { "rules": [] }
+    });
+    let plan = Plan {
+        core: "sing-box".into(),
+        system_dns: Some(crate::SystemDnsPlan {
+            listen_port: 20_554,
+            listen_hosts: vec!["127.0.0.1".into()],
+            core_listen_port: 1053,
+            original_upstreams: Vec::new(),
+            managed_frontend: true,
+            takeover_host: true,
+        }),
+        ..Plan::default()
+    };
+    configure_windows_dns_redirect(&mut config, &plan, "1.14.3").expect("redirect");
+    assert_eq!(
+        config["route"]["rules"][0]["outbound"],
+        json!("🚀 直接连接")
     );
 }
 
