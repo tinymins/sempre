@@ -1,4 +1,7 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use chrono::{DateTime, Utc};
 use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions, GithubClient};
@@ -11,6 +14,11 @@ const SING_BOX_V11: &str = "1.11.15";
 const SING_BOX_V12: &str = "1.12.20";
 const SING_BOX_V13: &str = "1.13.18";
 const SING_BOX_V14: &str = "1.14.0-beta.13";
+pub(crate) const OPENWRT_CORE: &str = "sing-box";
+
+/// The newest release of each series the `OpenWrt` compiler targets support. Desktop bundles
+/// keep their own pins because the recommended profiles reference them.
+const OPENWRT_SING_BOX: [&str; 4] = [SING_BOX_V11, SING_BOX_V12, "1.13.21", "1.14.4"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Request {
@@ -48,6 +56,28 @@ pub(crate) async fn install_bundled_cores(
         });
     }
     build_document(installed_at, &resolved)
+}
+
+/// Downloads the cores published as `OpenWrt` packages, returning each version and directory.
+/// Gateway capture reads sing-box inbounds, so other cores could not start on `OpenWrt`.
+pub(crate) async fn install_openwrt_cores(
+    layout: &Layout,
+    target: &Target,
+    downloader: &Downloader,
+) -> Result<Vec<(String, PathBuf)>, BuildError> {
+    let registry = built_in_registry();
+    let adapter = registry.get(OPENWRT_CORE)?;
+    let releases = GithubClient::new("Sempre release builder")?;
+    let mut installed = Vec::new();
+    for reference in OPENWRT_SING_BOX {
+        let package = releases
+            .resolve(adapter.as_ref(), "", reference, target)
+            .await?;
+        install_core(layout, target, adapter.as_ref(), &package, downloader).await?;
+        let directory = layout.core_version_dir(OPENWRT_CORE, None, &package.version);
+        installed.push((package.version, directory));
+    }
+    Ok(installed)
 }
 
 fn requests() -> [Request; 7] {

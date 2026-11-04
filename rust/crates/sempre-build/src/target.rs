@@ -6,7 +6,7 @@ use crate::BuildError;
 pub struct BuildTarget {
     pub os: String,
     pub arch: String,
-    /// Statically linked musl build for `OpenWrt`; published without bundled cores.
+    /// Statically linked musl build for `OpenWrt`, packaged with one core at a time.
     pub musl: bool,
 }
 
@@ -84,8 +84,18 @@ impl BuildTarget {
             os: self.os.clone(),
             arch: self.arch.clone(),
             amd64_level: u8::from(self.arch == "amd64"),
-            openwrt: false,
+            openwrt: self.musl,
         }
+    }
+
+    /// Names a package by the `OpenWrt` architecture its package manager reports.
+    pub(crate) fn openwrt_package_name(&self, core: &str, version: &str) -> String {
+        let arch = if self.arch == "arm64" {
+            "aarch64_generic"
+        } else {
+            "x86_64"
+        };
+        format!("sempre-openwrt-{core}-{version}-{arch}")
     }
 
     pub fn tunnel_target(&self) -> (&'static str, &'static str) {
@@ -129,6 +139,21 @@ mod tests {
         let arm64 = BuildTarget::named("linux-musl-arm64").expect("arm64");
         assert_eq!(arm64.rust_triple(), "aarch64-unknown-linux-musl");
         assert_eq!(arm64.binary_name(), "sempre-linux-musl-arm64");
+    }
+
+    #[test]
+    fn openwrt_packages_use_the_openwrt_architecture_names() {
+        let amd64 = BuildTarget::named("linux-musl-amd64").expect("amd64");
+        assert_eq!(
+            amd64.openwrt_package_name("sing-box", "1.14.4"),
+            "sempre-openwrt-sing-box-1.14.4-x86_64"
+        );
+        assert!(amd64.core_target().openwrt);
+        let arm64 = BuildTarget::named("linux-musl-arm64").expect("arm64");
+        assert_eq!(
+            arm64.openwrt_package_name("sing-box", "1.14.4"),
+            "sempre-openwrt-sing-box-1.14.4-aarch64_generic"
+        );
     }
 
     #[test]

@@ -187,11 +187,16 @@ impl Adapter for BuiltInAdapter {
                 } else {
                     ("tar.gz", ".tar.gz")
                 };
+                let plain = format!("sing-box-{version}-{}-{}", target.os, target.arch);
+                // Since 1.13 the plain Linux build links glibc, which OpenWrt does not have.
+                // Older series publish only the plain build, and it is static.
+                let mut names = Vec::new();
+                if target.openwrt {
+                    names.push(format!("{plain}-musl{extension}"));
+                }
+                names.push(format!("{plain}{extension}"));
                 AssetSelection {
-                    names: vec![format!(
-                        "sing-box-{version}-{}-{}{extension}",
-                        target.os, target.arch
-                    )],
+                    names,
                     format: format.into(),
                 }
             }

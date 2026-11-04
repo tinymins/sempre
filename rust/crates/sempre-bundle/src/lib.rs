@@ -384,9 +384,11 @@ mod tests {
 }
 mod deploy;
 mod install;
+mod openwrt;
 mod release;
 mod restore;
 
+pub use openwrt::{OpenwrtPackage, package_openwrt};
 pub use release::{ReleaseTarget, package_release};
 
 mod archive;

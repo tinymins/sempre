@@ -73,6 +73,30 @@ fn configuration_without_a_controller_gets_the_private_one() {
 }
 
 #[test]
+fn openwrt_hosts_prefer_the_musl_sing_box_asset() {
+    let adapter = BuiltInAdapter::new(BuiltInKind::SingBox);
+    let mut host = target("linux", "amd64");
+    assert_eq!(
+        adapter
+            .package_assets("1.14.4", &host)
+            .expect("assets")
+            .names,
+        ["sing-box-1.14.4-linux-amd64.tar.gz"]
+    );
+    host.openwrt = true;
+    assert_eq!(
+        adapter
+            .package_assets("1.14.4", &host)
+            .expect("assets")
+            .names,
+        [
+            "sing-box-1.14.4-linux-amd64-musl.tar.gz",
+            "sing-box-1.14.4-linux-amd64.tar.gz"
+        ]
+    );
+}
+
+#[test]
 fn openwrt_hosts_compile_the_openwrt_target() {
     let adapter = BuiltInAdapter::new(BuiltInKind::SingBox);
     let mut host = target("linux", "amd64");

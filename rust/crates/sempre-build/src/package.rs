@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use chrono::{DateTime, Utc};
 use sempre_artifact::Downloader;
-use sempre_bundle::ReleaseTarget;
+use sempre_bundle::{OpenwrtPackage, ReleaseTarget};
 use sempre_state::{Layout, Store};
 
 use crate::{BuildError, BuildTarget, checksum, cores};
@@ -31,7 +31,7 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     fs::create_dir_all(&input.output)
         .map_err(|error| BuildError::io("create release output", &input.output, error))?;
     if input.target.musl {
-        return package_standalone(input);
+        return package_openwrt(input).await;
     }
     let staging = tempfile::tempdir().map_err(|error| {
         BuildError::io("create release staging directory", &input.output, error)
@@ -100,17 +100,49 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     })
 }
 
-/// Firmware images supply their own proxy core, so musl releases carry no bundle.
-fn package_standalone(input: &BuildInput) -> Result<BuildOutput, BuildError> {
+/// Musl releases have no bundle: an executable for firmware that ships its own core, and
+/// one package per core version for firmware that does not.
+async fn package_openwrt(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     let binary = copy_binary(input)?;
     let ui_archive = copy_ui_archive(input)?;
-    checksum::write(
-        &input.output,
-        &[file_name(&binary)?, file_name(&ui_archive)?],
-    )?;
+    let staging = tempfile::tempdir().map_err(|error| {
+        BuildError::io("create release staging directory", &input.output, error)
+    })?;
+    let source = Layout::at(&staging.path().join("release-source"));
+    Store::new(source.clone()).initialize()?;
+    let mut downloader = Downloader::new("Sempre release builder")?;
+    if let Some(cache) = &input.artifact_cache {
+        downloader = downloader.with_cache(cache);
+    }
+    let release_target = ReleaseTarget::new(&input.target.os, &input.target.arch)?;
+    let mut bundles = Vec::new();
+    for (version, core_directory) in
+        cores::install_openwrt_cores(&source, &input.target.core_target(), &downloader).await?
+    {
+        let name = input
+            .target
+            .openwrt_package_name(cores::OPENWRT_CORE, &version);
+        bundles.push(sempre_bundle::package_openwrt(&OpenwrtPackage {
+            name: &name,
+            core: cores::OPENWRT_CORE,
+            executable: &input.executable,
+            ui_archive: &ui_archive,
+            core_directory: &core_directory,
+            output: &input.output,
+            target: &release_target,
+        })?);
+    }
+    let mut names = vec![file_name(&binary)?, file_name(&ui_archive)?];
+    names.extend(
+        bundles
+            .iter()
+            .map(|bundle| file_name(bundle))
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    checksum::write(&input.output, &names)?;
     Ok(BuildOutput {
         binary,
-        bundles: Vec::new(),
+        bundles,
         ui_archive,
         checksums: input.output.join("SHA256SUMS"),
     })

@@ -130,6 +130,23 @@ jobs:
           --target "${{ matrix.name }}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - name: Verify OpenWrt packages run without glibc
+        if: startsWith(matrix.name, 'linux-musl-')
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" alpine:3.22 sh -eu -c '
+            count=0
+            for package in /dist/sempre-openwrt-sing-box-*.tar.gz; do
+              directory=$(mktemp -d)
+              tar -xzf "$package" -C "$directory" --strip-components=1
+              version=${package##*/sempre-openwrt-sing-box-}
+              version=${version%-*}
+              "$directory/sempre" version
+              "$directory/sing-box" version | grep -F "sing-box version $version"
+              test -x "$directory/install.sh"
+              count=$((count + 1))
+            done
+            test "$count" -eq 4
+          '
       - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: cargo-cyclonedx@0.5.9
@@ -149,6 +166,7 @@ jobs:
           subject-path: |
             dist/${{ matrix.binary }}
             dist/sempre-bundle-*
+            dist/sempre-openwrt-*
             dist/sempre-ui.zip
       - name: Attest SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
