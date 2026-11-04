@@ -279,6 +279,25 @@ async fn withdraw_stops_later_reapplies() {
 }
 
 #[tokio::test]
+async fn waiting_for_a_slow_core_lasts_until_it_listens() {
+    let fixture = fixture(false);
+    let table = fixture.root.path().join("net/tcp6");
+    let listening = std::fs::read_to_string(&table).unwrap();
+    std::fs::write(&table, "  sl  local_address rem_address st\n").unwrap();
+    let waiting = fixture.controller.wait_until_listening(7893);
+    tokio::pin!(waiting);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(1200), &mut waiting)
+            .await
+            .is_err()
+    );
+    std::fs::write(&table, listening).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), waiting)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn unregister_removes_rules_and_the_firewall_include() {
     let fixture = fixture(false);
     fixture.controller.apply(&intent()).await.unwrap();

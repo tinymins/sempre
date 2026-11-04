@@ -8,10 +8,11 @@ use tokio::time::sleep;
 use super::RuntimePlan;
 use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
 
-// The coordinator waits up to 20 seconds for the core's listener before applying.
 const APPLY_TIMEOUT: Duration = Duration::from_secs(40);
 const LIST_MAX_AGE: Duration = Duration::from_hours(168);
 const LIST_RETRY: Duration = Duration::from_hours(1);
+// Without any list all domestic traffic crosses the core, so retry the first download sooner.
+const FIRST_LIST_RETRY: Duration = Duration::from_mins(1);
 const LIST_FETCH_TIMEOUT: Duration = Duration::from_mins(2);
 const LIST_MAX_BYTES: usize = 4 * 1024 * 1024;
 
@@ -45,6 +46,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             capture.withdraw().await?;
             return Ok(());
         };
+        // The caller also watches the process, so a core that exits ends this wait.
+        self.startup_tasks
+            .log("capture", "Waiting for the core to open its TProxy inbound");
+        capture.wait_until_listening(intent.tproxy_port).await;
         self.lifecycle_phase(
             "capture",
             "Activating gateway capture",
@@ -85,7 +90,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 Ok(()) => self.log_supervisor("GeoIP list updated"),
                 Err(error) => {
                     self.log_supervisor(&format!("GeoIP update failed; list kept: {error}"));
-                    sleep(LIST_RETRY).await;
+                    let retry = if capture.cn_list_age().is_some() {
+                        LIST_RETRY
+                    } else {
+                        FIRST_LIST_RETRY
+                    };
+                    sleep(retry).await;
                 }
             }
         }

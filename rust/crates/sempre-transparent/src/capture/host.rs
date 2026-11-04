@@ -226,6 +226,14 @@ impl CaptureController {
         ))
     }
 
+    /// Waits for as long as the core takes to listen: its first start downloads remote
+    /// rule sets before opening inbounds, and a slow network is not a failed deployment.
+    pub async fn wait_until_listening(&self, port: u16) {
+        while !self.listening(port) {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
     async fn wait_for_listener(&self, port: u16) -> Result<(), TransparentError> {
         for attempt in 0..LISTENER_ATTEMPTS {
             if self.listening(port) {
