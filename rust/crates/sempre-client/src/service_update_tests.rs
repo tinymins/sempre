@@ -9,6 +9,7 @@ fn manifest(version: &str) -> Manifest {
         repository: "https://example.com/sempre".into(),
         releases: Vec::new(),
         assets: Vec::new(),
+        openwrt_assets: Vec::new(),
     }
 }
 

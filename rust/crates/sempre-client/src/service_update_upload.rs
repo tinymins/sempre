@@ -61,14 +61,21 @@ async fn run_uploaded_task(
     let extracted = temporary.path().join("bundle");
     extract_release(tasks, task_id, &archive, &extracted, archive_format)?;
     tasks.set_stage(task_id, "validating")?;
-    let canonical_root = extracted.join(format!("sempre-{target}"));
-    let root = if canonical_root.is_dir() {
-        canonical_root
+    let root = if sempre_state::openwrt_host() {
+        let root = super::openwrt::package_root(&extracted)?;
+        super::openwrt::prepare_uploaded_package(&root)?;
+        root
     } else {
-        extracted
+        let canonical_root = extracted.join(format!("sempre-{target}"));
+        let root = if canonical_root.is_dir() {
+            canonical_root
+        } else {
+            extracted
+        };
+        validate_uploaded_entrypoints(&root)?;
+        sempre_bundle::validate_release(&root).map_err(|error| error.to_string())?;
+        root
     };
-    validate_uploaded_entrypoints(&root)?;
-    sempre_bundle::validate_release(&root).map_err(|error| error.to_string())?;
     let executable = root.join(executable_name());
     let version = reported_version(&executable).await?;
     let parsed = parse_version(&version)?;

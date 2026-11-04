@@ -1,4 +1,3 @@
-import { useOpenwrt } from './platform'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, uploadServiceUpdate } from './api'
 import { useSession } from './session'
@@ -12,7 +11,6 @@ export function useServiceUpdateTask() {
   const { session } = useSession()
   const client = useQueryClient()
   const marker = readServiceUpdateMarker()
-  const openwrt = useOpenwrt()
   const query = useQuery({
     queryKey: serviceUpdateTaskKey,
     queryFn: async ({ signal }) => {
@@ -21,7 +19,7 @@ export function useServiceUpdateTask() {
       if (current && result.task) writeServiceUpdateMarker({ ...current, targetVersion: result.task.target_version || current.targetVersion, task: result.task })
       return current?.task && !result.task ? { task: current.task } : result
     },
-    enabled: (query) => Boolean(session) && openwrt === false && !(marker && ['succeeded', 'failed', 'cancelled'].includes(query.state.data?.task?.state || '')),
+    enabled: (query) => Boolean(session) && !(marker && ['succeeded', 'failed', 'cancelled'].includes(query.state.data?.task?.state || '')),
     retry: false,
     refetchInterval: (query) => query.state.data?.task?.state === 'running' ? 500 : 3000,
     refetchIntervalInBackground: true,

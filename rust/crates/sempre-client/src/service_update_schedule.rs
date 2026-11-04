@@ -11,10 +11,30 @@ pub(crate) fn schedule(temporary: TempDir, executable: &Path, log: &Path) -> Res
     scheduled
 }
 
+/// The installer restarts the service, so it must outlive the daemon that starts it.
+#[cfg(target_os = "linux")]
+fn openwrt_schedule(executable: &Path, root: &Path, log: &Path) -> Result<(), String> {
+    use std::{os::unix::process::CommandExt as _, process::Stdio};
+
+    let script = r#"sleep 1; "$1" install --yes >"$3.stdout.log" 2>"$3.stderr.log"; code=$?; if [ "$code" -ne 0 ]; then printf '\nSempre installer exited with code %s\n' "$code" >>"$3.stderr.log"; fi; rm -rf -- "$2"; exit $code"#;
+    std::process::Command::new("/bin/sh")
+        .args(["-c", script, "sempre-update"])
+        .arg(executable)
+        .arg(root)
+        .arg(log)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("schedule OpenWrt update: {error}"))
+}
+
 #[cfg(target_os = "linux")]
 fn platform_schedule(executable: &Path, root: &Path, log: &Path) -> Result<(), String> {
     if sempre_state::openwrt_host() {
-        return Err("On OpenWrt, update Sempre by installing a new package".into());
+        return openwrt_schedule(executable, root, log);
     }
     let unit = format!("sempre-update-{}", uuid::Uuid::new_v4());
     let script = "sleep 1; \"$1\" --portable install --yes >\"$3.stdout.log\" 2>\"$3.stderr.log\"; code=$?; if [ \"$code\" -ne 0 ]; then printf '\\nSempre installer exited with code %s\\n' \"$code\" >>\"$3.stderr.log\"; fi; rm -rf -- \"$2\"; exit $code";

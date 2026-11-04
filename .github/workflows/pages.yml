@@ -155,7 +155,17 @@ jobs:
                       size
                     }
                 ]
-              )
+              ),
+              openwrt_assets: [
+                .assets[]
+                | select(.name | test("^(sempre-linux-musl-(amd64|arm64)|sempre-ui\\.zip)$"))
+                | {
+                    name,
+                    url: .browser_download_url,
+                    sha256: (.digest | ltrimstr("sha256:")),
+                    size
+                  }
+              ]
             }
           ' "$RUNNER_TEMP/sempre-release.json" > site/dist/api/releases/latest.json
           jq -e '
@@ -238,7 +248,17 @@ jobs:
                       size
                     }
                 ]
-              )
+              ),
+              openwrt_assets: [
+                .assets[]
+                | select(.name | test("^(sempre-linux-musl-(amd64|arm64)|sempre-ui\\.zip)$"))
+                | {
+                    name,
+                    url: .browser_download_url,
+                    sha256: (.digest | ltrimstr("sha256:")),
+                    size
+                  }
+              ]
             }
           ' "$RUNNER_TEMP/sempre-preview-release.json" > site/dist/api/releases/preview.json
           jq -e '
