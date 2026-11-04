@@ -196,7 +196,7 @@ impl TrafficStore {
                 persisted_bytes,
                 last_persist: Instant::now(),
                 applied_migrations: document.applied_migrations,
-                settings: document.settings,
+                settings: capped(document.settings, storage_ceiling),
                 records,
                 dirty: false,
             }),
@@ -255,7 +255,7 @@ impl TrafficStore {
     ) -> Result<(), TrafficError> {
         traffic_rotation::validate(&settings)?;
         let mut inner = self.lock()?;
-        inner.settings = settings;
+        inner.settings = capped(settings, self.storage_ceiling);
         rotate(&mut inner, now);
         inner.dirty = true;
         persist(&self.path, &mut inner, self.storage_ceiling)
@@ -339,11 +339,17 @@ fn rotate(inner: &mut Inner, now: i64) -> bool {
     inner.records.len() != previous
 }
 
-fn persist(path: &Path, inner: &mut Inner, ceiling: Option<u64>) -> Result<(), TrafficError> {
-    let limit = match (inner.settings.max_bytes, ceiling) {
+/// Keeps the reported limit honest on hosts whose storage has a fixed ceiling.
+pub(crate) fn capped(mut settings: TrafficSettings, ceiling: Option<u64>) -> TrafficSettings {
+    settings.max_bytes = match (settings.max_bytes, ceiling) {
         (Some(limit), Some(ceiling)) => Some(limit.min(ceiling)),
         (limit, ceiling) => limit.or(ceiling),
     };
+    settings
+}
+
+fn persist(path: &Path, inner: &mut Inner, ceiling: Option<u64>) -> Result<(), TrafficError> {
+    let limit = capped(inner.settings.clone(), ceiling).max_bytes;
     let mut data = encoded(inner)?;
     while let Some(limit) = limit.filter(|limit| data.len() as u64 > *limit) {
         if inner.records.is_empty() {

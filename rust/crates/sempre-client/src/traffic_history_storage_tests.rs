@@ -1,6 +1,7 @@
 use chrono::Utc;
 
-use crate::traffic_history::{TrafficDelta, TrafficDimension, TrafficStore};
+use crate::traffic_history::{TrafficDelta, TrafficDimension, TrafficStore, capped};
+use crate::traffic_rotation::TrafficSettings;
 
 const MINUTE: i64 = 60_000;
 
@@ -50,4 +51,26 @@ fn storage_ceiling_bounds_the_file_and_keeps_recent_records() {
     // Eviction is proportional, so it must not throw away far more than the excess.
     assert!(data.len() >= 32 << 10, "{} bytes", data.len());
     assert!(String::from_utf8_lossy(&data).contains("host-0-0.example"));
+}
+
+#[test]
+fn reported_limit_never_exceeds_the_storage_ceiling() {
+    let ceiling = 4 << 20;
+    let limited = |max_bytes| TrafficSettings {
+        max_bytes,
+        ..TrafficSettings::default()
+    };
+    assert_eq!(
+        capped(limited(Some(32 << 20)), Some(ceiling)).max_bytes,
+        Some(ceiling)
+    );
+    assert_eq!(
+        capped(limited(None), Some(ceiling)).max_bytes,
+        Some(ceiling)
+    );
+    assert_eq!(
+        capped(limited(Some(1 << 20)), Some(ceiling)).max_bytes,
+        Some(1 << 20)
+    );
+    assert_eq!(capped(limited(None), None).max_bytes, None);
 }
