@@ -144,3 +144,19 @@ default outbound. Existing matching rules remain unchanged. These are ordinary
 host overrides: their outbounds can be edited independently and do not change
 when the default outbound is edited later. The access-test field initially uses
 `https://raw.githubusercontent.com/dler-io/Rules/refs/heads/main/Clash/Provider/AdBlock.yaml`.
+
+## Client proxy rules
+
+The client has the same **Proxy settings → Proxy rules** with the same semantics:
+`system`, `direct`, or a proxy, a default outbound, and exact-host overrides. They
+live in `fetch-proxies.json` and are served at `/api/v1/fetch-proxies/rules`.
+
+They apply to rule-set downloads, GeoIP lists, remote subscriptions, Sempre updates,
+UI archives, and core downloads. Subscription sources choose their proxy separately,
+which takes precedence. A rule that names a proxy never falls back to another path,
+while `system` keeps each request's usual path.
+
+Proxies are not long-running in the client: each runs as an isolated sing-box for the
+download and exits right after. Rule sets, GeoIP lists, and remote subscriptions select
+the outbound again on every redirect. Update, UI, and core downloads follow redirects
+inside one client, so their starting host chooses the outbound for the whole download.
