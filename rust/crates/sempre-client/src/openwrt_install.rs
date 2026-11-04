@@ -28,6 +28,16 @@ pub(crate) async fn run(options: bootstrap::Options<'_>) -> Result<(), ClientErr
     // previous executable and core running.
     sempre_service::restart().await?;
     println!("Sempre installed, enabled, and started.");
+    println!("Web UI: http://<router-address>:33211");
+    let protected = sempre_control_plane::WebConfigStore::new(&layout.web_config)
+        .read()
+        .is_ok_and(|config| config.password_protected());
+    if !protected {
+        println!(
+            "It has no password yet: {} web password set --stdin",
+            layout.service_executable.display()
+        );
+    }
     Ok(())
 }
 

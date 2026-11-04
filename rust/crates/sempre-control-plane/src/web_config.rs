@@ -19,6 +19,8 @@ const ITERATIONS: u32 = 3;
 const PARALLELISM: u32 = 2;
 const KEY_LENGTH: usize = 32;
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:33211";
+/// A router is managed from another device, and its firewall rejects WAN input by default.
+const OPENWRT_LISTEN: &str = "0.0.0.0:33211";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebConfig {
@@ -91,13 +93,29 @@ impl WebConfigStore {
     }
 
     pub fn initialize(&self) -> Result<WebConfig, ControlError> {
+        self.initialize_with_listen(DEFAULT_LISTEN)
+    }
+
+    /// Creates the configuration on first use; an existing listener is never replaced.
+    pub fn initialize_for_host(&self, openwrt: bool) -> Result<WebConfig, ControlError> {
+        self.initialize_with_listen(if openwrt {
+            OPENWRT_LISTEN
+        } else {
+            DEFAULT_LISTEN
+        })
+    }
+
+    fn initialize_with_listen(&self, listen: &str) -> Result<WebConfig, ControlError> {
         let _guard = self.lock.lock().expect("web config lock");
         match self.read_unlocked() {
             Ok(config) => Ok(config),
             Err(ControlError::Io { source, .. })
                 if source.kind() == std::io::ErrorKind::NotFound =>
             {
-                let config = WebConfig::default();
+                let config = WebConfig {
+                    listen: vec![listen.into()],
+                    ..WebConfig::default()
+                };
                 self.write_unlocked(&config)?;
                 Ok(config)
             }
@@ -331,6 +349,22 @@ pub fn primary_listen(values: &[String]) -> Result<&str, ControlError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_new_openwrt_configuration_listens_on_all_addresses() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let store = WebConfigStore::new(root.path().join("web.json"));
+        let created = store.initialize_for_host(true).expect("initialize");
+        assert_eq!(created.listen, [OPENWRT_LISTEN]);
+        store.set_listen("192.168.1.1:33211").expect("listen");
+        let existing = store.initialize_for_host(true).expect("existing");
+        assert_eq!(existing.listen, ["192.168.1.1:33211"]);
+
+        let root = tempfile::tempdir().expect("temporary directory");
+        let store = WebConfigStore::new(root.path().join("web.json"));
+        let created = store.initialize_for_host(false).expect("initialize");
+        assert_eq!(created.listen, [DEFAULT_LISTEN]);
+    }
 
     #[test]
     fn persists_password_without_plaintext_and_verifies_it() {

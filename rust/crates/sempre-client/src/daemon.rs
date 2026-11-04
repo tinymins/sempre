@@ -42,7 +42,7 @@ pub(crate) async fn run_with_layout(
         tracing::warn!(%error, "firmware core is unavailable");
     }
     let web = WebConfigStore::new(&layout.web_config);
-    let config = web.initialize()?;
+    let config = web.initialize_for_host(layout.openwrt)?;
     let traffic = Arc::new(crate::traffic_history::TrafficStore::open_with_ceiling(
         layout.traffic_history.clone(),
         layout.openwrt.then_some(OPENWRT_TRAFFIC_CEILING),

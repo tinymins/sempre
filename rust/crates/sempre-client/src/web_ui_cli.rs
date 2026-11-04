@@ -130,7 +130,7 @@ pub(crate) async fn run_ui(mode: Mode, command: UiCommand, json: bool) -> Result
 fn initialized_layout(mode: Mode) -> Result<Layout, ClientError> {
     let layout = Layout::for_mode(mode)?;
     Store::new(layout.clone()).initialize()?;
-    WebConfigStore::new(&layout.web_config).initialize()?;
+    WebConfigStore::new(&layout.web_config).initialize_for_host(layout.openwrt)?;
     Ok(layout)
 }
 
