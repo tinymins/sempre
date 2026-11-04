@@ -34,14 +34,15 @@ WantedBy=multi-user.target\n",
 
 /// Renders the procd script. A restart replaces the daemon without running
 /// `stop_service`, so traffic stays captured while the daemon comes back; only an
-/// explicit stop asks the daemon to withdraw its rules.
+/// explicit stop asks the daemon to withdraw its rules. Network and shaping changes reload
+/// the service because they decide the capture interfaces and the offload choice.
 #[cfg(any(target_os = "linux", all(test, unix)))]
 pub(crate) fn procd(executable: &Path, working_directory: &Path) -> Result<String, ServiceError> {
     let executable = shell_quote(path(executable)?);
     let working_directory = shell_quote(path(working_directory)?);
     Ok(format!(
         "#!/bin/sh /etc/rc.common\n\
-START=95\n\
+START=99\n\
 STOP=10\n\
 USE_PROCD=1\n\n\
 start_service() {{\n\
@@ -60,6 +61,12 @@ restart() {{\n\
 \tprocd_lock\n\
 \tprocd_kill \"$(basename \"${{basescript:-$initscript}}\")\"\n\
 \tstart\n\
+}}\n\n\
+reload_service() {{\n\
+\trestart\n\
+}}\n\n\
+service_triggers() {{\n\
+\tprocd_add_reload_trigger network sqm qos\n\
 }}\n",
     ))
 }

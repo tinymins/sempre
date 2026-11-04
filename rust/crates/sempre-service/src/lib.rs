@@ -213,21 +213,20 @@ mod tests {
     #[test]
     fn procd_script_keeps_capture_across_restart_and_releases_on_stop() {
         let script = render::procd(
-            std::path::Path::new("/usr/libexec/sempre/sempre"),
+            std::path::Path::new("/etc/sempre/sempre"),
             std::path::Path::new("/etc/sempre"),
         )
         .expect("script");
         assert!(script.starts_with("#!/bin/sh /etc/rc.common\n"));
+        assert!(script.contains("procd_set_param command '/etc/sempre/sempre' --system daemon"));
         assert!(
-            script.contains("procd_set_param command '/usr/libexec/sempre/sempre' --system daemon")
+            script.contains("stop_service() {\n\t'/etc/sempre/sempre' --system release-capture")
         );
-        assert!(
-            script.contains(
-                "stop_service() {\n\t'/usr/libexec/sempre/sempre' --system release-capture"
-            )
-        );
+        assert!(script.contains("START=99\nSTOP=10\n"));
         let restart = script.split("restart() {").nth(1).expect("restart");
         assert!(restart.contains("procd_kill") && !restart.contains("stop_service"));
+        assert!(script.contains("reload_service() {\n\trestart\n}"));
+        assert!(script.contains("procd_add_reload_trigger network sqm qos"));
     }
 
     #[cfg(unix)]
