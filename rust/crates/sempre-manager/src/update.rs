@@ -15,7 +15,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         value: &str,
         progress: &(impl Fn(CoreInstallProgress) + Sync),
     ) -> Result<Vec<CoreChange>, ManagerError> {
-        self.reject_on_openwrt("Core updates")?;
+        // The stable channel follows the package or firmware there; versions are downloaded by name.
+        self.reject_on_openwrt("Updating a core channel")?;
         let references = if value.trim().is_empty() {
             installed_channels(&self.store.read()?)
         } else {

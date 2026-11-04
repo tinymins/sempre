@@ -97,10 +97,10 @@ async fn firmware_managed_core_cannot_be_installed_separately() {
     let directory = tempdir().expect("directory");
     let manager = manager(directory.path(), "1.13.21");
     assert!(matches!(
-        manager.reject_firmware_managed_core(FIRMWARE_CORE),
+        manager.reject_firmware_managed_core("mihomo"),
         Err(ManagerError::FirmwareManagedCore(_))
     ));
-    assert!(manager.reject_firmware_managed_core("mihomo").is_err());
+    assert!(manager.reject_firmware_managed_core(FIRMWARE_CORE).is_ok());
 }
 
 #[tokio::test]

@@ -17,8 +17,29 @@ const STABLE: &str = "stable";
 
 impl<R: VersionRunner> Manager<R> {
     pub(crate) fn reject_firmware_managed_core(&self, core: &str) -> Result<(), ManagerError> {
-        if self.store.layout().openwrt {
+        if self.store.layout().openwrt && core != FIRMWARE_CORE {
             return Err(ManagerError::FirmwareManagedCore(core.into()));
+        }
+        Ok(())
+    }
+
+    /// The package or firmware supplies this one and would bring it back on the next start.
+    pub(crate) fn reject_removing_system_core(
+        &self,
+        document: &Document,
+        core: &str,
+        version: &str,
+    ) -> Result<(), ManagerError> {
+        let installed = document
+            .cores
+            .get(core)
+            .and_then(|state| state.default.installed.get(version));
+        if self.store.layout().openwrt
+            && installed.is_some_and(|item| item.source == FIRMWARE_SOURCE)
+        {
+            return Err(ManagerError::InvalidOperation(format!(
+                "{core} {version} comes with the installed package or firmware"
+            )));
         }
         Ok(())
     }

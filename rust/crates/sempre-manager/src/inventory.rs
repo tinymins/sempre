@@ -29,6 +29,9 @@ impl<R: VersionRunner> Manager<R> {
         let document = self.store.read()?;
         let mut installed = Vec::new();
         for (core, state) in &document.cores {
+            if self.reject_firmware_managed_core(core).is_err() {
+                continue;
+            }
             let adapter = self.registry.get(core)?;
             collect_source(
                 &mut installed,
@@ -49,7 +52,12 @@ impl<R: VersionRunner> Manager<R> {
             ))
         });
         Ok(CoreInventory {
-            supported: self.registry.ids(),
+            supported: self
+                .registry
+                .ids()
+                .into_iter()
+                .filter(|core| self.reject_firmware_managed_core(core).is_ok())
+                .collect(),
             catalog: self.registry.definitions(),
             installed,
             selected: document.selected,

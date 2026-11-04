@@ -97,6 +97,7 @@ describe('App', () => {
       if (path === '/api/v1/auth/login') return Response.json({ token: 'session', expires_at: '2099-01-01T00:00:00Z' })
       if (path === '/api/v1/system') return Response.json({ ...systemStatus, capabilities: { openwrt: true } })
       if (path === '/api/v1/network/settings') return Response.json({ settings: { mode: 'gateway' }, gateway_available: false })
+      if (path === '/api/v1/cores') return Response.json({ supported: ['sing-box'], catalog: [], installed: [] })
       if (path === '/api/v1/web') return Response.json({ listen: '0.0.0.0:33211', listen_addresses: ['0.0.0.0:33211'], local_url: 'http://sempre.test', password_set: true, password_warning: false, access_urls: [], interfaces: [] })
       return Response.json({ error: { code: 'NOT_FOUND', message: path } }, { status: 404 })
     }))
@@ -120,7 +121,8 @@ describe('App', () => {
 
     fireEvent.click(within(screen.getByRole('navigation')).getByRole('link', { name: 'Management' }))
     expect(await screen.findByRole('heading', { name: 'Management' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Core' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    await screen.findByText('Web')
     expect(screen.queryByText('Run mode')).not.toBeInTheDocument()
 
     window.location.hash = '#/tunnels'

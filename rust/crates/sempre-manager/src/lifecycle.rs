@@ -117,11 +117,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 
 impl<R: VersionRunner> Manager<R> {
     pub fn remove_core(&self, value: &str) -> Result<CoreChange, ManagerError> {
-        self.reject_on_openwrt("Removing a core")?;
         let _operation = self.store.acquire_operation()?;
         let reference = self.normalized_reference(value)?;
         let before = self.store.read()?;
         let version = resolve_installed_version(&before, &reference)?;
+        self.reject_removing_system_core(&before, &reference.core, &version)?;
         reject_referenced_version(&before, &reference, &version)?;
 
         let version_directory = self.store.layout().core_version_dir(

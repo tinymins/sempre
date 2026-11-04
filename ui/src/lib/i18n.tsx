@@ -14,6 +14,7 @@ const zh = {
   live: '实时', paused: '已暂停', pause: '暂停', resume: '继续', clear: '清空', export: '导出', level: '级别', message: '消息',
   runtimeTab: '运行状态', coreTab: '核心', subscriptionTab: '订阅', configTab: '配置', consoleTab: '控制台', backupAndUpdateTab: '备份与更新', deploymentBackup: '部署备份',
   install: '安装', remove: '移除', use: '使用', currentUse: '当前使用', reference: '核心引用', repository: '仓库', official: '官方', custom: '自定义', channel: '通道', installedVersions: '已安装版本', downloadTasks: '下载任务', downloadProgress: '下载进度', cancelDownload: '取消下载', cancelDownloadTitle: '取消核心下载？', cancelDownloadDetail: '下载将立即终止，临时文件和任务列表项会被清除。', clearDownload: '清除任务', downloadQueued: '等待中', downloadResolving: '查询版本', downloading: '下载中', downloadInstalling: '校验并安装', downloadCompleted: '已完成',
+  coreReferenceHintOpenwrt: 'OpenWrt 只能用 sing-box，请填写具体版本，例如 sing-box@1.14.4。',
   coreReferenceHint: '格式：核心名:GitHub 所有者/仓库名@stable 或具体版本。换源时替换所有者/仓库名，例如 sing-box:tinymins/sing-box@1.13.15-ddns.1。',
   subscriptionURL: '订阅地址', schedule: '更新周期', save: '保存', updateNow: '更新订阅', lastResult: '最近结果',
   commonSettings: '常用设置', jsonEditor: '完整 JSON', validate: '校验', validated: '配置校验通过', logLevel: '日志级别', routeFinal: '默认出站', dnsFinal: '默认 DNS', autoInterface: '自动检测网卡',
@@ -34,6 +35,7 @@ const zh = {
 
 type Key = keyof typeof zh
 const en: Record<Key, string> = {
+  coreReferenceHintOpenwrt: 'OpenWrt runs sing-box only. Enter an exact version, e.g. sing-box@1.14.4.',
   coreReferenceHint: 'Format: core:GitHub-owner/repository@stable or a specific version. Replace owner/repository to use another source, e.g. sing-box:tinymins/sing-box@1.13.15-ddns.1.',
   overview: 'Overview', customNodes: 'Custom Nodes', proxySettings: 'Proxy Settings', subscriptions: 'Subscriptions', tunnels: 'Tunnels', proxies: 'Node Selection', connections: 'Connections', rules: 'Rules', routingRules: 'Domain Routing', runtimeRules: 'Runtime Rules', dns: 'DNS', traffic: 'Traffic', logs: 'Logs', networkTest: 'Network Test', networkDiagnostics: 'Network Diagnostics', leakDetection: 'Leak detection', nodeTest: 'Node Test', routeTable: 'Route Table', gateway: 'Gateway', management: 'Management',
   navigationStrategy: 'Strategy', navigationConfiguration: 'Configuration', navigationNetwork: 'Network capabilities', navigationAnalysis: 'Analysis & diagnostics', navigationSystem: 'System', navigationSubscriptions: 'Subscription Config', navigationEffectiveRules: 'Effective Rules', navigationCoreStatus: 'Core Status',

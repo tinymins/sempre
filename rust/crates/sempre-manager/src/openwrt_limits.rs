@@ -115,8 +115,8 @@ mod tests {
         let root = tempfile::tempdir().expect("root");
         let manager = manager(Layout::openwrt_at(root.path()));
         assert!(manager.install_core("mihomo").await.is_err());
-        assert!(manager.update_cores("sing-box").await.is_err());
-        assert!(manager.remove_core("sing-box").is_err());
+        assert!(manager.update_cores("sing-box@stable").await.is_err());
+        assert!(manager.install_core("sing-box@stable").await.is_err());
         let error = manager.select_core("mihomo").await.expect_err("select");
         assert!(error.to_string().contains("not available on OpenWrt"));
         assert!(manager.export_bundle().is_err());
