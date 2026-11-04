@@ -10,3 +10,4 @@ export * from "./sources"
 export * from "./SourceListEditor"
 export * from "./ManualNodesEditor"
 export * from "./SubscriptionConfigEditor"
+export * from './manual-proxy'

@@ -5,7 +5,7 @@ import { useI18n } from '../i18n/provider'
 import type { CustomNode } from '../subscriptions/types'
 import { proxyApi, type ProxyInput } from './api'
 import { ManualProxyFields } from './ManualProxyFields'
-import { defaultManualContent } from './manual-proxy'
+import { defaultManualProxyContent as defaultManualContent } from '@acme/subscription-editor'
 
 type Mode = 'custom-node' | 'import' | 'manual'
 const payload = (input: ProxyInput, mode: Mode): ProxyInput => mode === 'custom-node'

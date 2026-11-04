@@ -109,6 +109,7 @@ export function useProxySubscribeEditor({
         remark: item.remark || undefined,
         user_agent: item.fetchUa || "clash.meta",
         fetch_mode: item.fetchMode ?? "auto",
+        ...(item.proxyId ? { proxy_id: item.proxyId } : {}),
         cache_ttl_minutes: item.cacheTtlMinutes,
       }));
 			return {

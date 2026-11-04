@@ -251,6 +251,7 @@ export interface SubscriptionSource {
   remark?: string
   user_agent?: string
   fetch_mode?: 'auto' | 'domestic-direct'
+  proxy_id?: string
   cache_ttl_minutes?: number
   snapshot_hash?: string
   fetched_at?: string

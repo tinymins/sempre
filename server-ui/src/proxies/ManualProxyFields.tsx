@@ -2,7 +2,7 @@ import { Checkbox, Input, InputNumber, Select } from '@acme/components'
 import { useState } from 'react'
 import { useI18n } from '../i18n/provider'
 
-import { initial, manualContent, type Node } from './manual-proxy'
+import { initialManualProxy as initial, manualProxyContent as manualContent, type ManualProxyNode as Node } from '@acme/subscription-editor'
 
 export function ManualProxyFields({ onChange, disabled }: { onChange: (content: string) => void; disabled: boolean }) {
   const { t } = useI18n()

@@ -11,6 +11,7 @@ import { dnsOptions } from './editor-options'
 import SourceDebugModal from './SourceDebugModal'
 import { useFakeIpRouteCheck } from './FakeIpRouteCheck'
 import { clientEditorMessages } from './editor-messages'
+import { useSourceProxyOptions } from '@/features/proxy-settings/useFetchProxies'
 
 export type { ProxySubscribeSaveState } from './ProxySubscribeModel'
 export interface ProxySubscribeEditorRef { saveNow: () => void }
@@ -22,6 +23,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
   const [draft, setDraft] = useState(() => profileFormValues(props.profile) as EditorDraft)
   const [debugSource, setDebugSource] = useState<Extract<EditorSource, { type: 'url' }> | null>(null)
   const checkFakeIpRange = useFakeIpRouteCheck()
+  const sourceProxies = useSourceProxyOptions()
   const privateAccessOptions = usePrivateAccessOptions(props.profile.id)
   const recommended = recommendedEditorDefaults(defaults, configurationContext)
   useImperativeHandle(ref, () => ({ saveNow }), [saveNow])
@@ -38,7 +40,7 @@ const ProxySubscribeEditor = forwardRef<ProxySubscribeEditorRef, Props>((props, 
   const runtime = <>
     <ProxyRuntimeFields supportsLocalProxy={state.supportsLocalProxy} supportsTransparent={state.supportsTransparent} supportsManagement={state.supportsManagement} features={features} form={form} transparentMode={state.transparentMode} tunInterfaceMode={state.tunInterfaceMode} networkInventory={networkInventory} />
   </>
-  return <EditorProvider locale={locale} messages={clientEditorMessages(t)}><div className="min-h-0 rounded-lg border border-black/[0.08] bg-white/50 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
+  return <EditorProvider locale={locale} messages={clientEditorMessages(t)} subscriptionProxies={sourceProxies}><div className="min-h-0 rounded-lg border border-black/[0.08] bg-white/50 p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
     <Form form={form} layout="vertical" autoComplete="off" onValuesChange={props.readOnly ? undefined : queueAutosave}>
       <SubscriptionConfigEditor value={draft} onChange={update} readOnly={props.readOnly} layout="page"
         tabBarFooter={<><SaveStatus profile={state.profileFeedback} schedule={state.scheduleFeedback} onRetry={saveNow} />{configurationContext.target && configurationContext.running && configurationContext.target.core !== configurationContext.running.core ? <Alert type="warning" showIcon message={t('proxy.form.coreTransition', { target: configurationContext.target.core, running: configurationContext.running.core })} /> : null}</>}

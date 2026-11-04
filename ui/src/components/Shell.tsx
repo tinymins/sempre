@@ -76,6 +76,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
     { key: 'configuration', label: t('navigationConfiguration'), items: [
       { path: '/subscriptions', label: t('navigationSubscriptions'), icon: Rss },
       { path: '/custom-nodes', label: t('customNodes'), icon: Library },
+      { path: '/proxy-settings', label: t('proxySettings'), icon: Globe2 },
       { path: '/network-automation', label: t('networkAutomation'), icon: Radar },
     ] },
     { key: 'strategy', label: t('navigationStrategy'), items: [
@@ -103,7 +104,7 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
   ]
   const simple = !chrome && !navigation && uiMode === 'simple'
   const openwrt = system.data?.capabilities?.openwrt === true
-  const hiddenInSimpleMode = new Set(['/network-automation', '/dns', '/tunnels'])
+  const hiddenInSimpleMode = new Set(['/network-automation', '/dns', '/tunnels', '/proxy-settings'])
   const sections: ShellNavigationSection[] = navigation ? [{ key: 'custom', items: navigation }] : defaultNavigation
     .map((section) => ({ ...section, items: section.items.filter((item) => !(simple && hiddenInSimpleMode.has(item.path)) && !(openwrt && OPENWRT_HIDDEN_PATHS.has(item.path))) }))
     .filter((section) => section.items.length > 0)

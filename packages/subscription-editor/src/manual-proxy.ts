@@ -1,11 +1,11 @@
-export interface Node {
+export interface ManualProxyNode {
   type: string; server: string; port: number; username: string; password: string; uuid: string;
   cipher: string; tls: boolean; servername: string; network: string; path: string; host: string;
   service: string; reality: boolean; publicKey: string; shortId: string; flow: string
 }
-export const initial: Node = { type: 'vless', server: '', port: 443, username: '', password: '', uuid: '', cipher: 'aes-256-gcm', tls: true, servername: '', network: 'tcp', path: '/', host: '', service: '', reality: false, publicKey: '', shortId: '', flow: '' }
+export const initialManualProxy: ManualProxyNode = { type: 'vless', server: '', port: 443, username: '', password: '', uuid: '', cipher: 'aes-256-gcm', tls: true, servername: '', network: 'tcp', path: '/', host: '', service: '', reality: false, publicKey: '', shortId: '', flow: '' }
 
-export function manualContent(node: Node): string {
+export function manualProxyContent(node: ManualProxyNode): string {
   const proxy: Record<string, unknown> = { name: 'subscription-proxy', type: node.type, server: node.server, port: node.port }
   if (['vmess', 'vless', 'tuic'].includes(node.type)) proxy.uuid = node.uuid
   if (['ss', 'trojan', 'hysteria2', 'tuic', 'http', 'socks5'].includes(node.type) && node.password) proxy.password = node.password
@@ -24,4 +24,4 @@ export function manualContent(node: Node): string {
   return JSON.stringify({ proxies: [proxy] }, null, 2)
 }
 
-export const defaultManualContent = () => manualContent(initial)
+export const defaultManualProxyContent = () => manualProxyContent(initialManualProxy)

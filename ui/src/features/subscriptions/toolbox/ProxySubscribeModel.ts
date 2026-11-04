@@ -67,6 +67,7 @@ export function profileFormValues(profile: SubscriptionProfile): FormFieldValues
       cacheTtlMinutes: source.cache_ttl_minutes,
       fetchUa: source.user_agent || undefined,
       fetchMode: source.fetch_mode ?? "auto",
+      proxyId: source.proxy_id || null,
     } as Partial<EditorSource>));
   return clearInheritedValues({
     remark: profile.remark ?? "",

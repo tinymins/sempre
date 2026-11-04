@@ -112,6 +112,8 @@ describe('App', () => {
     for (const name of ['Automatic network switching', 'DNS', 'Gateway']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
+    expect(screen.getByRole('link', { name: 'Proxy Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Custom Nodes' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Analysis & diagnostics' }))
     expect(screen.queryByRole('link', { name: 'Leak Detection' })).not.toBeInTheDocument()
     expect(within(screen.getByRole('navigation')).getByRole('link', { name: 'Core Status' })).toBeInTheDocument()

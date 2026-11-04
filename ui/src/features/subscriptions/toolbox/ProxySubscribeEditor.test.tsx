@@ -6,6 +6,7 @@ import { I18nProvider } from '@/lib/i18n'
 import type { SubscriptionConfigurationContext, SubscriptionProfile } from '@/lib/types'
 import ProxySubscribeEditor, { type ProxySubscribeEditorRef, type ProxySubscribeSaveState } from './ProxySubscribeEditor'
 
+vi.mock('@/features/proxy-settings/useFetchProxies', () => ({ useSourceProxyOptions: () => undefined }))
 vi.mock('@monaco-editor/react', () => ({
   default: ({ value = '', onChange, options }: { value?: string; onChange?: (value: string) => void; options?: { readOnly?: boolean } }) => (
     <textarea aria-label="JSONC editor" value={value} readOnly={options?.readOnly} onChange={(event) => onChange?.(event.target.value)} />
