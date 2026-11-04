@@ -1,3 +1,4 @@
 rust/crates/sempre-dns/resources/domains-min.txt text eol=lf
 rust/crates/sempre-state/src/migrations/*.rs text eol=lf
 rust/crates/sempre-client/src/traffic_history_migrations/*.rs text eol=lf
+*.sha256 text eol=lf
