@@ -136,6 +136,7 @@ fn make_executable(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps, reason = "matches the Unix signature")]
 fn make_executable(_: &Path) -> Result<(), String> {
     Ok(())
 }

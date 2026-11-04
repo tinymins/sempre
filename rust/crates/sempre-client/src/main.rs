@@ -188,7 +188,7 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
             ui,
             ui_sha256,
         } => {
-            run_install(
+            Box::pin(run_install(
                 yes,
                 bootstrap::Options {
                     core: core.as_deref(),
@@ -197,7 +197,7 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
                     ui: ui.as_deref(),
                     ui_sha256: ui_sha256.as_deref(),
                 },
-            )
+            ))
             .await
         }
         Command::Uninstall { purge, yes } => uninstall_cli::run(purge, yes).await,
@@ -221,13 +221,13 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
         },
         Command::Run { core } => direct_cli::run(mode, core.as_deref()).await,
         Command::Core { command } => run_core(mode, command).await,
-        Command::Config { command } => run_config(mode, command).await,
+        Command::Config { command } => Box::pin(run_config(mode, command)).await,
         Command::Subscription { command } => subscription_cli::run(mode, command, json).await,
         Command::CustomNode { command } => custom_node_cli::run(mode, command, json),
         Command::Web { command } => web_ui_cli::run_web(mode, command, json).await,
         Command::Ui { command } => web_ui_cli::run_ui(mode, command, json).await,
         Command::Bundle { command } => run_bundle(mode, command).await,
-        Command::Service { command } => run_service(mode, command).await,
+        Command::Service { command } => Box::pin(run_service(mode, command)).await,
         Command::Portable { command } => match command {
             PortableCommand::Run => portable_cli::run(mode).await,
             PortableCommand::Enable => portable_cli::set_marker(true),
@@ -251,7 +251,7 @@ fn release_capture(mode: Mode) -> Result<(), ClientError> {
 async fn run_service(mode: Mode, command: ServiceCommand) -> Result<(), ClientError> {
     match command {
         ServiceCommand::Install { yes } => {
-            run_install(
+            Box::pin(run_install(
                 yes,
                 bootstrap::Options {
                     core: None,
@@ -260,7 +260,7 @@ async fn run_service(mode: Mode, command: ServiceCommand) -> Result<(), ClientEr
                     ui: None,
                     ui_sha256: None,
                 },
-            )
+            ))
             .await
         }
         ServiceCommand::Deploy { component, yes } => {
