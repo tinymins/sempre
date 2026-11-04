@@ -78,6 +78,29 @@ pub(crate) async fn dns_configuration(
     Ok(parse_dns_configuration(&output.stdout))
 }
 
+/// Reads the servers the primary service received from the network. Unlike the global resolver
+/// list, this dynamic store key is not replaced while Sempre owns the service DNS preference.
+pub(crate) async fn primary_service_dns(
+    runner: &dyn command::Runner,
+) -> Result<Vec<String>, TransparentError> {
+    let script = "show State:/Network/Global/IPv4\nquit\n";
+    let output = command::require_success(
+        SCUTIL,
+        runner.run(SCUTIL, &[], Some(script.as_bytes())).await?,
+    )?;
+    let Some(id) =
+        parse_value(&output.stdout, "PrimaryService").filter(|id| validate_service_id(id).is_ok())
+    else {
+        return Ok(Vec::new());
+    };
+    let script = format!("show State:/Network/Service/{id}/DNS\nquit\n");
+    let output = command::require_success(
+        SCUTIL,
+        runner.run(SCUTIL, &[], Some(script.as_bytes())).await?,
+    )?;
+    Ok(parse_dns_configuration(&output.stdout).servers)
+}
+
 pub(crate) async fn set_dns_configuration(
     runner: &dyn command::Runner,
     service_id: &str,

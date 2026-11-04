@@ -48,13 +48,20 @@ impl SystemDns {
         &self,
         runner: &dyn command::Runner,
     ) -> Result<Vec<String>, TransparentError> {
-        let servers = if let Some(state) = self.read_state()? {
-            state.original_upstreams
-        } else {
-            let output =
-                command::require_success(SCUTIL, runner.run(SCUTIL, &["--dns"], None).await?)?;
-            parse_scutil_dns(&output.stdout)
-        };
+        if let Some(state) = self.read_state()?
+            && !state.original_upstreams.is_empty()
+        {
+            return Ok(state.original_upstreams);
+        }
+        let output = command::require_success(SCUTIL, runner.run(SCUTIL, &["--dns"], None).await?)?;
+        let servers = parse_scutil_dns(&output.stdout);
+        if !servers.is_empty() {
+            return Ok(servers);
+        }
+        // The global list shows only the managed frontend during takeover, or while it is being
+        // restored at startup.
+        let mut servers = preferences::primary_service_dns(runner).await?;
+        servers.retain(|server| usable_upstream(server));
         Ok(servers)
     }
 
@@ -282,14 +289,17 @@ fn parse_scutil_dns(data: &str) -> Vec<String> {
                 .split_once(':')
                 .and_then(|(key, value)| key.starts_with("nameserver[").then_some(value.trim()))
             && value.parse::<IpAddr>().is_ok()
-            && !value.starts_with("127.")
-            && value != "::1"
+            && usable_upstream(value)
             && !servers.iter().any(|server| server == value)
         {
             servers.push(value.into());
         }
     }
     servers
+}
+
+fn usable_upstream(value: &str) -> bool {
+    !value.starts_with("127.") && value != "::1"
 }
 
 fn parse_services(data: &str) -> Vec<String> {
@@ -301,6 +311,10 @@ fn parse_services(data: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
+
+#[cfg(test)]
+#[path = "macos_dns_discovery_tests.rs"]
+mod discovery_tests;
 
 #[cfg(test)]
 mod tests {
