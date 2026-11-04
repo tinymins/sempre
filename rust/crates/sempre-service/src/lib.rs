@@ -209,6 +209,7 @@ pub(crate) fn require_administrator() -> Result<(), ServiceError> {
 mod tests {
     use super::{Action, render};
 
+    #[cfg(unix)]
     #[test]
     fn procd_script_keeps_capture_across_restart_and_releases_on_stop() {
         let script = render::procd(
@@ -229,6 +230,7 @@ mod tests {
         assert!(restart.contains("procd_kill") && !restart.contains("stop_service"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn procd_script_quotes_paths_for_the_shell() {
         let script = render::procd(
