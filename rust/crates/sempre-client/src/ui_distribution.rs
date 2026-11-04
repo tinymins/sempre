@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use sempre_artifact::Egress;
 use sempre_state::Layout;
 
 pub(crate) async fn install(
@@ -30,7 +31,7 @@ pub(crate) async fn install(
 }
 
 pub(crate) async fn update(layout: &Layout) -> Result<sempre_ui::Metadata, String> {
-    let prepared = prepare_update(layout).await?;
+    let prepared = prepare_update(layout, &Egress::System).await?;
     sempre_ui::Store::new(&layout.ui)
         .activate_prepared(prepared)
         .map_err(|error| error.to_string())
@@ -38,11 +39,12 @@ pub(crate) async fn update(layout: &Layout) -> Result<sempre_ui::Metadata, Strin
 
 pub(crate) async fn prepare_update(
     layout: &Layout,
+    egress: &Egress,
 ) -> Result<sempre_ui::PreparedInstallation, String> {
-    let store = sempre_ui::Store::new(&layout.ui);
+    let store = sempre_ui::Store::new(&layout.ui).with_egress(egress.clone());
     let current = store.current().map_err(|error| error.to_string())?;
     match current.source_type.as_str() {
-        "official" => prepare_official(layout).await,
+        "official" => prepare_official(layout, egress).await,
         "github" => store
             .prepare_github(&current.source)
             .await
@@ -57,7 +59,7 @@ pub(crate) async fn prepare_update(
 }
 
 pub(crate) async fn install_official(layout: &Layout) -> Result<sempre_ui::Metadata, String> {
-    let prepared = prepare_official(layout).await?;
+    let prepared = prepare_official(layout, &Egress::System).await?;
     sempre_ui::Store::new(&layout.ui)
         .activate_prepared(prepared)
         .map_err(|error| error.to_string())
@@ -65,6 +67,7 @@ pub(crate) async fn install_official(layout: &Layout) -> Result<sempre_ui::Metad
 
 pub(crate) async fn prepare_official(
     layout: &Layout,
+    egress: &Egress,
 ) -> Result<sempre_ui::PreparedInstallation, String> {
     let archive = layout.resources.join("sempre-ui.zip");
     if archive.is_file() {
@@ -77,9 +80,11 @@ pub(crate) async fn prepare_official(
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string());
     }
-    let releases =
-        sempre_artifact::GithubClient::new(concat!("Sempre/", env!("CARGO_PKG_VERSION")))
-            .map_err(|error| error.to_string())?;
+    let releases = sempre_artifact::GithubClient::with_egress(
+        concat!("Sempre/", env!("CARGO_PKG_VERSION")),
+        egress,
+    )
+    .map_err(|error| error.to_string())?;
     let release = releases
         .release("tinymins/sempre", "stable")
         .await
@@ -94,6 +99,7 @@ pub(crate) async fn prepare_official(
         .parse::<sempre_artifact::Sha256Digest>()
         .map_err(|_| "official UI release asset has no valid SHA-256 digest".to_owned())?;
     sempre_ui::Store::new(&layout.ui)
+        .with_egress(egress.clone())
         .prepare_url(&asset.url, "official", &asset.url, &digest.to_string())
         .await
         .map_err(|error| error.to_string())

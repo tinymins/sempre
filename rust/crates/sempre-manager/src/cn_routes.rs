@@ -114,7 +114,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             let snapshot = if let Some(snapshot) = self.fetcher.cached_rule_set(&url, &format)? {
                 snapshot
             } else {
-                let candidate = self.fetcher.fetch_rule_set(&url).await?;
+                let active = self.start_resource_routes().await?;
+                let candidate = active.apply(&self.fetcher).fetch_rule_set(&url).await?;
                 read_prefixes(
                     binary,
                     &Source {

@@ -294,7 +294,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<RenderedProfile, ManagerError> {
         if profile_mode(profile) == "remote" {
             self.local_transport_profile(profile, &target)?;
-            let mut remote = self.remote.render(profile, &target).await?;
+            let mut remote = self.render_remote(profile, &target).await?;
             let dns_settings = self.dns_settings.read();
             if dns_settings.enabled && target.core == "sing-box" {
                 remote.content = dns_settings.apply_compiled_sing_box_overlay(&remote.content)?;

@@ -57,8 +57,10 @@ struct ManifestRuntime {
     management_api: Value,
 }
 
+#[derive(Clone)]
 pub struct RemoteClient {
     http: Client,
+    routes: Option<crate::ResourceRoutes>,
 }
 
 impl RemoteClient {
@@ -68,7 +70,15 @@ impl RemoteClient {
             .redirect(Policy::none())
             .build()
             .map_err(|error| SubscriptionError::Fetch(error.to_string()))?;
-        Ok(Self { http })
+        Ok(Self { http, routes: None })
+    }
+
+    #[must_use]
+    pub fn with_resource_routes(&self, routes: crate::ResourceRoutes) -> Self {
+        Self {
+            http: self.http.clone(),
+            routes: Some(routes),
+        }
     }
 
     pub async fn render(
@@ -141,6 +151,16 @@ impl RemoteClient {
     }
 
     async fn get(&self, url: &Url, limit: usize) -> Result<Vec<u8>, SubscriptionError> {
+        if let Some(routes) = &self.routes {
+            return routes
+                .fetch(
+                    url.as_str(),
+                    "sempre-client/remote-subscription",
+                    limit,
+                    &self.http,
+                )
+                .await;
+        }
         let response = self
             .http
             .get(url.clone())

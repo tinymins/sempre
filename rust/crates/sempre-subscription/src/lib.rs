@@ -7,7 +7,8 @@ mod validate;
 
 pub use error::SubscriptionError;
 pub use fetch::{
-    FetchInspection, FetchObservation, FetchResult, Fetcher, RuleSetSnapshot, SourceProxyRoute,
+    FetchInspection, FetchObservation, FetchResult, Fetcher, ResourceRoute, ResourceRoutes,
+    RuleSetSnapshot, SourceProxyRoute,
 };
 pub use model::{CATALOG_SCHEMA, Catalog, MAX_SOURCE_SIZE, new_profile};
 pub use remote::{RemoteClient, RemoteResult};

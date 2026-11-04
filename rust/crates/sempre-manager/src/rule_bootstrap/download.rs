@@ -53,6 +53,16 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         } else {
             proxy_fetcher(&self.fetcher, &plan.rules.original)?
         };
+        if !plan
+            .rules
+            .resources
+            .iter()
+            .any(|resource| refresh_due(&fetcher, resource))
+        {
+            return Ok(false);
+        }
+        let active = self.start_resource_routes().await?;
+        let fetcher = active.apply(&fetcher);
         let mut jobs = tokio::task::JoinSet::new();
         let limit = Arc::new(tokio::sync::Semaphore::new(6));
         for resource in &plan.rules.resources {

@@ -20,7 +20,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-use crate::{Manager, ManagerError, VersionRunner};
+use crate::{Manager, ManagerError, VersionRunner, fetch_proxy_rules::ResourceRules};
 
 const CORE: &str = "sing-box";
 const START_TIMEOUT: Duration = Duration::from_secs(15);
@@ -63,9 +63,11 @@ pub struct FetchProxySummary {
 }
 
 #[derive(Default, Deserialize, Serialize)]
-struct Document {
+pub(super) struct Document {
     #[serde(default)]
-    proxies: Vec<FetchProxy>,
+    pub(super) proxies: Vec<FetchProxy>,
+    #[serde(default)]
+    pub(super) rules: ResourceRules,
 }
 
 pub(crate) struct SourceProxies {
@@ -74,8 +76,8 @@ pub(crate) struct SourceProxies {
     _running: Vec<Running>,
 }
 
-struct Running {
-    route: SourceProxyRoute,
+pub(super) struct Running {
+    pub(super) route: SourceProxyRoute,
     _child: Child,
     _directory: tempfile::TempDir,
 }
@@ -83,8 +85,8 @@ struct Running {
 impl<R: VersionRunner> Manager<R> {
     pub fn fetch_proxies(&self) -> Result<Vec<FetchProxySummary>, ManagerError> {
         let catalog = self.subscriptions.read()?;
-        Ok(self
-            .read_fetch_proxies()?
+        let document = self.read_fetch_proxies()?;
+        Ok(document
             .proxies
             .iter()
             .map(|proxy| {
@@ -95,7 +97,8 @@ impl<R: VersionRunner> Manager<R> {
                     custom_node_id: proxy.custom_node_id.clone(),
                     enabled: proxy.enabled,
                     protocol: connection.as_ref().ok().map(|item| item.protocol.clone()),
-                    reference_count: references(&catalog.profiles, &proxy.id),
+                    reference_count: references(&catalog.profiles, &proxy.id)
+                        + document.rules.references(&proxy.id),
                     error: connection.err().map(|error| error.to_string()),
                 }
             })
@@ -139,13 +142,14 @@ impl<R: VersionRunner> Manager<R> {
 
     pub fn remove_fetch_proxy(&self, id: &str) -> Result<(), ManagerError> {
         let _operation = self.store.acquire_operation()?;
-        let count = references(&self.subscriptions.read()?.profiles, id);
+        let mut document = self.read_fetch_proxies()?;
+        let count =
+            references(&self.subscriptions.read()?.profiles, id) + document.rules.references(id);
         if count > 0 {
             return Err(ManagerError::InvalidOperation(format!(
-                "this proxy is used by {count} subscription source(s); choose another one first"
+                "this proxy is used by {count} subscription source(s) or proxy rule(s); choose another one first"
             )));
         }
-        let mut document = self.read_fetch_proxies()?;
         let before = document.proxies.len();
         document.proxies.retain(|proxy| proxy.id != id);
         if document.proxies.len() == before {
@@ -252,7 +256,10 @@ impl<R: VersionRunner> Manager<R> {
         Ok(proxy)
     }
 
-    async fn start_fetch_proxy(&self, proxy: &FetchProxy) -> Result<Running, ManagerError> {
+    pub(super) async fn start_fetch_proxy(
+        &self,
+        proxy: &FetchProxy,
+    ) -> Result<Running, ManagerError> {
         let connection = connection(proxy, &self.subscriptions.read()?.custom_nodes)?;
         let binary = self.fetch_proxy_core()?;
         let port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
@@ -338,7 +345,7 @@ impl<R: VersionRunner> Manager<R> {
         Ok(binary)
     }
 
-    fn read_fetch_proxies(&self) -> Result<Document, ManagerError> {
+    pub(super) fn read_fetch_proxies(&self) -> Result<Document, ManagerError> {
         match fs::read(&self.store.layout().fetch_proxies) {
             Ok(data) => serde_json::from_slice(&data).map_err(invalid),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Document::default()),
@@ -346,7 +353,7 @@ impl<R: VersionRunner> Manager<R> {
         }
     }
 
-    fn write_fetch_proxies(&self, document: &Document) -> Result<(), ManagerError> {
+    pub(super) fn write_fetch_proxies(&self, document: &Document) -> Result<(), ManagerError> {
         let data = serde_json::to_vec_pretty(document).map_err(invalid)?;
         sempre_state::write_atomic(&self.store.layout().fetch_proxies, &data, 0o600)
             .map_err(|error| ManagerError::io("write subscription proxies", error))

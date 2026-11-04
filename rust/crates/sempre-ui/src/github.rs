@@ -27,7 +27,8 @@ impl Store {
 
     pub async fn prepare_github(&self, value: &str) -> Result<PreparedInstallation, UiError> {
         let reference = Reference::parse(value)?;
-        let client = GithubClient::new(concat!("Sempre/", env!("CARGO_PKG_VERSION")))?;
+        let client =
+            GithubClient::with_egress(concat!("Sempre/", env!("CARGO_PKG_VERSION")), &self.egress)?;
         let release = client
             .release(&reference.repository, &reference.version)
             .await?;
@@ -48,7 +49,7 @@ impl Store {
                     release.tag
                 ))
             })?;
-            checksum(checksums, ARCHIVE_NAME).await?
+            checksum(checksums, ARCHIVE_NAME, &self.egress).await?
         };
         self.prepare_url(&archive.url, "github", &reference.to_string(), &digest)
             .await
@@ -100,8 +101,12 @@ fn asset<'a>(assets: &'a [ReleaseAsset], name: &str) -> Option<&'a ReleaseAsset>
     assets.iter().find(|asset| asset.name == name)
 }
 
-async fn checksum(asset: &ReleaseAsset, name: &str) -> Result<String, UiError> {
-    let client = sempre_http::client_builder()
+async fn checksum(
+    asset: &ReleaseAsset,
+    name: &str,
+    egress: &sempre_artifact::Egress,
+) -> Result<String, UiError> {
+    let builder = sempre_http::client_builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 10 {
@@ -112,8 +117,10 @@ async fn checksum(asset: &ReleaseAsset, name: &str) -> Result<String, UiError> {
                 attempt.follow()
             }
         }))
-        .user_agent(concat!("Sempre/", env!("CARGO_PKG_VERSION")))
-        .build()
+        .user_agent(concat!("Sempre/", env!("CARGO_PKG_VERSION")));
+    let client = egress
+        .apply(builder)
+        .and_then(reqwest::ClientBuilder::build)
         .map_err(UiError::Http)?;
     let response = client.get(&asset.url).send().await.map_err(UiError::Http)?;
     if response.status() != StatusCode::OK {

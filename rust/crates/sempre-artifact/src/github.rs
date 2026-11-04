@@ -54,10 +54,24 @@ impl GithubClient {
         )
     }
 
+    pub fn with_egress(user_agent: &str, egress: &crate::Egress) -> Result<Self> {
+        Self::with_base_and_egress(
+            user_agent,
+            Url::parse("https://api.github.com").expect("valid URL"),
+            egress,
+        )
+    }
+
     fn with_base(user_agent: &str, base: Url) -> Result<Self> {
-        let client = crate::http::client_builder(user_agent, Duration::from_secs(30))
-            .retry(crate::http::github_retry())
-            .build()
+        Self::with_base_and_egress(user_agent, base, &crate::Egress::System)
+    }
+
+    fn with_base_and_egress(user_agent: &str, base: Url, egress: &crate::Egress) -> Result<Self> {
+        let builder = crate::http::client_builder(user_agent, Duration::from_secs(30))
+            .retry(crate::http::github_retry());
+        let client = egress
+            .apply(builder)
+            .and_then(reqwest::ClientBuilder::build)
             .map_err(|error| ArtifactError::http("build GitHub client", error))?;
         let token = std::env::var("GITHUB_TOKEN")
             .ok()

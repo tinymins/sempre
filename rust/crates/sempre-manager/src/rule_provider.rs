@@ -71,6 +71,8 @@ impl<R: VersionRunner> Manager<R> {
         } else {
             self.fetcher.clone()
         };
+        let active = self.start_resource_routes().await?;
+        let fetcher = active.apply(&fetcher);
         let mut jobs = tokio::task::JoinSet::new();
         let concurrency = Arc::new(tokio::sync::Semaphore::new(6));
         for (index, provider) in effective.rule_providers.into_iter().enumerate() {

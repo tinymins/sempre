@@ -60,11 +60,22 @@ pub enum UiError {
 #[derive(Clone, Debug)]
 pub struct Store {
     pub(crate) root: PathBuf,
+    pub(crate) egress: sempre_artifact::Egress,
 }
 
 impl Store {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            egress: sempre_artifact::Egress::System,
+        }
+    }
+
+    /// Chooses how downloads reach the network.
+    #[must_use]
+    pub fn with_egress(mut self, egress: sempre_artifact::Egress) -> Self {
+        self.egress = egress;
+        self
     }
 
     pub fn current_dir(&self) -> PathBuf {

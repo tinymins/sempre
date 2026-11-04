@@ -79,19 +79,7 @@ pub(crate) fn validate_url(input: &str) -> Result<Url, ApiError> {
 }
 
 fn normalize_host(input: &str) -> Result<String, ApiError> {
-    let host = input.trim();
-    if host.is_empty() || host.contains(['/', ':', '?', '#', '@', '*']) {
-        return Err(ApiError::bad_request(
-            "host rules require an exact hostname without scheme, port or wildcard",
-        ));
-    }
-    match url::Host::parse(host).map_err(|_| ApiError::bad_request("invalid host rule"))? {
-        url::Host::Domain(host) => Ok(host.to_ascii_lowercase()),
-        url::Host::Ipv4(host) => Ok(host.to_string()),
-        url::Host::Ipv6(_) => Err(ApiError::bad_request(
-            "host rules require a hostname or IPv4 address",
-        )),
-    }
+    sempre_proxy::normalize_host(input).map_err(ApiError::bad_request)
 }
 
 impl Policy {

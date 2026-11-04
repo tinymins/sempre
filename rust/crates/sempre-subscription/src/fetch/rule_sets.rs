@@ -33,6 +33,7 @@ impl Fetcher {
             store: self.store.clone(),
             standard: client(Some(proxy))?,
             source_proxies: self.source_proxies.clone(),
+            resource_routes: self.resource_routes.clone(),
         })
     }
 
@@ -84,6 +85,17 @@ impl Fetcher {
     }
 
     pub async fn fetch_rule_set(&self, url: &str) -> Result<RuleSetSnapshot, SubscriptionError> {
+        if let Some(routes) = &self.resource_routes {
+            let content = routes
+                .fetch(
+                    url,
+                    DEFAULT_USER_AGENT,
+                    crate::MAX_SOURCE_SIZE,
+                    &self.standard,
+                )
+                .await?;
+            return self.rule_set_candidate(content);
+        }
         let source = Source {
             id: String::new(),
             kind: "url".into(),

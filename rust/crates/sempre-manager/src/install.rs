@@ -50,6 +50,12 @@ impl<R: VersionRunner> Manager<R> {
         let mut reference = CoreRef::parse(value)?;
         let adapter = self.registry.get(&reference.core)?;
         self.reject_firmware_managed_core(&reference.core)?;
+        // The stable channel follows the package or firmware there.
+        if self.store.layout().openwrt && reference.is_channel() {
+            return Err(ManagerError::InvalidOperation(
+                "choose an exact sing-box version, such as sing-box@1.14.4".into(),
+            ));
+        }
         if reference
             .repository
             .as_deref()
@@ -60,8 +66,11 @@ impl<R: VersionRunner> Manager<R> {
         progress(CoreInstallProgress::Resolving {
             reference: reference.to_string(),
         });
-        let package = self
-            .releases
+        let lookup = self.resource_egress("https://api.github.com/").await?;
+        let routed_releases = lookup.github_client()?;
+        let package = routed_releases
+            .as_ref()
+            .unwrap_or(&self.releases)
             .resolve(
                 adapter.as_ref(),
                 reference.repository.as_deref().unwrap_or_default(),
@@ -69,6 +78,7 @@ impl<R: VersionRunner> Manager<R> {
                 &self.target,
             )
             .await?;
+        drop(lookup);
         self.reject_conflicting_source(&reference, &package)?;
 
         let temporary = tempfile::Builder::new()
@@ -82,7 +92,11 @@ impl<R: VersionRunner> Manager<R> {
             downloaded: 0,
             total: package.size,
         });
-        self.downloader
+        let download = self.resource_egress(&package.url).await?;
+        let routed_downloader = download.downloader()?;
+        routed_downloader
+            .as_ref()
+            .unwrap_or(&self.downloader)
             .verified_with_progress(
                 &Artifact {
                     name: package.name.clone(),

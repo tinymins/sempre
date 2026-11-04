@@ -36,6 +36,19 @@ pub struct InstanceStatus {
     pub password: String,
 }
 
+/// Normalize a proxy rule host. Rules match one exact hostname, so anything else is refused.
+pub fn normalize_host(input: &str) -> Result<String, &'static str> {
+    let host = input.trim();
+    if host.is_empty() || host.contains(['/', ':', '?', '#', '@', '*']) {
+        return Err("host rules require an exact hostname without scheme, port or wildcard");
+    }
+    match url::Host::parse(host).map_err(|_| "invalid host rule")? {
+        url::Host::Domain(host) => Ok(host.to_ascii_lowercase()),
+        url::Host::Ipv4(host) => Ok(host.to_string()),
+        url::Host::Ipv6(_) => Err("host rules require a hostname or IPv4 address"),
+    }
+}
+
 /// Parse exactly one URI, Clash node, or native outbound, without network access.
 pub fn parse(content: &str, engine: Option<Engine>) -> Result<Connection, String> {
     if content.len() > 65_536 {

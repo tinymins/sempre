@@ -14,6 +14,21 @@ export interface FetchProxySummary {
 
 export interface FetchProxyInput { name: string; content: string; custom_node_id: string | null; enabled: boolean }
 
+export type ResourceOutbound = { type: 'system' } | { type: 'direct' } | { type: 'proxy'; proxy_id: string }
+export interface ResourceHostRule { host: string; outbound: ResourceOutbound }
+export interface ResourceRules { revision: number; default_outbound: ResourceOutbound; host_rules: ResourceHostRule[] }
+export interface ResourceRulesTest {
+  ok: boolean
+  host: string
+  matched_host: string | null
+  outbound: ResourceOutbound
+  outbound_name: string
+  http_status: number | null
+  elapsed_ms: number
+  body_bytes: number
+  error?: string
+}
+
 export const fetchProxiesKey = ['fetch-proxies']
 
 export function useFetchProxies() {

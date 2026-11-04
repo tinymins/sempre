@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2, Zap } from 'lucide-react'
-import { Checkbox, Modal, Popconfirm, Select, Table, Tag, TextArea, useToast, type TableColumn } from '@acme/components'
+import { Checkbox, Modal, Popconfirm, Select, Table, Tabs, Tag, TextArea, useToast, type TableColumn } from '@acme/components'
 import { defaultManualProxyContent } from '@acme/subscription-editor'
 import { Button, Card, Field, Input, PageTitle } from '../components/ui'
 import { ManualProxyFields } from '../features/proxy-settings/ManualProxyFields'
+import { ProxyRulesPanel } from '../features/proxy-settings/ProxyRulesPanel'
 import { fetchProxiesKey, useFetchProxies, type FetchProxyInput, type FetchProxySummary } from '../features/proxy-settings/useFetchProxies'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
@@ -22,6 +23,7 @@ export function ProxySettings() {
   const label = (zh: string, en: string) => locale === 'zh-CN' ? zh : en
   const proxies = useFetchProxies()
   const [editing, setEditing] = useState<{ id: string | null; input: FetchProxyInput } | null>(null)
+  const [tab, setTab] = useState('nodes')
   const refresh = () => queryClient.invalidateQueries({ queryKey: fetchProxiesKey })
   const failed = (error: Error) => toast.error(error.message)
   const test = useMutation({
@@ -53,10 +55,13 @@ export function ProxySettings() {
     },
   ]
   return <div className="space-y-5">
-    <PageTitle title={label('代理设置', 'Proxy Settings')} detail={label('拉取订阅时使用的代理。只在下载时临时启动，在订阅地址里为每个来源选择。', 'Proxies for downloading subscriptions. They start only for a download; choose one per source under the subscription address.')}>
+    <PageTitle title={label('代理设置', 'Proxy Settings')} detail={label('Sempre 自身下载使用的代理，只在下载时临时启动。订阅来源在订阅地址里单独选择，其他下载由代理规则决定。', 'Proxies for Sempre\'s own downloads. They start only for a download. Subscription sources choose one under the subscription address; proxy rules decide the rest.')}>
       <Button onClick={() => setEditing({ id: null, input: EMPTY })}><Plus size={16} />{label('新增代理', 'Add proxy')}</Button>
     </PageTitle>
-    <Card className="!p-0"><Table<FetchProxySummary> size="small" rowKey="id" loading={proxies.isLoading} dataSource={proxies.data?.items ?? []} columns={columns} pagination={false} scroll={{ x: 680 }} /></Card>
+    <Tabs destroyInactiveTabPane activeKey={tab} onChange={setTab} items={[
+      { key: 'nodes', label: label('代理节点', 'Proxy nodes'), children: <Card className="!p-0"><Table<FetchProxySummary> size="small" rowKey="id" loading={proxies.isLoading} dataSource={proxies.data?.items ?? []} columns={columns} pagination={false} scroll={{ x: 680 }} /></Card> },
+      { key: 'rules', label: label('代理规则', 'Proxy rules'), children: <ProxyRulesPanel proxies={proxies.data?.items ?? []} /> },
+    ]} />
     {editing ? <ProxyEditor key={editing.id ?? 'new'} id={editing.id} initial={editing.input} label={label} onClose={() => setEditing(null)} onSaved={refresh} /> : null}
   </div>
 }

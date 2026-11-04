@@ -36,6 +36,7 @@ impl Fetcher {
             store: self.store.clone(),
             standard: self.standard.clone(),
             source_proxies,
+            resource_routes: self.resource_routes.clone(),
         })
     }
 }

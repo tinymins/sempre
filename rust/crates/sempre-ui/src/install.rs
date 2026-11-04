@@ -134,11 +134,14 @@ impl Store {
         let temporary = NamedTempFile::new_in(&self.root).map_err(UiError::Write)?;
         let target = temporary.reopen().map_err(UiError::Write)?;
         let mut target = tokio::fs::File::from_std(target);
-        let client = sempre_http::client_builder()
+        let builder = sempre_http::client_builder()
             .timeout(Duration::from_mins(10))
             .redirect(https_redirect_policy())
-            .user_agent(concat!("Sempre/", env!("CARGO_PKG_VERSION")))
-            .build()
+            .user_agent(concat!("Sempre/", env!("CARGO_PKG_VERSION")));
+        let client = self
+            .egress
+            .apply(builder)
+            .and_then(reqwest::ClientBuilder::build)
             .map_err(UiError::Http)?;
         let response = client
             .get(url.clone())

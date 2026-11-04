@@ -10,10 +10,12 @@ use sha2::{Digest, Sha256};
 use crate::{SubscriptionError, SubscriptionStore};
 
 mod observation;
+mod resource_route;
 mod rule_sets;
 mod source_proxy;
 pub use observation::FetchObservation;
 use observation::download_once;
+pub use resource_route::{ResourceRoute, ResourceRoutes};
 pub use rule_sets::RuleSetSnapshot;
 pub use source_proxy::SourceProxyRoute;
 
@@ -47,6 +49,7 @@ pub struct Fetcher {
     store: SubscriptionStore,
     standard: Client,
     source_proxies: HashMap<String, Client>,
+    resource_routes: Option<ResourceRoutes>,
 }
 
 impl Fetcher {
@@ -55,6 +58,7 @@ impl Fetcher {
             store,
             standard: client(None)?,
             source_proxies: HashMap::new(),
+            resource_routes: None,
         })
     }
 

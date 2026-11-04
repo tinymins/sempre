@@ -207,6 +207,9 @@ struct UiInstallInput {
     sha256: String,
 }
 
+// Official and GitHub-hosted UI archives are released from here.
+const GITHUB: &str = "https://github.com/";
+
 /// The UI ships in the `OpenWrt` package, so installing a new package updates it.
 fn ui_ships_with_package(state: &AppState) -> Option<Response> {
     state.manager.store().layout().openwrt.then(|| {
@@ -226,11 +229,16 @@ async fn ui_install(
     let result = if input.source.is_empty() || input.source == "official" {
         prepare_official(&state).await
     } else {
-        let store = ui_store(&state);
-        store
-            .prepare_url(&input.source, "url", &input.source, &input.sha256)
-            .await
-            .map_err(|error| error.to_string())
+        match state.manager.resource_egress(&input.source).await {
+            Ok(lease) => {
+                ui_store(&state)
+                    .with_egress(lease.egress.clone())
+                    .prepare_url(&input.source, "url", &input.source, &input.sha256)
+                    .await
+            }
+            Err(error) => return operation(error.to_string()),
+        }
+        .map_err(|error| error.to_string())
     };
     match result.and_then(|prepared| prepare_ui_update(&state, prepared)) {
         Ok(proposal) => Json(json!({ "proposal": proposal })).into_response(),
@@ -282,7 +290,11 @@ async fn ui_update(State(state): State<Arc<AppState>>) -> Response {
     if let Some(response) = ui_ships_with_package(&state) {
         return response;
     }
-    match crate::ui_distribution::prepare_update(state.manager.store().layout())
+    let lease = match state.manager.resource_egress(GITHUB).await {
+        Ok(lease) => lease,
+        Err(error) => return operation(error.to_string()),
+    };
+    match crate::ui_distribution::prepare_update(state.manager.store().layout(), &lease.egress)
         .await
         .and_then(|prepared| prepare_ui_update(&state, prepared))
     {
@@ -326,7 +338,12 @@ async fn ui_remove(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn prepare_official(state: &AppState) -> Result<sempre_ui::PreparedInstallation, String> {
-    crate::ui_distribution::prepare_official(state.manager.store().layout()).await
+    let lease = state
+        .manager
+        .resource_egress(GITHUB)
+        .await
+        .map_err(|error| error.to_string())?;
+    crate::ui_distribution::prepare_official(state.manager.store().layout(), &lease.egress).await
 }
 
 fn prepare_ui_update(

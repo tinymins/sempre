@@ -1,6 +1,7 @@
 mod archive;
 mod digest;
 mod download;
+mod egress;
 mod github;
 mod http;
 
@@ -11,6 +12,7 @@ use thiserror::Error;
 pub use archive::{ArchiveFormat, ExtractOptions, extract, find};
 pub use digest::Sha256Digest;
 pub use download::{Artifact, Downloader, MAX_ARTIFACT_SIZE};
+pub use egress::Egress;
 pub use github::{GithubClient, Release, ReleaseAsset};
 
 pub type Result<T> = std::result::Result<T, ArtifactError>;

@@ -39,6 +39,18 @@ impl Downloader {
         })
     }
 
+    pub fn with_egress(user_agent: &str, egress: &crate::Egress) -> Result<Self> {
+        let builder = crate::http::client_builder(user_agent, Duration::from_mins(15));
+        let client = egress
+            .apply(builder)
+            .and_then(reqwest::ClientBuilder::build)
+            .map_err(|error| ArtifactError::http("build download client", error))?;
+        Ok(Self {
+            client,
+            cache: None,
+        })
+    }
+
     pub fn new_via_http_proxy(
         user_agent: &str,
         address: std::net::SocketAddr,
