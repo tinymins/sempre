@@ -349,3 +349,77 @@ async fn runtime_failure_is_retried_without_exiting_the_supervisor() {
     shutdown.send(true).expect("shutdown");
     task.await.expect("task").expect("supervisor");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stable_core_becomes_the_rollback_target() {
+    let (_root, manager) = fixture("#!/bin/sh\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n");
+    let (shutdown, receiver) = watch::channel(false);
+    let running = Arc::clone(&manager);
+    let task = tokio::spawn(async move {
+        running
+            .run_supervisor_with_grace(receiver, Duration::from_millis(50))
+            .await
+    });
+    wait_for_state(&manager, sempre_state::RuntimeState::Running).await;
+    assert!(manager.state().expect("state").last_good.is_none());
+    wait_until(Duration::from_secs(3), || {
+        manager
+            .state()
+            .is_ok_and(|document| document.last_good.is_some())
+    })
+    .await;
+    shutdown.send(true).expect("shutdown");
+    task.await.expect("task").expect("supervisor");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn failed_deployment_rolls_back_and_stays_pending() {
+    let (_root, manager) = fixture(
+        "#!/bin/sh\nfor a; do [ -f \"$a\" ] && grep -q bad \"$a\" && exit 7; done\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n",
+    );
+    let bad_hash = "c".repeat(64);
+    let bad_config = manager.store.layout().config("sing-box", &bad_hash);
+    fs::write(bad_config, br#"{"bad":true}"#).expect("configuration");
+    let good_hash = "a".repeat(64);
+    manager
+        .store
+        .update(|document| {
+            document.last_good.clone_from(&document.active);
+            document
+                .active
+                .as_mut()
+                .expect("active")
+                .config_hash
+                .clone_from(&bad_hash);
+            Ok(())
+        })
+        .expect("seed deployments");
+    let (shutdown, receiver) = watch::channel(false);
+    let running = Arc::clone(&manager);
+    let task = tokio::spawn(async move {
+        running
+            .run_supervisor_with_grace(receiver, Duration::from_millis(50))
+            .await
+    });
+    wait_until(Duration::from_secs(5), || {
+        manager.state().is_ok_and(|document| {
+            document.runtime.state == sempre_state::RuntimeState::Running
+                && document
+                    .active
+                    .as_ref()
+                    .is_some_and(|d| d.config_hash == good_hash)
+        })
+    })
+    .await;
+    let document = manager.state().expect("state");
+    assert!(document.pending);
+    assert_eq!(
+        document.rejected_deployment.expect("rejected").config_hash,
+        bad_hash
+    );
+    assert!(document.runtime.last_failure.is_some());
+    shutdown.send(true).expect("shutdown");
+    task.await.expect("task").expect("supervisor");
+}

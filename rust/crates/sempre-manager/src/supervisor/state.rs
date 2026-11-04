@@ -74,7 +74,6 @@ pub fn mark_healthy<R: VersionRunner>(
         {
             return Ok(());
         }
-        document.record_healthy_deployment();
         document.runtime.state = RuntimeState::Running;
         document.runtime.last_transition = Some(Utc::now());
         // A rolled-back runtime still owes the user a restart and the failure reason.
@@ -88,6 +87,22 @@ pub fn mark_healthy<R: VersionRunner>(
         document.last_error = None;
         document.runtime.last_error = None;
         document.runtime.last_failure = None;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+/// Makes the running deployment the rollback target once it has proven stable.
+pub fn mark_stable<R: VersionRunner>(
+    manager: &Manager<R>,
+    plan: &RuntimePlan,
+) -> Result<(), ManagerError> {
+    manager.store.update(|document| {
+        if document.runtime.state == RuntimeState::Running
+            && document.active.as_ref() == Some(&plan.deployment)
+        {
+            document.record_healthy_deployment();
+        }
         Ok(())
     })?;
     Ok(())

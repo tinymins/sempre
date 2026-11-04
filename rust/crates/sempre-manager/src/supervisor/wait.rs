@@ -6,6 +6,12 @@ use tokio::{sync::watch, time::sleep};
 use super::RuntimePlan;
 use crate::{Manager, ManagerError, ValidationRunner, VersionRunner};
 
+const STABLE_WINDOW: Duration = if cfg!(test) {
+    Duration::from_millis(200)
+} else {
+    Duration::from_secs(30)
+};
+
 pub(super) enum ProcessEvent {
     Healthy,
     StartupFailed(ManagerError),
@@ -154,10 +160,24 @@ pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(
         () = manager.monitor_cn_routes(plan) => ProcessEvent::Reload,
         () = manager.complete_rule_bootstrap(plan) => ProcessEvent::Reload,
         () = manager.monitor_network_automation() => unreachable!("network monitor does not exit"),
+        () = confirm_stable(manager, plan) => unreachable!("stability check does not exit"),
         result = process.wait() => ProcessEvent::Exited(result),
         () = manager.wait_runtime_reload() => ProcessEvent::Reload,
         () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,
     }
+}
+
+/// A core can publish its API and still abort a moment later, so readiness alone does
+/// not qualify a deployment as a rollback target.
+async fn confirm_stable<R: VersionRunner + ValidationRunner>(
+    manager: &Manager<R>,
+    plan: &RuntimePlan,
+) {
+    sleep(STABLE_WINDOW).await;
+    if let Err(error) = super::state::mark_stable(manager, plan) {
+        manager.log_supervisor(&format!("record stable deployment failed: {error}"));
+    }
+    std::future::pending::<()>().await;
 }
 
 pub(super) async fn wait_inactive<R: VersionRunner>(
