@@ -54,16 +54,26 @@ impl<R: VersionRunner> Manager<R> {
             warnings: Vec::new(),
             failed_ids: Vec::new(),
         };
+        // Kept alive until every download finishes, then stopped.
+        let proxies = if cached_only {
+            None
+        } else {
+            let proxies = self.start_source_proxies(&profile.sources).await;
+            loaded.warnings.extend(proxies.warnings.iter().cloned());
+            Some(proxies)
+        };
+        let fetcher = proxies
+            .as_ref()
+            .map_or(&self.fetcher, |proxies| &proxies.fetcher);
         for source in profile.sources.iter_mut().filter(|source| source.enabled) {
             let result = if cached_only {
-                self.fetcher
-                    .load_cached(source.clone(), validate_source_content)
+                fetcher.load_cached(source.clone(), validate_source_content)
             } else if persist {
-                self.fetcher
+                fetcher
                     .load(source.clone(), force, validate_source_content)
                     .await
             } else {
-                self.fetcher
+                fetcher
                     .inspect(source.clone(), force, validate_source_content)
                     .await
             };

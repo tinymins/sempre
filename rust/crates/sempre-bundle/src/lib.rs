@@ -141,6 +141,7 @@ fn export_directory(
         copy_tree(from, to)?;
     }
     copy_optional_file(&source.tunnels, &target.tunnels)?;
+    copy_optional_file(&source.fetch_proxies, &target.fetch_proxies)?;
     write_document(&target.state, document)?;
     write_web_config(&source.web_config, &target.web_config)?;
     write_bundle_marker(&target.root, "snapshot")?;

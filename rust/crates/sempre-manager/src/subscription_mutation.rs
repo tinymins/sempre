@@ -225,6 +225,7 @@ fn same_fetch_identity(left: &Source, right: &Source) -> bool {
         && left.url == right.url
         && defaulted(&left.user_agent, "clash.meta") == defaulted(&right.user_agent, "clash.meta")
         && extra_string(left, "fetch_mode", "auto") == extra_string(right, "fetch_mode", "auto")
+        && extra_string(left, "proxy_id", "") == extra_string(right, "proxy_id", "")
 }
 
 fn defaulted<'a>(value: &'a str, fallback: &'a str) -> &'a str {

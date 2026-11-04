@@ -127,6 +127,8 @@ Standalone binaries remain available and install the service without bundled UI 
 
 OpenWrt has its own packages, each carrying one sing-box version, named `sempre-openwrt-sing-box-<version>-<arch>.tar.gz` where the architecture is `x86_64` or `aarch64_generic`; see the [releases page](https://github.com/tinymins/sempre/releases) for versions and downloads. Extract one and run `./install.sh`. Everything installs under `/etc/sempre`, so run commands as `/etc/sempre/sempre`. The packaged core outranks one shipped by the firmware; firmware that already ships sing-box can use `sempre-linux-musl-<amd64|arm64>` and `sempre-ui.zip` alone. OpenWrt gateway capture currently supports sing-box only.
 
+When a subscription must be downloaded through a proxy, add one under Proxy Settings in the Web UI (a node link, Clash node, sing-box outbound, or a custom node), then choose it for the source under the subscription address. This requires sing-box 1.12 or newer. A proxy runs as an isolated sing-box only for the download and exits right after. If the chosen proxy is unavailable the download fails rather than connecting directly.
+
 Release checksums are available from [`SHA256SUMS`](https://github.com/tinymins/sempre/releases/latest/download/SHA256SUMS). Each target also includes a CycloneDX JSON SBOM. Verify build provenance with:
 
 ```text

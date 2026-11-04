@@ -166,6 +166,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             failed_ids: Vec::new(),
         };
         let mut sources = Vec::new();
+        let proxies = self.start_source_proxies(&profile.sources).await;
+        loaded.warnings.extend(proxies.warnings.iter().cloned());
         for (index, source) in profile.sources.iter_mut().enumerate() {
             if !source.enabled {
                 continue;
@@ -176,7 +178,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     source: Box::new(source.clone()),
                 })
                 .await;
-            let inspection = self
+            let inspection = proxies
                 .fetcher
                 .inspect_observed(source.clone(), true, validate_source_content)
                 .await;

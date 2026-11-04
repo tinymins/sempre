@@ -32,6 +32,7 @@ impl Fetcher {
         Ok(Self {
             store: self.store.clone(),
             standard: client(Some(proxy))?,
+            source_proxies: self.source_proxies.clone(),
         })
     }
 

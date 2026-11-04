@@ -133,6 +133,8 @@ sempre --portable portable run
 
 OpenWrt 使用独立的软件包，每个包只带一个 sing-box 版本，文件名为 `sempre-openwrt-sing-box-<版本>-<架构>.tar.gz`，架构是 `x86_64` 或 `aarch64_generic`，版本和下载见 [Release 页面](https://github.com/tinymins/sempre/releases)。解压后运行 `./install.sh`。所有文件都安装在 `/etc/sempre` 下，命令是 `/etc/sempre/sempre`。包内的核心优先于固件自带的核心；固件已带 sing-box 时，也可以只用 `sempre-linux-musl-<amd64|arm64>` 和 `sempre-ui.zip`。OpenWrt 的网关捕获目前只支持 sing-box。
 
+拉取订阅需要走代理时，在 Web UI 的“代理设置”里新增代理（节点链接、Clash 节点、sing-box outbound，或绑定自定义节点），再到订阅地址里为来源选择它。需要 sing-box 1.12 或更新版本。代理只在下载时临时启动一个隔离的 sing-box，下载完就退出；选了代理但它不可用时，下载直接失败，不会改为直连。
+
 Release checksum 位于 [`SHA256SUMS`](https://github.com/tinymins/sempre/releases/latest/download/SHA256SUMS)。每个目标还包含 CycloneDX JSON SBOM。使用以下命令验证构建来源：
 
 ```text

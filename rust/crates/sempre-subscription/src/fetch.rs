@@ -1,4 +1,4 @@
-use std::{env, time::Duration};
+use std::{collections::HashMap, env, time::Duration};
 
 use chrono::{DateTime, Utc};
 use reqwest::{Client, Proxy, redirect::Policy};
@@ -11,9 +11,11 @@ use crate::{SubscriptionError, SubscriptionStore};
 
 mod observation;
 mod rule_sets;
+mod source_proxy;
 pub use observation::FetchObservation;
 use observation::download_once;
 pub use rule_sets::RuleSetSnapshot;
+pub use source_proxy::SourceProxyRoute;
 
 const DEFAULT_USER_AGENT: &str = "clash.meta";
 const DEFAULT_FETCH_MODE: &str = "auto";
@@ -44,6 +46,7 @@ struct CacheEntry {
 pub struct Fetcher {
     store: SubscriptionStore,
     standard: Client,
+    source_proxies: HashMap<String, Client>,
 }
 
 impl Fetcher {
@@ -51,6 +54,7 @@ impl Fetcher {
         Ok(Self {
             store,
             standard: client(None)?,
+            source_proxies: HashMap::new(),
         })
     }
 
@@ -112,7 +116,13 @@ impl Fetcher {
         let mut source = source;
         let user_agent = defaulted(&source.user_agent, DEFAULT_USER_AGENT).to_owned();
         let fetch_mode = extra_string(&source, "fetch_mode", DEFAULT_FETCH_MODE).to_owned();
-        let key = format!("{}\0{user_agent}\0{fetch_mode}", source.url);
+        let proxy_id = extra_string(&source, "proxy_id", "");
+        // Sources without a proxy keep the cache entries they already have.
+        let key = if proxy_id.is_empty() {
+            format!("{}\0{user_agent}\0{fetch_mode}", source.url)
+        } else {
+            format!("{}\0{user_agent}\0{fetch_mode}\0{proxy_id}", source.url)
+        };
         let cached = self.read_cache(&key).ok();
         let ttl = extra_i64(&source, "cache_ttl_minutes").max(0);
         if !force
@@ -268,7 +278,18 @@ impl Fetcher {
         mode: &str,
     ) -> Result<(Vec<u8>, FetchObservation), (SubscriptionError, FetchObservation)> {
         let dynamic;
-        let http = if mode == "domestic-direct" {
+        let proxy_id = extra_string(source, "proxy_id", "");
+        let http = if !proxy_id.is_empty() {
+            // Falling back to a direct request would expose the subscription address.
+            self.source_proxies.get(proxy_id).ok_or_else(|| {
+                (
+                    SubscriptionError::Fetch(format!(
+                        "subscription proxy {proxy_id:?} is unavailable"
+                    )),
+                    FetchObservation::default(),
+                )
+            })?
+        } else if mode == "domestic-direct" {
             dynamic = client(Some(
                 domestic_proxy().map_err(|error| (error, FetchObservation::default()))?,
             ))

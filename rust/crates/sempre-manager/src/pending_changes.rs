@@ -300,6 +300,7 @@ fn source_settings(sources: &[Source]) -> Value {
                     "content": source.content,
                     "user_agent": source.user_agent,
                     "fetch_mode": source.extra.get("fetch_mode"),
+                    "proxy_id": source.extra.get("proxy_id"),
                 })
             })
             .collect(),

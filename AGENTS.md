@@ -11,6 +11,7 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 
 - `rust/crates/sempre-client` owns the production CLI, local daemon, authenticated Web API, and platform orchestration.
 - `rust/crates/sempre-manager` owns core lifecycle, supervision, deployment rollback, and subscription rules shared by the CLI and API. Put shared rules here, not in `sempre-client`.
+- `sempre-manager/src/fetch_proxy.rs` owns client subscription proxies, which run only for a download. A source naming an unavailable proxy fails and never connects directly.
 - `rust/crates/sempre-service` owns native service integration: systemd, procd, launchd, and Windows services.
 - `rust/crates/sempre-transparent` owns host capture: nftables, policy routing, system DNS, and `OpenWrt` gateway capture.
 - `rust/crates/sempre-network` owns passive host inventory and routing. `rust/crates/sempre-diagnostics` owns active probes and traces, so the gateway path has no HTTP client.

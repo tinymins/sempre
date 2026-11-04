@@ -39,6 +39,7 @@ pub fn stage_install(source: &Layout, target: &Layout) -> Result<RestoreTransact
         (&source.subscriptions, &target.subscriptions, false),
         (&source.gateway, &target.gateway, false),
         (&source.tunnels, &target.tunnels, false),
+        (&source.fetch_proxies, &target.fetch_proxies, false),
         (&source.state, &target.state, true),
         (&source.web_config, &target.web_config, true),
     ] {

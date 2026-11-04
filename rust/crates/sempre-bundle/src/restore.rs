@@ -119,6 +119,7 @@ fn stage(
         (&source.gateway, &target.gateway, false, false),
         (&source.ui, &target.ui, false, false),
         (&source.tunnels, &target.tunnels, false, false),
+        (&source.fetch_proxies, &target.fetch_proxies, false, false),
         (&source.state, &target.state, true, false),
         (&source.web_config, &target.web_config, true, false),
     ] {

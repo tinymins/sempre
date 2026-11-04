@@ -81,6 +81,7 @@ pub fn stage_deploy(
                 (&source.gateway, &target.gateway, false),
                 (&source.ui, &target.ui, false),
                 (&source.tunnels, &target.tunnels, false),
+                (&source.fetch_proxies, &target.fetch_proxies, false),
                 (&source.web_config, &target.web_config, true),
             ] {
                 transaction

@@ -152,6 +152,16 @@ impl<R: VersionRunner> Manager<R> {
 
     pub fn remove_custom_node(&self, id: &str) -> Result<CoreChange, ManagerError> {
         let _operation = self.store.acquire_operation()?;
+        if let Some(proxy) = self
+            .fetch_proxies()?
+            .iter()
+            .find(|proxy| proxy.custom_node_id.as_deref() == Some(id))
+        {
+            return Err(ManagerError::InvalidOperation(format!(
+                "custom node is used by subscription proxy {:?}",
+                proxy.name
+            )));
+        }
         self.subscriptions.update(|catalog| {
             if let Some(profile) = catalog
                 .profiles
