@@ -22,6 +22,7 @@ mod network_diagnostics_api;
 mod network_trace_api;
 mod node_diagnostic;
 mod node_test_api;
+mod openwrt_install;
 mod portable_cli;
 mod runtime_api;
 mod runtime_args;
@@ -301,6 +302,9 @@ async fn service_action(
 }
 
 async fn run_install(yes: bool, options: bootstrap::Options<'_>) -> Result<(), ClientError> {
+    if sempre_state::openwrt_host() {
+        return Box::pin(openwrt_install::run(options)).await;
+    }
     let executable = current_executable("locate release executable")?;
     let source = Layout::portable_at(&executable);
     sempre_bundle::validate_release(&source.root)?;
