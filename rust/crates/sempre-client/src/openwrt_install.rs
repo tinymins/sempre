@@ -1,5 +1,5 @@
-//! `OpenWrt` releases are one executable and a UI archive, with the proxy core supplied
-//! by the firmware, so installation has no release bundle to validate or deploy.
+//! `OpenWrt` releases are an executable and a UI archive, optionally packaged with one
+//! proxy core, so installation has no release bundle to validate or deploy.
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -19,12 +19,31 @@ pub(crate) async fn run(options: bootstrap::Options<'_>) -> Result<(), ClientErr
     let layout = Layout::for_mode(Mode::System)?;
     layout.ensure()?;
     install_executable(&source, &layout)?;
+    install_adjacent_core(&source, &layout)?;
     let manager = Manager::new(Store::new(layout.clone()))?;
     install_adjacent_ui(&source, &layout)?;
     bootstrap::prepare(&manager, options).await?;
     sempre_service::install(&layout.service_executable, &layout.home).await?;
-    sempre_service::start().await?;
+    // procd ignores a start when the command is unchanged, which would keep an upgrade's
+    // previous executable and core running.
+    sempre_service::restart().await?;
     println!("Sempre installed, enabled, and started.");
+    Ok(())
+}
+
+fn install_adjacent_core(source: &Path, layout: &Layout) -> Result<(), ClientError> {
+    let target = sempre_manager::packaged_core_path(layout);
+    let Some(name) = target.file_name() else {
+        return Ok(());
+    };
+    let packaged = source.with_file_name(name);
+    if packaged == target || !packaged.is_file() {
+        return Ok(());
+    }
+    let data = fs::read(&packaged).map_err(|error| io("read packaged core", &packaged, error))?;
+    sempre_state::write_atomic(&target, &data, 0o755)
+        .map_err(|error| io("install packaged core", &target, error))?;
+    println!("Installed the packaged core at {}.", target.display());
     Ok(())
 }
 

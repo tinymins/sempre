@@ -88,6 +88,7 @@ pub use subscription_tools::{
     ProfileDebugProgress, ProfileDebugResult, ProfileDebugSource, SourceInspection,
     SourceTestResult,
 };
+pub use system_core::packaged_core_path;
 
 const USER_AGENT: &str = concat!("Sempre/", env!("CARGO_PKG_VERSION"));
 

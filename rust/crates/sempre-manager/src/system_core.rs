@@ -1,11 +1,12 @@
-//! `OpenWrt` firmware ships sing-box, so Sempre adopts that binary instead of downloading.
+//! `OpenWrt` gets sing-box from a release package or the firmware, so Sempre adopts that
+//! binary instead of downloading.
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
 use chrono::Utc;
-use sempre_state::{Document, Installation, Selection};
+use sempre_state::{Document, Installation, Layout, Selection};
 
 use crate::{Manager, ManagerError, VersionRunner};
 
@@ -27,12 +28,9 @@ impl<R: VersionRunner> Manager<R> {
         if !self.store.layout().openwrt {
             return Ok(());
         }
-        let binary = FIRMWARE_CORE_PATHS
-            .iter()
-            .map(Path::new)
-            .find(|path| path.is_file())
+        let binary = system_core_binary(self.store.layout())
             .ok_or_else(|| ManagerError::FirmwareCoreMissing(FIRMWARE_CORE.into()))?;
-        self.adopt_core_binary(binary).await
+        self.adopt_core_binary(&binary).await
     }
 
     pub(crate) async fn adopt_core_binary(&self, binary: &Path) -> Result<(), ManagerError> {
@@ -57,6 +55,18 @@ impl<R: VersionRunner> Manager<R> {
         }
         Ok(())
     }
+}
+
+/// Where a release package installs its core, beside the service executable.
+pub fn packaged_core_path(layout: &Layout) -> PathBuf {
+    layout.service_executable.with_file_name(FIRMWARE_CORE)
+}
+
+/// Installing a package that carries a core is an explicit choice, so it outranks firmware.
+fn system_core_binary(layout: &Layout) -> Option<PathBuf> {
+    std::iter::once(packaged_core_path(layout))
+        .chain(FIRMWARE_CORE_PATHS.iter().map(PathBuf::from))
+        .find(|path| path.is_file())
 }
 
 fn link_core(binary: &Path, link: &Path) -> Result<(), ManagerError> {
