@@ -78,6 +78,18 @@ mod tests {
         assert!(!manager.dns_settings.read().enabled);
     }
 
+    #[tokio::test]
+    async fn a_router_only_runs_the_core_it_was_installed_with() {
+        let root = tempfile::tempdir().expect("root");
+        let manager = manager(Layout::openwrt_at(root.path()));
+        assert!(manager.install_core("mihomo").await.is_err());
+        assert!(manager.update_cores("sing-box").await.is_err());
+        assert!(manager.remove_core("sing-box").is_err());
+        let error = manager.select_core("mihomo").await.expect_err("select");
+        assert!(error.to_string().contains("not available on OpenWrt"));
+        assert!(manager.export_bundle().is_err());
+    }
+
     #[test]
     fn stored_settings_cannot_enable_them_on_a_router() {
         let root = tempfile::tempdir().expect("root");

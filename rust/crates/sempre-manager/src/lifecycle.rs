@@ -20,6 +20,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub async fn select_core(&self, value: &str) -> Result<CoreChange, ManagerError> {
         let _operation = self.operation_guard().await?;
         let reference = self.normalized_reference(value)?;
+        // Gateway capture reads sing-box inbounds, so no other core can start on a router.
+        if reference.core != "sing-box" {
+            self.reject_on_openwrt(&reference.core)?;
+        }
         let before = self.store.read()?;
         let version = resolve_installed_version(&before, &reference)?;
         let _config = before
@@ -113,6 +117,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
 
 impl<R: VersionRunner> Manager<R> {
     pub fn remove_core(&self, value: &str) -> Result<CoreChange, ManagerError> {
+        self.reject_on_openwrt("Removing a core")?;
         let _operation = self.store.acquire_operation()?;
         let reference = self.normalized_reference(value)?;
         let before = self.store.read()?;

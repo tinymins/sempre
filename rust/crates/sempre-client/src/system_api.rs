@@ -119,7 +119,7 @@ async fn system(State(state): State<Arc<AppState>>) -> Response {
             "installed": ui_installed,
             "metadata": null,
         },
-        "capabilities": {},
+        "capabilities": { "openwrt": state.manager.store().layout().openwrt },
     }))
     .into_response()
 }
@@ -144,6 +144,9 @@ async fn service_action(
     State(state): State<Arc<AppState>>,
     Json(input): Json<ServiceActionInput>,
 ) -> Response {
+    if let Some(response) = crate::service_update::service_managed_by_procd(&state.manager) {
+        return response;
+    }
     let action = match sempre_service::Action::parse(&input.action) {
         Ok(action) => action,
         Err(error) => {

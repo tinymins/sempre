@@ -100,7 +100,7 @@ async fn firmware_managed_core_cannot_be_installed_separately() {
         manager.reject_firmware_managed_core(FIRMWARE_CORE),
         Err(ManagerError::FirmwareManagedCore(_))
     ));
-    assert!(manager.reject_firmware_managed_core("mihomo").is_ok());
+    assert!(manager.reject_firmware_managed_core("mihomo").is_err());
 }
 
 #[tokio::test]

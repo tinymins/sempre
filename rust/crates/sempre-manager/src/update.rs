@@ -15,6 +15,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         value: &str,
         progress: &(impl Fn(CoreInstallProgress) + Sync),
     ) -> Result<Vec<CoreChange>, ManagerError> {
+        self.reject_on_openwrt("Core updates")?;
         let references = if value.trim().is_empty() {
             installed_channels(&self.store.read()?)
         } else {

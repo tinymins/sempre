@@ -17,7 +17,7 @@ const STABLE: &str = "stable";
 
 impl<R: VersionRunner> Manager<R> {
     pub(crate) fn reject_firmware_managed_core(&self, core: &str) -> Result<(), ManagerError> {
-        if self.store.layout().openwrt && core == FIRMWARE_CORE {
+        if self.store.layout().openwrt {
             return Err(ManagerError::FirmwareManagedCore(core.into()));
         }
         Ok(())

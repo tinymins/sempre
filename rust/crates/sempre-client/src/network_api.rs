@@ -30,7 +30,7 @@ async fn settings(State(state): State<Arc<AppState>>) -> Response {
         "settings": state.manager.network_settings(),
         "current": current,
         "platform": std::env::consts::OS,
-        "gateway_available": cfg!(target_os = "linux"),
+        "gateway_available": cfg!(target_os = "linux") && !state.manager.store().layout().openwrt,
     }))
     .into_response()
 }
@@ -45,7 +45,7 @@ async fn update_settings(
             "settings": settings,
             "current": sempre_network::default_interface().unwrap_or_default(),
             "platform": std::env::consts::OS,
-            "gateway_available": cfg!(target_os = "linux"),
+            "gateway_available": cfg!(target_os = "linux") && !state.manager.store().layout().openwrt,
         }))
         .into_response(),
         Err(error) => api_error(

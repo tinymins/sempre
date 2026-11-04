@@ -75,15 +75,22 @@ pub(crate) struct Status {
 
 /// `OpenWrt` installs carry their own core, so installing a new package is the update.
 pub(crate) fn unavailable_on_openwrt(manager: &sempre_manager::Manager) -> Option<Response> {
+    refuse_on_openwrt(
+        manager,
+        "On OpenWrt, update Sempre by installing a new package",
+    )
+}
+
+/// Stopping the service from its own Web UI would leave no way to start it again.
+pub(crate) fn service_managed_by_procd(manager: &sempre_manager::Manager) -> Option<Response> {
+    refuse_on_openwrt(manager, "On OpenWrt, use /etc/init.d/sempre")
+}
+
+fn refuse_on_openwrt(manager: &sempre_manager::Manager, message: &str) -> Option<Response> {
     manager.store().layout().openwrt.then(|| {
         (
             StatusCode::CONFLICT,
-            Json(json!({
-                "error": {
-                    "code": "SERVICE_UNAVAILABLE",
-                    "message": "On OpenWrt, update Sempre by installing a new package"
-                }
-            })),
+            Json(json!({ "error": { "code": "SERVICE_UNAVAILABLE", "message": message } })),
         )
             .into_response()
     })

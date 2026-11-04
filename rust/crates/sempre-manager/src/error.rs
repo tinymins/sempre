@@ -16,7 +16,7 @@ pub enum ManagerError {
     Layout(#[from] LayoutError),
     #[error(transparent)]
     Reference(#[from] ReferenceError),
-    #[error("{0} is supplied by the OpenWrt firmware and cannot be installed separately")]
+    #[error("{0} comes with the OpenWrt package or firmware and cannot be installed separately")]
     FirmwareManagedCore(String),
     #[error("the OpenWrt firmware does not supply {0}")]
     FirmwareCoreMissing(String),

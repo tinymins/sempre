@@ -134,6 +134,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         candidate_id: &str,
     ) -> Result<AutoConfigApplyResult, ManagerError> {
+        self.reject_on_openwrt("Automatic core configuration")?;
         let report = self.diagnose_core_configuration()?;
         let selected_id = if candidate_id.is_empty() {
             report
