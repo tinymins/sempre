@@ -2438,6 +2438,7 @@ dependencies = [
  "sempre-service",
  "sempre-state",
  "sempre-subscription",
+ "sempre-transparent",
  "sempre-tunnel",
  "sempre-ui",
  "semver",

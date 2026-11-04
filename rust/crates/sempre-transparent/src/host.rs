@@ -13,6 +13,7 @@ pub struct Controller {
     macos_dns: MacSystemDns,
     windows_dns: WindowsSystemDns,
     cn_routes: Arc<crate::cn_routes::Controller>,
+    capture: Option<crate::CaptureController>,
 }
 
 impl Default for Controller {
@@ -23,6 +24,7 @@ impl Default for Controller {
             macos_dns: MacSystemDns::new(std::path::PathBuf::new()),
             windows_dns: WindowsSystemDns::new(std::path::PathBuf::new()),
             cn_routes: Arc::new(crate::cn_routes::Controller::new(None)),
+            capture: None,
         }
     }
 }
@@ -37,7 +39,15 @@ impl Controller {
             system_dns: SystemDns::new(layout.home.join("system-dns"), "/etc/resolv.conf".into()),
             macos_dns: MacSystemDns::new(layout.home.join("system-dns").join("macos")),
             windows_dns: WindowsSystemDns::new(layout.home.join("system-dns").join("windows")),
+            capture: layout
+                .openwrt
+                .then(|| crate::CaptureController::new(layout)),
         }
+    }
+
+    /// The gateway capture coordinator, present only on `OpenWrt` hosts.
+    pub fn capture(&self) -> Option<&crate::CaptureController> {
+        self.capture.as_ref()
     }
 
     pub async fn prepare(
@@ -85,7 +95,8 @@ impl Controller {
                 upstreams,
             );
         }
-        if !cfg!(target_os = "linux") {
+        // OpenWrt capture has its own coordinator and the router keeps its own resolver.
+        if !cfg!(target_os = "linux") || self.capture.is_some() {
             return Ok(Plan::default());
         }
         let inventory = sempre_network::inventory()?;

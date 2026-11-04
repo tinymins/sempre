@@ -22,6 +22,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         binary: &Path,
         config: &Path,
     ) -> Result<(Option<Source>, crate::rule_bootstrap::RuleBootstrap), ManagerError> {
+        // OpenWrt runs the published configuration and bypasses domestic traffic in nft.
+        if self.store.layout().openwrt {
+            return Ok((None, crate::rule_bootstrap::RuleBootstrap::default()));
+        }
         if core != "sing-box" {
             if self.network_settings.read().cn_direct_routes {
                 self.log_supervisor(&format!(

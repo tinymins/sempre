@@ -1,3 +1,4 @@
+mod capture;
 mod cn_routes;
 mod command;
 mod desktop_plan;
@@ -19,6 +20,7 @@ use sempre_network::Inventory;
 use serde_json::Value;
 use thiserror::Error;
 
+pub use capture::{CaptureController, CaptureIntent, CaptureSettings, parse_cidrs};
 pub use cn_routes::{CnRouteIntent, CnRouteProgress, CnRouteReport, normalize_cn_prefixes};
 pub use host::Controller;
 pub use route_events::RouteEvents;

@@ -27,6 +27,11 @@ pub(crate) enum Command {
     /// Ask the daemon to withdraw transparent capture when it next exits.
     #[command(hide = true)]
     ReleaseCapture,
+    /// Inspect `OpenWrt` gateway capture.
+    Capture {
+        #[command(subcommand)]
+        command: CaptureCommand,
+    },
     /// Install this extracted release as the native system service.
     Install {
         /// Replace a different existing system deployment without prompting.
@@ -172,12 +177,20 @@ impl Arguments {
             Command::Runtime { .. } => system,
             Command::Update => system,
             Command::Status | Command::Logs { .. } | Command::Doctor | Command::Open => system,
-            Command::ReleaseCapture => system,
+            Command::ReleaseCapture | Command::Capture { .. } => system,
             Command::Version | Command::LeakProbe { .. } => false,
             #[cfg(windows)]
             Command::ServiceHost => false,
         }
     }
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CaptureCommand {
+    /// Show the applied rules and the offload decision.
+    Status,
+    /// Restore rules after a firewall reload; does nothing once capture is withdrawn.
+    Reapply,
 }
 
 #[derive(Debug, Subcommand)]

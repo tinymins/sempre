@@ -66,13 +66,15 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             cleanup_needed: true,
         };
         let mut phase = Phase::Recover;
-        loop {
+        let result = loop {
             phase = match machine.step(phase).await {
-                Ok(Phase::Done(result)) => return result,
+                Ok(Phase::Done(result)) => break result,
                 Ok(next) => next,
-                Err(Fatal(error)) => return Err(error),
+                Err(Fatal(error)) => break Err(error),
             };
-        }
+        };
+        self.release_capture_on_exit().await;
+        result
     }
 }
 

@@ -51,22 +51,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let data = self.store.layout().core_data.join(&deployment.core);
         fs::create_dir_all(&data)
             .map_err(|error| ManagerError::io("create core data directory", error))?;
-        let control_directory = self
-            .store
-            .layout()
-            .runtime
-            .join(&deployment.core)
-            .join("control");
-        if control_directory.exists() {
-            fs::remove_dir_all(&control_directory)
-                .map_err(|error| ManagerError::io("reset core control directory", error))?;
-        }
+        let control_directory = self.reset_control_directory(&deployment.core)?;
         let runtime = if self.store.layout().openwrt {
             adapter.prepare_runtime_keeping_controller(&config, &control_directory)?
         } else {
             adapter.prepare_runtime(&config, &control_directory)?
         };
-        if deployment.core == "sing-box" {
+        if deployment.core == "sing-box" && !self.store.layout().openwrt {
             self.adapt_fakeip_runtime(&runtime.config);
         }
         let dns_rule_files = if deployment.core == "sing-box" {
@@ -89,6 +80,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         .await?;
         self.validate_gateway_config(&reference, &deployment.version, &runtime.config)
             .await?;
+        let capture = self.capture_intent(&runtime.config)?;
         self.startup_tasks
             .capture_config(&deployment.config_hash, &config);
         let runtime_data = fs::read(&runtime.config)
@@ -107,7 +99,17 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             dns_frontend,
             dns_rule_files,
             rules,
+            capture,
         })
+    }
+
+    fn reset_control_directory(&self, core: &str) -> Result<std::path::PathBuf, ManagerError> {
+        let directory = self.store.layout().runtime.join(core).join("control");
+        if directory.exists() {
+            fs::remove_dir_all(&directory)
+                .map_err(|error| ManagerError::io("reset core control directory", error))?;
+        }
+        Ok(directory)
     }
 
     /// A router has no operator nearby, so it rejects a bad configuration before

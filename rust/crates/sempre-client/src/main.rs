@@ -2,6 +2,7 @@ mod api;
 mod args;
 mod bootstrap;
 mod bundle_api;
+mod capture_cli;
 mod core_management_api;
 mod custom_node_api;
 mod custom_node_cli;
@@ -204,6 +205,7 @@ async fn run(arguments: Arguments, mode: Mode) -> Result<(), ClientError> {
             Ok(())
         }
         Command::ReleaseCapture => release_capture(mode),
+        Command::Capture { command } => capture_cli::run(mode, command).await,
         #[cfg(windows)]
         Command::ServiceHost => unreachable!("service host is dispatched before the async runtime"),
         Command::Daemon {

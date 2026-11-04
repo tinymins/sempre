@@ -268,6 +268,10 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
         remote: &mut sempre_subscription::RemoteResult,
     ) -> Result<(), ManagerError> {
         use sha2::{Digest, Sha256};
+        // A published OpenWrt configuration is final and must deploy byte for byte.
+        if target.platform == "openwrt" {
+            return Ok(());
+        }
         remote.content =
             sempre_converter::apply_intranet_routing(profile, target, &remote.content)?;
         remote.artifact_hash = format!("{:x}", Sha256::digest(remote.content.as_bytes()));

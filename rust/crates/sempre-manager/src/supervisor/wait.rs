@@ -105,6 +105,7 @@ async fn activate_network<R: VersionRunner + ValidationRunner>(
                 .activate_core(plan.dns_frontend.as_ref()),
         )
         .await?;
+    manager.sync_capture(plan).await?;
     if let Some(intent) = &plan.transparent.cn_routes {
         manager
             .network_phase(
@@ -161,6 +162,7 @@ pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(
         () = manager.complete_rule_bootstrap(plan) => ProcessEvent::Reload,
         () = manager.monitor_network_automation() => unreachable!("network monitor does not exit"),
         () = confirm_stable(manager, plan) => unreachable!("stability check does not exit"),
+        () = manager.maintain_cn_list(plan) => unreachable!("GeoIP maintenance does not exit"),
         result = process.wait() => ProcessEvent::Exited(result),
         () = manager.wait_runtime_reload() => ProcessEvent::Reload,
         () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,

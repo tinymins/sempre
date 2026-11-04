@@ -1,3 +1,4 @@
+mod capture;
 pub(crate) mod lifecycle;
 mod machine;
 mod plan;
@@ -33,6 +34,7 @@ pub(crate) struct RuntimePlan {
     pub(crate) dns_frontend: Option<DnsFrontendPlan>,
     dns_rule_files: Option<crate::dns_rule_files::PreparedRuleFiles>,
     pub(crate) rules: crate::rule_bootstrap::RuleBootstrap,
+    capture: Option<sempre_transparent::CaptureIntent>,
 }
 
 enum CycleResult {
@@ -204,6 +206,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         } else {
             Ok(())
         };
+        // Nothing is running to receive captured traffic any more.
+        let cleanup = cleanup.and(self.withdraw_capture().await);
         // CN routes outlive core restarts; only an inactive runtime removes them.
         let routes = self
             .route_phase(

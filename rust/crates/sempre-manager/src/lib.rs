@@ -143,11 +143,19 @@ impl<R: VersionRunner> Manager<R> {
             .as_deref()
             .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id))
             .unwrap_or(&catalog.profiles[0]);
+        let first_run = !store.layout().dns_settings.exists();
         let dns_settings = Arc::new(dns_settings::DnsSettingsStore::open(
             store.layout().dns_settings.clone(),
             store.layout().dns_query_history.clone(),
             initial_profile,
         )?);
+        // A router already resolves through dnsmasq and the configuration's DNS inbound.
+        if first_run && store.layout().openwrt {
+            dns_settings.replace(DnsSettings {
+                enabled: false,
+                ..dns_settings.read()
+            })?;
+        }
         let network_settings = Arc::new(network_settings::NetworkSettingsStore::open(
             store.layout().network_settings.clone(),
         )?);
