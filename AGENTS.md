@@ -1,6 +1,6 @@
 # Project Context and Stack
 
-Sempre is a cross-platform Rust service and CLI that manages proxy cores, generated configurations, persisted state, native services, and the authenticated Web control plane on Windows, Linux, and macOS. The same workspace also contains a core-free multi-user subscription server.
+Sempre is a cross-platform Rust service and CLI that manages proxy cores, generated configurations, persisted state, native services, and the authenticated Web control plane on Windows, Linux, `OpenWrt`, and macOS. The same workspace also contains a core-free multi-user subscription server.
 
 - Rust 1.95 or newer implements the CLI, daemon, shared converter, multi-user server, core lifecycle, platform integration, and build tooling.
 - Bun 1.3.14 drives repository orchestration and the frontend toolchains.
@@ -9,12 +9,19 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 
 ## Architecture and Ownership
 
-- `rust/crates/sempre-client` owns the production CLI, local daemon, authenticated Web API, core lifecycle, native service integration, and platform orchestration.
+- `rust/crates/sempre-client` owns the production CLI, local daemon, authenticated Web API, and platform orchestration.
+- `rust/crates/sempre-manager` owns core lifecycle, supervision, deployment rollback, and subscription rules shared by the CLI and API. Put shared rules here, not in `sempre-client`.
+- `rust/crates/sempre-service` owns native service integration: systemd, procd, launchd, and Windows services.
+- `rust/crates/sempre-transparent` owns host capture: nftables, policy routing, system DNS, and `OpenWrt` gateway capture.
+- `rust/crates/sempre-network` owns passive host inventory and routing. `rust/crates/sempre-diagnostics` owns active probes and traces, so the gateway path has no HTTP client.
+- `rust/crates/sempre-control-plane` owns Web API configuration, authentication, and endpoints. `rust/crates/sempre-core-control` is the client for a running core's own API.
+- `rust/crates/sempre-http` is the only place that builds an HTTP client, because it installs the TLS provider.
 - `rust/crates/sempre-converter` owns pure subscription parsing and configuration compilation. It must remain free of HTTP, persistence, environment, and process-management side effects.
 - `rust/crates/sempre-server` owns the core-free multi-user service, authentication, persistence, fetching, published artifacts, memberships, and shares. It must never install or start a proxy core.
 - `rust/crates/sempre-state` owns local filesystem layout and persistent state. `rust/crates/sempre-build` owns release artifact assembly.
 - `ui/` consumes the versioned control-plane API and owns authenticated control experiences. `site/` is public presentation and must remain independent of daemon state and APIs.
 - Keep canonical state and configuration ownership at the existing domain boundary. Do not duplicate business rules across the CLI, API, UI, or individual core adapters.
+- `sempre_state::openwrt_host()` is the only `OpenWrt` check, and `Layout::openwrt` carries its result. On `OpenWrt`, published configurations deploy unmodified and capture rules outlive core restarts.
 - For platform-sensitive changes, inspect the Windows, Linux, macOS, Unix, and fallback implementations that share the affected contract. Do not make a single-platform fix that silently breaks another supported target.
 
 ## UI Boundaries
