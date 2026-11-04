@@ -21,6 +21,7 @@ impl<R: VersionRunner> Manager<R> {
     }
 
     pub fn update_gateway(&self, config: &Config) -> Result<(Config, bool), ManagerError> {
+        self.reject_on_openwrt("Gateway mode")?;
         let saved = self.gateway.update(config)?;
         let reload_requested = self.store.read()?.desired_state == DesiredState::Running;
         if reload_requested {
@@ -41,10 +42,12 @@ impl<R: VersionRunner> Manager<R> {
         &self,
         request: HostApplyRequest,
     ) -> Result<HostPlan, ManagerError> {
+        self.reject_on_openwrt("Gateway mode")?;
         Ok(apply_host_plan(request).await?)
     }
 
     pub async fn revoke_gateway_lease(&self, mac: &str) -> Result<(), ManagerError> {
+        self.reject_on_openwrt("Gateway mode")?;
         Ok(self.gateway.revoke_lease(mac).await?)
     }
 

@@ -1,9 +1,14 @@
 use std::{collections::HashSet, error::Error, path::Path, sync::Arc, time::Duration};
 
+use axum::{
+    Json,
+    response::{IntoResponse, Response},
+};
 use reqwest::{Client, ClientBuilder, StatusCode};
 use sempre_artifact::{ArchiveFormat, Artifact, Downloader, ExtractOptions, Sha256Digest};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::process::Command;
 use url::Url;
 
@@ -66,6 +71,22 @@ pub(crate) struct Status {
     pub(crate) release_notes: String,
     pub(crate) release_history: Vec<ReleaseNote>,
     pub(crate) repository: String,
+}
+
+/// `OpenWrt` installs carry their own core, so installing a new package is the update.
+pub(crate) fn unavailable_on_openwrt(manager: &sempre_manager::Manager) -> Option<Response> {
+    manager.store().layout().openwrt.then(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "On OpenWrt, update Sempre by installing a new package"
+                }
+            })),
+        )
+            .into_response()
+    })
 }
 
 pub(crate) async fn check(

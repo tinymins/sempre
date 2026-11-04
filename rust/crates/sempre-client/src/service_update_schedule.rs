@@ -14,7 +14,7 @@ pub(crate) fn schedule(temporary: TempDir, executable: &Path, log: &Path) -> Res
 #[cfg(target_os = "linux")]
 fn platform_schedule(executable: &Path, root: &Path, log: &Path) -> Result<(), String> {
     if sempre_state::openwrt_host() {
-        return Err("Sempre is updated with the firmware on OpenWrt".into());
+        return Err("On OpenWrt, update Sempre by installing a new package".into());
     }
     let unit = format!("sempre-update-{}", uuid::Uuid::new_v4());
     let script = "sleep 1; \"$1\" --portable install --yes >\"$3.stdout.log\" 2>\"$3.stderr.log\"; code=$?; if [ \"$code\" -ne 0 ]; then printf '\\nSempre installer exited with code %s\\n' \"$code\" >>\"$3.stderr.log\"; fi; rm -rf -- \"$2\"; exit $code";

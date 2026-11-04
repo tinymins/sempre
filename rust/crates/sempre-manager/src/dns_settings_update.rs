@@ -9,6 +9,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         mut candidate: crate::DnsSettings,
     ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
+        if candidate.enabled {
+            self.reject_on_openwrt("The DNS frontend")?;
+        }
         candidate.normalize_and_validate()?;
         let _operation = self.operation_guard().await?;
         let _runtime = self.runtime_rules_gate.lock().await;

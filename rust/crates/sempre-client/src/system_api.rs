@@ -193,6 +193,9 @@ async fn service_action(
 }
 
 async fn service_update_check(State(state): State<Arc<AppState>>) -> Response {
+    if let Some(response) = crate::service_update::unavailable_on_openwrt(&state.manager) {
+        return response;
+    }
     let settings = match read_service_update_settings(&state) {
         Ok(settings) => settings,
         Err(error) => return internal(error),
@@ -210,6 +213,9 @@ async fn service_update_check(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn service_update(State(state): State<Arc<AppState>>) -> Response {
+    if let Some(response) = crate::service_update::unavailable_on_openwrt(&state.manager) {
+        return response;
+    }
     if state.manager.store().layout().mode != sempre_state::Mode::System {
         return (
             StatusCode::CONFLICT,
@@ -283,6 +289,9 @@ async fn service_update_upload(
     headers: HeaderMap,
     body: Body,
 ) -> Response {
+    if let Some(response) = crate::service_update::unavailable_on_openwrt(&state.manager) {
+        return response;
+    }
     if state.manager.store().layout().mode != sempre_state::Mode::System {
         return (
             StatusCode::CONFLICT,

@@ -15,6 +15,7 @@ impl<R: VersionRunner> Manager<R> {
     }
 
     pub async fn install_tunnel_tool(&self) -> Result<BinaryStatus, ManagerError> {
+        self.reject_on_openwrt("Tunnels")?;
         Ok(self.tunnels.install().await?)
     }
 
@@ -22,7 +23,14 @@ impl<R: VersionRunner> Manager<R> {
         Ok(self.tunnels.log(id)?)
     }
 
-    pub async fn run_tunnels(&self, shutdown: watch::Receiver<bool>) -> Result<(), ManagerError> {
+    pub async fn run_tunnels(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> Result<(), ManagerError> {
+        if self.store.layout().openwrt {
+            while !*shutdown.borrow() && shutdown.changed().await.is_ok() {}
+            return Ok(());
+        }
         Ok(Arc::clone(&self.tunnels).run(shutdown).await?)
     }
 }
@@ -41,6 +49,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .get("enabled")
             .and_then(serde_json::Value::as_bool)
             == Some(true);
+        if enabled && !remote {
+            self.reject_on_openwrt("Private access")?;
+        }
         if let Some(connectors) = compiled
             .private_access
             .get_mut("connectors")
@@ -123,6 +134,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 
     pub async fn update_tunnels(&self, config: Config) -> Result<(Status, bool), ManagerError> {
+        self.reject_on_openwrt("Tunnels")?;
         let catalog = self.subscriptions.read()?;
         let references = referenced_forwards(&catalog.profiles)?;
         for (id, profiles) in &references {
@@ -178,6 +190,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 
     pub async fn tunnel_action(&self, id: &str, action: &str) -> Result<Status, ManagerError> {
+        self.reject_on_openwrt("Tunnels")?;
         Ok(Arc::clone(&self.tunnels).action(id, action).await?)
     }
 }

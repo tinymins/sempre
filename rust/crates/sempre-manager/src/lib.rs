@@ -26,6 +26,7 @@ mod inventory;
 mod lifecycle;
 mod network_automation;
 mod network_settings;
+mod openwrt_limits;
 mod pending_changes;
 mod private_access_status;
 mod process;
@@ -146,14 +147,13 @@ impl<R: VersionRunner> Manager<R> {
             .as_deref()
             .and_then(|id| catalog.profiles.iter().find(|profile| profile.id == id))
             .unwrap_or(&catalog.profiles[0]);
-        let first_run = !store.layout().dns_settings.exists();
         let dns_settings = Arc::new(dns_settings::DnsSettingsStore::open(
             store.layout().dns_settings.clone(),
             store.layout().dns_query_history.clone(),
             initial_profile,
         )?);
         // A router already resolves through dnsmasq and the configuration's DNS inbound.
-        if first_run && store.layout().openwrt {
+        if store.layout().openwrt && dns_settings.read().enabled {
             dns_settings.replace(DnsSettings {
                 enabled: false,
                 ..dns_settings.read()
@@ -223,10 +223,6 @@ impl<R: VersionRunner> Manager<R> {
 
     pub fn dns_frontend_status(&self) -> DnsFrontendStatus {
         self.dns_frontend.status()
-    }
-
-    pub fn network_settings(&self) -> NetworkSettings {
-        self.network_settings.read()
     }
 
     pub fn dns_queries(&self) -> Vec<sempre_dns::DnsQueryEvent> {

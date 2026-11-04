@@ -49,7 +49,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     ) -> Result<(CoreChange, crate::NetworkSettings), ManagerError> {
         let _operation = self.operation_guard().await?;
         let document = self.store.read()?;
-        candidate.validate_intranet(&document)?;
+        self.validate_network_candidate(&candidate, &document)?;
         let previous = self.network_settings.read();
         let saved = self.network_settings.replace(candidate)?;
         if saved.same_routing(&previous) {
