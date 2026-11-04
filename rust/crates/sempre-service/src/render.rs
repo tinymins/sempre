@@ -35,7 +35,7 @@ WantedBy=multi-user.target\n",
 /// Renders the procd script. A restart replaces the daemon without running
 /// `stop_service`, so traffic stays captured while the daemon comes back; only an
 /// explicit stop asks the daemon to withdraw its rules.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(crate) fn procd(executable: &Path, working_directory: &Path) -> Result<String, ServiceError> {
     let executable = shell_quote(path(executable)?);
     let working_directory = shell_quote(path(working_directory)?);
@@ -64,7 +64,7 @@ restart() {{\n\
     ))
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
