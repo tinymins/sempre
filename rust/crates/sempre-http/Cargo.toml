@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 reqwest.workspace = true
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "prefer-post-quantum", "std", "tls12"] }
 
 [lints]
 workspace = true
