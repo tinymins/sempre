@@ -410,7 +410,7 @@ async fn a_deployment_staged_during_startup_does_not_leave_the_runtime_starting(
 #[tokio::test]
 async fn failed_deployment_rolls_back_and_stays_pending() {
     let (_root, manager) = fixture(
-        "#!/bin/sh\nfor a; do [ -f \"$a\" ] && grep -q bad \"$a\" && exit 7; done\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n",
+        "#!/bin/sh\nfor a; do [ -f \"$a\" ] && grep -q '\"bad\"' \"$a\" && exit 7; done\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n",
     );
     let bad_hash = "c".repeat(64);
     let bad_config = manager.store.layout().config("sing-box", &bad_hash);
