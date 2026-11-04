@@ -129,6 +129,31 @@ impl CaptureController {
         table
     }
 
+    /// Removes everything an installation left in the system firewall configuration.
+    pub async fn unregister(&self) -> Result<(), TransparentError> {
+        if !self.enabled {
+            return Ok(());
+        }
+        self.withdraw().await?;
+        let current = self
+            .runner
+            .run("uci", &["-q", "get", UCI_SECTION], None)
+            .await?;
+        if current.success {
+            for arguments in [&["delete", UCI_SECTION], &["commit", "firewall"]] {
+                command::require_success("uci", self.runner.run("uci", arguments, None).await?)?;
+            }
+        }
+        match fs::remove_file(&self.include) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(TransparentError::Io {
+                context: format!("remove {}", self.include.display()),
+                source,
+            }),
+        }
+    }
+
     pub fn status(&self) -> Value {
         fs::read(&self.status)
             .ok()

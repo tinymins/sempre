@@ -32,8 +32,14 @@ pub async fn uninstall_application(
     crate::dns_capture::cleanup(&layout.resources).await?;
 
     let mut problems = Vec::new();
-    if let Err(error) = sempre_transparent::Controller::new(layout).cleanup().await {
+    let transparent = sempre_transparent::Controller::new(layout);
+    if let Err(error) = transparent.cleanup().await {
         problems.push(format!("clean transparent networking: {error}"));
+    }
+    if let Some(capture) = transparent.capture()
+        && let Err(error) = capture.unregister().await
+    {
+        problems.push(format!("remove gateway capture: {error}"));
     }
     if let Err(error) = unregister_command(layout) {
         problems.push(format!("remove command registration: {error}"));

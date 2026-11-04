@@ -72,7 +72,7 @@ fn sysfs(root: &std::path::Path) {
 }
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    root: tempfile::TempDir,
     runner: Arc<FakeRunner>,
     controller: CaptureController,
 }
@@ -97,7 +97,7 @@ fn fixture(fail_offload_check: bool) -> Fixture {
     });
     let controller = CaptureController::with_runner(&layout, runner.clone(), sys, proc_net);
     Fixture {
-        _root: root,
+        root,
         runner,
         controller,
     }
@@ -275,5 +275,28 @@ async fn withdraw_stops_later_reapplies() {
     assert!(fixture.controller.reapply().await.unwrap());
     fixture.controller.withdraw().await.unwrap();
     assert!(!fixture.controller.reapply().await.unwrap());
+    assert_eq!(fixture.controller.status()["active"], false);
+}
+
+#[tokio::test]
+async fn unregister_removes_rules_and_the_firewall_include() {
+    let fixture = fixture(false);
+    fixture.controller.apply(&intent()).await.unwrap();
+    let include = sempre_state::Layout::at(fixture.root.path())
+        .home
+        .join("firewall.include");
+    assert!(include.is_file());
+    fixture.controller.unregister().await.unwrap();
+    assert!(!include.exists());
+    let calls = fixture.runner.calls.lock().unwrap().clone();
+    assert!(
+        calls
+            .iter()
+            .any(|call| call == "uci delete firewall.sempre_capture")
+    );
+    assert_eq!(
+        calls.last().map(String::as_str),
+        Some("uci commit firewall")
+    );
     assert_eq!(fixture.controller.status()["active"], false);
 }
