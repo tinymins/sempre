@@ -98,6 +98,9 @@ fn value_or_unknown(value: &str) -> String {
     }
 }
 
+const RETRY_MIN: Duration = Duration::from_secs(1);
+const RETRY_MAX: Duration = Duration::from_secs(30);
+
 pub(crate) async fn run(
     store: Arc<TrafficStore>,
     control_path: PathBuf,
@@ -105,10 +108,11 @@ pub(crate) async fn run(
 ) {
     let mut accumulator = Accumulator::default();
     let mut flush = tokio::time::interval(Duration::from_secs(5));
+    let mut retry = RETRY_MIN;
     flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         let Ok(client) = sempre_core_control::Client::from_file(&control_path) else {
-            if retry_or_shutdown(&store, &mut shutdown).await {
+            if retry_or_shutdown(&store, &mut shutdown, &mut retry).await {
                 return;
             }
             continue;
@@ -124,11 +128,12 @@ pub(crate) async fn run(
             }
         };
         let Ok(mut stream) = connection else {
-            if retry_or_shutdown(&store, &mut shutdown).await {
+            if retry_or_shutdown(&store, &mut shutdown, &mut retry).await {
                 return;
             }
             continue;
         };
+        retry = RETRY_MIN;
         loop {
             tokio::select! {
                 result = shutdown.changed() => {
@@ -146,16 +151,23 @@ pub(crate) async fn run(
                     }
                     Err(_) => break,
                 },
-                _ = flush.tick() => maintain_store(&store),
+                _ = flush.tick() => maintain_store(&store).await,
             }
         }
-        if retry_or_shutdown(&store, &mut shutdown).await {
+        if retry_or_shutdown(&store, &mut shutdown, &mut retry).await {
             return;
         }
     }
 }
 
-async fn retry_or_shutdown(store: &TrafficStore, shutdown: &mut watch::Receiver<bool>) -> bool {
+/// A stopped core stays stopped for a while, so reconnect attempts back off.
+async fn retry_or_shutdown(
+    store: &Arc<TrafficStore>,
+    shutdown: &mut watch::Receiver<bool>,
+    retry: &mut Duration,
+) -> bool {
+    let delay = *retry;
+    *retry = (delay * 2).min(RETRY_MAX);
     tokio::select! {
         result = shutdown.changed() => {
             if result.is_err() || *shutdown.borrow() {
@@ -165,15 +177,19 @@ async fn retry_or_shutdown(store: &TrafficStore, shutdown: &mut watch::Receiver<
                 false
             }
         }
-        () = tokio::time::sleep(Duration::from_secs(1)) => {
-            maintain_store(store);
+        () = tokio::time::sleep(delay) => {
+            maintain_store(store).await;
             false
         },
     }
 }
 
-fn maintain_store(store: &TrafficStore) {
-    if let Err(error) = store.maintain(Utc::now().timestamp_millis()) {
+/// Encoding and writing the history must not stall the runtime's worker threads.
+async fn maintain_store(store: &Arc<TrafficStore>) {
+    let store = Arc::clone(store);
+    let result =
+        tokio::task::spawn_blocking(move || store.maintain(Utc::now().timestamp_millis())).await;
+    if let Ok(Err(error)) = result {
         warn!(%error, "failed to rotate or persist traffic history");
     }
 }

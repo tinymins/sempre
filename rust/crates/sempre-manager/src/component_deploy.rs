@@ -35,7 +35,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 "system deployment is not initialized; run 'sempre service install' first".into(),
             ));
         }
-        let _operation = self.store.acquire_operation()?;
+        let _operation = self.operation_guard().await?;
         let _configuration = if includes_data(component) {
             Some(self.store.acquire_config()?)
         } else {

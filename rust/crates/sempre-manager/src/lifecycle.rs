@@ -18,7 +18,7 @@ pub struct CoreChange {
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub async fn select_core(&self, value: &str) -> Result<CoreChange, ManagerError> {
-        let _operation = self.store.acquire_operation()?;
+        let _operation = self.operation_guard().await?;
         let reference = self.normalized_reference(value)?;
         let before = self.store.read()?;
         let version = resolve_installed_version(&before, &reference)?;

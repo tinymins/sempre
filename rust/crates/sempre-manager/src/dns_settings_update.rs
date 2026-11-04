@@ -10,7 +10,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         mut candidate: crate::DnsSettings,
     ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
         candidate.normalize_and_validate()?;
-        let _operation = self.store.acquire_operation()?;
+        let _operation = self.operation_guard().await?;
         let _runtime = self.runtime_rules_gate.lock().await;
         let document = self.store.read()?;
         let previous = self.dns_settings.read();

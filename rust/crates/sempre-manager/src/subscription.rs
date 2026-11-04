@@ -47,7 +47,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         candidate: crate::NetworkSettings,
     ) -> Result<(CoreChange, crate::NetworkSettings), ManagerError> {
-        let _operation = self.store.acquire_operation()?;
+        let _operation = self.operation_guard().await?;
         let document = self.store.read()?;
         candidate.validate_intranet(&document)?;
         let previous = self.network_settings.read();
@@ -134,7 +134,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         id: &str,
     ) -> Result<(CoreChange, SubscriptionRender), ManagerError> {
-        let _operation = self.store.acquire_operation()?;
+        let _operation = self.operation_guard().await?;
         self.prepare_subscription_locked(id, false, false).await
     }
     pub fn clear_subscription_cache(&self) -> Result<CoreChange, ManagerError> {
@@ -150,14 +150,14 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         &self,
         id: &str,
     ) -> Result<(CoreChange, SubscriptionRender), ManagerError> {
-        let _operation = self.store.acquire_operation()?;
+        let _operation = self.operation_guard().await?;
         self.prepare_subscription_locked(id, false, true).await
     }
     pub async fn activate_subscription_profile(
         &self,
         id: &str,
     ) -> Result<(CoreChange, SubscriptionRender), ManagerError> {
-        let _operation = self.store.acquire_operation()?;
+        let _operation = self.operation_guard().await?;
         self.prepare_subscription_locked(id, true, true).await
     }
     async fn prepare_subscription_locked(

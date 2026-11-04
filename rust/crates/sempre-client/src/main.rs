@@ -43,6 +43,8 @@ mod system_api;
 mod traffic_collector;
 mod traffic_history;
 mod traffic_history_migrations;
+#[cfg(test)]
+mod traffic_history_storage_tests;
 mod traffic_rotation;
 mod tunnel_api;
 mod ui_distribution;

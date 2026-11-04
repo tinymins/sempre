@@ -3,6 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -25,6 +26,8 @@ use crate::{
 };
 
 const BUCKET_MILLIS: i64 = 60_000;
+/// Samples arrive often; rewriting the whole file for each would dominate idle CPU.
+const PERSIST_INTERVAL: Duration = Duration::from_mins(1);
 #[derive(Debug, Error)]
 pub(crate) enum TrafficError {
     #[error("read traffic history {path}: {source}")]
@@ -95,11 +98,15 @@ struct Inner {
     settings: TrafficSettings,
     records: HashMap<RecordKey, Totals>,
     dirty: bool,
+    persisted_bytes: usize,
+    last_persist: Instant,
 }
 
 pub(crate) struct TrafficStore {
     path: PathBuf,
     inner: Mutex<Inner>,
+    /// Ceiling that settings cannot exceed; the file may live in RAM.
+    storage_ceiling: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -117,7 +124,15 @@ pub(crate) struct TrafficHistory {
 }
 
 impl TrafficStore {
+    #[cfg(test)]
     pub(crate) fn open(path: PathBuf) -> Result<Self, TrafficError> {
+        Self::open_with_ceiling(path, None)
+    }
+
+    pub(crate) fn open_with_ceiling(
+        path: PathBuf,
+        storage_ceiling: Option<u64>,
+    ) -> Result<Self, TrafficError> {
         let (document, migrated) = match fs::read(&path) {
             Ok(data) => {
                 let migration = traffic_history_migrations::run(&data)?;
@@ -171,9 +186,15 @@ impl TrafficStore {
                 )
             })
             .collect();
+        let persisted_bytes = fs::metadata(&path).map_or(0, |metadata| {
+            usize::try_from(metadata.len()).unwrap_or(usize::MAX)
+        });
         Ok(Self {
+            storage_ceiling,
             path,
             inner: Mutex::new(Inner {
+                persisted_bytes,
+                last_persist: Instant::now(),
                 applied_migrations: document.applied_migrations,
                 settings: document.settings,
                 records,
@@ -214,7 +235,7 @@ impl TrafficStore {
         let inner = self.lock()?;
         let since = traffic_rotation::summary_cutoff(&inner.settings, now)
             .map_or(since, |cutoff| since.max(cutoff));
-        summarize(&inner, since, None, dimension)
+        Ok(summarize(&inner, since, None, dimension))
     }
 
     fn history_range(
@@ -224,7 +245,7 @@ impl TrafficStore {
         dimension: TrafficDimension,
     ) -> Result<TrafficHistory, TrafficError> {
         let inner = self.lock()?;
-        summarize(&inner, since, until, dimension)
+        Ok(summarize(&inner, since, until, dimension))
     }
 
     pub(crate) fn update_settings(
@@ -237,20 +258,20 @@ impl TrafficStore {
         inner.settings = settings;
         rotate(&mut inner, now);
         inner.dirty = true;
-        persist(&self.path, &mut inner)
+        persist(&self.path, &mut inner, self.storage_ceiling)
     }
 
     pub(crate) fn clear(&self) -> Result<(), TrafficError> {
         let mut inner = self.lock()?;
         inner.records.clear();
         inner.dirty = true;
-        persist(&self.path, &mut inner)
+        persist(&self.path, &mut inner, self.storage_ceiling)
     }
 
     pub(crate) fn flush(&self) -> Result<(), TrafficError> {
         let mut inner = self.lock()?;
         if inner.dirty {
-            persist(&self.path, &mut inner)?;
+            persist(&self.path, &mut inner, self.storage_ceiling)?;
         }
         Ok(())
     }
@@ -260,8 +281,8 @@ impl TrafficStore {
         if rotate(&mut inner, now) {
             inner.dirty = true;
         }
-        if inner.dirty {
-            persist(&self.path, &mut inner)?;
+        if inner.dirty && inner.last_persist.elapsed() >= PERSIST_INTERVAL {
+            persist(&self.path, &mut inner, self.storage_ceiling)?;
         }
         Ok(())
     }
@@ -276,7 +297,7 @@ fn summarize(
     since: i64,
     until: Option<i64>,
     dimension: TrafficDimension,
-) -> Result<TrafficHistory, TrafficError> {
+) -> TrafficHistory {
     let mut totals = HashMap::<String, Totals>::new();
     for (key, value) in &inner.records {
         if key.time < since
@@ -302,11 +323,11 @@ fn summarize(
             .cmp(&(left.download + left.upload))
             .then_with(|| left.label.cmp(&right.label))
     });
-    Ok(TrafficHistory {
+    TrafficHistory {
         settings: inner.settings.clone(),
-        storage_bytes: encoded(inner)?.len(),
+        storage_bytes: inner.persisted_bytes,
         totals,
-    })
+    }
 }
 
 fn rotate(inner: &mut Inner, now: i64) -> bool {
@@ -318,21 +339,19 @@ fn rotate(inner: &mut Inner, now: i64) -> bool {
     inner.records.len() != previous
 }
 
-fn persist(path: &Path, inner: &mut Inner) -> Result<(), TrafficError> {
+fn persist(path: &Path, inner: &mut Inner, ceiling: Option<u64>) -> Result<(), TrafficError> {
+    let limit = match (inner.settings.max_bytes, ceiling) {
+        (Some(limit), Some(ceiling)) => Some(limit.min(ceiling)),
+        (limit, ceiling) => limit.or(ceiling),
+    };
     let mut data = encoded(inner)?;
-    while inner
-        .settings
-        .max_bytes
-        .is_some_and(|limit| data.len() as u64 > limit)
-        && !inner.records.is_empty()
-    {
-        let oldest = inner
-            .records
-            .keys()
-            .map(|key| key.time)
-            .min()
-            .unwrap_or_default();
-        inner.records.retain(|key, _| key.time > oldest);
+    while let Some(limit) = limit.filter(|limit| data.len() as u64 > *limit) {
+        if inner.records.is_empty() {
+            break;
+        }
+        let times = inner.records.keys().map(|key| key.time);
+        let cutoff = traffic_rotation::eviction_cutoff(times, data.len() as u64, limit);
+        inner.records.retain(|key, _| key.time > cutoff);
         data = encoded(inner)?;
     }
     sempre_state::write_atomic(path, &data, 0o600).map_err(|source| TrafficError::Write {
@@ -340,6 +359,8 @@ fn persist(path: &Path, inner: &mut Inner) -> Result<(), TrafficError> {
         source,
     })?;
     inner.dirty = false;
+    inner.persisted_bytes = data.len();
+    inner.last_persist = Instant::now();
     Ok(())
 }
 

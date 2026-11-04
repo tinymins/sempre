@@ -182,6 +182,18 @@ impl<R: VersionRunner> Manager<R> {
     }
 }
 
+impl<R: VersionRunner> Manager<R> {
+    /// Waits for the operation lock without holding up a runtime worker thread.
+    pub(crate) async fn operation_guard(&self) -> Result<sempre_state::Lease, ManagerError> {
+        loop {
+            if let Some(lease) = self.store.try_acquire_operation()? {
+                return Ok(lease);
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
+    }
+}
+
 impl<R: VersionRunner + crate::ValidationRunner> Manager<R> {
     pub(super) async fn fail_network_startup(
         &self,

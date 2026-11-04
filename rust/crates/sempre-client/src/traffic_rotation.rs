@@ -146,3 +146,25 @@ fn reset_date(year: i32, month: u32, day: u8) -> Option<NaiveDate> {
     let last = first.checked_add_months(Months::new(1))?.pred_opt()?;
     NaiveDate::from_ymd_opt(year, month, u32::from(day).min(last.day()))
 }
+
+/// The newest bucket to drop for an oversized history. Whole oldest buckets go in
+/// proportion to the excess, so eviction costs one or two encodes, not one per bucket.
+pub(crate) fn eviction_cutoff(times: impl Iterator<Item = i64>, size: u64, limit: u64) -> i64 {
+    let mut buckets = std::collections::BTreeMap::<i64, u64>::new();
+    let mut records = 0;
+    for time in times {
+        *buckets.entry(time).or_default() += 1;
+        records += 1;
+    }
+    let excess = size.saturating_sub(limit).saturating_mul(records) / size.max(1);
+    let mut removed = 0;
+    let mut cutoff = i64::MIN;
+    for (time, count) in buckets {
+        cutoff = time;
+        removed += count;
+        if removed > excess {
+            break;
+        }
+    }
+    cutoff
+}

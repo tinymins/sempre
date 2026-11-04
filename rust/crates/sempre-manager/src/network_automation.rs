@@ -76,6 +76,9 @@ impl<R: VersionRunner> Manager<R> {
     }
 
     pub(crate) async fn activate_network_automation(&self, grace: Duration) {
+        if self.store.layout().openwrt {
+            return;
+        }
         if !self.network_settings.read().automatic_switching {
             let _ = self.sync_network_mode().await;
             return;
@@ -93,6 +96,10 @@ impl<R: VersionRunner> Manager<R> {
     where
         R: ValidationRunner,
     {
+        // A router is the gateway; there is no upstream network mode to follow.
+        if self.store.layout().openwrt {
+            return std::future::pending().await;
+        }
         let mut events = match sempre_transparent::RouteEvents::open() {
             Ok(events) => Some(events),
             Err(error) => {

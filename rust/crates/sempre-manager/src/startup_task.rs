@@ -8,6 +8,14 @@ use crate::{
 };
 
 const MAX_LOG_ENTRIES: usize = 2000;
+const OPENWRT_MAX_LOG_ENTRIES: usize = 400;
+static LOG_LIMIT: std::sync::LazyLock<usize> = std::sync::LazyLock::new(|| {
+    if sempre_state::openwrt_host() {
+        OPENWRT_MAX_LOG_ENTRIES
+    } else {
+        MAX_LOG_ENTRIES
+    }
+});
 
 #[derive(Clone, Debug, Serialize)]
 pub struct StartupLogEntry {
@@ -340,7 +348,7 @@ impl StartupTask {
 
     fn push(&mut self, stage: &str, message: &str) {
         // Bound both entry count and individual raw output chunks.
-        if self.logs.len() == MAX_LOG_ENTRIES {
+        if self.logs.len() >= *LOG_LIMIT {
             self.logs.remove(0);
             self.omitted_logs += 1;
         }

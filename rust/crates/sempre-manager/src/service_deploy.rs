@@ -68,7 +68,7 @@ impl<R: VersionRunner> Manager<R> {
         sempre_service::require_installation_privileges()?;
         require_bundle_replacement_confirmation(kind, source, target, allow_replace)?;
         prepare_command_registration(target)?;
-        let _operation = self.store.acquire_operation()?;
+        let _operation = self.operation_guard().await?;
         let document = self.store.read()?;
         self.repair_and_validate_deployed_cores(source, &document, kind.name())
             .await?;

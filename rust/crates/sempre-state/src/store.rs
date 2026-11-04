@@ -1,4 +1,12 @@
-use std::{fs, fs::File, fs::OpenOptions, io, path::Path};
+use std::{
+    fs,
+    fs::File,
+    fs::OpenOptions,
+    io,
+    path::Path,
+    sync::{Arc, Mutex},
+    time::SystemTime,
+};
 
 use chrono::Utc;
 use fs2::FileExt as _;
@@ -35,6 +43,23 @@ pub enum StateError {
 #[derive(Clone, Debug)]
 pub struct Store {
     layout: Layout,
+    cache: Arc<Mutex<Option<CachedDocument>>>,
+}
+
+/// State files are replaced by rename, so a changed file always has a new identity,
+/// including when another process such as the CLI wrote it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FileStamp {
+    length: u64,
+    modified: Option<SystemTime>,
+    #[cfg(unix)]
+    inode: u64,
+}
+
+#[derive(Debug)]
+struct CachedDocument {
+    stamp: FileStamp,
+    document: Document,
 }
 
 pub struct Lease {
@@ -43,7 +68,10 @@ pub struct Lease {
 
 impl Store {
     pub fn new(layout: Layout) -> Self {
-        Self { layout }
+        Self {
+            layout,
+            cache: Arc::default(),
+        }
     }
 
     pub fn layout(&self) -> &Layout {
@@ -69,7 +97,40 @@ impl Store {
     }
 
     pub fn read(&self) -> Result<Document, StateError> {
-        self.with_lock(|| self.read_unlocked())
+        if let Some(stamp) = self.stamp()
+            && let Some(cached) = self.cached(&stamp)
+        {
+            return Ok(cached);
+        }
+        self.with_lock(|| {
+            let stamp = self.stamp();
+            let document = self.read_unlocked()?;
+            if let (Some(stamp), Ok(mut cache)) = (stamp, self.cache.lock()) {
+                *cache = Some(CachedDocument {
+                    stamp,
+                    document: document.clone(),
+                });
+            }
+            Ok(document)
+        })
+    }
+
+    fn cached(&self, stamp: &FileStamp) -> Option<Document> {
+        let cache = self.cache.lock().ok()?;
+        cache
+            .as_ref()
+            .filter(|cached| cached.stamp == *stamp)
+            .map(|cached| cached.document.clone())
+    }
+
+    fn stamp(&self) -> Option<FileStamp> {
+        let metadata = fs::metadata(&self.layout.state).ok()?;
+        Some(FileStamp {
+            length: metadata.len(),
+            modified: metadata.modified().ok(),
+            #[cfg(unix)]
+            inode: std::os::unix::fs::MetadataExt::ino(&metadata),
+        })
     }
 
     pub fn update<F>(&self, update: F) -> Result<Document, StateError>

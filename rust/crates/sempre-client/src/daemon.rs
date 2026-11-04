@@ -15,6 +15,9 @@ use tracing::info;
 
 use crate::{ClientError, VERSION, api, listener};
 
+/// The history lives in RAM on a router, so it stays small whatever the settings say.
+const OPENWRT_TRAFFIC_CEILING: u64 = 4 << 20;
+
 pub(crate) async fn run(mode: Mode, listen_override: Option<&str>) -> Result<(), ClientError> {
     run_with_layout(Layout::for_mode(mode)?, listen_override, None, None).await
 }
@@ -40,8 +43,9 @@ pub(crate) async fn run_with_layout(
     }
     let web = WebConfigStore::new(&layout.web_config);
     let config = web.initialize()?;
-    let traffic = Arc::new(crate::traffic_history::TrafficStore::open(
+    let traffic = Arc::new(crate::traffic_history::TrafficStore::open_with_ceiling(
         layout.traffic_history.clone(),
+        layout.openwrt.then_some(OPENWRT_TRAFFIC_CEILING),
     )?);
     let listen = listen_override.map_or(config.listen, |value| vec![value.into()]);
     let listeners = listener::bind(&listen).await?;
