@@ -82,15 +82,7 @@ pub(super) fn render(target: &Target, shared: &SharedDns, source: &Value) -> Val
         rules.push(cn);
     }
     if shared.fakeip_enabled() {
-        let mut fakeip = json!({
-            "disable_cache": false, "rewrite_ttl": shared.fakeip_ttl,
-            "query_type": ["A", "AAAA"], "server": "fakeip"
-        });
-        if modern {
-            fakeip["action"] = json!("route");
-            fakeip["strategy"] = json!("ipv4_only");
-        }
-        rules.push(fakeip);
+        push_fakeip_rules(&mut rules, shared, modern, response_matching);
     }
 
     if modern {
@@ -112,4 +104,27 @@ pub(super) fn render(target: &Target, shared: &SharedDns, source: &Value) -> Val
         }
         output
     }
+}
+
+fn push_fakeip_rules(
+    rules: &mut Vec<Value>,
+    shared: &SharedDns,
+    modern: bool,
+    response_matching: bool,
+) {
+    let mut fakeip = json!({
+        "disable_cache": false, "rewrite_ttl": shared.fakeip_ttl,
+        "query_type": ["A", "AAAA"], "server": "fakeip"
+    });
+    if response_matching {
+        // sing-box 1.14 refuses to start on the rule `strategy` option, so an empty AAAA
+        // answer keeps FakeIP IPv4-only.
+        rules.push(json!({ "query_type": ["AAAA"], "action": "predefined" }));
+        fakeip["query_type"] = json!(["A"]);
+        fakeip["action"] = json!("route");
+    } else if modern {
+        fakeip["action"] = json!("route");
+        fakeip["strategy"] = json!("ipv4_only");
+    }
+    rules.push(fakeip);
 }

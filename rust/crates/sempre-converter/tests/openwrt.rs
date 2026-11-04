@@ -204,7 +204,7 @@ fn openwrt_uses_tproxy_local_dns_and_first_selector_member_across_versions() {
 
 #[test]
 fn openwrt_modern_fakeip_preserves_ipv4_only_strategy() {
-    for version in ["sing-box-v12", "sing-box-v13", "sing-box-v14"] {
+    for version in ["sing-box-v12", "sing-box-v13"] {
         let config = render(version);
         let rule = config["dns"]["rules"]
             .as_array()
@@ -215,6 +215,22 @@ fn openwrt_modern_fakeip_preserves_ipv4_only_strategy() {
         assert_eq!(rule["strategy"], "ipv4_only", "{version}");
         assert_eq!(rule["query_type"], json!(["A", "AAAA"]), "{version}");
     }
+}
+
+#[test]
+fn openwrt_v14_keeps_fakeip_ipv4_only_without_the_refused_strategy_option() {
+    let config = render("sing-box-v14");
+    let rules = config["dns"]["rules"].as_array().expect("DNS rules");
+    assert!(rules.iter().all(|rule| rule.get("strategy").is_none()));
+    let fakeip = rules
+        .iter()
+        .position(|rule| rule["server"] == "fakeip")
+        .expect("FakeIP rule");
+    assert_eq!(rules[fakeip]["query_type"], json!(["A"]));
+    assert_eq!(
+        rules[fakeip - 1],
+        json!({ "query_type": ["AAAA"], "action": "predefined" })
+    );
 }
 
 #[test]
