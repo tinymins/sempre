@@ -5,6 +5,7 @@ mod cn_routes;
 mod component_deploy;
 mod config;
 mod config_build;
+mod config_retention;
 mod context;
 mod core_download_task;
 mod custom_node;

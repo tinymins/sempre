@@ -105,7 +105,7 @@ pub fn mark_stable<R: VersionRunner>(
         }
         Ok(())
     })?;
-    Ok(())
+    crate::config_retention::prune_superseded_configs(&manager.store)
 }
 
 pub fn mark_stopping<R: VersionRunner>(manager: &Manager<R>) -> Result<(), ManagerError> {

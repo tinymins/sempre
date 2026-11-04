@@ -192,6 +192,16 @@ impl Store {
         }
     }
 
+    pub fn try_acquire_config(&self) -> Result<Option<Lease>, StateError> {
+        self.layout.ensure()?;
+        let file = open_lock(&self.layout.config_lock)?;
+        match file.try_lock_exclusive() {
+            Ok(()) => Ok(Some(Lease { file })),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            Err(error) => Err(StateError::Lock(error)),
+        }
+    }
+
     pub fn acquire_config(&self) -> Result<Lease, StateError> {
         self.layout.ensure()?;
         let file = open_lock(&self.layout.config_lock)?;
