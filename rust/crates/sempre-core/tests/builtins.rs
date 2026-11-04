@@ -30,3 +30,63 @@ fn selects_cpu_and_platform_assets() {
         "clash-rs-x86_64-pc-windows-msvc.exe"
     );
 }
+
+#[test]
+fn published_controller_is_kept_and_reached_over_loopback() {
+    let directory = tempfile::tempdir().expect("directory");
+    let config = directory.path().join("input.json");
+    std::fs::write(
+        &config,
+        r#"{"experimental":{"clash_api":{"external_controller":"0.0.0.0:9999","secret":"s3","external_ui":"/etc/sb/ui"}}}"#,
+    )
+    .expect("config");
+    let adapter = BuiltInAdapter::new(BuiltInKind::SingBox);
+    let runtime = adapter
+        .prepare_runtime_keeping_controller(&config, &directory.path().join("control"))
+        .expect("runtime");
+    let control = runtime.control.expect("control");
+    assert_eq!(control.base_url, "http://127.0.0.1:9999");
+    assert_eq!(control.secret, "s3");
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(runtime.config).expect("runtime")).expect("JSON");
+    let api = &written["experimental"]["clash_api"];
+    assert_eq!(api["external_controller"], "0.0.0.0:9999");
+    assert_eq!(api["external_ui"], "/etc/sb/ui");
+}
+
+#[test]
+fn configuration_without_a_controller_gets_the_private_one() {
+    let directory = tempfile::tempdir().expect("directory");
+    let config = directory.path().join("input.json");
+    std::fs::write(&config, "{}").expect("config");
+    let adapter = BuiltInAdapter::new(BuiltInKind::SingBox);
+    let runtime = adapter
+        .prepare_runtime_keeping_controller(&config, &directory.path().join("control"))
+        .expect("runtime");
+    assert!(
+        runtime
+            .control
+            .expect("control")
+            .base_url
+            .starts_with("http://127.0.0.1:")
+    );
+}
+
+#[test]
+fn openwrt_hosts_compile_the_openwrt_target() {
+    let adapter = BuiltInAdapter::new(BuiltInKind::SingBox);
+    let mut host = target("linux", "amd64");
+    host.openwrt = true;
+    let compiler = adapter
+        .compiler_target(Some("1.13.21"), &host)
+        .expect("target");
+    assert_eq!(compiler.format, "sing-box-v13-openwrt");
+    assert_eq!(compiler.platform, "openwrt");
+    assert_eq!(
+        adapter
+            .compiler_target(Some("1.13.21"), &target("linux", "amd64"))
+            .expect("target")
+            .format,
+        "sing-box-v13"
+    );
+}

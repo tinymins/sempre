@@ -346,7 +346,14 @@ fn version_is_referenced(document: &Document, reference: &CoreRef, version: &str
             .is_some_and(|resolved| resolved == version)
     });
     selection_references
-        || document.active.as_ref().is_some_and(|deployment| {
+        || [
+            &document.active,
+            &document.last_good,
+            &document.rejected_deployment,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|deployment| {
             deployment.core == reference.core
                 && deployment.repository == reference.repository
                 && deployment.version == version

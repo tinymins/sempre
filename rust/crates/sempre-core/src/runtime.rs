@@ -58,6 +58,48 @@ fn prepare_sing_box(config: &Path, directory: &Path) -> Result<RuntimeSpec, Regi
     })
 }
 
+/// Keeps a controller the configuration publishes, such as a router dashboard, and
+/// reaches it over loopback. A configuration without one gets the private controller.
+pub(super) fn prepare_sing_box_keeping_controller(
+    config: &Path,
+    directory: &Path,
+) -> Result<RuntimeSpec, RegistryError> {
+    let core = "sing-box";
+    let document = read_json_object(core, config)?;
+    let Some(control) = published_control(&document) else {
+        return prepare_sing_box(config, directory);
+    };
+    let encoded = serde_json::to_vec_pretty(&document)
+        .map_err(|error| runtime_error(core, format!("encode configuration: {error}")))?;
+    let path = write_runtime(core, directory, "config.json", &encoded, true)?;
+    Ok(RuntimeSpec {
+        config: path,
+        control: Some(control),
+    })
+}
+
+fn published_control(document: &Map<String, Value>) -> Option<ControlSpec> {
+    let api = document.get("experimental")?.get("clash_api")?;
+    let controller = api.get("external_controller")?.as_str()?.trim();
+    let (host, port) = controller.rsplit_once(':')?;
+    let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
+    let host = match host.trim_matches(['[', ']']) {
+        "" | "0.0.0.0" => "127.0.0.1",
+        "::" => "[::1]",
+        _ => host,
+    };
+    Some(ControlSpec {
+        core: "sing-box".into(),
+        protocol: ControlProtocol::ClashRest,
+        base_url: format!("http://{host}:{port}"),
+        secret: api
+            .get("secret")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    })
+}
+
 fn prepare_clash_yaml(
     kind: BuiltInKind,
     config: &Path,

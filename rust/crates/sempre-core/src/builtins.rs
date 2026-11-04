@@ -337,6 +337,18 @@ impl Adapter for BuiltInAdapter {
         runtime::prepare(self.kind, config, runtime_directory)
     }
 
+    fn prepare_runtime_keeping_controller(
+        &self,
+        config: &Path,
+        runtime_directory: &Path,
+    ) -> Result<crate::RuntimeSpec, RegistryError> {
+        if self.kind == BuiltInKind::SingBox {
+            runtime::prepare_sing_box_keeping_controller(config, runtime_directory)
+        } else {
+            runtime::prepare(self.kind, config, runtime_directory)
+        }
+    }
+
     fn auto_config_profiles(&self, target: &Target) -> Vec<crate::AutoConfigCandidateProfile> {
         crate::recommendation::profiles(self.kind, target)
     }

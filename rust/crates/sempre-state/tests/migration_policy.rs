@@ -8,6 +8,10 @@ const FROZEN: &[(&str, &str)] = &[
         "b18ed94bd5dc948a621d31b0736390a321a69d43cf3b34aa63bd0a9d4daed956",
     ),
     (
+        "sempre-state/src/migrations/v0004_last_good_deployment.rs",
+        "f25995b238b5dfc1b686ce43f2c45b2f58fc45dcb15c58ffedcbdf5c9e84f44f",
+    ),
+    (
         "sempre-state/src/migrations/v0003_remove_runtime_rollback.rs",
         "b6c200860bed6363d20d83bd48ae5e5e2c597dc4ea751a18eda63e9239787546",
     ),

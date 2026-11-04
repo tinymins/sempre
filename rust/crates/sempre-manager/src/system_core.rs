@@ -103,12 +103,17 @@ fn record_firmware_core(document: &mut Document, version: &str) -> Vec<String> {
             installed_at: Utc::now(),
         });
     source.channels.insert(STABLE.into(), version.to_owned());
-    if let Some(active) = document
-        .active
-        .as_mut()
-        .filter(|active| active.core == FIRMWARE_CORE && stale.contains(&active.version))
+    for deployment in [
+        &mut document.active,
+        &mut document.last_good,
+        &mut document.rejected_deployment,
+    ]
+    .into_iter()
+    .flatten()
     {
-        version.clone_into(&mut active.version);
+        if deployment.core == FIRMWARE_CORE && stale.contains(&deployment.version) {
+            version.clone_into(&mut deployment.version);
+        }
     }
     if let Some(selected) = document
         .selected

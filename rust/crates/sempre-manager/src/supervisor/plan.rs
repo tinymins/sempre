@@ -61,7 +61,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             fs::remove_dir_all(&control_directory)
                 .map_err(|error| ManagerError::io("reset core control directory", error))?;
         }
-        let runtime = adapter.prepare_runtime(&config, &control_directory)?;
+        let runtime = if self.store.layout().openwrt {
+            adapter.prepare_runtime_keeping_controller(&config, &control_directory)?
+        } else {
+            adapter.prepare_runtime(&config, &control_directory)?
+        };
         if deployment.core == "sing-box" {
             self.adapt_fakeip_runtime(&runtime.config);
         }
@@ -83,6 +87,8 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             &mut transparent,
         )
         .await?;
+        self.validate_gateway_config(&reference, &deployment.version, &runtime.config)
+            .await?;
         self.startup_tasks
             .capture_config(&deployment.config_hash, &config);
         let runtime_data = fs::read(&runtime.config)
@@ -102,6 +108,21 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             dns_rule_files,
             rules,
         })
+    }
+
+    /// A router has no operator nearby, so it rejects a bad configuration before
+    /// the old core stops; other hosts keep their faster start and report failures.
+    async fn validate_gateway_config(
+        &self,
+        reference: &CoreRef,
+        version: &str,
+        config: &std::path::Path,
+    ) -> Result<(), ManagerError> {
+        if self.store.layout().openwrt && reference.core == "sing-box" {
+            self.validate_config_path(reference, version, config)
+                .await?;
+        }
+        Ok(())
     }
 
     fn adapt_fakeip_runtime(&self, config: &std::path::Path) {

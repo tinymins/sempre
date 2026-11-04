@@ -410,6 +410,12 @@ impl<R: VersionRunner + ValidationRunner + 'static> Manager<R> {
                 message: availability.reason.clone(),
             });
         }
+        if action == "restart" {
+            self.store.update(|document| {
+                document.retry_rejected_deployment();
+                Ok(())
+            })?;
+        }
         let task = self.startup_tasks.begin(action, status.pending_changes)?;
         let manager = self.clone();
         let task_id = task.id.clone();

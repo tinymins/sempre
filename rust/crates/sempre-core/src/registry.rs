@@ -32,6 +32,14 @@ pub trait Adapter: Send + Sync {
         config: &Path,
         runtime_directory: &Path,
     ) -> Result<RuntimeSpec, RegistryError>;
+    /// Prepares the runtime around a controller the configuration publishes itself.
+    fn prepare_runtime_keeping_controller(
+        &self,
+        config: &Path,
+        runtime_directory: &Path,
+    ) -> Result<RuntimeSpec, RegistryError> {
+        self.prepare_runtime(config, runtime_directory)
+    }
     fn auto_config_profiles(&self, _target: &Target) -> Vec<AutoConfigCandidateProfile> {
         Vec::new()
     }

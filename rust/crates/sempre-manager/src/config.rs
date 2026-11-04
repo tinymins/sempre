@@ -193,7 +193,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             };
             let deployment_changed =
                 document.active.as_ref() != Some(&deployment) || runtime_changed;
-            if deployment_changed {
+            // A deployment that already failed waits for an explicit restart.
+            let rejected = document.rejected_deployment.as_ref() == Some(&deployment);
+            if deployment_changed && !rejected {
                 document.stage(deployment);
                 change.needs_restart = true;
             }

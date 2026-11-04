@@ -74,15 +74,20 @@ pub fn mark_healthy<R: VersionRunner>(
         {
             return Ok(());
         }
+        document.record_healthy_deployment();
+        document.runtime.state = RuntimeState::Running;
+        document.runtime.last_transition = Some(Utc::now());
+        // A rolled-back runtime still owes the user a restart and the failure reason.
+        if document.rejected_deployment.is_some() {
+            return Ok(());
+        }
         if document.pending {
             document.pending = false;
             document.pending_config_fields.clear();
         }
         document.last_error = None;
-        document.runtime.state = RuntimeState::Running;
         document.runtime.last_error = None;
         document.runtime.last_failure = None;
-        document.runtime.last_transition = Some(Utc::now());
         Ok(())
     })?;
     Ok(())
@@ -163,6 +168,34 @@ pub fn record_failure<R: VersionRunner + ValidationRunner>(
     })?;
     manager.startup_tasks.failure(stage, error);
     Ok(())
+}
+
+/// Falls back to the last healthy deployment when its files are still available.
+pub fn roll_back<R: VersionRunner + ValidationRunner>(
+    manager: &Manager<R>,
+) -> Result<bool, ManagerError> {
+    let layout = manager.store.layout();
+    let mut rolled_back = false;
+    manager.store.update(|document| {
+        let available = document.last_good.as_ref().is_some_and(|deployment| {
+            layout
+                .config(&deployment.core, &deployment.config_hash)
+                .is_file()
+                && layout
+                    .core_binary(
+                        &deployment.core,
+                        deployment.repository.as_deref(),
+                        &deployment.version,
+                    )
+                    .is_file()
+        });
+        rolled_back = available && document.roll_back_failed_deployment();
+        Ok(())
+    })?;
+    if rolled_back {
+        manager.log_supervisor("deployment failed; rolled back to the last healthy deployment");
+    }
+    Ok(rolled_back)
 }
 
 fn fill_runtime(document: &mut Document, plan: &RuntimePlan) {

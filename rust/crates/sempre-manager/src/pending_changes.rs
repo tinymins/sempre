@@ -22,6 +22,10 @@ pub enum RuntimePendingChange {
         fields: Vec<PendingConfigField>,
         current_revision: Option<u64>,
     },
+    RolledBack {
+        failed: String,
+        error: Option<String>,
+    },
 }
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
@@ -38,6 +42,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             .fakeip_pending_change(document)
             .into_iter()
             .collect::<Vec<_>>();
+        if let Some(failed) = &document.rejected_deployment {
+            changes.push(RuntimePendingChange::RolledBack {
+                failed: deployment_label(failed),
+                error: document.runtime.last_error.clone(),
+            });
+        }
         if document.pending
             && runtime_deployment_identity(document)
                 != deployment_identity(document.active.as_ref())

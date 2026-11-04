@@ -4,6 +4,7 @@ mod layout;
 mod migrations;
 mod model;
 mod pending;
+mod rollback;
 mod schema_migration;
 mod store;
 

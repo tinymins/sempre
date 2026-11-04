@@ -36,8 +36,10 @@ never recommended as a LAN interface.
 The service reports a failed deployment if the TUN address conflicts, a
 configured LAN interface is missing, forwarding is disabled, a TProxy policy
 table collides with user state, or the generated runtime configuration is
-invalid. The attempted deployment remains selected and pending for inspection
-and retry; Sempre does not restore an older configuration.
+invalid. Sempre restores the last healthy compiled configuration when one exists
+and keeps the attempted deployment pending, so settings stay unchanged and the
+next manual restart retries it. Without a healthy deployment the service stays
+failed.
 
 ## TUN Router
 

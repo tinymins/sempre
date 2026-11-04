@@ -173,6 +173,9 @@ impl<'a, R: VersionRunner + ValidationRunner> Machine<'a, R> {
                     &error,
                     false,
                 ))?;
+                if fatal(state::roll_back(manager))? {
+                    return Ok(Phase::Decide);
+                }
                 Ok(Phase::Backoff(Resume::Cycle, ReloadCleanup::CoreFailure))
             }
         }
@@ -193,7 +196,12 @@ impl<'a, R: VersionRunner + ValidationRunner> Machine<'a, R> {
                 Ok(Phase::Decide)
             }
             Ok(CycleResult::Shutdown) => Ok(Phase::Done(Ok(()))),
-            Ok(CycleResult::Failed) => Ok(Phase::Backoff(Resume::Cycle, ReloadCleanup::Frontend)),
+            Ok(CycleResult::Failed) => {
+                if fatal(state::roll_back(manager))? {
+                    return Ok(Phase::Decide);
+                }
+                Ok(Phase::Backoff(Resume::Cycle, ReloadCleanup::Frontend))
+            }
             Err(error) => {
                 fatal(manager.handle_process_failure(plan, "runtime failed", &error))?;
                 Ok(Phase::Backoff(Resume::Cycle, ReloadCleanup::Frontend))

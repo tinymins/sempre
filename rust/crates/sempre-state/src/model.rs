@@ -6,7 +6,7 @@ use serde_json::Value;
 use thiserror::Error;
 use url::Url;
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -16,6 +16,8 @@ pub struct Document {
     pub updated_at: DateTime<Utc>,
     pub selected: Option<Selection>,
     pub active: Option<Deployment>,
+    pub last_good: Option<Deployment>,
+    pub rejected_deployment: Option<Deployment>,
     pub pending: bool,
     pub pending_config_fields: Vec<crate::PendingConfigField>,
     pub last_error: Option<String>,
@@ -172,6 +174,8 @@ impl Default for Document {
             updated_at: Utc::now(),
             selected: None,
             active: None,
+            last_good: None,
+            rejected_deployment: None,
             pending: false,
             pending_config_fields: Vec::new(),
             last_error: None,
@@ -286,6 +290,7 @@ impl Document {
 
     pub fn stage(&mut self, deployment: Deployment) {
         self.active = Some(deployment);
+        self.rejected_deployment = None;
         self.pending = true;
         self.last_error = None;
         self.runtime.last_failure = None;

@@ -47,9 +47,13 @@ fn initialize_migrates_v1_once_and_preserves_existing_pending_fields() {
         fs::write(&store.layout().state, fixture).expect("write v1 state");
 
         let migrated = store.initialize().expect("migrate state");
-        assert_eq!(migrated.schema, 3);
+        assert_eq!(migrated.schema, 4);
         assert_eq!(migrated.pending_config_fields, expected);
-        assert_eq!(migrated.applied_migrations.len(), 2);
+        assert_eq!(migrated.applied_migrations.len(), 3);
+        assert_eq!(
+            migrated.applied_migrations[2].id,
+            "v0004_last_good_deployment"
+        );
         assert_eq!(
             migrated.applied_migrations[0].id,
             "v0002_pending_change_contract"
@@ -138,8 +142,8 @@ fn concurrent_initialize_applies_the_migration_once() {
 
     for handle in handles {
         let document = handle.join().expect("initialize thread");
-        assert_eq!(document.applied_migrations.len(), 2);
+        assert_eq!(document.applied_migrations.len(), 3);
     }
     let persisted = store.read().expect("read migrated state");
-    assert_eq!(persisted.applied_migrations.len(), 2);
+    assert_eq!(persisted.applied_migrations.len(), 3);
 }
