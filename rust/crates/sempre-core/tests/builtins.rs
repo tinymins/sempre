@@ -51,7 +51,7 @@ fn published_controller_is_kept_and_reached_over_loopback() {
         serde_json::from_slice(&std::fs::read(runtime.config).expect("runtime")).expect("JSON");
     let api = &written["experimental"]["clash_api"];
     assert_eq!(api["external_controller"], "0.0.0.0:9999");
-    assert_eq!(api["external_ui"], "/etc/sb/ui");
+    assert_eq!(api["external_ui"], "ui");
 }
 
 #[test]

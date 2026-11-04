@@ -65,10 +65,11 @@ pub(super) fn prepare_sing_box_keeping_controller(
     directory: &Path,
 ) -> Result<RuntimeSpec, RegistryError> {
     let core = "sing-box";
-    let document = read_json_object(core, config)?;
+    let mut document = read_json_object(core, config)?;
     let Some(control) = published_control(&document) else {
         return prepare_sing_box(config, directory);
     };
+    keep_dashboard_in_data_directory(&mut document);
     let encoded = serde_json::to_vec_pretty(&document)
         .map_err(|error| runtime_error(core, format!("encode configuration: {error}")))?;
     let path = write_runtime(core, directory, "config.json", &encoded, true)?;
@@ -76,6 +77,23 @@ pub(super) fn prepare_sing_box_keeping_controller(
         config: path,
         control: Some(control),
     })
+}
+
+/// A published dashboard path describes the publisher's layout. Relative to the core's
+/// working directory it stays inside the installation on any router.
+fn keep_dashboard_in_data_directory(document: &mut Map<String, Value>) {
+    let clash_api = document
+        .get_mut("experimental")
+        .and_then(|experimental| experimental.get_mut("clash_api"))
+        .and_then(Value::as_object_mut);
+    if let Some(clash_api) = clash_api
+        && clash_api
+            .get("external_ui")
+            .and_then(Value::as_str)
+            .is_some_and(|path| !path.is_empty())
+    {
+        clash_api.insert("external_ui".into(), json!("ui"));
+    }
 }
 
 fn published_control(document: &Map<String, Value>) -> Option<ControlSpec> {
