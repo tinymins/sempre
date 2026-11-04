@@ -14,6 +14,7 @@ import { randomUuid } from '../lib/randomUuid'
 import { useSession } from '../lib/session'
 import type { NetworkSettingsResponse, ProxyNode } from '../lib/types'
 import { SimpleRoutingRules, type SimpleRoutingSave } from '../features/dns/SimpleRoutingRules'
+import { useOpenwrt } from '../lib/platform'
 import { useUIMode } from '../lib/uiMode'
 import { useDnsSettings } from '../features/dns/useDnsSettings'
 
@@ -31,6 +32,7 @@ export function RoutingRules() {
   const { locale } = useI18n()
   const { session } = useSession()
   const { mode: uiMode } = useUIMode()
+  const openwrt = useOpenwrt()
   const queryClient = useQueryClient()
   const zh = locale === 'zh-CN'
   const [selectedId, setSelectedId] = useState(INTRANET_ID)
@@ -145,6 +147,8 @@ export function RoutingRules() {
   if (uiMode === 'simple' && proxies.isLoading) return <div className="p-8 text-sm text-[var(--muted)]">{zh ? '正在加载分流节点…' : 'Loading routing nodes…'}</div>
   const builtin = <BuiltinRuleSet policy={current.domestic_domains} count={builtinCount} saving={save.isPending} proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} zh={zh} onChange={(patch) => save.mutate((latest) => ({ ...latest, domestic_domains: { ...latest.domestic_domains, ...patch } }))} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy }, { onError: (error) => message.error(error.message) })} />
   const intranetBuiltin = <IntranetRuleSet proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} zh={zh} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy }, { onError: (error) => message.error(error.message) })} />
+  // Domain rule sets only reach the core through the DNS frontend, and CN routes need TUN.
+  if (openwrt) return <div className="space-y-5"><h1 className="text-xl font-semibold">{zh ? '域名分流' : 'Domain routing'}</h1><Card className="!rounded-lg" bodyStyle={{ padding: '1rem' }}>{intranetBuiltin}</Card><p className="text-sm text-[var(--muted)]">{zh ? '其他规则在订阅配置的规则列表、代理组和自定义规则中修改。' : 'Edit other rules under the rule list, proxy group, and custom rule tabs of a subscription.'}</p></div>
   const cnBuiltin = <CnRuleSet proxyGroups={proxies.data ?? []} selecting={selectProxy.isPending} zh={zh} onSelectProxy={(group, proxy) => selectProxy.mutate({ group, proxy }, { onError: (error) => message.error(error.message) })} />
   if (uiMode === 'simple') return <SimpleRoutingRules builtin={<div className="space-y-6">{intranetBuiltin}<div className="border-t border-[var(--border)] pt-6">{cnBuiltin}</div><div className="border-t border-[var(--border)] pt-6">{builtin}</div></div>} settings={current} proxyGroups={proxies.data ?? []} saving={save.isPending || selectProxy.isPending} pendingSelection={Object.keys(pendingSelections).length > 0} onSave={saveSimple} />
   return <div className="space-y-5">

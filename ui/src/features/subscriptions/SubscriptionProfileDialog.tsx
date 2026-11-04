@@ -10,7 +10,6 @@ export function SubscriptionProfileDialog({
   creating,
   name,
   mode,
-  remoteOnly,
   manifestURL,
   error,
   pending,
@@ -25,7 +24,6 @@ export function SubscriptionProfileDialog({
   creating: boolean
   name: string
   mode: SubscriptionMode
-  remoteOnly?: boolean
   manifestURL: string
   error: string
   pending: boolean
@@ -65,7 +63,7 @@ export function SubscriptionProfileDialog({
         <Field label={t('subscriptionSetName')}>
           <Input autoFocus aria-invalid={Boolean(error)} aria-describedby={error ? 'subscription-set-name-error' : undefined} value={name} onChange={(event) => onNameChange(event.target.value)} />
         </Field>
-        {creating && !remoteOnly ? (
+        {creating ? (
           <Field label={t('subscriptionMode')}>
             <Select
               value={mode}

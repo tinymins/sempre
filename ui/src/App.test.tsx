@@ -109,7 +109,7 @@ describe('App', () => {
     expect(await screen.findByRole('link', { name: 'Overview' })).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Tunnels' })).not.toBeInTheDocument())
     expect(screen.queryByText(/^Smart diagnos/i)).not.toBeInTheDocument()
-    for (const name of ['Automatic network switching', 'DNS', 'Gateway', 'Custom Nodes', 'Routing Rules']) {
+    for (const name of ['Automatic network switching', 'DNS', 'Gateway']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
     fireEvent.click(screen.getByRole('button', { name: 'Analysis & diagnostics' }))

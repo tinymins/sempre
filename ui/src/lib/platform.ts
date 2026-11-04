@@ -5,9 +5,7 @@ import type { SystemStatus } from './types'
 
 /** Pages for features that OpenWrt does not run, because Sempre only maintains sing-box and its rules there. */
 export const OPENWRT_HIDDEN_PATHS: ReadonlySet<string> = new Set([
-  '/custom-nodes',
   '/network-automation',
-  '/routing-rules',
   '/dns',
   '/tunnels',
   '/gateway',

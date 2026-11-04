@@ -1,5 +1,6 @@
 import { Alert, Form, type FormInstance, Input, InputNumber, Password, Select, Switch, TextArea } from "@acme/components";
 import { useTranslation } from "react-i18next";
+import { useOpenwrt } from "@/lib/platform";
 import type { LinuxNetworkInventory } from "@/lib/types";
 
 interface Props {
@@ -24,7 +25,9 @@ export function ProxyRuntimeFields({
   networkInventory,
 }: Props) {
   const { t } = useTranslation();
-  const unsupportedMode = transparentMode && transparentMode !== "disabled" && !(
+  // A router always captures through TProxy, whatever mode the profile stores.
+  const openwrt = useOpenwrt();
+  const unsupportedMode = !openwrt && transparentMode && transparentMode !== "disabled" && !(
     transparentMode === "tun-router" && features.has("transparent.tun") ||
     transparentMode === "tproxy" && features.has("transparent.tproxy") ||
     transparentMode === "ebpf-router" && features.has("transparent.ebpf")
