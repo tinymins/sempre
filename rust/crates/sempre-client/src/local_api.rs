@@ -1,7 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use reqwest::{Client, Method, StatusCode};
-use sempre_control::DaemonEndpoint;
+use sempre_control_plane::DaemonEndpoint;
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
@@ -10,7 +10,7 @@ const TOKEN_HEADER: &str = "x-sempre-daemon-token";
 #[derive(Debug, Error)]
 pub(crate) enum Error {
     #[error(transparent)]
-    Control(#[from] sempre_control::ControlError),
+    Control(#[from] sempre_control_plane::ControlError),
     #[error("build local API client: {0}")]
     Build(#[source] reqwest::Error),
     #[error("call local API: {0}")]

@@ -15,7 +15,7 @@ path = "src/main.rs"
 chrono.workspace = true
 clap.workspace = true
 sempre-bundle = { path = "../sempre-bundle" }
-sempre-control = { path = "../sempre-control" }
+sempre-control-plane = { path = "../sempre-control-plane" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }
 sha2.workspace = true

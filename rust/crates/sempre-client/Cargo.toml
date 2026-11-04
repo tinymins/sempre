@@ -29,7 +29,7 @@ reqwest.workspace = true
 semver.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }
 sempre-bundle = { path = "../sempre-bundle" }
-sempre-control = { path = "../sempre-control" }
+sempre-control-plane = { path = "../sempre-control-plane" }
 sempre-core = { path = "../sempre-core" }
 sempre-converter = { path = "../sempre-converter" }
 sempre-core-control = { path = "../sempre-core-control" }

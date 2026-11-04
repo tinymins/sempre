@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use sempre_control::PublicEndpoint;
+use sempre_control_plane::PublicEndpoint;
 use sempre_manager::Manager;
 use sempre_state::{Layout, Mode, Store};
 use serde_json::json;

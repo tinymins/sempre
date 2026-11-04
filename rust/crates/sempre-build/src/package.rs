@@ -38,7 +38,7 @@ pub async fn package(input: &BuildInput) -> Result<BuildOutput, BuildError> {
     })?;
     let source = Layout::at(&staging.path().join("release-source"));
     Store::new(source.clone()).initialize()?;
-    sempre_control::WebConfigStore::new(&source.web_config).initialize()?;
+    sempre_control_plane::WebConfigStore::new(&source.web_config).initialize()?;
     sempre_subscription::SubscriptionStore::new(source.clone()).initialize()?;
     sempre_tunnel::initialize(&source)?;
 

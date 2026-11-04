@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use sempre_control::{API_MAJOR, PublicEndpoint, local_url};
+use sempre_control_plane::{API_MAJOR, PublicEndpoint, local_url};
 use sempre_state::Layout;
 use serde::Deserialize;
 use tokio::time::{Instant, sleep};

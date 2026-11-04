@@ -5,7 +5,7 @@ use axum::{
     extract::ConnectInfo,
     http::{HeaderValue, Request, StatusCode, header},
 };
-use sempre_control::{DaemonEndpoint, WebConfigStore};
+use sempre_control_plane::{DaemonEndpoint, WebConfigStore};
 use sempre_manager::Manager;
 use sempre_state::{Layout, Store};
 use tower::ServiceExt as _;

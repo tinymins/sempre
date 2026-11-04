@@ -1,3 +1,5 @@
+mod account_api;
+mod admin_api;
 mod auth;
 mod config;
 mod debug_stream;
@@ -7,14 +9,19 @@ mod error;
 mod export_target;
 mod fetch;
 mod maintenance;
+mod network_api;
+mod nodes_api;
+mod overview_api;
 mod proxy_crypto;
 mod proxy_node_binding;
 mod proxy_runtime;
+mod public_api;
 mod relay_egress;
 mod resource_export;
 #[cfg(test)]
 mod resource_export_golden;
 mod resource_relay;
+mod rules_api;
 mod source_cache;
 mod subscription_compile;
 mod subscription_editor;
@@ -26,13 +33,6 @@ mod subscription_sources;
 mod subscription_stats;
 mod subscription_validation;
 mod subscriptions;
-mod toolbox_account;
-mod toolbox_admin;
-mod toolbox_network;
-mod toolbox_nodes;
-mod toolbox_overview;
-mod toolbox_public;
-mod toolbox_rules;
 mod trusted_proxy;
 
 use std::sync::Arc;
@@ -126,13 +126,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(subscription_compile::router())
         .merge(subscription_stats::router())
         .merge(subscription_source_debug::router())
-        .merge(toolbox_nodes::router())
+        .merge(nodes_api::router())
         .merge(subscription_proxies::router())
-        .merge(toolbox_account::router())
-        .merge(toolbox_admin::router())
+        .merge(account_api::router())
+        .merge(admin_api::router())
         .merge(relay_egress::router())
-        .merge(toolbox_overview::router())
-        .merge(toolbox_network::router())
+        .merge(overview_api::router())
+        .merge(network_api::router())
         .merge(auth::protected_router())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -144,10 +144,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/v1/auth/config", get(auth::public_config))
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
-        .merge(toolbox_public::router())
-        .merge(toolbox_rules::router())
+        .merge(public_api::router())
+        .merge(rules_api::router())
         .merge(resource_relay::router())
-        .merge(toolbox_account::public_router())
+        .merge(account_api::public_router())
         .merge(protected)
         .route("/api/{*path}", any(api_not_found))
         .layer(PropagateRequestIdLayer::x_request_id())

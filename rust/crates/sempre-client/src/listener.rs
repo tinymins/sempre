@@ -10,7 +10,9 @@ use axum::{
 };
 use chrono::Utc;
 use futures_util::StreamExt;
-use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, primary_listen};
+use sempre_control_plane::{
+    DaemonEndpoint, PublicEndpoint, WebConfigStore, local_url, primary_listen,
+};
 use sempre_state::Layout;
 #[cfg(test)]
 use tokio::net::TcpListener;

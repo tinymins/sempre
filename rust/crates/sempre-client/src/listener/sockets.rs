@@ -1,6 +1,6 @@
 use std::{io, net::SocketAddr};
 
-use sempre_control::validate_listens;
+use sempre_control_plane::validate_listens;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::{TcpListener, TcpStream};
 

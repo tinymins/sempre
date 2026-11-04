@@ -15,7 +15,7 @@ chrono.workspace = true
 clap.workspace = true
 sempre-artifact = { path = "../sempre-artifact" }
 sempre-bundle = { path = "../sempre-bundle" }
-sempre-control = { path = "../sempre-control" }
+sempre-control-plane = { path = "../sempre-control-plane" }
 sempre-core = { path = "../sempre-core" }
 sempre-state = { path = "../sempre-state" }
 sempre-subscription = { path = "../sempre-subscription" }

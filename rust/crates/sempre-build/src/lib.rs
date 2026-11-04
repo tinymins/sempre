@@ -36,7 +36,7 @@ pub enum BuildError {
     #[error(transparent)]
     Bundle(#[from] sempre_bundle::BundleError),
     #[error(transparent)]
-    Control(#[from] sempre_control::ControlError),
+    Control(#[from] sempre_control_plane::ControlError),
     #[error(transparent)]
     Core(#[from] sempre_core::RegistryError),
     #[error(transparent)]

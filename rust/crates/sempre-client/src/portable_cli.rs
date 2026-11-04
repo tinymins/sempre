@@ -1,7 +1,7 @@
 use std::{path::PathBuf, time::Duration};
 
 use reqwest::Client;
-use sempre_control::PublicEndpoint;
+use sempre_control_plane::PublicEndpoint;
 use sempre_state::{Layout, Mode, set_portable_marker};
 
 use crate::{ClientError, args::Arguments, daemon, diagnostics_cli};

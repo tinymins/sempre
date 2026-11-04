@@ -11,7 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use sempre_control::{API_MAJOR, AuthStore, WebConfigStore, token_matches};
+use sempre_control_plane::{API_MAJOR, AuthStore, WebConfigStore, token_matches};
 use sempre_manager::{MAX_CONFIG_SIZE, Manager};
 use serde::{Deserialize, Serialize};
 use url::Url;

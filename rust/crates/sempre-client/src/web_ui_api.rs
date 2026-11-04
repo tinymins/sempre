@@ -139,7 +139,7 @@ async fn web_patch(State(state): State<Arc<AppState>>, Json(input): Json<WebPatc
         .or_else(|| input.listen.map(|value| vec![value]));
     let mut endpoint = state.endpoint.get();
     if let Some(listen) = listen.as_deref()
-        && let Err(error) = sempre_control::validate_listens(listen)
+        && let Err(error) = sempre_control_plane::validate_listens(listen)
     {
         return invalid(error.to_string());
     }

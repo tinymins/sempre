@@ -60,7 +60,7 @@ use args::{
     Arguments, BundleCommand, Command, ConfigCommand, CoreCommand, PortableCommand, ServiceCommand,
 };
 use clap::Parser;
-use sempre_control::ControlError;
+use sempre_control_plane::ControlError;
 use sempre_manager::{Manager, ManagerError};
 use sempre_state::{Layout, LayoutError, Mode, StateError, Store};
 use sempre_subscription::SubscriptionError;

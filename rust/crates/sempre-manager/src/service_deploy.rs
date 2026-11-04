@@ -64,7 +64,7 @@ impl<R: VersionRunner> Manager<R> {
             BundleKind::Release => sempre_bundle::validate_release(&source.root)?,
             BundleKind::Snapshot => sempre_bundle::validate_snapshot(&source.root)?,
         }
-        sempre_control::WebConfigStore::new(&source.web_config).read()?;
+        sempre_control_plane::WebConfigStore::new(&source.web_config).read()?;
         sempre_service::require_installation_privileges()?;
         require_bundle_replacement_confirmation(kind, source, target, allow_replace)?;
         prepare_command_registration(target)?;

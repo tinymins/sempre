@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use sempre_control::{DaemonEndpoint, PublicEndpoint, WebConfigStore};
+use sempre_control_plane::{DaemonEndpoint, PublicEndpoint, WebConfigStore};
 use sempre_manager::Manager;
 use sempre_state::{Layout, Mode, Store};
 use tokio::{

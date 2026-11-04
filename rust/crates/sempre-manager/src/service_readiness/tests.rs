@@ -82,7 +82,7 @@ async fn failed_health_retains_the_old_executable_and_ui_for_rollback() {
         sempre_state::Store::new(layout.clone())
             .initialize()
             .unwrap();
-        sempre_control::WebConfigStore::new(&layout.web_config)
+        sempre_control_plane::WebConfigStore::new(&layout.web_config)
             .initialize()
             .unwrap();
         std::fs::create_dir_all(layout.service_executable.parent().unwrap()).unwrap();

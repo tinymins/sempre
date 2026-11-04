@@ -1,6 +1,6 @@
 use std::io::{self, Read as _};
 
-use sempre_control::{WebConfigStore, local_url, primary_listen};
+use sempre_control_plane::{WebConfigStore, local_url, primary_listen};
 use sempre_state::{Layout, Mode, Store};
 use serde::{Deserialize, Serialize};
 

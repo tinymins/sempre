@@ -28,7 +28,7 @@ fn setup(root: &std::path::Path, core: &std::path::Path) -> Result<(), Box<dyn s
     let layout = Layout::at(root);
     let store = Store::new(layout.clone());
     store.initialize()?;
-    sempre_control::WebConfigStore::new(&layout.web_config).initialize()?;
+    sempre_control_plane::WebConfigStore::new(&layout.web_config).initialize()?;
     let subscriptions = sempre_subscription::SubscriptionStore::new(layout.clone());
     subscriptions.initialize()?;
     subscriptions.update(|catalog| {

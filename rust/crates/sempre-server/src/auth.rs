@@ -165,7 +165,7 @@ pub(crate) async fn register(
             if user_count > 0
                 && let Some(code) = input.invitation_code.as_deref()
             {
-                crate::toolbox_admin::consume_invitation(&mut transaction, code, id).await?;
+                crate::admin_api::consume_invitation(&mut transaction, code, id).await?;
             }
             transaction.commit().await?;
         }

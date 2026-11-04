@@ -1,7 +1,7 @@
 use std::{io, path::PathBuf};
 
 use sempre_artifact::ArtifactError;
-use sempre_control::ControlError;
+use sempre_control_plane::ControlError;
 use sempre_core::{ReferenceError, RegistryError};
 use sempre_state::{LayoutError, StateError};
 use sempre_subscription::SubscriptionError;
