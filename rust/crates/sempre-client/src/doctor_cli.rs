@@ -322,7 +322,7 @@ async fn transparent_network_checks(report: &mut Report, profile: &sempre_conver
     let host_capture =
         transparent.mode == "tun" || (transparent.mode == "tproxy" && transparent.capture_host);
     if host_capture {
-        match sempre_network::run_network_test().await {
+        match sempre_diagnostics::run_network_test().await {
             Ok(network) => {
                 for result in network.results {
                     report.warning(

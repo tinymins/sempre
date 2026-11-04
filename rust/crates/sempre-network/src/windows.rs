@@ -207,8 +207,13 @@ pub fn neighbor_mac(index: u32, gateway: &str) -> Option<String> {
     )
 }
 
+pub struct BestRoute {
+    pub interface: String,
+    pub gateway: String,
+}
+
 #[allow(unsafe_code)] // GetBestRoute2 receives live initialized address/row output buffers.
-pub(crate) fn route_for(ip: IpAddr) -> Result<crate::route_probe::RouteDecision, NetworkError> {
+pub fn route_for(ip: IpAddr) -> Result<BestRoute, NetworkError> {
     let destination = encode(ip, 0);
     let mut row = MIB_IPFORWARD_ROW2::default();
     let mut source = SOCKADDR_INET::default();
@@ -225,8 +230,7 @@ pub(crate) fn route_for(ip: IpAddr) -> Result<crate::route_probe::RouteDecision,
         )
     })?;
     let next_hop = decode(&row.NextHop)?;
-    Ok(crate::route_probe::RouteDecision {
-        address: ip,
+    Ok(BestRoute {
         interface: decode(&source)?.to_string(),
         gateway: if next_hop.is_unspecified() {
             "On-link".into()

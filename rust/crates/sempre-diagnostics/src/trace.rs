@@ -8,7 +8,7 @@ use tokio::{
 use tokio_rustls::{TlsConnector, rustls::pki_types::ServerName};
 use url::Url;
 
-use crate::NetworkError;
+use crate::DiagnosticError;
 
 #[derive(Clone, Debug)]
 pub enum TraceTransportEvent {
@@ -23,7 +23,7 @@ pub enum TraceTransportEvent {
     },
 }
 
-pub fn parse_trace_target(target: &str) -> Result<(Url, String, u16), NetworkError> {
+pub fn parse_trace_target(target: &str) -> Result<(Url, String, u16), DiagnosticError> {
     crate::diagnostics::parse_target(target)
 }
 

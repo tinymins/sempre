@@ -6,7 +6,7 @@ use reqwest::{Client, StatusCode};
 use serde::Serialize;
 
 use crate::{
-    DOMESTIC_IP_PROBE, DnsAnswer, FOREIGN_IP_PROBE, IpMetadata, NetworkError, dns_probe,
+    DOMESTIC_IP_PROBE, DiagnosticError, DnsAnswer, FOREIGN_IP_PROBE, IpMetadata, dns_probe,
     lookup_ip_metadata,
 };
 
@@ -134,7 +134,7 @@ const PROBES: [Probe; 8] = [
     },
 ];
 
-pub async fn run_network_test() -> Result<NetworkTestReport, NetworkError> {
+pub async fn run_network_test() -> Result<NetworkTestReport, DiagnosticError> {
     let client = sempre_http::client_builder()
         .no_proxy()
         .timeout(TIMEOUT)

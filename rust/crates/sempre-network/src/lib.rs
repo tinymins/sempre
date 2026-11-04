@@ -1,26 +1,12 @@
 mod default_interface;
-mod diagnostics;
-mod dns_probe;
 mod interface_addresses;
 mod inventory;
-mod probe;
-mod public_ip;
-mod route_probe;
 mod route_table;
 mod routes;
 
 pub use default_interface::{DefaultInterface, default_interface, normalize_mac};
-pub use diagnostics::{
-    DiagnosticFinding, DiagnosticLayer, DiagnosticProgress, DiagnosticStatus,
-    NetworkDiagnosticReport, run_network_diagnostics, run_network_diagnostics_with_progress,
-};
-pub use dns_probe::DnsAnswer;
 pub use interface_addresses::{InterfaceAddress, interface_addresses};
 pub use inventory::{Interface, Inventory, inventory};
-pub use probe::{NetworkTestReport, NetworkTestResult, run_network_test};
-pub use public_ip::{
-    DOMESTIC_IP_PROBE, FOREIGN_IP_PROBE, IpMetadata, PublicIpProbe, lookup_ip_metadata,
-};
 pub use route_table::{SystemRoute, route_table};
 pub use routes::{route_prefixes, route_prefixes_excluding};
 
@@ -32,14 +18,7 @@ use thiserror::Error;
 pub enum NetworkError {
     #[error("inspect network state: {0}")]
     Io(#[from] io::Error),
-    #[error("build network diagnostic client: {0}")]
-    Client(#[from] reqwest::Error),
-    #[error("invalid diagnostic target: {0}")]
-    InvalidTarget(String),
 }
-
-mod trace;
-pub use trace::{TraceTransportEvent, parse_trace_target, trace_transport};
 
 #[cfg(target_os = "windows")]
 pub mod windows;

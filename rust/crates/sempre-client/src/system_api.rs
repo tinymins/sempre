@@ -468,7 +468,7 @@ async fn network_inventory() -> Response {
 }
 
 async fn network_test() -> Response {
-    match sempre_network::run_network_test().await {
+    match sempre_diagnostics::run_network_test().await {
         Ok(report) => Json(report).into_response(),
         Err(error) => internal(error.to_string()),
     }

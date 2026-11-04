@@ -8,8 +8,8 @@ use std::{
 
 use futures_util::StreamExt;
 use reqwest::{Client, Proxy, redirect::Policy};
+use sempre_diagnostics::{IpMetadata, PublicIpProbe, lookup_ip_metadata};
 use sempre_manager::Manager;
-use sempre_network::{IpMetadata, PublicIpProbe, lookup_ip_metadata};
 use sempre_state::RuntimeState;
 use serde::Serialize;
 use serde_json::Value;

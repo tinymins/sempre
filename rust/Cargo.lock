@@ -2431,6 +2431,7 @@ dependencies = [
  "sempre-converter",
  "sempre-core",
  "sempre-core-control",
+ "sempre-diagnostics",
  "sempre-gateway",
  "sempre-http",
  "sempre-manager",
@@ -2535,6 +2536,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "sempre-diagnostics"
+version = "2.0.7"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "reqwest",
+ "sempre-http",
+ "sempre-network",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-rustls",
+ "url",
+ "webpki-roots 1.0.10",
+]
+
+[[package]]
 name = "sempre-dns"
 version = "2.0.7"
 dependencies = [
@@ -2633,19 +2652,12 @@ dependencies = [
 name = "sempre-network"
 version = "2.0.7"
 dependencies = [
- "chrono",
- "futures-util",
  "ipconfig",
- "reqwest",
- "sempre-http",
  "serde",
  "serde_json",
  "sysinfo",
  "thiserror 2.0.20",
  "tokio",
- "tokio-rustls",
- "url",
- "webpki-roots 1.0.10",
  "windows-sys 0.61.2",
 ]
 

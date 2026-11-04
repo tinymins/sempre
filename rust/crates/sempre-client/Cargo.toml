@@ -37,6 +37,7 @@ sempre-gateway = { path = "../sempre-gateway" }
 sempre-manager = { path = "../sempre-manager" }
 sempre-network = { path = "../sempre-network" }
 sempre-service = { path = "../sempre-service" }
+sempre-diagnostics = { path = "../sempre-diagnostics" }
 sempre-state = { path = "../sempre-state" }
 sempre-transparent = { path = "../sempre-transparent" }
 sempre-subscription = { path = "../sempre-subscription" }

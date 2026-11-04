@@ -10,7 +10,7 @@ use tokio::{net::TcpStream, time::timeout};
 use tokio_rustls::{TlsConnector, rustls::pki_types::ServerName};
 use url::Url;
 
-use crate::{NetworkError, dns_probe, route_probe};
+use crate::{DiagnosticError, dns_probe, route_probe};
 
 mod findings;
 mod progress;
@@ -76,7 +76,7 @@ struct Attempt {
 pub async fn run_network_diagnostics(
     target: &str,
     runtime_running: bool,
-) -> Result<NetworkDiagnosticReport, NetworkError> {
+) -> Result<NetworkDiagnosticReport, DiagnosticError> {
     run_network_diagnostics_with_progress(target, runtime_running, |_| {}).await
 }
 
@@ -84,7 +84,7 @@ pub async fn run_network_diagnostics_with_progress<F>(
     target: &str,
     runtime_running: bool,
     on_progress: F,
-) -> Result<NetworkDiagnosticReport, NetworkError>
+) -> Result<NetworkDiagnosticReport, DiagnosticError>
 where
     F: FnMut(DiagnosticProgress),
 {
@@ -142,7 +142,7 @@ async fn run_transport_layers<F>(
     addresses: Vec<IpAddr>,
     route_conflict: bool,
     log: &mut DiagnosticLog<F>,
-) -> Result<(), NetworkError>
+) -> Result<(), DiagnosticError>
 where
     F: FnMut(DiagnosticProgress),
 {
@@ -209,21 +209,22 @@ where
     Ok(())
 }
 
-pub(crate) fn parse_target(target: &str) -> Result<(Url, String, u16), NetworkError> {
-    let url = Url::parse(target).map_err(|error| NetworkError::InvalidTarget(error.to_string()))?;
+pub(crate) fn parse_target(target: &str) -> Result<(Url, String, u16), DiagnosticError> {
+    let url =
+        Url::parse(target).map_err(|error| DiagnosticError::InvalidTarget(error.to_string()))?;
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
         || url.host_str().is_none()
     {
-        return Err(NetworkError::InvalidTarget(
+        return Err(DiagnosticError::InvalidTarget(
             "use an HTTP or HTTPS URL without embedded credentials".into(),
         ));
     }
     let host = url.host_str().expect("validated host").to_owned();
     let port = url
         .port_or_known_default()
-        .ok_or_else(|| NetworkError::InvalidTarget("target has no known port".into()))?;
+        .ok_or_else(|| DiagnosticError::InvalidTarget("target has no known port".into()))?;
     Ok((url, host, port))
 }
 

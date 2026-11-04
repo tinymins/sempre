@@ -7,18 +7,11 @@ license.workspace = true
 description = "Cross-platform network inventory and connectivity diagnostics for Sempre"
 
 [dependencies]
-sempre-http = { path = "../sempre-http" }
-chrono.workspace = true
-futures-util.workspace = true
-reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sysinfo.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
-url.workspace = true
-webpki-roots = "1"
 
 [target.'cfg(windows)'.dependencies]
 ipconfig = { version = "0.3.4", default-features = false }

@@ -9,6 +9,7 @@ members = [
     "crates/sempre-control",
     "crates/sempre-core",
     "crates/sempre-core-control",
+    "crates/sempre-diagnostics",
     "crates/sempre-dns",
     "crates/sempre-dns-capture",
     "crates/sempre-gateway",

@@ -1,7 +1,7 @@
 use std::{collections::HashSet, net::SocketAddr, time::Duration};
 
 use sempre_core_control::{Connection, ConnectionSnapshot};
-use sempre_network::TraceTransportEvent;
+use sempre_diagnostics::TraceTransportEvent;
 use tokio::{sync::mpsc, time::timeout};
 
 use super::{AppState, Session};
@@ -87,7 +87,7 @@ pub(super) async fn run(
             }
         };
     let (sender, mut events) = mpsc::unbounded_channel();
-    let work = sempre_network::trace_transport(url, remote, move |event| {
+    let work = sempre_diagnostics::trace_transport(url, remote, move |event| {
         let _ = sender.send(event);
     });
     tokio::pin!(work);

@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response, Sse, sse::Event},
     routing::{get, post},
 };
-use sempre_network::{DOMESTIC_IP_PROBE, FOREIGN_IP_PROBE, PublicIpProbe};
+use sempre_diagnostics::{DOMESTIC_IP_PROBE, FOREIGN_IP_PROBE, PublicIpProbe};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;

@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response, Sse, sse::Event, sse::KeepAlive},
     routing::post,
 };
-use sempre_network::DiagnosticProgress;
+use sempre_diagnostics::DiagnosticProgress;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -36,7 +36,7 @@ async fn run(State(state): State<Arc<AppState>>, Json(input): Json<DiagnosticInp
     tokio::spawn(async move {
         let worker_sender = sender.clone();
         let progress_sender = sender.clone();
-        let work = sempre_network::run_network_diagnostics_with_progress(
+        let work = sempre_diagnostics::run_network_diagnostics_with_progress(
             &input.target,
             runtime_running,
             move |progress| {

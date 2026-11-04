@@ -108,7 +108,7 @@ fn title(phase: &str, status: &str) -> &'static str {
 }
 
 async fn preview(State(state): State<Arc<AppState>>, Json(input): Json<Input>) -> Response {
-    let (_, host, _) = match sempre_network::parse_trace_target(&input.target) {
+    let (_, host, _) = match sempre_diagnostics::parse_trace_target(&input.target) {
         Ok(target) => target,
         Err(error) => {
             return (
@@ -145,7 +145,7 @@ async fn preview(State(state): State<Arc<AppState>>, Json(input): Json<Input>) -
 }
 
 async fn trace(State(state): State<Arc<AppState>>, Json(input): Json<Input>) -> Response {
-    let target = match sempre_network::parse_trace_target(&input.target) {
+    let target = match sempre_diagnostics::parse_trace_target(&input.target) {
         Ok(target) => target,
         Err(error) => {
             return (

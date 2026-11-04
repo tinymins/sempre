@@ -57,7 +57,12 @@ fn route_for(address: IpAddr) -> Option<RouteDecision> {
     if address.is_ipv6() {
         return None;
     }
-    crate::windows::route_for(address).ok()
+    let route = sempre_network::windows::route_for(address).ok()?;
+    Some(RouteDecision {
+        address,
+        interface: route.interface,
+        gateway: route.gateway,
+    })
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
