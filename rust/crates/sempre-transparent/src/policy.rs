@@ -145,7 +145,7 @@ async fn route_json(
     arguments: &[&str],
 ) -> Result<Value, TransparentError> {
     let output = runner.run("ip", arguments, None).await?;
-    let missing = !output.success && output.stderr.contains("FIB table does not exist");
+    let missing = !output.success && command::route_table_missing(&output.stderr);
     if missing {
         return Ok(Value::Array(Vec::new()));
     }
@@ -239,6 +239,41 @@ mod tests {
                 })
             })
         }
+    }
+
+    struct MissingTable(&'static str);
+
+    impl command::Runner for MissingTable {
+        fn run<'a>(
+            &'a self,
+            _: &'a str,
+            arguments: &'a [&'a str],
+            _: Option<&'a [u8]>,
+        ) -> Pin<Box<dyn Future<Output = Result<Output, TransparentError>> + Send + 'a>> {
+            Box::pin(async move {
+                let route = arguments.contains(&"route");
+                Ok(Output {
+                    success: !route,
+                    stdout: "[]".into(),
+                    stderr: if route { self.0.into() } else { String::new() },
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_missing_route_table_is_empty_for_every_iproute2_build() {
+        for stderr in [
+            "Error: ipv4: FIB table does not exist.\n",
+            "Dump terminated\n",
+        ] {
+            let runner = MissingTable(stderr);
+            check_collisions(&runner).await.expect(stderr);
+            delete(&runner).await.expect(stderr);
+        }
+        let denied = MissingTable("RTNETLINK answers: Operation not permitted\nDump terminated\n");
+        assert!(check_collisions(&denied).await.is_err());
+        assert!(delete(&denied).await.is_err());
     }
 
     #[tokio::test]

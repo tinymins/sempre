@@ -74,6 +74,13 @@ impl Runner for SystemRunner {
     }
 }
 
+/// `ip route show table` on a table with no routes. iproute2 built with extended netlink
+/// acknowledgements names the reason; other builds, such as `OpenWrt`'s, report only the end
+/// of the dump. Any other failure prints a kernel error first, so it is not matched here.
+pub(crate) fn route_table_missing(stderr: &str) -> bool {
+    stderr.contains("FIB table does not exist") || stderr.trim() == "Dump terminated"
+}
+
 pub(crate) fn require_success(program: &str, output: Output) -> Result<Output, TransparentError> {
     if output.success {
         Ok(output)

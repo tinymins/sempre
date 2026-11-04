@@ -79,7 +79,7 @@ pub(super) async fn preflight(
                 if routes.iter().any(|r| !owned(r)) {
                     return Err(invalid("CN routing table is owned by another service"));
                 }
-            } else if !output.stderr.contains("FIB table does not exist") {
+            } else if !command::route_table_missing(&output.stderr) {
                 command::require_success("ip", output)?;
             }
         }
