@@ -90,17 +90,37 @@ fn remove_application_files(layout: &Layout, purge: bool) -> Result<bool, Manage
     if purge && let Err(error) = remove_tree(&layout.home) {
         problems.push(format!("remove {}: {error}", layout.home.display()));
     }
-    let scheduled = match remove_installation_root(&layout.root) {
-        Ok(scheduled) => scheduled,
-        Err(error) => {
-            problems.push(error.to_string());
-            false
+    let scheduled = if layout.root == layout.home {
+        // The programs share a directory with the configuration a plain uninstall retains.
+        for path in [
+            layout.service_executable.clone(),
+            crate::packaged_core_path(layout),
+        ] {
+            if let Err(error) = remove_file(&path) {
+                problems.push(format!("remove {}: {error}", path.display()));
+            }
+        }
+        false
+    } else {
+        match remove_installation_root(&layout.root) {
+            Ok(scheduled) => scheduled,
+            Err(error) => {
+                problems.push(error.to_string());
+                false
+            }
         }
     };
     if problems.is_empty() {
         Ok(scheduled)
     } else {
         Err(incomplete(&problems))
+    }
+}
+
+fn remove_file(path: &Path) -> Result<(), io::Error> {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
     }
 }
 
@@ -125,4 +145,40 @@ fn remove_installation_root(path: &Path) -> Result<bool, ManagerError> {
 
 fn incomplete(problems: &[String]) -> ManagerError {
     ManagerError::UninstallIncomplete(problems.join("; "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn installed() -> (tempfile::TempDir, Layout) {
+        let directory = tempfile::tempdir().expect("directory");
+        let layout = Layout::openwrt_at(directory.path());
+        layout.ensure().expect("layout");
+        for path in [
+            &layout.service_executable,
+            &crate::packaged_core_path(&layout),
+            &layout.state,
+        ] {
+            fs::write(path, b"data").expect("file");
+        }
+        (directory, layout)
+    }
+
+    #[test]
+    fn plain_openwrt_uninstall_removes_programs_and_keeps_configuration() {
+        let (_directory, layout) = installed();
+        remove_application_files(&layout, false).expect("remove");
+        assert!(!layout.service_executable.exists());
+        assert!(!crate::packaged_core_path(&layout).exists());
+        assert!(!layout.cores.exists());
+        assert!(layout.state.exists());
+    }
+
+    #[test]
+    fn purged_openwrt_uninstall_removes_the_whole_directory() {
+        let (_directory, layout) = installed();
+        remove_application_files(&layout, true).expect("remove");
+        assert!(!layout.home.exists());
+    }
 }

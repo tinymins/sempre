@@ -131,7 +131,7 @@ sempre --portable portable run
 | Linux | [下载](https://github.com/tinymins/sempre/releases/latest/download/sempre-linux-amd64) | [下载](https://github.com/tinymins/sempre/releases/latest/download/sempre-linux-arm64) |
 | macOS | [下载](https://github.com/tinymins/sempre/releases/latest/download/sempre-darwin-amd64) | [下载](https://github.com/tinymins/sempre/releases/latest/download/sempre-darwin-arm64) |
 
-OpenWrt 使用独立的软件包，每个包只带一个 sing-box 版本，文件名为 `sempre-openwrt-sing-box-<版本>-<架构>.tar.gz`，架构是 `x86_64` 或 `aarch64_generic`，版本和下载见 [Release 页面](https://github.com/tinymins/sempre/releases)。解压后运行 `./install.sh`。包内的核心优先于固件自带的核心；固件已带 sing-box 时，也可以只用 `sempre-linux-musl-<amd64|arm64>` 和 `sempre-ui.zip`。OpenWrt 的网关捕获目前只支持 sing-box。
+OpenWrt 使用独立的软件包，每个包只带一个 sing-box 版本，文件名为 `sempre-openwrt-sing-box-<版本>-<架构>.tar.gz`，架构是 `x86_64` 或 `aarch64_generic`，版本和下载见 [Release 页面](https://github.com/tinymins/sempre/releases)。解压后运行 `./install.sh`。所有文件都安装在 `/etc/sempre` 下，命令是 `/etc/sempre/sempre`。包内的核心优先于固件自带的核心；固件已带 sing-box 时，也可以只用 `sempre-linux-musl-<amd64|arm64>` 和 `sempre-ui.zip`。OpenWrt 的网关捕获目前只支持 sing-box。
 
 Release checksum 位于 [`SHA256SUMS`](https://github.com/tinymins/sempre/releases/latest/download/SHA256SUMS)。每个目标还包含 CycloneDX JSON SBOM。使用以下命令验证构建来源：
 

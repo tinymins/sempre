@@ -28,10 +28,7 @@ fn a_packaged_core_outranks_the_firmware_binary() {
     let directory = tempdir().expect("directory");
     let layout = Layout::openwrt_at(directory.path());
     let packaged = packaged_core_path(&layout);
-    assert_eq!(
-        packaged,
-        directory.path().join("usr/libexec/sempre/sing-box")
-    );
+    assert_eq!(packaged, directory.path().join("etc/sempre/sing-box"));
     fs::create_dir_all(packaged.parent().expect("parent")).expect("directory");
     fs::write(&packaged, b"binary").expect("binary");
     assert_eq!(system_core_binary(&layout), Some(packaged));
