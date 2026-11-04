@@ -309,3 +309,39 @@ fn openwrt_modern_preserves_selected_local_dns_upstream() {
         }
     }
 }
+
+#[test]
+fn a_new_local_profile_gets_the_router_inbounds_and_ports() {
+    let profile: Profile = serde_json::from_value(json!({
+        "manual_servers": [{
+            "name": "example-node", "type": "socks5", "server": "edge.example.test", "port": 1080
+        }],
+        "transparent_proxy": { "mode": "tun-router", "tproxy": {
+            "listen_port": sempre_converter::DEFAULT_TPROXY_PORT,
+            "dns_listen_port": sempre_converter::DEFAULT_CORE_DNS_PORT,
+        } },
+    }))
+    .expect("profile");
+    let target = Target::parse("sing-box-v13-openwrt").expect("target");
+    let profile =
+        sempre_converter::apply_dns_frontend_settings(&profile, &target, false).expect("profile");
+    let result = compile(&CompileRequest {
+        protocol: 1,
+        profile,
+        snapshots: Vec::new(),
+        custom_nodes: Vec::new(),
+        target,
+    })
+    .expect("compile");
+    let config: Value = serde_json::from_str(&result.content).expect("JSON");
+    let port = |tag: &str| {
+        config["inbounds"]
+            .as_array()
+            .expect("inbounds")
+            .iter()
+            .find(|inbound| inbound["tag"] == tag)
+            .map(|inbound| inbound["listen_port"].clone())
+    };
+    assert_eq!(port("tproxy-in"), Some(json!(7893)));
+    assert_eq!(port("dns-in"), Some(json!(1053)));
+}

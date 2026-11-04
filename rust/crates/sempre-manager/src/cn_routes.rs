@@ -22,9 +22,15 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         binary: &Path,
         config: &Path,
     ) -> Result<(Option<Source>, crate::rule_bootstrap::RuleBootstrap), ManagerError> {
-        // OpenWrt runs the published configuration and bypasses domestic traffic in nft.
+        // OpenWrt bypasses domestic traffic in nft, and runs a published configuration as is.
+        // A locally compiled one still references rule sets that only this step converts.
         if self.store.layout().openwrt {
-            return Ok((None, crate::rule_bootstrap::RuleBootstrap::default()));
+            let rules = if self.active_profile_is_remote()? {
+                crate::rule_bootstrap::RuleBootstrap::default()
+            } else {
+                crate::rule_bootstrap::RuleBootstrap::prepare(&self.fetcher, config)?
+            };
+            return Ok((None, rules));
         }
         if core != "sing-box" {
             if self.network_settings.read().cn_direct_routes {

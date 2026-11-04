@@ -54,20 +54,26 @@ pub(crate) fn apply(input: &Profile, profile: &mut Profile) -> Result<(), Compil
     }
     profile.transparent_proxy.mode = "tproxy".into();
     profile.transparent_proxy.tproxy.dns_listen_port = settings.dns_listen_port.unwrap_or(
-        if input.transparent_proxy.tproxy.dns_listen_port == 0 {
+        // The desktop defaults mean nothing was chosen, and routers use their own ports.
+        if matches!(
+            input.transparent_proxy.tproxy.dns_listen_port,
+            0 | crate::DEFAULT_CORE_DNS_PORT
+        ) {
             1053
         } else {
             input.transparent_proxy.tproxy.dns_listen_port
         },
     );
-    profile.transparent_proxy.tproxy.listen_port =
-        settings
-            .tproxy_port
-            .unwrap_or(if input.transparent_proxy.tproxy.listen_port == 0 {
-                7893
-            } else {
-                input.transparent_proxy.tproxy.listen_port
-            });
+    profile.transparent_proxy.tproxy.listen_port = settings.tproxy_port.unwrap_or(
+        if matches!(
+            input.transparent_proxy.tproxy.listen_port,
+            0 | crate::DEFAULT_TPROXY_PORT
+        ) {
+            7893
+        } else {
+            input.transparent_proxy.tproxy.listen_port
+        },
+    );
     if let Some(secret) = settings.clash_api_secret {
         profile.management_api.secret = secret;
     }

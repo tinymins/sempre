@@ -47,7 +47,12 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 
     async fn refresh_runtime_rules(&self, plan: &RuntimePlan) -> Result<bool, ManagerError> {
-        let fetcher = proxy_fetcher(&self.fetcher, &plan.rules.original)?;
+        // A router has no local proxy inbound, and capture does not touch its own traffic.
+        let fetcher = if self.store.layout().openwrt {
+            self.fetcher.clone()
+        } else {
+            proxy_fetcher(&self.fetcher, &plan.rules.original)?
+        };
         let mut jobs = tokio::task::JoinSet::new();
         let limit = Arc::new(tokio::sync::Semaphore::new(6));
         for resource in &plan.rules.resources {

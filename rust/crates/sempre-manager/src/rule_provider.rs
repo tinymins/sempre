@@ -55,7 +55,11 @@ impl<R: VersionRunner> Manager<R> {
         }
         let effective = prepare_profile(profile, target)?;
         let document = self.store.read()?;
-        let fetcher = if force && document.runtime.state == sempre_state::RuntimeState::Running {
+        // A router has no local proxy inbound, and capture does not touch its own traffic.
+        let through_core = force
+            && document.runtime.state == sempre_state::RuntimeState::Running
+            && !self.store.layout().openwrt;
+        let fetcher = if through_core {
             if let Some(config) = document.runtime.runtime_config.as_ref() {
                 crate::rule_bootstrap::proxy_fetcher(
                     &self.fetcher,

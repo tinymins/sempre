@@ -2,7 +2,9 @@
 //! the router alone. Features that would manage more of the host are refused here.
 use sempre_state::Document;
 
-use crate::{Manager, ManagerError, NetworkMode, NetworkSettings, VersionRunner};
+use crate::{
+    IntranetRoutingMode, Manager, ManagerError, NetworkMode, NetworkSettings, VersionRunner,
+};
 
 impl<R: VersionRunner> Manager<R> {
     pub(crate) fn reject_on_openwrt(&self, feature: &str) -> Result<(), ManagerError> {
@@ -25,7 +27,27 @@ impl<R: VersionRunner> Manager<R> {
         if candidate.automatic_switching {
             self.reject_on_openwrt("Automatic network switching")?;
         }
+        // Both route through a TUN device, and gateway capture requires TProxy.
+        if candidate.cn_direct_routes {
+            self.reject_on_openwrt("CN route splitting")?;
+        }
+        if candidate.intranet_routing_mode == IntranetRoutingMode::Proxy {
+            self.reject_on_openwrt("Proxied intranet routing")?;
+        }
         candidate.validate_intranet(document)
+    }
+
+    /// Without an active profile there is nothing compiled locally either.
+    pub(crate) fn active_profile_is_remote(&self) -> Result<bool, ManagerError> {
+        let Some(id) = self.store.read()?.active_profile_id else {
+            return Ok(true);
+        };
+        let catalog = self.subscriptions.read()?;
+        Ok(catalog
+            .profiles
+            .iter()
+            .find(|profile| profile.id == id)
+            .is_none_or(|profile| crate::subscription::profile_mode(profile) == "remote"))
     }
 
     /// Settings written before these limits, or edited by hand, have no effect on a router.
@@ -34,6 +56,8 @@ impl<R: VersionRunner> Manager<R> {
         if self.store.layout().openwrt {
             settings.mode = NetworkMode::Local;
             settings.automatic_switching = false;
+            settings.cn_direct_routes = false;
+            settings.intranet_routing_mode = IntranetRoutingMode::Direct;
         }
         settings
     }
@@ -61,6 +85,14 @@ mod tests {
             },
             NetworkSettings {
                 automatic_switching: true,
+                ..NetworkSettings::default()
+            },
+            NetworkSettings {
+                cn_direct_routes: true,
+                ..NetworkSettings::default()
+            },
+            NetworkSettings {
+                intranet_routing_mode: IntranetRoutingMode::Proxy,
                 ..NetworkSettings::default()
             },
         ] {
@@ -99,12 +131,16 @@ mod tests {
             .replace(NetworkSettings {
                 mode: NetworkMode::Gateway,
                 automatic_switching: true,
+                cn_direct_routes: true,
+                intranet_routing_mode: IntranetRoutingMode::Proxy,
                 ..NetworkSettings::default()
             })
             .expect("settings");
         let effective = manager.network_settings();
         assert_eq!(effective.mode, NetworkMode::Local);
         assert!(!effective.automatic_switching);
+        assert!(!effective.cn_direct_routes);
+        assert_eq!(effective.intranet_routing_mode, IntranetRoutingMode::Direct);
     }
 
     #[test]

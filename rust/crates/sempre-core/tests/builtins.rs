@@ -97,6 +97,26 @@ fn openwrt_hosts_prefer_the_musl_sing_box_asset() {
 }
 
 #[test]
+fn openwrt_editors_only_offer_what_a_router_applies() {
+    let adapter = BuiltInAdapter::new(BuiltInKind::SingBox);
+    let mut host = target("linux", "amd64");
+    let desktop = adapter.capabilities(Some("1.13.21"), &host).features;
+    assert!(desktop.iter().any(|feature| feature == "private_access"));
+    host.openwrt = true;
+    let router = adapter.capabilities(Some("1.13.21"), &host).features;
+    assert!(router.iter().any(|feature| feature == "dns.local_upstream"));
+    for feature in &router {
+        assert!(
+            feature != "private_access"
+                && feature != "dns.system_takeover"
+                && feature != "inbound.local_proxy"
+                && !feature.starts_with("transparent."),
+            "{feature}"
+        );
+    }
+}
+
+#[test]
 fn openwrt_hosts_compile_the_openwrt_target() {
     let adapter = BuiltInAdapter::new(BuiltInKind::SingBox);
     let mut host = target("linux", "amd64");

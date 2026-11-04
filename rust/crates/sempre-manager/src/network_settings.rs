@@ -206,7 +206,7 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
         &self,
         profile: &Profile,
     ) -> Result<Profile, ManagerError> {
-        let settings = self.network_settings.read();
+        let settings = self.network_settings();
         let mut profile = profile.clone();
         profile.extra.insert(
             "sempre_cn_direct_routes".into(),

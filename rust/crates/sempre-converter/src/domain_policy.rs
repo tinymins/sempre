@@ -63,8 +63,9 @@ pub fn dns_frontend_policy(
     })
 }
 
+/// A router keeps its own resolver and needs the configuration's DNS inbound for capture.
 fn managed_frontend_target(target: &Target) -> bool {
-    target.core == "sing-box"
+    target.core == "sing-box" && !target.is_openwrt()
 }
 
 fn shared_mut(dns: &mut Value) -> &mut serde_json::Map<String, Value> {

@@ -67,6 +67,15 @@ fn sing_box(version: Option<&str>, target: &Target) -> Capabilities {
     if compiler != "11" {
         features.push(f::PRIVATE_ACCESS.into());
     }
+    // A router captures through its own rules and keeps its own resolver.
+    if target.openwrt {
+        features.retain(|feature| {
+            feature != f::PRIVATE_ACCESS
+                && feature != f::DNS_SYSTEM_TAKEOVER
+                && feature != f::LOCAL_PROXY
+                && !feature.starts_with("transparent.")
+        });
+    }
     Capabilities {
         features,
         enum_values: enums(true, false),
