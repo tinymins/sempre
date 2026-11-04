@@ -187,7 +187,7 @@ impl Store {
         let file = open_lock(&self.layout.operation_lock)?;
         match file.try_lock_exclusive() {
             Ok(()) => Ok(Some(Lease { file })),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            Err(error) if is_contended(&error) => Ok(None),
             Err(error) => Err(StateError::Lock(error)),
         }
     }
@@ -197,7 +197,7 @@ impl Store {
         let file = open_lock(&self.layout.config_lock)?;
         match file.try_lock_exclusive() {
             Ok(()) => Ok(Some(Lease { file })),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            Err(error) if is_contended(&error) => Ok(None),
             Err(error) => Err(StateError::Lock(error)),
         }
     }
@@ -241,6 +241,11 @@ impl Drop for Lease {
     fn drop(&mut self) {
         let _ = self.file.unlock();
     }
+}
+
+/// Windows reports a held lock with its own error code instead of `WouldBlock`.
+fn is_contended(error: &std::io::Error) -> bool {
+    error.raw_os_error() == fs2::lock_contended_error().raw_os_error()
 }
 
 fn open_lock(path: &Path) -> Result<File, StateError> {
