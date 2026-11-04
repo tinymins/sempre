@@ -10,6 +10,9 @@ use crate::{CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner};
 
 const MINIMUM_DELAY: Duration = Duration::from_secs(1);
 const ERROR_RETRY: Duration = Duration::from_mins(1);
+/// The CLI writes the schedule from another process, where an in-process wakeup cannot
+/// reach, so a long wait still looks at the state file now and then.
+const SCHEDULE_RECHECK: Duration = Duration::from_mins(5);
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub fn update_subscription_settings(
@@ -103,9 +106,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                     continue;
                 }
             };
-            match wait_for_update(self, &mut shutdown, delay).await {
+            match wait_for_update(self, &mut shutdown, delay.min(SCHEDULE_RECHECK)).await {
                 SchedulerEvent::Changed => continue,
                 SchedulerEvent::Shutdown => return Ok(()),
+                SchedulerEvent::Due if delay > SCHEDULE_RECHECK => continue,
                 SchedulerEvent::Due => {}
             }
             match self.update_active_subscription().await {

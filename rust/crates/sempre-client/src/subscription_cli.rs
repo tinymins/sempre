@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use sempre_converter::{Profile, Source};
 use sempre_manager::{CoreChange, Manager};
 use sempre_state::{Layout, Mode, Store};
-use sempre_subscription::{SubscriptionError, new_profile};
+use sempre_subscription::SubscriptionError;
 use serde::Serialize;
 use serde_json::{Map, json};
 use url::Url;
@@ -22,9 +22,9 @@ pub(crate) async fn run(
     match command {
         SubscriptionCommand::List => list(&manager, json_output),
         SubscriptionCommand::Show { id } => show(&manager, id.as_deref(), json_output),
-        SubscriptionCommand::Create { name } => create(&manager, &name, None, json_output),
+        SubscriptionCommand::Create { name } => create(&manager, &name, None, json_output).await,
         SubscriptionCommand::CreateRemote { name, manifest_url } => {
-            create(&manager, &name, Some(&manifest_url), json_output)
+            create(&manager, &name, Some(&manifest_url), json_output).await
         }
         SubscriptionCommand::Save { id, file } => {
             let candidate: Profile =
@@ -58,7 +58,7 @@ pub(crate) async fn run(
                 Ok(())
             }
         }
-        SubscriptionCommand::Remove { id } => remove(&manager, &id),
+        SubscriptionCommand::Remove { id } => remove(&manager, &id).await,
         SubscriptionCommand::Set { url } => {
             let change = manager.set_subscription_source(&url)?;
             output_change(&change, json_output)
@@ -275,28 +275,15 @@ fn show(manager: &Manager, id: Option<&str>, json_output: bool) -> Result<(), Cl
     }
 }
 
-fn create(
+async fn create(
     manager: &Manager,
     name: &str,
     manifest_url: Option<&str>,
     json_output: bool,
 ) -> Result<(), ClientError> {
-    if name.trim().is_empty() {
-        return Err(SubscriptionError::Invalid("profile name is required".into()).into());
-    }
-    let mut profile = new_profile(name);
-    if let Some(manifest_url) = manifest_url {
-        validate_remote_url(manifest_url)?;
-        profile.extra.insert("mode".into(), json!("remote"));
-        profile.extra.insert(
-            "remote".into(),
-            json!({ "manifest_url": manifest_url.trim() }),
-        );
-    }
-    manager.subscriptions().update(|catalog| {
-        catalog.profiles.push(profile.clone());
-        Ok(())
-    })?;
+    let profile = manager
+        .create_subscription_profile(name, manifest_url)
+        .await?;
     if json_output {
         print_json(&profile)
     } else {
@@ -305,26 +292,8 @@ fn create(
     }
 }
 
-fn remove(manager: &Manager, id: &str) -> Result<(), ClientError> {
-    if manager.state()?.active_profile_id.as_deref() == Some(id) {
-        return Err(SubscriptionError::Invalid(
-            "the active subscription profile cannot be deleted".into(),
-        )
-        .into());
-    }
-    manager.subscriptions().update(|catalog| {
-        if catalog.profiles.len() == 1 {
-            return Err(SubscriptionError::Invalid(
-                "at least one subscription profile is required".into(),
-            ));
-        }
-        let before = catalog.profiles.len();
-        catalog.profiles.retain(|profile| profile.id != id);
-        if before == catalog.profiles.len() {
-            return Err(SubscriptionError::Invalid("profile was not found".into()));
-        }
-        Ok(())
-    })?;
+async fn remove(manager: &Manager, id: &str) -> Result<(), ClientError> {
+    manager.delete_subscription_profile(id).await?;
     println!("Profile removed: {id}");
     Ok(())
 }
@@ -379,23 +348,6 @@ fn find_profile(manager: &Manager, id: &str) -> Result<Profile, ClientError> {
         .into_iter()
         .find(|profile| profile.id == id)
         .ok_or_else(|| SubscriptionError::Invalid("profile was not found".into()).into())
-}
-
-fn validate_remote_url(value: &str) -> Result<(), ClientError> {
-    let valid = Url::parse(value.trim()).is_ok_and(|url| {
-        matches!(url.scheme(), "http" | "https")
-            && url.host_str().is_some()
-            && url.username().is_empty()
-            && url.password().is_none()
-    });
-    if valid {
-        Ok(())
-    } else {
-        Err(SubscriptionError::Invalid(
-            "remote manifest URL must be absolute HTTP(S) without credentials".into(),
-        )
-        .into())
-    }
 }
 
 fn profile_mode(profile: &Profile) -> &str {

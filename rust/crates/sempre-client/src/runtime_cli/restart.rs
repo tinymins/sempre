@@ -34,14 +34,22 @@ pub(super) async fn wait(client: &LocalApi, mut task: Task) -> Result<RuntimeSta
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
         let current: Output = client.get("/api/v1/runtime/startup-task").await?;
-        task = current
-            .task
-            .filter(|current| current.id == task.id)
-            .ok_or_else(|| {
-                ClientError::Runtime(
-                    "restart task is no longer available; check the runtime status".into(),
-                )
-            })?;
+        let Some(current) = current.task.filter(|current| current.id == task.id) else {
+            return superseded(client).await;
+        };
+        task = current;
+    }
+}
+
+/// The supervisor opens a new task when it recovers, as it does after a rollback, so
+/// the runtime state decides the outcome of the restart.
+async fn superseded(client: &LocalApi) -> Result<RuntimeStatus, ClientError> {
+    let status: RuntimeStatus = client.get("/api/v1/runtime/status").await?;
+    match status.last_error.as_deref().filter(|_| status.pending) {
+        Some(error) => Err(ClientError::Runtime(format!(
+            "deployment failed and the previous configuration was restored: {error}"
+        ))),
+        None => Ok(status),
     }
 }
 

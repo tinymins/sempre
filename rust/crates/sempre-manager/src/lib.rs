@@ -39,6 +39,7 @@ mod service_readiness;
 mod source_loading;
 mod startup_task;
 mod subscription;
+mod subscription_catalog;
 mod subscription_mutation;
 mod subscription_tools;
 mod supervisor;

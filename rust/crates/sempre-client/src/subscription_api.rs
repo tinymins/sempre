@@ -8,10 +8,10 @@ use axum::{
     routing::{get, patch, post},
 };
 use sempre_converter::Profile;
+use sempre_manager::ManagerError;
 use sempre_subscription::{SubscriptionError, new_profile};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use url::Url;
 
 use crate::api::AppState;
 
@@ -134,38 +134,25 @@ struct CreateInput {
 }
 
 async fn create(State(state): State<Arc<AppState>>, Json(input): Json<CreateInput>) -> Response {
-    let name = input.name.trim();
-    if name.is_empty() {
-        return bad_request("profile name is required");
-    }
-    let mut profile = new_profile(name);
-    if input.mode == "remote" {
-        let Some(manifest_url) = input.manifest_url else {
-            return bad_request("remote profile requires a manifest URL");
-        };
-        if !valid_remote_url(&manifest_url) {
-            return bad_request("remote manifest URL must be absolute HTTP(S) without credentials");
+    let manifest_url = match input.mode.as_str() {
+        "remote" => {
+            let Some(manifest_url) = input.manifest_url.as_deref() else {
+                return bad_request("remote profile requires a manifest URL");
+            };
+            Some(manifest_url)
         }
-        profile.extra.insert("mode".into(), json!("remote"));
-        profile.extra.insert(
-            "remote".into(),
-            json!({ "manifest_url": manifest_url.trim() }),
-        );
-    } else if !input.mode.is_empty() && input.mode != "local" {
-        return bad_request("profile mode must be local or remote");
-    }
-    match state.manager.subscriptions().update(|catalog| {
-        if input.mode != "remote" {
-            profile.custom_node_ids = catalog
-                .custom_nodes
-                .iter()
-                .map(|node| node.id.clone())
-                .collect();
+        "" | "local" => None,
+        _ => return bad_request("profile mode must be local or remote"),
+    };
+    match state
+        .manager
+        .create_subscription_profile(&input.name, manifest_url)
+        .await
+    {
+        Ok(profile) => (StatusCode::CREATED, Json(profile)).into_response(),
+        Err(ManagerError::Subscription(SubscriptionError::Invalid(message))) => {
+            error_response(StatusCode::BAD_REQUEST, "INVALID_SUBSCRIPTION", message)
         }
-        catalog.profiles.push(profile.clone());
-        Ok(())
-    }) {
-        Ok(_) => (StatusCode::CREATED, Json(profile)).into_response(),
         Err(error) => operation(error.to_string()),
     }
 }
@@ -202,7 +189,7 @@ async fn save(
         .save_subscription_profile(&id, candidate, expected)
     {
         Ok((change, profile)) => Json(SaveOutput { change, profile }).into_response(),
-        Err(sempre_manager::ManagerError::ConfigurationContextChanged) => error_response(
+        Err(ManagerError::ConfigurationContextChanged) => error_response(
             StatusCode::CONFLICT,
             "CONFIGURATION_CONTEXT_CHANGED",
             "subscription configuration target changed; reload before saving",
@@ -244,27 +231,11 @@ async fn rename(
 }
 
 async fn remove(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-    let document = match state.manager.state() {
-        Ok(document) => document,
-        Err(error) => return internal(error.to_string()),
-    };
-    if document.active_profile_id.as_deref() == Some(&id) {
-        return bad_request("the active subscription profile cannot be deleted");
-    }
-    match state.manager.subscriptions().update(|catalog| {
-        if catalog.profiles.len() == 1 {
-            return Err(SubscriptionError::Invalid(
-                "at least one subscription profile is required".into(),
-            ));
+    match state.manager.delete_subscription_profile(&id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(ManagerError::InvalidOperation(message)) => {
+            error_response(StatusCode::BAD_REQUEST, "INVALID_SUBSCRIPTION", message)
         }
-        let before = catalog.profiles.len();
-        catalog.profiles.retain(|profile| profile.id != id);
-        if catalog.profiles.len() == before {
-            return Err(SubscriptionError::Invalid("profile was not found".into()));
-        }
-        Ok(())
-    }) {
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => operation(error.to_string()),
     }
 }
@@ -287,15 +258,6 @@ async fn activate_profile(State(state): State<Arc<AppState>>, Path(id): Path<Str
         Ok((change, render)) => Json(PrepareOutput { change, render }).into_response(),
         Err(error) => operation(error.to_string()),
     }
-}
-
-fn valid_remote_url(value: &str) -> bool {
-    Url::parse(value.trim()).is_ok_and(|url| {
-        matches!(url.scheme(), "http" | "https")
-            && url.host_str().is_some()
-            && url.username().is_empty()
-            && url.password().is_none()
-    })
 }
 
 fn internal(error: impl Into<String>) -> Response {
