@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/format'
 import { useI18n } from '../lib/i18n'
+import { useOpenwrt } from '../lib/platform'
 import { useRuntimeEvents } from '../lib/useRuntimeEvents'
 import { useSession } from '../lib/session'
 import { useUIMode } from '../lib/uiMode'
@@ -17,7 +18,8 @@ import { networkAutomationDisplayPath, type NetworkAutomationDisplayPath } from 
 import { privateAccessMode } from '../lib/privateAccess'
 
 export function Overview() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
+  const openwrt = useOpenwrt()
   const { session } = useSession()
   const { mode: uiMode } = useUIMode()
   const [points, setPoints] = useState<ChartPoint[]>([])
@@ -48,9 +50,9 @@ export function Overview() {
     <div className="space-y-6">
       <PageTitle title={t('overview')} />
       <SystemSummary system={system.data} simple={uiMode === 'simple'} />
-      {system.data && (!system.data.selected || !system.data.active) ? <AutoConfigureCard /> : null}
+      {system.data && !openwrt && (!system.data.selected || !system.data.active) ? <AutoConfigureCard /> : null}
       {system.data && system.data.runtime.state !== 'running' ? (
-        <EmptyState title={system.data.active ? t('coreNotRunning') : t('noCore')} detail={system.data.active ? t('coreNotRunningDetail') : t('noCoreDetail')} />
+        <EmptyState title={system.data.active ? t('coreNotRunning') : t('noCore')} detail={system.data.active ? t('coreNotRunningDetail') : openwrt ? (locale === 'zh-CN' ? '前往订阅配置添加远程订阅。' : 'Add a remote subscription under Subscriptions.') : t('noCoreDetail')} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">

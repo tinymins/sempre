@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -88,5 +88,40 @@ describe('App', () => {
     expect(await screen.findByText('exit status 1')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('link', { name: 'Network Test' }))
     expect(await screen.findByRole('heading', { name: 'Network Test' })).toBeInTheDocument()
+  })
+
+  it('hides what OpenWrt does not run and sends hidden paths back to the overview', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname
+      if (path.endsWith('/ui/settings')) return Response.json({ ui_mode: 'simple' })
+      if (path === '/api/v1/auth/login') return Response.json({ token: 'session', expires_at: '2099-01-01T00:00:00Z' })
+      if (path === '/api/v1/system') return Response.json({ ...systemStatus, capabilities: { openwrt: true } })
+      if (path === '/api/v1/network/settings') return Response.json({ settings: { mode: 'gateway' }, gateway_available: false })
+      if (path === '/api/v1/web') return Response.json({ listen: '0.0.0.0:33211', listen_addresses: ['0.0.0.0:33211'], local_url: 'http://sempre.test', password_set: true, password_warning: false, access_urls: [], interfaces: [] })
+      return Response.json({ error: { code: 'NOT_FOUND', message: path } }, { status: 404 })
+    }))
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <I18nProvider><SessionProvider><App /></SessionProvider></I18nProvider>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Connect/ }))
+    expect(await screen.findByRole('link', { name: 'Overview' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Tunnels' })).not.toBeInTheDocument())
+    expect(screen.queryByText(/^Smart diagnos/i)).not.toBeInTheDocument()
+    for (const name of ['Automatic network switching', 'DNS', 'Gateway', 'Custom Nodes', 'Routing Rules']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis & diagnostics' }))
+    expect(screen.queryByRole('link', { name: 'Leak Detection' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('navigation')).getByRole('link', { name: 'Core Status' })).toBeInTheDocument()
+
+    fireEvent.click(within(screen.getByRole('navigation')).getByRole('link', { name: 'Management' }))
+    expect(await screen.findByRole('heading', { name: 'Management' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Core' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Run mode')).not.toBeInTheDocument()
+
+    window.location.hash = '#/tunnels'
+    await waitFor(() => expect(window.location.hash).toBe('#/'))
   })
 })

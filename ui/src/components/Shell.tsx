@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { OPENWRT_HIDDEN_PATHS } from '../lib/platform'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Activity, Cable, ChartNoAxesCombined, ChevronDown, ChevronLeft, ChevronRight, CircleGauge, Cpu, DatabaseZap, Gauge, Globe2, Languages, Library, ListFilter, ListTree, LogOut, Menu, Moon, Network, Radar, Router, Rss, ScanSearch, Server, Settings, Sun, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -101,9 +102,10 @@ export function Shell({ children, navigation, chrome }: { children: ReactNode; n
     { key: 'system', label: t('navigationSystem'), items: [{ path: '/management', label: t('management'), icon: Settings }] },
   ]
   const simple = !chrome && !navigation && uiMode === 'simple'
+  const openwrt = system.data?.capabilities?.openwrt === true
   const hiddenInSimpleMode = new Set(['/network-automation', '/dns', '/tunnels'])
   const sections: ShellNavigationSection[] = navigation ? [{ key: 'custom', items: navigation }] : defaultNavigation
-    .map((section) => ({ ...section, items: simple ? section.items.filter((item) => !hiddenInSimpleMode.has(item.path)) : section.items }))
+    .map((section) => ({ ...section, items: section.items.filter((item) => !(simple && hiddenInSimpleMode.has(item.path)) && !(openwrt && OPENWRT_HIDDEN_PATHS.has(item.path))) }))
     .filter((section) => section.items.length > 0)
   const runtime = system.data?.runtime.state || 'stopped'
   const statusLabel = chrome?.statusLabel ?? t('core')

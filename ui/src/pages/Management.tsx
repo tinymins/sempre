@@ -1,3 +1,4 @@
+import { useOpenwrt } from '../lib/platform'
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, Download, KeyRound, MonitorCog, Package, RefreshCw, Router, ServerCog, Upload } from 'lucide-react'
@@ -21,9 +22,12 @@ type Tab = 'core' | 'maintenance' | 'console'
 export function Management() {
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('core')
+  const openwrt = useOpenwrt()
   const tabs: Array<{ value: Tab; label: string; icon: typeof Package }> = [
     { value: 'core', label: t('coreTab'), icon: Package }, { value: 'maintenance', label: t('backupAndUpdateTab'), icon: Archive }, { value: 'console', label: t('consoleTab'), icon: MonitorCog },
   ]
+  if (openwrt === undefined) return <div className="grid min-h-64 place-items-center"><Spinner /></div>
+  if (openwrt) return <div className="space-y-5"><PageTitle title={t('management')} /><ConsolePanel /></div>
   return <div className="space-y-5"><PageTitle title={t('management')} /><div className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">{tabs.map(({ value, label, icon: Icon }) => <button key={value} className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`} onClick={() => setTab(value)}><Icon size={16} />{label}</button>)}</div>{tab === 'core' ? <div className="space-y-5"><AutoConfigureCard /><CorePanel /></div> : tab === 'maintenance' ? <BackupAndUpdatePanel /> : <ConsolePanel />}</div>
 }
 
@@ -69,6 +73,7 @@ function ServiceRolePanel() {
 
 function ConsolePanel() {
   const { t } = useI18n()
+  const openwrt = useOpenwrt()
   const toast = useToast()
   const { session, setSession } = useSession()
   const queryClient = useQueryClient()
@@ -81,8 +86,8 @@ function ConsolePanel() {
   return <div className="space-y-5">
     <Section title="Web" icon={<ServerCog size={18} />}><div className="grid gap-5"><WebListenSettings settings={web.data} /><div className="border-t border-[var(--border)] pt-5"><div className="mb-3 flex items-center gap-2"><KeyRound size={16} /><h3 className="text-sm font-semibold">{t('password')}</h3><Badge tone={web.data?.password_set ? 'success' : 'warning'}>{web.data?.password_set ? t('passwordSet') : t('emptyPassword')}</Badge></div><div className="flex flex-wrap gap-2"><Input className="min-w-56 flex-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={!password} onClick={() => webMutation.mutate({ password })}>{t('setPassword')}</Button><Button variant="danger" onClick={() => webMutation.mutate({ password: '' })}>{t('clearPassword')}</Button></div></div></div></Section>
     <ServerNamePanel />
-    <ServiceRolePanel />
-    <ServiceActionsPanel />
+    {openwrt ? null : <ServiceRolePanel />}
+    {openwrt ? null : <ServiceActionsPanel />}
   </div>
 }
 

@@ -6,6 +6,7 @@ import type { ProxyDebugFormat } from '@acme/types'
 import { Button, Card, ConfirmDialog, Field, PageTitle, Spinner } from '../components/ui'
 import { api } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { useOpenwrt } from '../lib/platform'
 import { useSession } from '../lib/session'
 import type { CustomNode, LinuxNetworkInventory, SubscriptionCatalogResponse, SubscriptionProfile } from '../lib/types'
 import { MessageBridge } from '../features/subscriptions/toolbox/MessageBridge'
@@ -32,7 +33,10 @@ export function Subscriptions() {
   const [nameDialogOpen, setNameDialogOpen] = useState(false)
   const [nameValue, setNameValue] = useState('')
   const [nameError, setNameError] = useState('')
-  const [createMode, setCreateMode] = useState<SubscriptionMode>('local')
+  const [selectedCreateMode, setCreateMode] = useState<SubscriptionMode>('local')
+  // A router deploys what the server publishes, so it has no locally compiled subscriptions.
+  const remoteOnly = useOpenwrt() === true
+  const createMode: SubscriptionMode = remoteOnly ? 'remote' : selectedCreateMode
   const [manifestURL, setManifestURL] = useState('')
   const [deleteProfile, setDeleteProfile] = useState<SubscriptionProfile | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -253,6 +257,8 @@ export function Subscriptions() {
         <>
 			{currentProfile.mode === 'remote' ? (
 				<RemoteSubscriptionPanel profile={currentProfile} />
+			) : remoteOnly ? (
+				<Card><p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? 'OpenWrt 只部署服务端发布的配置。点击上方 + 添加远程订阅并启用。' : 'OpenWrt deploys the configuration a server publishes. Use + above to add and activate a remote subscription.'}</p></Card>
 			) : (
 				<>
 					<MessageBridge />
@@ -309,6 +315,7 @@ export function Subscriptions() {
           creating={nameDialog.mode === 'create'}
           name={nameValue}
           mode={createMode}
+          remoteOnly={remoteOnly}
           manifestURL={manifestURL}
           error={nameError}
           pending={create.isPending || rename.isPending}
