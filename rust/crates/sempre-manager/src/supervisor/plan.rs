@@ -51,6 +51,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         let data = self.store.layout().core_data.join(&deployment.core);
         fs::create_dir_all(&data)
             .map_err(|error| ManagerError::io("create core data directory", error))?;
+        if self.store.layout().openwrt && deployment.core == "sing-box" {
+            crate::core_dashboard::prepare(&data)?;
+        }
         let control_directory = self.reset_control_directory(&deployment.core)?;
         let runtime = if self.store.layout().openwrt {
             adapter.prepare_runtime_keeping_controller(&config, &control_directory)?

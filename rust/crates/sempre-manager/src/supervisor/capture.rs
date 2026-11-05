@@ -102,21 +102,13 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     }
 
     async fn fetch_cn_list(&self, url: &str) -> Result<String, ManagerError> {
-        let active = self.start_resource_routes().await?;
-        let routes = match &active.routes {
-            Some(routes) => routes.clone(),
-            None => sempre_subscription::ResourceRoutes::new(
-                sempre_subscription::ResourceRoute::System,
-                Vec::new(),
-            )?,
-        };
-        let system = sempre_http::client_builder()
-            .timeout(LIST_FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|error| TransparentError::Invalid(error.to_string()))?;
-        let data = routes
-            .fetch(url, "sempre-client/geoip", LIST_MAX_BYTES, &system)
+        let data = self
+            .fetch_through_rules(
+                url,
+                "sempre-client/geoip",
+                LIST_MAX_BYTES,
+                LIST_FETCH_TIMEOUT,
+            )
             .await?;
         String::from_utf8(data)
             .map_err(|_| TransparentError::Invalid("GeoIP list is not UTF-8".into()).into())

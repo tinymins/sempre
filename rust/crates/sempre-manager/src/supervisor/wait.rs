@@ -163,6 +163,7 @@ pub(super) async fn wait_running<R: VersionRunner + ValidationRunner>(
         () = manager.monitor_network_automation() => unreachable!("network monitor does not exit"),
         () = confirm_stable(manager, plan) => unreachable!("stability check does not exit"),
         () = manager.maintain_cn_list(plan) => unreachable!("GeoIP maintenance does not exit"),
+        () = manager.maintain_core_dashboard(plan) => unreachable!("dashboard download does not exit"),
         result = process.wait() => ProcessEvent::Exited(result),
         () = manager.wait_runtime_reload() => ProcessEvent::Reload,
         () = shutdown_requested(shutdown) => ProcessEvent::Shutdown,

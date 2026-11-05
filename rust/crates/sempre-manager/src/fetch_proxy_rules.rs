@@ -173,6 +173,27 @@ impl<R: VersionRunner> Manager<R> {
 
     /// Starts the proxies the rules use. Without rules nothing runs and callers keep their
     /// usual path, so this is free to call before any download.
+    /// Downloads one resource through the proxy rules, choosing again at each redirect.
+    pub(crate) async fn fetch_through_rules(
+        &self,
+        url: &str,
+        user_agent: &str,
+        limit: usize,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, ManagerError> {
+        let active = self.start_resource_routes().await?;
+        let routes = match &active.routes {
+            Some(routes) => routes.clone(),
+            None => ResourceRoutes::new(ResourceRoute::System, Vec::new())?,
+        };
+        let system = sempre_http::client_builder()
+            .timeout(timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|error| ManagerError::InvalidOperation(error.to_string()))?;
+        Ok(routes.fetch(url, user_agent, limit, &system).await?)
+    }
+
     pub(crate) async fn start_resource_routes(&self) -> Result<ActiveRoutes, ManagerError> {
         let document = self.read_fetch_proxies()?;
         let rules = &document.rules;

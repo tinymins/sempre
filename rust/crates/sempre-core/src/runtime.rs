@@ -80,7 +80,8 @@ pub(super) fn prepare_sing_box_keeping_controller(
 }
 
 /// A published dashboard path describes the publisher's layout. Relative to the core's
-/// working directory it stays inside the installation on any router.
+/// working directory it stays inside the installation on any router. Sempre downloads the
+/// dashboard itself, because the core's own download skips the proxy rules.
 fn keep_dashboard_in_data_directory(document: &mut Map<String, Value>) {
     let clash_api = document
         .get_mut("experimental")
@@ -93,6 +94,8 @@ fn keep_dashboard_in_data_directory(document: &mut Map<String, Value>) {
             .is_some_and(|path| !path.is_empty())
     {
         clash_api.insert("external_ui".into(), json!("ui"));
+        clash_api.remove("external_ui_download_url");
+        clash_api.remove("external_ui_download_detour");
     }
 }
 

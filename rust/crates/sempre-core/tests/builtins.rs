@@ -52,6 +52,7 @@ fn published_controller_is_kept_and_reached_over_loopback() {
     let api = &written["experimental"]["clash_api"];
     assert_eq!(api["external_controller"], "0.0.0.0:9999");
     assert_eq!(api["external_ui"], "ui");
+    assert!(api.get("external_ui_download_url").is_none());
 }
 
 #[test]
