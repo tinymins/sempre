@@ -214,9 +214,9 @@ fn default_dns() -> Value {
         "fakeipIpv4Range": "198.18.0.0/15", "fakeipIpv6Range": "fc00::/18",
         "fakeipEnabled": true, "fakeipTtl": 300, "rejectHttps": true,
         "cnDomainLocalDns": true, "cnIpLocalDns": true, "excludeHkFromCnIp": true, "preferIpv4": true,
-        "cnDomainRuleSetEnabled": true, "cnDomainRuleSetUrl": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs", "cnDomainRuleSetDetour": "direct",
-        "cnIpRuleSetEnabled": true, "cnIpRuleSetUrl": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs", "cnIpRuleSetDetour": "direct",
-        "hkIpRuleSetEnabled": true, "hkIpRuleSetUrl": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-hk.srs", "hkIpRuleSetDetour": "direct"
+        "cnDomainRuleSetEnabled": true, "cnDomainRuleSetUrl": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs", "cnDomainRuleSetDetour": "direct",
+        "cnIpRuleSetEnabled": true, "cnIpRuleSetUrl": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs", "cnIpRuleSetDetour": "direct",
+        "hkIpRuleSetEnabled": true, "hkIpRuleSetUrl": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-hk.srs", "hkIpRuleSetDetour": "direct"
     }})
 }
 
@@ -250,7 +250,7 @@ pub fn recommended_defaults_for_target(target: &Target) -> Defaults {
 
 /// The list of foreign addresses that `GeoIP` places in China, excluded from local DNS on routers.
 pub const OPENWRT_GFW_BLACK_RULE_SET_URL: &str =
-    "https://cdn.jsdelivr.net/gh/ohmywrt/clash-rule@master/gfwip.yaml";
+    "https://raw.githubusercontent.com/ohmywrt/clash-rule/master/gfwip.yaml";
 
 pub(crate) fn openwrt_dns_defaults() -> Map<String, Value> {
     json!({

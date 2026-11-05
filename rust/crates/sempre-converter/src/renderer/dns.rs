@@ -255,17 +255,17 @@ impl SharedDns {
             cn_domain_rule_set: RuleSet::resolve(
                 shared,
                 "cnDomain",
-                "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs",
+                "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
             ),
             cn_ip_rule_set: RuleSet::resolve(
                 shared,
                 "cnIp",
-                "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs",
+                "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
             ),
             hk_ip_rule_set: RuleSet::resolve(
                 shared,
                 "hkIp",
-                "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-hk.srs",
+                "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-hk.srs",
             ),
         }
     }

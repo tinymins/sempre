@@ -255,9 +255,8 @@ pub(super) fn experimental(profile: &Profile, target: &Target, store_fakeip: boo
         }
     });
     if target.is_openwrt() {
-        result["clash_api"]["external_ui_download_url"] = json!(
-            "https://gh-proxy.org/https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
-        );
+        result["clash_api"]["external_ui_download_url"] =
+            json!("https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip");
     }
     result
 }

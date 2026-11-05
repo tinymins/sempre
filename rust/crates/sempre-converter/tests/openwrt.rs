@@ -377,3 +377,21 @@ fn a_locally_compiled_router_profile_excludes_the_gfw_black_list_by_default() {
             .contains("geoip-gfwblack")
     );
 }
+
+#[test]
+fn router_defaults_download_from_the_original_sites() {
+    for version in ["sing-box-v12", "sing-box-v13", "sing-box-v14"] {
+        let target = Target::parse(&format!("{version}-openwrt")).expect("target");
+        let content = compile(&CompileRequest {
+            protocol: 1,
+            profile: serde_json::from_value(json!({})).expect("profile"),
+            snapshots: vec![],
+            custom_nodes: vec![],
+            target,
+        })
+        .expect("compile")
+        .content;
+        assert!(!content.contains("jsdelivr"), "{version}");
+        assert!(!content.contains("gh-proxy"), "{version}");
+    }
+}
