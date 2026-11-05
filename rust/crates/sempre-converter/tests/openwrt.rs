@@ -345,3 +345,35 @@ fn a_new_local_profile_gets_the_router_inbounds_and_ports() {
     assert_eq!(port("tproxy-in"), Some(json!(7893)));
     assert_eq!(port("dns-in"), Some(json!(1053)));
 }
+
+#[test]
+fn a_locally_compiled_router_profile_excludes_the_gfw_black_list_by_default() {
+    let target = Target::parse("sing-box-v13-openwrt").expect("target");
+    let config: Value = serde_json::from_str(
+        &compile(&CompileRequest {
+            protocol: 1,
+            profile: serde_json::from_value(json!({})).expect("profile"),
+            snapshots: vec![],
+            custom_nodes: vec![],
+            target,
+        })
+        .expect("compile")
+        .content,
+    )
+    .expect("config");
+    let rule_set = config["route"]["rule_set"]
+        .as_array()
+        .expect("rule sets")
+        .iter()
+        .find(|set| set["tag"] == "geoip-gfwblack")
+        .expect("GFW black list");
+    assert_eq!(
+        rule_set["url"],
+        sempre_converter::OPENWRT_GFW_BLACK_RULE_SET_URL
+    );
+    assert!(
+        config["dns"]["rules"]
+            .to_string()
+            .contains("geoip-gfwblack")
+    );
+}

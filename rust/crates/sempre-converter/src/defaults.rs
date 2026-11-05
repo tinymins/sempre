@@ -248,11 +248,16 @@ pub fn recommended_defaults_for_target(target: &Target) -> Defaults {
     defaults
 }
 
+/// The list of foreign addresses that `GeoIP` places in China, excluded from local DNS on routers.
+pub const OPENWRT_GFW_BLACK_RULE_SET_URL: &str =
+    "https://cdn.jsdelivr.net/gh/ohmywrt/clash-rule@master/gfwip.yaml";
+
 pub(crate) fn openwrt_dns_defaults() -> Map<String, Value> {
     json!({
         "localDns": "127.0.0.1", "localDnsTransport": "udp", "localDnsPort": 53,
         "localServerName": "", "dnsListenPort": 1053, "tproxyPort": 7893,
         "clashApiPort": 9999, "clashApiSecret": "123456", "clashApiUiPath": "/etc/sb/ui",
+        "gfwBlackRuleSetUrl": OPENWRT_GFW_BLACK_RULE_SET_URL,
     })
     .as_object()
     .expect("OpenWrt defaults are an object")

@@ -92,7 +92,7 @@ pub(crate) fn compile(request: &CompileRequest, base: &Url) -> Result<CompileRes
     profile.editor = EditorConfig::default();
     if request.target.is_openwrt() {
         profile.dns["shared"]["gfwBlackRuleSetUrl"] =
-            "https://cdn.jsdelivr.net/gh/ohmywrt/clash-rule@master/gfwip.yaml".into();
+            sempre_converter::OPENWRT_GFW_BLACK_RULE_SET_URL.into();
     }
     let mut result = compile_parts(
         &profile,
