@@ -216,14 +216,17 @@ impl<R: crate::VersionRunner> crate::Manager<R> {
             "sempre_cn_routing_mode".into(),
             json!(settings.cn_routing_mode),
         );
-        profile.extra.insert(
-            "sempre_intranet_routing_enabled".into(),
-            json!(settings.intranet_routing_enabled),
-        );
-        profile.extra.insert(
-            "sempre_intranet_routing_mode".into(),
-            json!(settings.intranet_routing_mode),
-        );
+        // A router keeps the compiled selector for private addresses, as a published configuration does.
+        if !self.store.layout().openwrt {
+            profile.extra.insert(
+                "sempre_intranet_routing_enabled".into(),
+                json!(settings.intranet_routing_enabled),
+            );
+            profile.extra.insert(
+                "sempre_intranet_routing_mode".into(),
+                json!(settings.intranet_routing_mode),
+            );
+        }
         if settings.mode == NetworkMode::Local
             && (settings.cn_direct_routes
                 || (settings.intranet_routing_enabled

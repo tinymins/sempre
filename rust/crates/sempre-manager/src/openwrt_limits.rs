@@ -144,6 +144,21 @@ mod tests {
     }
 
     #[test]
+    fn a_router_leaves_the_private_address_rule_to_the_compiled_selector() {
+        let root = tempfile::tempdir().expect("root");
+        let profile = sempre_converter::Profile::default();
+        let router = manager(Layout::openwrt_at(root.path()))
+            .apply_network_settings(&profile)
+            .expect("router profile");
+        assert!(!router.extra.contains_key("sempre_intranet_routing_mode"));
+        let desktop_root = tempfile::tempdir().expect("root");
+        let desktop = manager(Layout::at(desktop_root.path()))
+            .apply_network_settings(&profile)
+            .expect("desktop profile");
+        assert!(desktop.extra.contains_key("sempre_intranet_routing_mode"));
+    }
+
+    #[test]
     fn other_hosts_keep_these_features() {
         let root = tempfile::tempdir().expect("root");
         let manager = manager(Layout::at(root.path()));
