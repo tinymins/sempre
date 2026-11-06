@@ -31,7 +31,7 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 - Native control implementations belong only in `ui/src/components/acme`. If the library lacks a required control, add the smallest reusable implementation there before using it in a page or feature.
 - Use Tailwind CSS v4 for new `ui/` styling while preserving global styles, theme tokens, keyframes, third-party overrides, and CSS that Tailwind cannot express cleanly.
 - The standalone static site under `site/` does not load the React component library and is outside these component and Tailwind rules.
-- Test business behavior with automated tests. For user-visible UI changes, also verify the actual rendered layout and interaction in a browser when that check is available and relevant.
+- For user-visible UI changes, also verify the actual rendered layout and interaction in a browser when that check is available and relevant.
 
 ## Implementation Rules
 
@@ -70,6 +70,7 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 ## Verification
 
 - Define verifiable success criteria before implementation and use the narrowest meaningful checks while iterating.
+- Verify business behavior with existing automated tests, focused checks, or repeatable steps. Do not add test cases by default, including new test files or cases appended to existing test files. Only when the user asks for tests, or existing verification cannot prove the result, state the need, scope, and count of new tests and get explicit approval first.
 - Run focused tests for the affected behavior first. For Rust changes, default to named test modules or filters plus affected-target Clippy/checks; touching a crate does not by itself require every test in that crate. Run the full crate only when the change alters a shared crate-wide contract or no reliable focused filter exists.
 - For `ui/` or `site/`, run the relevant Vitest files and the owning package's lint/type check. Do not expand from component tests to unrelated page or browser suites without a behavior-specific reason.
 - Before reporting a completed code change, run repository `bun run lint` and `bun run tsc` once on the final code state. These are final static gates, not commands to repeat after every edit.
