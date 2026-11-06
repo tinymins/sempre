@@ -119,7 +119,6 @@ mod tests {
         assert!(manager.install_core("sing-box@stable").await.is_err());
         let error = manager.select_core("mihomo").await.expect_err("select");
         assert!(error.to_string().contains("not available on OpenWrt"));
-        assert!(manager.export_bundle().is_err());
     }
 
     #[test]

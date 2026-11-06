@@ -210,22 +210,10 @@ struct UiInstallInput {
 // Official and GitHub-hosted UI archives are released from here.
 const GITHUB: &str = "https://github.com/";
 
-/// The UI ships in the `OpenWrt` package, so installing a new package updates it.
-fn ui_ships_with_package(state: &AppState) -> Option<Response> {
-    state.manager.store().layout().openwrt.then(|| {
-        operation(String::from(
-            "On OpenWrt, update the UI by installing a new package",
-        ))
-    })
-}
-
 async fn ui_install(
     State(state): State<Arc<AppState>>,
     Json(input): Json<UiInstallInput>,
 ) -> Response {
-    if let Some(response) = ui_ships_with_package(&state) {
-        return response;
-    }
     let result = if input.source.is_empty() || input.source == "official" {
         prepare_official(&state).await
     } else {
@@ -258,9 +246,6 @@ async fn ui_upload(
     headers: HeaderMap,
     body: Body,
 ) -> Response {
-    if let Some(response) = ui_ships_with_package(&state) {
-        return response;
-    }
     let data = match to_bytes(body, sempre_ui::MAX_ARCHIVE_SIZE).await {
         Ok(data) => data,
         Err(error) => return operation(error.to_string()),
@@ -287,9 +272,6 @@ async fn ui_upload(
 }
 
 async fn ui_update(State(state): State<Arc<AppState>>) -> Response {
-    if let Some(response) = ui_ships_with_package(&state) {
-        return response;
-    }
     let lease = match state.manager.resource_egress(GITHUB).await {
         Ok(lease) => lease,
         Err(error) => return operation(error.to_string()),
