@@ -31,34 +31,20 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 - Native control implementations belong only in `ui/src/components/acme`. If the library lacks a required control, add the smallest reusable implementation there before using it in a page or feature.
 - Use Tailwind CSS v4 for new `ui/` styling while preserving global styles, theme tokens, keyframes, third-party overrides, and CSS that Tailwind cannot express cleanly.
 - The standalone static site under `site/` does not load the React component library and is outside these component and Tailwind rules.
-- For user-visible UI changes, also verify the actual rendered layout and interaction in a browser when that check is available and relevant.
+
+## Approvals
+
+These rules also bind sub-agents, scripts, and tools; delegation never bypasses them.
+
+- Before modifying files, data, configuration, or services, propose a concrete plan with material assumptions and tradeoffs, then wait for explicit confirmation. Analysis-only requests stay read-only. After confirmation, finish the confirmed scope without re-asking; re-confirm only when the scope or design changes materially.
+- Get explicit approval for: a new branch (exact name and starting ref); a new worktree (purpose, exact path, and starting ref); the first SSH or other remote connection to a host, except routine `git fetch`, `pull`, and `push` transport; any backup copy; new test cases; and compatibility logic for old versions, interfaces, or data formats.
+- Never push, tag, or trigger GitHub Actions unless explicitly requested.
 
 ## Implementation Rules
 
 - Published migration files are immutable, including comments, imports, and formatting. Never put test modules, test functions, fixtures, or test-only imports inside a migration file. Put tests in separate files and register new migration checksums in `rust/crates/sempre-state/tests/migration_policy.rs`; behavioral changes require a new migration. Do not update frozen checksums to make an existing migration edit pass validation.
-- Surface material assumptions and tradeoffs before implementation. Ask when ambiguity could materially change the result.
-- Prefer the smallest root-cause solution that follows the existing architecture. If a local fix would weaken a boundary, propose the cleaner design first.
-- Add abstractions only for real domain boundaries, meaningful duplication, or safer changes. Do not add speculative features, configuration, flexibility, or impossible error handling.
-- Touch only files and lines required by the task, preserve unrelated work, and match the existing style.
-- Remove imports, variables, functions, and files made unused by the change. Report unrelated dead code without modifying it.
-- Every changed line must trace to the requested outcome. Multiple agents may be working concurrently, so never modify unrelated files or modules.
-
-## Execution Scope and Concurrency
-
-- Start modifying tasks by recording the base commit and checking the current branch, worktree status, tracked remote ref, and task-owned files.
-- If unrelated uncommitted changes or another active task are present, use an existing approved worktree or ask the user to approve the exact new worktree path and starting ref. Do not create any branch or worktree without the global authorization requirements above.
-- Do not run full-workspace Cargo commands in a shared dirty checkout. They validate other tasks' code, contend on build locks, and can turn unrelated failures into false blockers.
-- Keep discovered adjacent bugs separate. Report them, but do not repair, build, deploy, or release them unless the user adds that work to the scope.
-- A request to commit, push, tag, or trigger GitHub Actions is a delivery request. Resolve the branch, next tag, workflow trigger, and remote transport near the start; follow the global SSH exceptions and approval rules exactly.
-- Before advancing shared `main`, compare the recorded base, current `main`, and `origin/main`. If either ref advanced, do not fast-forward the task commit into shared `main` first. Keep it isolated and rebuild a linear result on the latest base in an approved worktree, or report the pending integration.
-- Do not report a commit as integrated into `main` while `main...origin/main` is diverged. State `ahead`/`behind` status explicitly.
-
-## Discovery and Tool Efficiency
-
-- Begin with the existing feature owner and its tests. Use at most two targeted repository-search batches before selecting the implementation boundary; after that, open only files needed by the next edit or verification decision.
-- Keep command output bounded. Do not dump hundreds of unrelated matches or whole large files into context when a narrower `rg`, line range, or test name answers the question.
-- Batch related reads and status checks. Avoid long sequences of tiny tool calls and repeated unchanged `git status`, process, or test polls.
-- Reuse existing update-task, API, and UI contracts before designing new layers. Once the requested path is proven, stop exploring adjacent release, deployment, or runtime behavior.
+- Prefer the smallest root-cause solution that follows the existing architecture; if a local fix would weaken a boundary, propose the cleaner design first. Add abstractions only for real domain boundaries, meaningful duplication, or safer changes, and add no speculative features, configuration, flexibility, or impossible error handling.
+- Every changed line must trace to the requested outcome: touch only required files and lines, match the existing style, and remove imports, variables, functions, and files made unused by the change. Report unrelated dead code and adjacent bugs without repairing, building, deploying, or releasing them.
 
 ## Code Organization
 
@@ -67,29 +53,33 @@ Sempre is a cross-platform Rust service and CLI that manages proxy cores, genera
 - Existing files above 500 lines are grandfathered but may only shrink. A change must not increase their physical line count.
 - When a task would otherwise grow an oversized file, place the new responsibility in a cohesive module instead of extending the existing file. Do not perform unrelated splitting or refactoring.
 
+## Discovery and Tool Efficiency
+
+- Begin with the existing feature owner and its tests. Use at most two targeted repository-search batches before selecting the implementation boundary; after that, open only files needed by the next edit or verification decision.
+- Keep output bounded with a narrower `rg`, line range, or test name, and batch related reads and status checks instead of repeating unchanged polls. Reuse existing update-task, API, and UI contracts before designing new layers, and stop exploring adjacent release, deployment, or runtime behavior once the requested path is proven.
+
 ## Verification
 
 - Define verifiable success criteria before implementation and use the narrowest meaningful checks while iterating.
-- Verify business behavior with existing automated tests, focused checks, or repeatable steps. Do not add test cases by default, including new test files or cases appended to existing test files. Only when the user asks for tests, or existing verification cannot prove the result, state the need, scope, and count of new tests and get explicit approval first.
-- Run focused tests for the affected behavior first. For Rust changes, default to named test modules or filters plus affected-target Clippy/checks; touching a crate does not by itself require every test in that crate. Run the full crate only when the change alters a shared crate-wide contract or no reliable focused filter exists.
+- Verify behavior with existing automated tests, focused checks, or repeatable steps. Do not add test cases by default, including new test files or modules, test functions, table rows, fixtures, or snapshots; only when the user asks, or existing verification cannot prove the result, state the need, scope, and count and get approval first. Never delete, skip, or weaken existing tests to make them pass.
+- For Rust changes, default to named test modules or filters plus affected-target Clippy/checks; touching a crate does not by itself require every test in that crate. Run the full crate only when the change alters a shared crate-wide contract or no reliable focused filter exists.
 - For `ui/` or `site/`, run the relevant Vitest files and the owning package's lint/type check. Do not expand from component tests to unrelated page or browser suites without a behavior-specific reason.
 - Before reporting a completed code change, run repository `bun run lint` and `bun run tsc` once on the final code state. These are final static gates, not commands to repeat after every edit.
-- Run full `bun run rust:lint` and `bun run rust:test` only when the change crosses shared Rust contracts, workspace configuration, foundational crates, or multiple independently owned crates, or when the user explicitly requests full local validation. Otherwise rely on affected-crate Clippy/tests plus CI for the workspace matrix.
-- For a requested commit/tag/push whose purpose is to trigger GitHub Actions, do not delay dispatch for a redundant local full-workspace run after focused tests and final static gates have passed. GitHub Actions owns the full matrix unless the user requested a local artifact.
+- Run full `bun run rust:lint` and `bun run rust:test` only when the change crosses shared Rust contracts, workspace configuration, foundational crates, or multiple independently owned crates, or when the user explicitly requests full local validation. When a commit, tag, or push is meant to trigger GitHub Actions, CI owns the full matrix; do not delay dispatch for a redundant local run unless the user requested a local artifact.
 - Run a full local `bun run build` only when the user requested a local release artifact or the final artifact itself is the acceptance surface. For build-tooling or archive changes, prefer focused packaging tests when they prove the changed contract. Inspect the build entry point first and do not invoke a wrapper that repeats already completed verification.
-- Perform browser verification only after confirming the exact Sempre dev server, owning process, working directory, and served source revision. If the correct source-backed surface is unavailable and deployment is not requested, accept focused component/DOM tests and report that limitation; do not probe unrelated ports or installed stale UI.
-- If a full suite is required and produces no task-relevant progress for five minutes, or waits on another task's build lock, stop and report or move it to an isolated worktree/CI rather than repeatedly polling it.
+- For user-visible UI changes, verify the rendered layout and interaction in a browser when available, but only after confirming the exact Sempre dev server, owning process, working directory, and served source revision. Otherwise accept focused component/DOM tests and report that limitation; do not probe unrelated ports or installed stale UI.
+- If a full suite produces no task-relevant progress for five minutes, or waits on another task's build lock, stop and report or move it to an isolated worktree/CI rather than repeatedly polling it.
 - Documentation-only changes require content review and `git diff --check`; do not run product builds or test suites for them.
 
-## Git Workflow
+## Concurrency and Git
 
-- Every completed user-requested task must end with a local Git commit containing all changes produced by that task. Do not report a task complete while leaving its finished work uncommitted for another agent or a later turn.
-- Split multiple requests or independently verifiable changes into separate commits. Never combine unrelated tasks in one commit, even when they were implemented in the same run.
-- In a shared worktree, stage and commit only files owned by the current task. If parallel-task changes appear, identify them from the diff and recent history, leave them untouched, and require the owning task to commit them before it reports completion.
-- Validate before committing. If validation fails, do not commit; report the failure and leave the changes available for correction.
-- Stage only in-scope files and preserve unrelated worktree changes.
+- Start modifying tasks by recording the base commit and checking the current branch, worktree status, tracked remote ref, and task-owned files. Multiple agents may work concurrently: never modify unrelated files, and when another task's uncommitted changes are present, use an existing approved worktree or request approval for a new one.
+- Do not run full-workspace Cargo commands in a shared dirty checkout. They validate other tasks' code, contend on build locks, and can turn unrelated failures into false blockers.
+- Treat a request to commit, push, tag, or trigger GitHub Actions as a delivery request, and resolve the branch, next tag, workflow trigger, and remote transport near the start.
+- Before advancing shared `main`, compare the recorded base, current `main`, and `origin/main`. If either ref advanced, keep the task commit isolated and rebuild a linear result on the latest base in an approved worktree, or report the pending integration. Never report a commit as integrated while `main...origin/main` is diverged; state `ahead`/`behind` explicitly.
+- Validate, then end every completed task with a local commit containing exactly its own changes; never leave finished work uncommitted for another agent or a later turn. If validation fails, do not commit; report the failure and leave the changes for correction.
+- Split independent requests or independently verifiable changes into separate commits. In a shared worktree, stage only task-owned files and leave parallel-task changes for their owners to commit.
 - Use English Conventional Commit titles in the form `<type>(<scope>): <outcome>`, for example `feat(core): add runtime reload support`. Use a concise lowercase scope and a specific English outcome. Supported types are `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, and `revert`.
-- Never push unless explicitly requested.
 
 ## Development Servers
 
