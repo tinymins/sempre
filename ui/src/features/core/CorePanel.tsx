@@ -86,7 +86,7 @@ export function CorePanel() {
     <div className="grid gap-4 border-b border-[var(--border)] pb-6 md:grid-cols-[minmax(0,1fr)_auto_auto]">
       <Field label={t('reference')}><><Input list="supported-core-references" aria-describedby="core-reference-hint" value={reference} onChange={(event) => setReference(event.target.value)} placeholder={referenceExamples['sing-box']} /><datalist id="supported-core-references">{cores.data?.supported.filter((core) => referenceExamples[core]).map((core) => <option key={core} value={referenceExamples[core]} />)}</datalist></></Field>
       <Button className="self-end" variant="primary" disabled={busy} onClick={() => download.mutate('install')}><Download size={16} />{t('install')}</Button>
-      {openwrt ? null : <Button className="self-end" disabled={busy} onClick={() => download.mutate('update')}><RefreshCw size={16} />{t('update')}</Button>}
+      <Button className="self-end" disabled={busy} onClick={() => download.mutate('update')}><RefreshCw size={16} />{t('update')}</Button>
       <p id="core-reference-hint" className="break-words text-xs text-[var(--muted)] md:col-span-3">{t(openwrt ? 'coreReferenceHintOpenwrt' : 'coreReferenceHint')}</p>
     </div>
     {task ? <><h3 className="mt-6 text-sm font-semibold">{t('downloadTasks')}</h3><Table<CoreDownloadTask> className="mt-3" rowKey="id" pagination={false} columns={taskColumns} dataSource={[task]} scroll={{ x: 760 }} /></> : null}

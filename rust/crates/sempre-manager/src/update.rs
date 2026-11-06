@@ -2,7 +2,7 @@ use sempre_core::CoreRef;
 
 use crate::{
     CoreChange, Manager, ManagerError, ValidationRunner, VersionRunner,
-    install::CoreInstallProgress,
+    install::{CoreInstallProgress, InstallResult},
 };
 
 impl<R: VersionRunner + ValidationRunner> Manager<R> {
@@ -16,7 +16,9 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         progress: &(impl Fn(CoreInstallProgress) + Sync),
     ) -> Result<Vec<CoreChange>, ManagerError> {
         // The stable channel follows the package or firmware there; versions are downloaded by name.
-        self.reject_on_openwrt("Updating a core channel")?;
+        if self.store.layout().openwrt {
+            return self.update_router_core(value, progress).await;
+        }
         let references = if value.trim().is_empty() {
             installed_channels(&self.store.read()?)
         } else {
@@ -40,16 +42,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             let result = self
                 .install_core_observed(&reference.to_string(), progress)
                 .await?;
-            changes.push(CoreChange {
-                changed: result.changed,
-                message: if result.changed {
-                    format!("{}@{} installed", result.core, result.version)
-                } else {
-                    format!("{}@{} is already installed", result.core, result.version)
-                },
-                current_detail: format!("{} -> {}", result.reference, result.version),
-                ..CoreChange::default()
-            });
+            changes.push(installed(&result));
             if selected {
                 let selection = self.select_core(&reference.to_string()).await?;
                 if selection.changed {
@@ -58,6 +51,51 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             }
         }
         Ok(changes)
+    }
+
+    /// Installs the latest stable release as an exact version and switches to it when selected.
+    async fn update_router_core(
+        &self,
+        value: &str,
+        progress: &(impl Fn(CoreInstallProgress) + Sync),
+    ) -> Result<Vec<CoreChange>, ManagerError> {
+        let core = if value.trim().is_empty() {
+            String::from("sing-box")
+        } else {
+            self.normalized_reference(value)?.core
+        };
+        self.reject_firmware_managed_core(&core)?;
+        let adapter = self.registry.get(&core)?;
+        let stable = CoreRef::parse(&format!("{core}@stable"))?;
+        let package = self.resolve_package(adapter.as_ref(), &stable).await?;
+        let exact = format!("{core}@{}", package.version);
+        let selected = self
+            .store
+            .read()?
+            .selected
+            .is_some_and(|selected| selected.core == core);
+        let result = self.install_core_observed(&exact, progress).await?;
+        let mut changes = vec![installed(&result)];
+        if selected {
+            let selection = self.select_core(&exact).await?;
+            if selection.changed {
+                changes.push(selection);
+            }
+        }
+        Ok(changes)
+    }
+}
+
+fn installed(result: &InstallResult) -> CoreChange {
+    CoreChange {
+        changed: result.changed,
+        message: if result.changed {
+            format!("{}@{} installed", result.core, result.version)
+        } else {
+            format!("{}@{} is already installed", result.core, result.version)
+        },
+        current_detail: format!("{} -> {}", result.reference, result.version),
+        ..CoreChange::default()
     }
 }
 

@@ -41,6 +41,25 @@ impl<R: VersionRunner> Manager<R> {
         self.install_core_observed(value, &|_| {}).await
     }
 
+    pub(crate) async fn resolve_package(
+        &self,
+        adapter: &dyn Adapter,
+        reference: &CoreRef,
+    ) -> Result<Package, ManagerError> {
+        let lookup = self.resource_egress("https://api.github.com/").await?;
+        let routed_releases = lookup.github_client()?;
+        Ok(routed_releases
+            .as_ref()
+            .unwrap_or(&self.releases)
+            .resolve(
+                adapter,
+                reference.repository.as_deref().unwrap_or_default(),
+                &reference.reference,
+                &self.target,
+            )
+            .await?)
+    }
+
     pub(crate) async fn install_core_observed(
         &self,
         value: &str,
@@ -66,19 +85,7 @@ impl<R: VersionRunner> Manager<R> {
         progress(CoreInstallProgress::Resolving {
             reference: reference.to_string(),
         });
-        let lookup = self.resource_egress("https://api.github.com/").await?;
-        let routed_releases = lookup.github_client()?;
-        let package = routed_releases
-            .as_ref()
-            .unwrap_or(&self.releases)
-            .resolve(
-                adapter.as_ref(),
-                reference.repository.as_deref().unwrap_or_default(),
-                &reference.reference,
-                &self.target,
-            )
-            .await?;
-        drop(lookup);
+        let package = self.resolve_package(adapter.as_ref(), &reference).await?;
         self.reject_conflicting_source(&reference, &package)?;
 
         let temporary = tempfile::Builder::new()
