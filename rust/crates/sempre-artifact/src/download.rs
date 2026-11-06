@@ -81,6 +81,20 @@ impl Downloader {
             .await
     }
 
+    /// Retries a request whose connection or TLS handshake failed before any response arrived.
+    async fn send_with_retry(&self, url: &str) -> reqwest::Result<reqwest::Response> {
+        let mut delays = [Duration::from_secs(1), Duration::from_secs(2)].into_iter();
+        loop {
+            match self.client.get(url).send().await {
+                Err(error) if error.is_connect() || error.is_timeout() => match delays.next() {
+                    Some(delay) => tokio::time::sleep(delay).await,
+                    None => return Err(error),
+                },
+                result => return result,
+            }
+        }
+    }
+
     pub async fn verified_with_progress(
         &self,
         artifact: &Artifact,
@@ -101,9 +115,7 @@ impl Downloader {
             }
         }
         let response = self
-            .client
-            .get(&artifact.url)
-            .send()
+            .send_with_retry(&artifact.url)
             .await
             .map_err(|error| ArtifactError::http(format!("download {}", artifact.name), error))?;
         if response.status() != StatusCode::OK {

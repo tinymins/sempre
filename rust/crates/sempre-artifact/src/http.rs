@@ -8,6 +8,7 @@ use reqwest::{ClientBuilder, Method};
 pub(crate) fn client_builder(user_agent: &str, timeout: Duration) -> ClientBuilder {
     let mut builder = sempre_http::client_builder()
         .timeout(timeout)
+        .connect_timeout(Duration::from_secs(15))
         .redirect(crate::https_redirect_policy())
         .user_agent(user_agent);
     if !ipv6_egress_available() {
