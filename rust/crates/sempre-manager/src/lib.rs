@@ -18,6 +18,7 @@ mod dns_routing;
 mod dns_rule_files;
 mod dns_runtime;
 mod dns_settings;
+mod dns_tunnel_rules;
 mod error;
 mod fakeip_routes;
 mod fakeip_selection;

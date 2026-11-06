@@ -240,6 +240,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
             system_dns.listen_port,
             &system_dns.listen_hosts,
             &self.dns_settings.read(),
+            &self.tunnels.read()?,
         )?;
         if sempre_converter::cn_pre_routing(&profile) {
             match self.transparent.cn_outbound_interfaces().await {
@@ -311,6 +312,7 @@ impl DnsFrontendPlan {
         listen_port: u16,
         listen_hosts: &[String],
         settings: &crate::DnsSettings,
+        tunnels: &sempre_tunnel::Config,
     ) -> Result<Self, ManagerError> {
         let fakeip_ranges = if policy.fakeip_enabled {
             [&policy.fakeip_ipv4_range, &policy.fakeip_ipv6_range]
@@ -329,7 +331,7 @@ impl DnsFrontendPlan {
             listen_port,
             local_upstreams,
             dns_endpoint("127.0.0.1", policy.core_listen_port),
-            settings.frontend_rule_sets(),
+            crate::dns_tunnel_rules::frontend_rule_sets(settings, tunnels),
             &settings.domestic_domains,
         )?;
         config.listen_hosts = listen_hosts.to_vec();

@@ -106,3 +106,41 @@ async fn frontend_starts_and_keeps_domestic_dns_when_core_is_down() {
         runtime.stop().await;
     }
 }
+
+#[tokio::test]
+async fn rule_updates_resolve_tunnel_servers_through_direct_upstreams() {
+    let (local, local_task) = answering_upstream(1, [192, 0, 2, 44]).await;
+    let dead = UdpSocket::bind("127.0.0.1:0").await.expect("dead port");
+    let remote = dead.local_addr().expect("dead address").to_string();
+    drop(dead);
+    let port = frontend_port().await;
+    let plan = plan("first", port, local.clone(), remote);
+    let runtime = DnsFrontendRuntime::new(Arc::new(TestPolicy), None);
+    runtime
+        .prepare(Some(&plan))
+        .await
+        .expect("prepare frontend");
+    let settings: crate::DnsSettings = serde_json::from_value(serde_json::json!({
+        "schema": 3, "revision": 0, "enabled": true,
+        "domestic_domains": { "enabled": false }, "direct_upstreams": [local]
+    }))
+    .expect("DNS settings");
+    let tunnels: sempre_tunnel::Config = serde_json::from_value(serde_json::json!({
+        "schema": 1, "instances": [{ "id": "hz", "name": "HZ",
+            "server_url": "ws://tunnel.example.com:30088" }]
+    }))
+    .expect("tunnel config");
+    runtime
+        .update_rules(&settings, &tunnels)
+        .await
+        .expect("update rules");
+    let answer = probe_dns(&format!("127.0.0.1:{port}"), "tunnel.example.com", "A")
+        .await
+        .expect("tunnel response");
+    assert_eq!(
+        answer.addresses,
+        ["192.0.2.44".parse::<IpAddr>().expect("IP")]
+    );
+    local_task.await.expect("local responder");
+    runtime.stop().await;
+}

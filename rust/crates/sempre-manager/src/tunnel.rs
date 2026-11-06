@@ -133,8 +133,10 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         Ok(result)
     }
 
-    pub async fn update_tunnels(&self, config: Config) -> Result<(Status, bool), ManagerError> {
+    pub async fn update_tunnels(&self, mut config: Config) -> Result<(Status, bool), ManagerError> {
         self.reject_on_openwrt("Tunnels")?;
+        config.normalize();
+        config.validate()?;
         let catalog = self.subscriptions.read()?;
         let references = referenced_forwards(&catalog.profiles)?;
         for (id, profiles) in &references {
@@ -145,7 +147,7 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
                 )));
             }
         }
-        let saved = Arc::clone(&self.tunnels).update(config).await?;
+        let saved = self.save_tunnels_with_dns_rules(config).await?;
         if references.is_empty() {
             return Ok((self.tunnels.status()?, false));
         }
@@ -192,6 +194,29 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
     pub async fn tunnel_action(&self, id: &str, action: &str) -> Result<Status, ManagerError> {
         self.reject_on_openwrt("Tunnels")?;
         Ok(Arc::clone(&self.tunnels).action(id, action).await?)
+    }
+
+    /// Publishes the tunnel server DNS rules before the new tunnels resolve them.
+    async fn save_tunnels_with_dns_rules(&self, config: Config) -> Result<Config, ManagerError> {
+        let _runtime = self.runtime_rules_gate.lock().await;
+        let previous = if crate::dns_tunnel_rules::tunnel_server_rule_set(&self.tunnels.read()?)
+            == crate::dns_tunnel_rules::tunnel_server_rule_set(&config)
+        {
+            None
+        } else {
+            self.dns_frontend
+                .update_rules(&self.dns_settings.read(), &config)
+                .await?
+        };
+        match Arc::clone(&self.tunnels).update(config).await {
+            Ok(saved) => Ok(saved),
+            Err(error) => match self.dns_frontend.restore_rules(previous).await {
+                Ok(()) => Err(error.into()),
+                Err(restore) => Err(ManagerError::InvalidOperation(format!(
+                    "tunnel update failed: {error}; restoring DNS frontend failed: {restore}"
+                ))),
+            },
+        }
     }
 }
 

@@ -25,6 +25,7 @@ impl DnsFrontendRuntime {
     pub(crate) async fn update_rules(
         &self,
         settings: &DnsSettings,
+        tunnels: &sempre_tunnel::Config,
     ) -> Result<Option<DnsConfig>, ManagerError> {
         let mut running = self.running.lock().await;
         let Some(current) = running.as_mut() else {
@@ -33,7 +34,7 @@ impl DnsFrontendRuntime {
         let previous = current.plan.config.clone();
         let mut config = previous.clone();
         config.rule_sets = DnsConfig::managed_rule_sets(
-            settings.frontend_rule_sets(),
+            crate::dns_tunnel_rules::frontend_rule_sets(settings, tunnels),
             &settings.domestic_domains,
         )?;
         config

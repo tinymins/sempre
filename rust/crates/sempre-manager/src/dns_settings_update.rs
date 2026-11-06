@@ -88,10 +88,11 @@ impl<R: VersionRunner + ValidationRunner> Manager<R> {
         candidate: crate::DnsSettings,
         mut update: crate::dns_rule_files::RuleFileUpdate,
     ) -> Result<(CoreChange, crate::DnsSettings), ManagerError> {
+        let tunnels = self.tunnels.read()?;
         if let Err(error) = update.publish() {
             return Err(publication_error(error, update.rollback().err(), None));
         }
-        let frontend = match self.dns_frontend.update_rules(&candidate).await {
+        let frontend = match self.dns_frontend.update_rules(&candidate, &tunnels).await {
             Ok(previous) => previous,
             Err(error) => {
                 return Err(publication_error(error, update.rollback().err(), None));
