@@ -19,7 +19,7 @@ pub fn write_atomic(path: &Path, data: &[u8], mode: u32) -> io::Result<()> {
     set_permissions(temporary.path(), mode)?;
     temporary.as_file().sync_all()?;
     temporary.persist(path).map_err(|error| error.error)?;
-    sync_parent(parent)
+    sync_directory(parent)
 }
 
 #[cfg(unix)]
@@ -35,13 +35,13 @@ fn set_permissions(_: &Path, _: u32) -> io::Result<()> {
 }
 
 #[cfg(unix)]
-fn sync_parent(parent: &Path) -> io::Result<()> {
+pub fn sync_directory(parent: &Path) -> io::Result<()> {
     File::open(parent)?.sync_all()
 }
 
 #[cfg(not(unix))]
 #[allow(clippy::unnecessary_wraps)]
-fn sync_parent(_: &Path) -> io::Result<()> {
+pub fn sync_directory(_: &Path) -> io::Result<()> {
     Ok(())
 }
 

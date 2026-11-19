@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-use sempre_state::AppliedMigration;
+use sempre_state::{AppliedMigration, sync_directory};
 use serde::{
     Deserialize,
     de::{self, DeserializeSeed, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor},
@@ -15,8 +15,7 @@ use sha2::{Digest, Sha256};
 
 use super::{
     Row, SETTINGS_FILE, TrafficDimension, TrafficError, TrafficSettings, capped,
-    segments::{Segments, sync_directory},
-    write_settings,
+    segments::Segments, write_settings,
 };
 use crate::{traffic_history_migrations, traffic_rotation};
 

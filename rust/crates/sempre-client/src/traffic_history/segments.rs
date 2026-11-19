@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use sempre_state::sync_directory;
 use serde::{Deserialize, Serialize};
 
 use super::{Row, TrafficError};
@@ -49,18 +50,6 @@ pub(super) struct Segments {
 
 fn path(root: &Path, id: u64) -> PathBuf {
     root.join(format!("{id:016x}.jsonl"))
-}
-
-pub(super) fn sync_directory(root: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        File::open(root)?.sync_all()?;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = root;
-    }
-    Ok(())
 }
 
 fn charged(size: u64, unit: u64) -> u64 {

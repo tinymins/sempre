@@ -113,7 +113,7 @@ fn replace_metadata(root: &Path, name: &str, bytes: &[u8]) -> Result<(), Traffic
 
 fn write_settings(root: &Path, settings: &TrafficSettings) -> Result<(), TrafficError> {
     replace_metadata(root, SETTINGS_FILE, &serde_json::to_vec(settings)?)?;
-    segments::sync_directory(root)?;
+    sempre_state::sync_directory(root)?;
     Ok(())
 }
 
