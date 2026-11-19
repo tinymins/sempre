@@ -20,7 +20,7 @@ manifest = Path(__file__).resolve().parents[1] / "Cargo.toml"
 # graph so that a resolution error can never authorize an exemption.
 result = subprocess.run(
     [
-        "cargo", "tree", "--manifest-path", str(manifest), "--locked",
+        "cargo", "tree", "--color", "never", "--manifest-path", str(manifest), "--locked",
         "--workspace", "--all-features", "--target", "all", "--prefix", "none", "--format", "{p}",
     ],
     check=True,
