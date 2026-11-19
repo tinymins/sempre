@@ -27,30 +27,48 @@ fn fill(store: &TrafficStore, minutes: i64) {
 #[test]
 fn maintenance_does_not_rewrite_the_file_for_every_sample() {
     let root = tempfile::tempdir().expect("root");
-    let path = root.path().join("history.json");
+    let path = root.path().join("history");
     let store = TrafficStore::open(path.clone()).expect("open");
-    let baseline = std::fs::read(&path).ok();
+    let cursor = path.join("cursor");
+    let baseline = std::fs::read(&cursor).ok();
     fill(&store, 2);
     store
         .maintain(Utc::now().timestamp_millis())
         .expect("maintain");
-    assert_eq!(std::fs::read(&path).ok(), baseline);
+    assert_eq!(std::fs::read(&cursor).ok(), baseline);
     store.flush().expect("flush");
-    assert_ne!(std::fs::read(&path).ok(), baseline);
+    assert_ne!(std::fs::read(&cursor).ok(), baseline);
 }
 
 #[test]
 fn storage_ceiling_bounds_the_file_and_keeps_recent_records() {
     let root = tempfile::tempdir().expect("root");
-    let path = root.path().join("history.json");
-    let store = TrafficStore::open_with_ceiling(path.clone(), Some(64 << 10)).expect("open");
+    let path = root.path().join("history");
+    let limit = 64 << 10;
+    let store = TrafficStore::open_with_ceiling(path.clone(), Some(limit)).expect("open");
     fill(&store, 300);
     store.flush().expect("flush");
-    let data = std::fs::read(&path).expect("file");
-    assert!(data.len() <= 64 << 10, "{} bytes", data.len());
-    // Eviction is proportional, so it must not throw away far more than the excess.
-    assert!(data.len() >= 32 << 10, "{} bytes", data.len());
-    assert!(String::from_utf8_lossy(&data).contains("host-0-0.example"));
+    let bytes: u64 = std::fs::read_dir(&path)
+        .unwrap()
+        .map(|file| file.unwrap().metadata().unwrap().len())
+        .sum();
+    assert!(bytes <= limit, "{bytes} bytes");
+    assert!(bytes >= 32 << 10, "{bytes} bytes");
+    drop(store);
+    let reopened = TrafficStore::open_with_ceiling(path, Some(limit)).unwrap();
+    let history = reopened
+        .history(0, TrafficDimension::Host, Utc::now().timestamp_millis())
+        .unwrap();
+    let data = serde_json::to_value(history).unwrap();
+    let totals = data["totals"].as_array().unwrap();
+    for n in 0..20 {
+        let row = totals
+            .iter()
+            .find(|row| row["label"] == format!("host-0-{n}.example"))
+            .expect("latest record");
+        assert_eq!(row["download"], 1);
+        assert_eq!(row["upload"], 1);
+    }
 }
 
 #[test]

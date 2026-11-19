@@ -121,7 +121,7 @@ pub(crate) async fn run(
             result = client.stream("connections") => result,
             result = shutdown.changed() => {
                 if result.is_err() || *shutdown.borrow() {
-                    flush_shutdown(&store);
+                    flush_shutdown(&store).await;
                     return;
                 }
                 continue;
@@ -138,16 +138,17 @@ pub(crate) async fn run(
             tokio::select! {
                 result = shutdown.changed() => {
                     if result.is_err() || *shutdown.borrow() {
-                        flush_shutdown(&store);
+                        flush_shutdown(&store).await;
                         return;
                     }
                 }
                 snapshot = stream.next_connections() => match snapshot {
                     Ok(snapshot) => {
-                    let deltas = accumulator.observe(snapshot);
-                    if let Err(error) = store.record(Utc::now().timestamp_millis(), deltas) {
-                        warn!(%error, "failed to record traffic history");
-                    }
+                        let deltas = accumulator.observe(snapshot);
+                        let time = Utc::now().timestamp_millis();
+                        if !deltas.is_empty() && let Err(error) = store.blocking(move |store| store.record(time, deltas)).await {
+                            warn!(%error, "failed to record traffic history");
+                        }
                     }
                     Err(_) => break,
                 },
@@ -171,7 +172,7 @@ async fn retry_or_shutdown(
     tokio::select! {
         result = shutdown.changed() => {
             if result.is_err() || *shutdown.borrow() {
-                flush_shutdown(store);
+                flush_shutdown(store).await;
                 true
             } else {
                 false
@@ -186,16 +187,16 @@ async fn retry_or_shutdown(
 
 /// Encoding and writing the history must not stall the runtime's worker threads.
 async fn maintain_store(store: &Arc<TrafficStore>) {
-    let store = Arc::clone(store);
-    let result =
-        tokio::task::spawn_blocking(move || store.maintain(Utc::now().timestamp_millis())).await;
-    if let Ok(Err(error)) = result {
+    if let Err(error) = store
+        .blocking(|store| store.maintain(Utc::now().timestamp_millis()))
+        .await
+    {
         warn!(%error, "failed to rotate or persist traffic history");
     }
 }
 
-fn flush_shutdown(store: &TrafficStore) {
-    if let Err(error) = store.flush() {
+async fn flush_shutdown(store: &Arc<TrafficStore>) {
+    if let Err(error) = store.blocking(TrafficStore::flush).await {
         warn!(%error, "failed to flush traffic history during shutdown");
     }
 }

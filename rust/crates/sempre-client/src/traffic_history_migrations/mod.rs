@@ -5,8 +5,8 @@ mod v0003_rolling_window;
 pub(crate) mod tests;
 
 use sempre_state::{
-    AppliedMigration, JsonMigration, JsonMigrationOutcome, MigrationError,
-    current_migration_ledger, migrate_json, validate_migration_ledger,
+    AppliedMigration, JsonMigration, JsonMigrationOutcome, MigrationError, migrate_json,
+    validate_migration_ledger,
 };
 
 pub(crate) const CURRENT_SCHEMA: u32 = 3;
@@ -27,8 +27,9 @@ const REGISTRY: &[JsonMigration] = &[
     ]),
 ];
 
+#[cfg(test)]
 pub(crate) fn current_ledger() -> Vec<AppliedMigration> {
-    current_migration_ledger(REGISTRY)
+    sempre_state::current_migration_ledger(REGISTRY)
 }
 
 pub(crate) fn validate_ledger(ledger: &[AppliedMigration]) -> Result<(), MigrationError> {

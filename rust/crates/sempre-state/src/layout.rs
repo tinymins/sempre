@@ -229,7 +229,7 @@ impl Layout {
         layout.openwrt = true;
         layout.core_data = home.join("core-data");
         layout.endpoint = runtime.join("endpoint.json");
-        layout.traffic_history = runtime.join("traffic-history.json");
+        layout.traffic_history = runtime.join("traffic-history");
         layout.dns_query_history = runtime.join("dns-query-history.json");
         layout
     }
@@ -376,7 +376,7 @@ impl Layout {
             capture_cn_list: home.join("cn_ip.txt"),
             state: home.join("state.json"),
             web_config: home.join("web.json"),
-            traffic_history: home.join("traffic-history.json"),
+            traffic_history: home.join("traffic-history"),
             dns_settings: home.join("dns.json"),
             dns_query_history: home.join("dns-query-history.json"),
             network_settings: home.join("network.json"),

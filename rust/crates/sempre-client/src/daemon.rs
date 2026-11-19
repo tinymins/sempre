@@ -44,7 +44,7 @@ pub(crate) async fn run_with_layout(
     let web = WebConfigStore::new(&layout.web_config);
     let config = web.initialize_for_host(layout.openwrt)?;
     let traffic = Arc::new(crate::traffic_history::TrafficStore::open_with_ceiling(
-        layout.traffic_history.clone(),
+        &layout.traffic_history,
         layout.openwrt.then_some(OPENWRT_TRAFFIC_CEILING),
     )?);
     let listen = listen_override.map_or(config.listen, |value| vec![value.into()]);

@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
@@ -14,50 +13,48 @@ use axum::{
     routing::get,
 };
 use chrono::Utc;
-use sempre_state::AppliedMigration;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
     api,
     api::AppState,
-    traffic_history_migrations,
     traffic_rotation::{self, RotationError, TrafficSettings},
 };
 
+mod segments;
+use segments::Segments;
+const SETTINGS_FILE: &str = "settings.json";
+mod legacy;
+
 const BUCKET_MILLIS: i64 = 60_000;
-/// Samples arrive often; rewriting the whole file for each would dominate idle CPU.
 const PERSIST_INTERVAL: Duration = Duration::from_mins(1);
+
 #[derive(Debug, Error)]
 pub(crate) enum TrafficError {
-    #[error("read traffic history {path}: {source}")]
-    Read {
-        path: PathBuf,
-        source: std::io::Error,
-    },
-    #[error("decode traffic history {path}: {source}")]
-    Decode {
-        path: PathBuf,
-        source: serde_json::Error,
-    },
-    #[error("encode traffic history: {0}")]
-    Encode(#[from] serde_json::Error),
-    #[error("write traffic history {path}: {source}")]
-    Write {
-        path: PathBuf,
-        source: std::io::Error,
-    },
+    #[error("traffic history file: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("traffic history task: {0}")]
+    Task(#[from] tokio::task::JoinError),
+    #[error("traffic history JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error(
+        "retaining the complete traffic history needs {required} bytes, exceeding the {limit}-byte limit; the original JSON is intact"
+    )]
+    ImportBudget { required: u64, limit: u64 },
     #[error("traffic history lock is poisoned")]
     Lock,
-    #[error("traffic history schema {0} is not supported")]
+    #[error("unsupported traffic history schema {0}")]
     Schema(u32),
+    #[error("invalid traffic history: {0}")]
+    Invalid(&'static str),
     #[error(transparent)]
     Migration(#[from] sempre_state::MigrationError),
     #[error(transparent)]
     Rotation(#[from] RotationError),
 }
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum TrafficDimension {
     Device,
@@ -66,47 +63,62 @@ pub(crate) enum TrafficDimension {
     Outbound,
     Process,
 }
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct StoredRecord {
-    time: i64,
-    dimension: TrafficDimension,
-    label: String,
-    download: i64,
-    upload: i64,
-}
-#[derive(Debug, Deserialize, Serialize)]
-struct Document {
-    schema: u32,
-    applied_migrations: Vec<AppliedMigration>,
-    settings: TrafficSettings,
-    records: Vec<StoredRecord>,
-}
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+
+#[derive(Debug, Eq, Hash, PartialEq)]
 struct RecordKey {
     time: i64,
     dimension: TrafficDimension,
     label: String,
 }
-#[derive(Clone, Copy, Debug, Default)]
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Totals {
     download: i64,
     upload: i64,
 }
 
+impl Totals {
+    fn add(&mut self, other: Self) {
+        self.download += other.download;
+        self.upload += other.upload;
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(super) struct Row(i64, TrafficDimension, String, i64, i64);
+
 struct Inner {
-    applied_migrations: Vec<AppliedMigration>,
+    segments: Segments,
+    ceiling: Option<u64>,
     settings: TrafficSettings,
-    records: HashMap<RecordKey, Totals>,
-    dirty: bool,
-    persisted_bytes: usize,
+    settings_len: u64,
+    pending: HashMap<RecordKey, Totals>,
     last_persist: Instant,
 }
 
+// Rename is the logical commit. Callers update their in-memory view before
+// syncing the directory so an error after rename never replays committed data.
+fn replace_metadata(root: &Path, name: &str, bytes: &[u8]) -> Result<(), TrafficError> {
+    use std::io::Write;
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".sempre-write-")
+        .tempfile_in(root)?;
+    temporary.write_all(bytes)?;
+    temporary.as_file().sync_all()?;
+    temporary
+        .persist(root.join(name))
+        .map_err(|error| error.error)?;
+    Ok(())
+}
+
+fn write_settings(root: &Path, settings: &TrafficSettings) -> Result<(), TrafficError> {
+    replace_metadata(root, SETTINGS_FILE, &serde_json::to_vec(settings)?)?;
+    segments::sync_directory(root)?;
+    Ok(())
+}
+
 pub(crate) struct TrafficStore {
-    path: PathBuf,
     inner: Mutex<Inner>,
-    /// Ceiling that settings cannot exceed; the file may live in RAM.
-    storage_ceiling: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -125,80 +137,36 @@ pub(crate) struct TrafficHistory {
 
 impl TrafficStore {
     #[cfg(test)]
-    pub(crate) fn open(path: PathBuf) -> Result<Self, TrafficError> {
+    pub(crate) fn open(path: impl AsRef<Path>) -> Result<Self, TrafficError> {
         Self::open_with_ceiling(path, None)
     }
 
     pub(crate) fn open_with_ceiling(
-        path: PathBuf,
+        path: impl AsRef<Path>,
         storage_ceiling: Option<u64>,
     ) -> Result<Self, TrafficError> {
-        let (document, migrated) = match fs::read(&path) {
-            Ok(data) => {
-                let migration = traffic_history_migrations::run(&data)?;
-                let document =
-                    serde_json::from_value::<Document>(migration.value).map_err(|source| {
-                        TrafficError::Decode {
-                            path: path.clone(),
-                            source,
-                        }
-                    })?;
-                (document, migration.changed)
+        let root = path.as_ref();
+        legacy::prepare(root, &root.with_extension("json"), storage_ceiling)?;
+        let segments = Segments::open(root)?;
+        let bytes = match std::fs::read(root.join(SETTINGS_FILE)) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let settings = TrafficSettings::default();
+                write_settings(root, &settings)?;
+                serde_json::to_vec(&settings)?
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
-                Document {
-                    schema: traffic_history_migrations::CURRENT_SCHEMA,
-                    applied_migrations: traffic_history_migrations::current_ledger(),
-                    settings: TrafficSettings::default(),
-                    records: Vec::new(),
-                },
-                false,
-            ),
-            Err(source) => {
-                return Err(TrafficError::Read {
-                    path: path.clone(),
-                    source,
-                });
-            }
+            Err(error) => return Err(error.into()),
         };
-        if document.schema != traffic_history_migrations::CURRENT_SCHEMA {
-            return Err(TrafficError::Schema(document.schema));
-        }
-        traffic_history_migrations::validate_ledger(&document.applied_migrations)?;
-        traffic_rotation::validate(&document.settings)?;
-        if migrated {
-            write_document(&path, &document)?;
-        }
-        let records = document
-            .records
-            .into_iter()
-            .map(|record| {
-                (
-                    RecordKey {
-                        time: record.time,
-                        dimension: record.dimension,
-                        label: record.label,
-                    },
-                    Totals {
-                        download: record.download,
-                        upload: record.upload,
-                    },
-                )
-            })
-            .collect();
-        let persisted_bytes = fs::metadata(&path).map_or(0, |metadata| {
-            usize::try_from(metadata.len()).unwrap_or(usize::MAX)
-        });
+        let settings = serde_json::from_slice(&bytes)?;
+        traffic_rotation::validate(&settings)?;
         Ok(Self {
-            storage_ceiling,
-            path,
             inner: Mutex::new(Inner {
-                persisted_bytes,
+                segments,
+                ceiling: storage_ceiling,
+                settings: capped(settings, storage_ceiling),
+                settings_len: bytes.len() as u64,
+                pending: HashMap::new(),
                 last_persist: Instant::now(),
-                applied_migrations: document.applied_migrations,
-                settings: capped(document.settings, storage_ceiling),
-                records,
-                dirty: false,
             }),
         })
     }
@@ -208,21 +176,19 @@ impl TrafficStore {
             return Ok(());
         }
         let mut inner = self.lock()?;
-        let bucket = time - time.rem_euclid(BUCKET_MILLIS);
+        let time = time - time.rem_euclid(BUCKET_MILLIS);
         for delta in deltas {
-            let totals = inner
-                .records
-                .entry(RecordKey {
-                    time: bucket,
-                    dimension: delta.dimension,
-                    label: delta.label,
-                })
-                .or_default();
-            totals.download += delta.download;
-            totals.upload += delta.upload;
+            let key = RecordKey {
+                time,
+                dimension: delta.dimension,
+                label: delta.label,
+            };
+            let entry = inner.pending.entry(key).or_default();
+            entry.add(Totals {
+                download: delta.download,
+                upload: delta.upload,
+            });
         }
-        rotate(&mut inner, time);
-        inner.dirty = true;
         Ok(())
     }
 
@@ -235,17 +201,22 @@ impl TrafficStore {
         let inner = self.lock()?;
         let since = traffic_rotation::summary_cutoff(&inner.settings, now)
             .map_or(since, |cutoff| since.max(cutoff));
-        Ok(summarize(&inner, since, None, dimension))
+        summarize(&inner, since, None, dimension, now)
     }
 
-    fn history_range(
+    pub(crate) fn history_range(
         &self,
         since: i64,
         until: Option<i64>,
         dimension: TrafficDimension,
     ) -> Result<TrafficHistory, TrafficError> {
-        let inner = self.lock()?;
-        Ok(summarize(&inner, since, until, dimension))
+        summarize(
+            &*self.lock()?,
+            since,
+            until,
+            dimension,
+            Utc::now().timestamp_millis(),
+        )
     }
 
     pub(crate) fn update_settings(
@@ -255,36 +226,51 @@ impl TrafficStore {
     ) -> Result<(), TrafficError> {
         traffic_rotation::validate(&settings)?;
         let mut inner = self.lock()?;
-        inner.settings = capped(settings, self.storage_ceiling);
-        rotate(&mut inner, now);
-        inner.dirty = true;
-        persist(&self.path, &mut inner, self.storage_ceiling)
+        // Commit the old policy's cutoff before a wider retention policy
+        // can make the expired portion of a shared segment visible again.
+        let cutoff = traffic_rotation::storage_cutoff(&inner.settings, now).unwrap_or(i64::MIN);
+        let settings_len = inner.settings_len;
+        inner.segments.persist(&[], cutoff, None, settings_len)?;
+        inner.pending.retain(|key, _| key.time >= cutoff);
+        let settings = capped(settings, inner.ceiling);
+        let data = serde_json::to_vec(&settings)?;
+        replace_metadata(inner.segments.root(), SETTINGS_FILE, &data)?;
+        inner.settings = settings;
+        inner.settings_len = data.len() as u64;
+        inner.segments.settings_replaced()?;
+        persist(&mut inner, now)
     }
 
     pub(crate) fn clear(&self) -> Result<(), TrafficError> {
         let mut inner = self.lock()?;
-        inner.records.clear();
-        inner.dirty = true;
-        persist(&self.path, &mut inner, self.storage_ceiling)
+        let result = inner.segments.clear();
+        if inner.segments.empty() {
+            // Cursor publication precedes unlink. A cleanup error must not
+            // leave older pending samples visible after a committed clear.
+            inner.pending.clear();
+        }
+        result
     }
 
     pub(crate) fn flush(&self) -> Result<(), TrafficError> {
         let mut inner = self.lock()?;
-        if inner.dirty {
-            persist(&self.path, &mut inner, self.storage_ceiling)?;
-        }
-        Ok(())
+        persist(&mut inner, Utc::now().timestamp_millis())
     }
 
     pub(crate) fn maintain(&self, now: i64) -> Result<(), TrafficError> {
         let mut inner = self.lock()?;
-        if rotate(&mut inner, now) {
-            inner.dirty = true;
-        }
-        if inner.dirty && inner.last_persist.elapsed() >= PERSIST_INTERVAL {
-            persist(&self.path, &mut inner, self.storage_ceiling)?;
+        if inner.last_persist.elapsed() >= PERSIST_INTERVAL {
+            persist(&mut inner, now)?;
         }
         Ok(())
+    }
+
+    pub(crate) async fn blocking<T: Send + 'static>(
+        self: &Arc<Self>,
+        operation: impl FnOnce(&Self) -> Result<T, TrafficError> + Send + 'static,
+    ) -> Result<T, TrafficError> {
+        let store = Arc::clone(self);
+        tokio::task::spawn_blocking(move || operation(&store)).await?
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Inner>, TrafficError> {
@@ -292,30 +278,63 @@ impl TrafficStore {
     }
 }
 
+fn persist(inner: &mut Inner, now: i64) -> Result<(), TrafficError> {
+    let cutoff = traffic_rotation::storage_cutoff(&inner.settings, now).unwrap_or(i64::MIN);
+    let cutoff = inner.segments.visible_since(cutoff);
+    let mut rows: Vec<_> = inner
+        .pending
+        .iter()
+        .filter(|(key, _)| key.time >= cutoff)
+        .map(|(key, value)| {
+            Row(
+                key.time,
+                key.dimension,
+                key.label.clone(),
+                value.download,
+                value.upload,
+            )
+        })
+        .collect();
+    rows.sort_unstable_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
+    inner
+        .segments
+        .persist(&rows, cutoff, inner.settings.max_bytes, inner.settings_len)?;
+    inner.pending.clear();
+    inner.last_persist = Instant::now();
+    inner.segments.sync_publication()
+}
+
 fn summarize(
     inner: &Inner,
     since: i64,
     until: Option<i64>,
     dimension: TrafficDimension,
-) -> TrafficHistory {
+    now: i64,
+) -> Result<TrafficHistory, TrafficError> {
+    let since = traffic_rotation::storage_cutoff(&inner.settings, now)
+        .map_or(since, |cutoff| since.max(cutoff));
+    let since = inner.segments.visible_since(since);
+    let until = until.unwrap_or(i64::MAX);
     let mut totals = HashMap::<String, Totals>::new();
-    for (key, value) in &inner.records {
-        if key.time < since
-            || until.is_some_and(|until| key.time > until)
-            || key.dimension != dimension
-        {
-            continue;
+    inner.segments.visit(since, until, |row| {
+        if row.1 == dimension {
+            totals.entry(row.2).or_default().add(Totals {
+                download: row.3,
+                upload: row.4,
+            });
         }
-        let total = totals.entry(key.label.clone()).or_default();
-        total.download += value.download;
-        total.upload += value.upload;
+    })?;
+    for (key, delta) in &inner.pending {
+        if (since..=until).contains(&key.time) && key.dimension == dimension {
+            totals.entry(key.label.clone()).or_default().add(*delta);
+        }
     }
     let mut totals = totals
         .into_iter()
-        .map(|(label, total)| TrafficTotal {
+        .map(|(label, totals)| TrafficTotal {
             label,
-            download: total.download,
-            upload: total.upload,
+            download: totals.download,
+            upload: totals.upload,
         })
         .collect::<Vec<_>>();
     totals.sort_by(|left, right| {
@@ -323,20 +342,12 @@ fn summarize(
             .cmp(&(left.download + left.upload))
             .then_with(|| left.label.cmp(&right.label))
     });
-    TrafficHistory {
+    Ok(TrafficHistory {
         settings: inner.settings.clone(),
-        storage_bytes: inner.persisted_bytes,
+        storage_bytes: usize::try_from(inner.segments.storage_bytes() + inner.settings_len)
+            .unwrap_or(usize::MAX),
         totals,
-    }
-}
-
-fn rotate(inner: &mut Inner, now: i64) -> bool {
-    let Some(cutoff) = traffic_rotation::storage_cutoff(&inner.settings, now) else {
-        return false;
-    };
-    let previous = inner.records.len();
-    inner.records.retain(|key, _| key.time >= cutoff);
-    inner.records.len() != previous
+    })
 }
 
 /// Keeps the reported limit honest on hosts whose storage has a fixed ceiling.
@@ -346,61 +357,6 @@ pub(crate) fn capped(mut settings: TrafficSettings, ceiling: Option<u64>) -> Tra
         (limit, ceiling) => limit.or(ceiling),
     };
     settings
-}
-
-fn persist(path: &Path, inner: &mut Inner, ceiling: Option<u64>) -> Result<(), TrafficError> {
-    let limit = capped(inner.settings.clone(), ceiling).max_bytes;
-    let mut data = encoded(inner)?;
-    while let Some(limit) = limit.filter(|limit| data.len() as u64 > *limit) {
-        if inner.records.is_empty() {
-            break;
-        }
-        let times = inner.records.keys().map(|key| key.time);
-        let cutoff = traffic_rotation::eviction_cutoff(times, data.len() as u64, limit);
-        inner.records.retain(|key, _| key.time > cutoff);
-        data = encoded(inner)?;
-    }
-    sempre_state::write_atomic(path, &data, 0o600).map_err(|source| TrafficError::Write {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    inner.dirty = false;
-    inner.persisted_bytes = data.len();
-    inner.last_persist = Instant::now();
-    Ok(())
-}
-
-fn write_document(path: &Path, document: &Document) -> Result<(), TrafficError> {
-    let data = serde_json::to_vec(document)?;
-    sempre_state::write_atomic(path, &data, 0o600).map_err(|source| TrafficError::Write {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
-fn encoded(inner: &Inner) -> Result<Vec<u8>, TrafficError> {
-    let mut records = inner
-        .records
-        .iter()
-        .map(|(key, totals)| StoredRecord {
-            time: key.time,
-            dimension: key.dimension,
-            label: key.label.clone(),
-            download: totals.download,
-            upload: totals.upload,
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|left, right| {
-        left.time
-            .cmp(&right.time)
-            .then_with(|| left.label.cmp(&right.label))
-    });
-    Ok(serde_json::to_vec(&Document {
-        schema: traffic_history_migrations::CURRENT_SCHEMA,
-        applied_migrations: inner.applied_migrations.clone(),
-        settings: inner.settings.clone(),
-        records,
-    })?)
 }
 
 #[derive(Debug)]
@@ -435,15 +391,16 @@ async fn history(
     State(state): State<Arc<AppState>>,
     Query(query): Query<HistoryQuery>,
 ) -> Response {
-    let history = if query.since == 0 && query.until.is_none() {
-        state
-            .traffic
-            .history(0, query.dimension, Utc::now().timestamp_millis())
-    } else {
-        state
-            .traffic
-            .history_range(query.since, query.until, query.dimension)
-    };
+    let history = state
+        .traffic
+        .blocking(move |store| {
+            if query.since == 0 && query.until.is_none() {
+                store.history(0, query.dimension, Utc::now().timestamp_millis())
+            } else {
+                store.history_range(query.since, query.until, query.dimension)
+            }
+        })
+        .await;
     result(history)
 }
 
@@ -453,7 +410,8 @@ async fn update_settings(
 ) -> Response {
     match state
         .traffic
-        .update_settings(settings, Utc::now().timestamp_millis())
+        .blocking(move |store| store.update_settings(settings, Utc::now().timestamp_millis()))
+        .await
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(TrafficError::Rotation(error)) => api::api_error(
@@ -466,7 +424,7 @@ async fn update_settings(
 }
 
 async fn clear(State(state): State<Arc<AppState>>) -> Response {
-    match state.traffic.clear() {
+    match state.traffic.blocking(TrafficStore::clear).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => internal_error(&error),
     }
