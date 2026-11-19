@@ -14,6 +14,8 @@ mod direct;
 mod dns_capture;
 mod dns_frontend;
 mod dns_listener;
+mod dns_query_history;
+mod dns_query_segments;
 mod dns_routing;
 mod dns_rule_files;
 mod dns_runtime;
@@ -156,6 +158,7 @@ impl<R: VersionRunner> Manager<R> {
         let dns_settings = Arc::new(dns_settings::DnsSettingsStore::open(
             store.layout().dns_settings.clone(),
             store.layout().dns_query_history.clone(),
+            store.layout().manager_log.clone(),
             initial_profile,
         )?);
         // A router already resolves through dnsmasq and the configuration's DNS inbound.

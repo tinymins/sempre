@@ -1,20 +1,11 @@
-use std::{
-    collections::VecDeque,
-    fs::{self, OpenOptions},
-    io::Write as _,
-    path::PathBuf,
-    sync::{
-        Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::{fs, io, path::PathBuf, sync::Mutex};
 
 use sempre_converter::Profile;
 use sempre_dns::{DnsQueryEvent, DnsRewrite, DnsRuntimePolicy};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{DnsRoutingRuleSet, ManagerError};
+use crate::{DnsRoutingRuleSet, ManagerError, dns_query_history::QueryHistory};
 
 const SCHEMA_VERSION: u32 = 3;
 
@@ -114,15 +105,15 @@ struct V2DnsSettings {
 pub(crate) struct DnsSettingsStore {
     path: PathBuf,
     settings: Mutex<DnsSettings>,
-    query_path: PathBuf,
-    queries: Mutex<VecDeque<DnsQueryEvent>>,
-    query_appends: AtomicUsize,
+    administration: Mutex<()>,
+    history: QueryHistory,
 }
 
 impl DnsSettingsStore {
     pub(crate) fn open(
         path: PathBuf,
         query_path: PathBuf,
+        log_path: PathBuf,
         initial_profile: &Profile,
     ) -> Result<Self, ManagerError> {
         let mut settings = match fs::read(&path) {
@@ -137,13 +128,13 @@ impl DnsSettingsStore {
         crate::dns_routing::normalize(&mut settings);
         validate(&settings)?;
         write(&path, &settings)?;
-        let queries = load_queries(&query_path, settings.query_log_max_entries)?;
+        let history = QueryHistory::open(query_path, settings.query_log_max_entries, log_path)
+            .map_err(|error| ManagerError::io("open DNS query history", error))?;
         Ok(Self {
             path,
             settings: Mutex::new(settings),
-            query_path,
-            queries: Mutex::new(queries),
-            query_appends: AtomicUsize::new(0),
+            administration: Mutex::new(()),
+            history,
         })
     }
 
@@ -153,41 +144,42 @@ impl DnsSettingsStore {
 
     pub(crate) fn replace(&self, mut candidate: DnsSettings) -> Result<DnsSettings, ManagerError> {
         candidate.normalize_and_validate()?;
-        let mut current = self.settings.lock().expect("DNS settings lock");
-        candidate.revision = current.revision.saturating_add(1);
-        let mut queries = self.queries.lock().expect("DNS query log lock");
-        let mut next_queries = queries.clone();
-        while next_queries.len() > candidate.query_log_max_entries {
-            next_queries.pop_front();
+        let _admin = self.administration.lock().expect("DNS administration lock");
+        let previous = self.read();
+        candidate.revision = previous.revision.saturating_add(1);
+        let limit = candidate.query_log_max_entries;
+        let changed_limit = previous.query_log_max_entries != limit;
+        let path = self.path.clone();
+        let next = candidate.clone();
+        let save = move || {
+            if let Err(error) = write(&path, &next) {
+                return match write(&path, &previous) {
+                    Ok(()) => Err(io::Error::other(error)),
+                    Err(rollback) => Err(io::Error::other(format!(
+                        "DNS settings persistence failed: {error}; restoring saved settings failed: {rollback}"
+                    ))),
+                };
+            }
+            Ok(())
+        };
+        if changed_limit {
+            self.history.resize_and_save(limit, save)
+        } else {
+            save()
         }
-        write_queries(&self.query_path, &next_queries)?;
-        if let Err(error) = write(&self.path, &candidate) {
-            return match write(&self.path, &current) {
-                Ok(()) => Err(error),
-                Err(rollback) => Err(ManagerError::InvalidOperation(format!(
-                    "DNS settings persistence failed: {error}; restoring saved settings failed: {rollback}"
-                ))),
-            };
-        }
-        *current = candidate.clone();
-        *queries = next_queries;
+        .map_err(|error| ManagerError::io("update DNS settings", error))?;
+        *self.settings.lock().expect("DNS settings lock") = candidate.clone();
         Ok(candidate)
     }
 
     pub(crate) fn queries(&self) -> Vec<DnsQueryEvent> {
-        self.queries
-            .lock()
-            .expect("DNS query log lock")
-            .iter()
-            .rev()
-            .cloned()
-            .collect()
+        self.history.recent()
     }
 
     pub(crate) fn clear_queries(&self) -> Result<(), ManagerError> {
-        self.queries.lock().expect("DNS query log lock").clear();
-        self.query_appends.store(0, Ordering::Relaxed);
-        sempre_state::write_atomic(&self.query_path, b"", 0o600)
+        let _admin = self.administration.lock().expect("DNS administration lock");
+        self.history
+            .clear()
             .map_err(|error| ManagerError::io("clear DNS query history", error))
     }
 }
@@ -212,28 +204,13 @@ impl DnsRuntimePolicy for DnsSettingsStore {
     }
 
     fn record(&self, event: DnsQueryEvent) {
-        let settings = self.read();
-        if !settings.query_log_enabled {
-            return;
-        }
-        let line = serde_json::to_vec(&event).ok();
-        let mut queries = self.queries.lock().expect("DNS query log lock");
-        queries.push_back(event);
-        while queries.len() > settings.query_log_max_entries {
-            queries.pop_front();
-        }
-        if let Some(mut line) = line {
-            line.push(b'\n');
-            if let Ok(mut file) = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&self.query_path)
-            {
-                let _ = file.write_all(&line);
-            }
-        }
-        if self.query_appends.fetch_add(1, Ordering::Relaxed) % 100 == 99 {
-            let _ = write_queries(&self.query_path, &queries);
+        if self
+            .settings
+            .lock()
+            .expect("DNS settings lock")
+            .query_log_enabled
+        {
+            self.history.record(event);
         }
     }
 }
@@ -337,38 +314,4 @@ fn validate(settings: &DnsSettings) -> Result<(), ManagerError> {
         }
     }
     Ok(())
-}
-
-fn load_queries(
-    path: &std::path::Path,
-    limit: usize,
-) -> Result<VecDeque<DnsQueryEvent>, ManagerError> {
-    let data = match fs::read_to_string(path) {
-        Ok(data) => data,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(VecDeque::new()),
-        Err(error) => return Err(ManagerError::io("read DNS query history", error)),
-    };
-    let mut queries = data
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect::<VecDeque<_>>();
-    while queries.len() > limit {
-        queries.pop_front();
-    }
-    Ok(queries)
-}
-
-fn write_queries(
-    path: &std::path::Path,
-    queries: &VecDeque<DnsQueryEvent>,
-) -> Result<(), ManagerError> {
-    let mut data = Vec::new();
-    for query in queries {
-        serde_json::to_writer(&mut data, query).map_err(|error| {
-            ManagerError::InvalidOperation(format!("encode DNS query history: {error}"))
-        })?;
-        data.push(b'\n');
-    }
-    sempre_state::write_atomic(path, &data, 0o600)
-        .map_err(|error| ManagerError::io("write DNS query history", error))
 }
