@@ -22,8 +22,7 @@ jobs:
       - name: Install cargo-audit
         if: steps.audit-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-audit --version 0.22.2 --locked
-      - name: Verify ignored RSA advisory is unreachable
-        run: python3 rust/scripts/check_rsa_dependency.py
-      # rsa is locked only through SQLx's disabled MySQL feature, is absent from
-      # every target's dependency graph, and RUSTSEC-2023-0071 has no fixed release.
-      - run: cargo audit --file rust/Cargo.lock --ignore RUSTSEC-2023-0071
+      - name: Verify exempted dependencies are unreachable
+        run: python3 rust/scripts/check_audit_exemption_reachability.py
+      # Cargo.lock includes SQLx's disabled MySQL and SQLite dependencies.
+      - run: cargo audit --file rust/Cargo.lock --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0459
